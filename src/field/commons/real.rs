@@ -18,6 +18,7 @@ use crate::{
         Derivable, Field, Group, PartiallyOrderedSet, Ring, Set, SetParseExpression, matrix::M,
     },
     parser::Parser,
+    polynom::ToTerm,
     printer::PrettyPrinter,
     term::{self, Fun, Mul, Normalize, Term, TermSet, Value},
 };
@@ -223,6 +224,24 @@ impl Ring for R<Rational> {
             _ => {}
         }
         a
+    }
+
+    fn simplify(&self, a: Term<Self>) -> Term<Self> {
+        // Cancel common polynomial factors of the numerator and the denominator
+        let (num, den) = a.as_fraction(true);
+        if den.is_one() {
+            return a;
+        }
+        let (num, den) = (num.to_polynomial(), den.to_polynomial());
+        // The polynomial gcd only terminates on univariate polynomials
+        if num.variables().union(&den.variables()).count() > 1 {
+            return a;
+        }
+        let gcd = num.gcd(&den);
+        if gcd.is_constant() {
+            return a;
+        }
+        num.quot_rem(&gcd).0.to_term() / den.quot_rem(&gcd).0.to_term()
     }
 
     fn expand(&self, a: Term<Self>) -> Term<Self> {

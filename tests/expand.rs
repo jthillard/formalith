@@ -109,7 +109,6 @@ fn expand_removes_zero_terms() {
 }
 
 #[test]
-#[ignore = "known limitation: simplify does not cancel common polynomial factors"]
 fn simplify_cancels_common_factors() {
     assert_eq!(parse!("(x^2-1)/(x-1)", R).simplify(), parse!("x+1", R));
     assert_eq!(parse!("(x^2-1)/(x+1)", R).simplify(), parse!("x-1", R));

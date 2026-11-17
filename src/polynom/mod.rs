@@ -2,7 +2,7 @@
 
 use std::{
     cmp::Ordering,
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fmt::{Debug, Display},
     hash::Hash,
 };
@@ -102,6 +102,16 @@ impl<V, T: Ring, U: Set> MultivariatePolynomial<V, T, U> {
     /// Create a new constant polynomial equal to one.
     pub fn one(set: T, exponant_set: U) -> Self {
         Self::constant(set.one(), set, exponant_set)
+    }
+}
+
+impl<V: Monomial, T: Set, U: Set> MultivariatePolynomial<V, T, U> {
+    /// Get the variables appearing in the polynom.
+    pub fn variables(&self) -> HashSet<&V> {
+        self.terms
+            .iter()
+            .flat_map(|(vars, _)| vars.iter().map(|(var, _)| var))
+            .collect()
     }
 }
 
