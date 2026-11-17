@@ -164,11 +164,21 @@ impl Parser<'_> {
     /// # Errors
     /// This method can return an error if the parsing failed.
     pub fn parse<E: Set>(&mut self, set: E) -> Result<Term<E>, ParserError> {
-        Ok(
-            ParserTraitBounded::<E, U10>::parse_expression_bounded(self, 0, set)?
-                .ok_or_else(|| ParserError::new("Input was empty"))?
-                .normalize(),
-        )
+        let term = ParserTraitBounded::<E, U10>::parse_expression_bounded(self, 0, set)?
+            .ok_or_else(|| ParserError::new("Input was empty"))?;
+        if let Some(op) = self.get_op() {
+            return Err(ParserError::new(format!(
+                "Operand expected for binary operation {op:?} at position {}",
+                self.end_span
+            )));
+        }
+        if self.token.kind != TokenKind::Eof {
+            return Err(ParserError::new(format!(
+                "Unexpected {:?} at position {}",
+                self.token.kind, self.start_span
+            )));
+        }
+        Ok(term.normalize())
     }
 
     fn parse_symbol<E: Set>(&mut self, set: E) -> Option<Term<E>> {
@@ -185,8 +195,13 @@ impl Parser<'_> {
         match &self.token.kind {
             TokenKind::OpenParen => {
                 self.next_token();
-                let content =
-                    ParserTraitBounded::<E, N>::parse_expression_bounded(self, 0, set)?.unwrap();
+                let content = ParserTraitBounded::<E, N>::parse_expression_bounded(self, 0, set)?
+                    .ok_or_else(|| {
+                    ParserError::new(format!(
+                        "Expression expected at position {}",
+                        self.start_span
+                    ))
+                })?;
                 self.expect_token(&TokenKind::CloseParen)?;
                 Ok(Some(content))
             }
@@ -199,7 +214,13 @@ impl Parser<'_> {
         let mut args = vec![];
         loop {
             args.push(
-                ParserTraitBounded::<E, N>::parse_expression_bounded(self, 0, arg_set)?.unwrap(),
+                ParserTraitBounded::<E, N>::parse_expression_bounded(self, 0, arg_set)?
+                    .ok_or_else(|| {
+                        ParserError::new(format!(
+                            "Argument expected at position {}",
+                            self.start_span
+                        ))
+                    })?,
             );
             if self.token.kind != TokenKind::Comma {
                 return Ok(args);
@@ -248,26 +269,36 @@ where
             (Some(mut node), mut node_in_coefficient_set) => {
                 if let (TokenKind::OpenParen, Term::Symbol(symbol)) = (&self.token.kind, &node) {
                     self.next_token();
-                    node = match symbol.symbol {
-                        Context::DET => Term::Fun(Box::new(Fun::new(
-                            symbol.symbol,
-                            self.parse_args::<M<TermSet<E>>, Diff<N, U1>>(
+                    let ident = symbol.symbol;
+                    let (fun, args_count): (Term<E>, _) = match ident {
+                        Context::DET => {
+                            let args = self.parse_args::<M<TermSet<E>>, Diff<N, U1>>(
                                 set.get_term_set().get_matrix_set(),
-                            )?,
-                            set,
-                        ))),
-                        _ => Term::Fun(Box::new(Fun::new(
-                            symbol.symbol,
-                            self.parse_args::<E, N>(set)?,
-                            set,
-                        ))),
+                            )?;
+                            let count = args.len();
+                            (Term::Fun(Box::new(Fun::new(ident, args, set))), count)
+                        }
+                        _ => {
+                            let args = self.parse_args::<E, N>(set)?;
+                            let count = args.len();
+                            (Term::Fun(Box::new(Fun::new(ident, args, set))), count)
+                        }
                     };
+                    self.expect_token(&TokenKind::CloseParen)?;
+                    if matches!(ident, Context::ABS | Context::DET) && args_count != 1 {
+                        return Err(ParserError::new(format!(
+                            "Function {} expects 1 argument, found {args_count}",
+                            Context::get_symbol_data(&ident).name
+                        )));
+                    }
+                    node = fun.normalize();
                 }
                 let mut op = self.get_op();
                 while self.token.kind != TokenKind::Eof
                     && op.is_some()
                     && priority < op.as_ref().unwrap().get_priority()
                 {
+                    let before_op = self.clone();
                     self.next_token();
                     let (new_node, parsed) = ParseBinary::<E, N>::parse_binary_expr(
                         self,
@@ -440,7 +471,7 @@ impl<E: Group, N> ParseUnary<E, N> for Parser<'_> {
                 self.next_token();
                 ParserTraitBounded::<E, N>::parse_expression_bounded(
                     self,
-                    Op::Add.get_priority(),
+                    Op::Multiply.get_priority(),
                     set,
                 )
             }
@@ -448,7 +479,7 @@ impl<E: Group, N> ParseUnary<E, N> for Parser<'_> {
                 self.next_token();
                 Ok(ParserTraitBounded::<E, N>::parse_expression_bounded(
                     self,
-                    Op::Subtract.get_priority(),
+                    Op::Multiply.get_priority(),
                     set,
                 )?
                 .map(|term| -term))
@@ -478,7 +509,7 @@ macro_rules! parse {
 mod tests {
     use super::*;
     use crate::{
-        field::{matrix::VectorSpaceElement, real::R},
+        field::real::R,
         term::{
             Add,
             flags::{Flags, NORMALIZED},
@@ -495,26 +526,13 @@ mod tests {
     }
     #[test]
     fn test_parse_function() {
+        // Function calls are evaluated once parsed
         let mut parser = Parser::new("abs(-5)");
         let args = ParserTraitBounded::<_, U1>::parse_expression_bounded(&mut parser, 0, R);
-        assert_eq!(
-            args,
-            Ok(Some(Term::Fun(Box::new(Fun::new(
-                Context::ABS,
-                vec![(-5).into()],
-                R
-            )))))
-        );
+        assert_eq!(args, Ok(Some(5.into())));
         let mut parser = Parser::new("det(1)");
         let args = ParserTraitBounded::<_, U2>::parse_expression_bounded(&mut parser, 0, R);
-        assert_eq!(
-            args,
-            Ok(Some(Term::Fun(Box::new(Fun::<M<_>, _>::new(
-                Context::DET,
-                vec![VectorSpaceElement::Scalar(1.into(), R.get_term_set()).into()],
-                R
-            )))))
-        );
+        assert_eq!(args, Ok(Some(1.into())));
     }
     #[test]
     fn test_parse_unary() {

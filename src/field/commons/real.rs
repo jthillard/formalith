@@ -202,7 +202,6 @@ impl Ring for R<Rational> {
             },
             Term::Fun(fun) => match fun.get_ident() {
                 Context::ABS => {
-                    // TODO check parameters count, maybe at function creation in parser
                     if let Some(fun) = fun.as_any().downcast_ref::<Fun<Self>>() {
                         let content = fun.args.first().unwrap();
                         if content >= &0.into() {

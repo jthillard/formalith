@@ -256,7 +256,6 @@ fn det_with_row_swap() {
 }
 
 #[test]
-#[ignore = "known bug: the parser drops everything after a function call"]
 fn operators_after_function_call() {
     assert_eq!(parse!("abs(3)*2", R), 6.into());
     assert_eq!(parse!("abs(3)+abs(4)", R), 7.into());
@@ -267,14 +266,12 @@ fn operators_after_function_call() {
 }
 
 #[test]
-#[ignore = "known bug: a function call as right operand is not normalized (debug assertion in `term_op.rs`)"]
 fn function_call_as_right_operand() {
     assert_eq!(parse!("x*abs(-3)", R), parse!("3*x", R));
     assert_eq!(parse!("x+abs(-3)", R), parse!("x+3", R));
 }
 
 #[test]
-#[ignore = "known bug: unary minus in an exponent captures the whole product (`x^-1*x` is `x^(-x)`)"]
 fn negative_exponent_precedence() {
     assert_eq!(parse!("x^-1*x", R), 1.into());
     assert_eq!(parse!("2^-1*4", R), 2.into());

@@ -100,7 +100,6 @@ fn test_parse_nested_det() {
 }
 
 #[test]
-#[ignore = "known bug: trailing input after a complete expression is silently ignored"]
 fn test_parse_trailing_input() {
     for input in [
         "5 x", "5)", "5 5", "x y", "2x", "5 $ 3", "x,y", "1..2", "1e3", "abs 3",
@@ -110,14 +109,12 @@ fn test_parse_trailing_input() {
 }
 
 #[test]
-#[ignore = "known bug: empty parentheses or function calls without arguments panic"]
 fn test_parse_empty_parentheses() {
     assert!(try_parse!("()", R).is_err());
     assert!(try_parse!("abs()", R).is_err());
 }
 
 #[test]
-#[ignore = "known bug: extra function arguments are silently dropped"]
 fn test_parse_function_arity() {
     assert!(try_parse!("abs(1,2)", R).is_err());
     assert!(try_parse!("det(5,6)", R).is_err());
