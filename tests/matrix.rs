@@ -314,7 +314,6 @@ fn print_non_square_matrix() {
 }
 
 #[test]
-#[ignore = "known bug: matrix product and power of matrix terms are not evaluated"]
 fn matrix_term_product() {
     assert_eq!(
         parse!("[[1,2],[3,4]]*[[5,6],[7,8]]", M),
@@ -330,7 +329,6 @@ fn scalar_times_matrix() {
 }
 
 #[test]
-#[ignore = "known bug: adding a scalar or a matrix of another size to a matrix panics"]
 fn invalid_matrix_addition_does_not_panic() {
     let _ = try_parse!("[[1,2],[3,4]]+1", M);
     let _ = try_parse!("[[1,2],[3,4]]+[[1,2,3],[4,5,6]]", M);

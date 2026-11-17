@@ -147,14 +147,21 @@ impl<T: Group> Group for M<T> {
     }
 
     fn add(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
+        self.try_add(a, b)
+            .unwrap_or_else(|| panic!("Can't add {a} and {b} !"))
+    }
+
+    fn try_add(&self, a: &Self::Element, b: &Self::Element) -> Option<Self::Element> {
         match (a, b) {
-            (VectorSpaceElement::Scalar(a, _), VectorSpaceElement::Scalar(b, _)) => {
-                VectorSpaceElement::Scalar(self.scalar_sub_set.add(a, b), self.scalar_sub_set)
+            (VectorSpaceElement::Scalar(a, _), VectorSpaceElement::Scalar(b, _)) => Some(
+                VectorSpaceElement::Scalar(self.scalar_sub_set.add(a, b), self.scalar_sub_set),
+            ),
+            (VectorSpaceElement::Vector(a), VectorSpaceElement::Vector(b))
+                if a.height() == b.height() && a.width() == b.width() =>
+            {
+                Some(VectorSpaceElement::Vector(a + b))
             }
-            (VectorSpaceElement::Vector(a), VectorSpaceElement::Vector(b)) => {
-                VectorSpaceElement::Vector(a + b)
-            }
-            _ => panic!("Can't add a scalar and a vector ! ({a} + {b})"),
+            _ => None,
         }
     }
 
@@ -292,6 +299,33 @@ impl<T: Ring> Ring for M<T> {
                         )),
                         *self,
                     ));
+                }
+                if let (
+                    Term::Value(Value {
+                        value: VectorSpaceElement::Vector(matrix),
+                        ..
+                    }),
+                    Term::Value(Value {
+                        value: exponant, ..
+                    }),
+                ) = (&**base, &***exponant)
+                    && matrix.height() == matrix.width()
+                {
+                    // Count the exponant, only evaluating natural powers
+                    let exponant_set = self.get_exponant_set();
+                    let mut remaining = exponant.clone();
+                    let mut count = 0_usize;
+                    while exponant_set.is_strictly_positive(&remaining) {
+                        exponant_set.sub_assign(&mut remaining, &exponant_set.nth(1));
+                        count += 1;
+                    }
+                    if count > 0 && exponant_set.is_zero(&remaining) {
+                        let mut res = matrix.clone();
+                        for _ in 1..count {
+                            res = &res * matrix;
+                        }
+                        return Term::Value(Value::new(VectorSpaceElement::Vector(res), *self));
+                    }
                 }
             }
             _ => {}

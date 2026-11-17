@@ -88,6 +88,10 @@ pub trait Group: PartiallyOrderedSet {
     fn add_assign(&self, a: &mut Self::Element, b: &Self::Element) {
         *a = self.add(a, b);
     }
+    /// Add two elements of this group, returning `None` if they can't be added (like matrices of different sizes).
+    fn try_add(&self, a: &Self::Element, b: &Self::Element) -> Option<Self::Element> {
+        Some(self.add(a, b))
+    }
     /// Computes the symmetric (inverse) element of `a` in this group for `+`
     fn neg(&self, a: &Self::Element) -> Self::Element;
     /// Computes the symmetric (inverse) element of `a` in this group for `+` into `a`

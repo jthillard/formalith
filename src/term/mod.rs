@@ -421,8 +421,10 @@ impl<T: Group> MergeTerms for Term<T> {
     default fn merge_terms(&mut self, other: &Self) -> bool {
         match (self.borrow_mut(), other) {
             (Self::Value(Value { value: v1, set, .. }), Self::Value(Value { value: v2, .. })) => {
-                set.add_assign(v1, v2);
-                true
+                set.try_add(v1, v2).is_some_and(|sum| {
+                    *v1 = sum;
+                    true
+                })
             }
             (Self::Symbol(s1), Self::Symbol(s2)) if s1 == s2 => {
                 // Merge x + x
