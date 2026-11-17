@@ -313,13 +313,18 @@ where
                     }
                     node = new_node;
                     if !parsed {
+                        // No operand in this set, let the caller handle the operator (like `2*[[1]]`, where `2` is parsed as a scalar)
+                        *self = before_op;
                         break;
                     }
                     op = self.get_op();
                 }
                 Ok(Some(node))
             }
-            _ => todo!(),
+            (None, Ok(Some(_))) => Err(ParserError::new(format!(
+                "Unexpected literal at position {}",
+                self.start_span
+            ))),
         }
     }
 }
@@ -390,10 +395,7 @@ impl<E: Ring, N> ParseBinary<E, N> for Parser<'_> {
                 true,
             ));
         }
-        Err(ParserError::new(format!(
-            "Operand expected for binary operation {op:?} at position {}",
-            self.start_span
-        )))
+        Ok((current, false))
     }
 }
 impl Parser<'_> {

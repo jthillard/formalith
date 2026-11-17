@@ -323,7 +323,6 @@ fn matrix_term_product() {
 }
 
 #[test]
-#[ignore = "known bug: a scalar on the left of a matrix fails to parse"]
 fn scalar_times_matrix() {
     assert_eq!(parse!("2*[[1,2],[3,4]]", M), parse!("[[2,4],[6,8]]", M));
 }
