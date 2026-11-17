@@ -36,7 +36,6 @@ fn errors() {
 }
 
 #[test]
-#[ignore = "known limitation: integer powers and divisions are not evaluated"]
 fn powers() {
     assert_eq!(line(&parse!("2^10", Z)), "1024");
     assert_eq!(line(&parse!("10^20", Z)), "100000000000000000000");
@@ -44,13 +43,11 @@ fn powers() {
 }
 
 #[test]
-#[ignore = "known bug: floats are silently rounded when parsed as integers"]
 fn float_is_not_an_integer() {
     assert!(try_parse!("5.5", Z).is_err());
 }
 
 #[test]
-#[ignore = "known limitation: `abs` is only evaluated over R"]
 fn abs() {
     assert_eq!(line(&parse!("abs(-3)", Z)), "3");
 }

@@ -5,15 +5,19 @@ use std::{cmp::Ordering, marker::PhantomData};
 use malachite::{
     Integer,
     base::num::{
+        arithmetic::traits::{Abs, DivisibleBy, Pow, Sign},
         basic::traits::{One, Zero},
         conversion::traits::FromSciString,
     },
+    rational::Rational,
 };
 
 use crate::{
+    context::Context,
     field::{Group, PartiallyOrderedSet, Ring, Set, SetParseExpression},
     parser::Parser,
     printer::PrettyPrinter,
+    term::{self, Fun, Term, Value},
 };
 
 /// The integer ring `{$ZZ$}`
@@ -99,13 +103,64 @@ impl Ring for Z<Integer> {
             None
         }
     }
+
+    fn normalize(&self, a: Term<Self>) -> Term<Self> {
+        match &a {
+            Term::Pow(term::Pow { base, exponant, .. }) => {
+                if let (Term::Value(base), Term::Value(exponant)) = (&**base, &***exponant)
+                    && let Ok(exponant) = u64::try_from(&exponant.value)
+                {
+                    return Term::Value(Value::new(Pow::pow(&base.value, exponant), *self));
+                }
+            }
+            Term::Mul(mul) => {
+                // Divide the coefficient by constant factors like `7^-1` when the division is exact
+                let mut coeff = mul.coefficient.clone();
+                let mut factors = vec![];
+                for factor in mul {
+                    if let Term::Pow(term::Pow { base, exponant, .. }) = factor
+                        && let (Term::Value(base), Term::Value(exponant)) = (&**base, &***exponant)
+                        && exponant.value.sign() == Ordering::Less
+                        && let Ok(exponant) = u64::try_from(&-&exponant.value)
+                    {
+                        let divisor = Pow::pow(&base.value, exponant);
+                        if (&coeff).divisible_by(&divisor) {
+                            coeff /= divisor;
+                            continue;
+                        }
+                    }
+                    factors.push(factor.clone());
+                }
+                if factors.len() != mul.factors.len() {
+                    return match factors.len() {
+                        0 => Term::Value(Value::new(coeff, *self)),
+                        1 if coeff == 1 => factors.pop().unwrap(),
+                        _ => Term::Mul(term::Mul::new(coeff, factors, *self)),
+                    };
+                }
+            }
+            Term::Fun(fun) => {
+                if fun.get_ident() == Context::ABS
+                    && let Some(fun) = fun.as_any().downcast_ref::<Fun<Self>>()
+                    && let Some(Term::Value(value)) = fun.args.first()
+                {
+                    return Term::Value(Value::new((&value.value).abs(), *self));
+                }
+            }
+            _ => {}
+        }
+        a
+    }
 }
 impl<N> SetParseExpression<N> for Z<Integer> {
     fn parse_literal(&self, parser: &mut Parser) -> Result<Option<Self::Element>, String> {
         parser.is_literal_and(|value| {
-            Ok(Some(Integer::from_sci_string(value).ok_or_else(|| {
-                format!("Failed to parse \"{value}\" to malachite::Integer",)
-            })?))
+            let rational = Rational::from_sci_string(value)
+                .ok_or_else(|| format!("Failed to parse \"{value}\" to malachite::Integer",))?;
+            Ok(Some(
+                Integer::try_from(rational)
+                    .map_err(|_| format!("\"{value}\" is not an integer"))?,
+            ))
         })
     }
 }
