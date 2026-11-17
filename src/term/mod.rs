@@ -1066,8 +1066,7 @@ impl<T: Ring> Term<T> {
     pub fn is_one(&self) -> bool {
         match self {
             Self::Value(value) => value.set.is_one(&value.value),
-            Self::Symbol(_) | Self::Add(_) | Self::Mul(_) | Self::Pow(_) => false,
-            Self::Fun(_) => todo!(),
+            Self::Symbol(_) | Self::Add(_) | Self::Mul(_) | Self::Pow(_) | Self::Fun(_) => false,
         }
     }
 }

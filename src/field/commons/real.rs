@@ -112,7 +112,7 @@ impl Ring for R<Rational> {
     }
 
     fn try_inv(&self, a: &Self::Element) -> Option<Self::Element> {
-        Some(a.pow(-1_i64))
+        if *a == 0 { None } else { Some(a.pow(-1_i64)) }
     }
 
     fn as_fraction(&self, a: &Self::Element) -> (Self::Element, Self::Element) {
@@ -175,6 +175,10 @@ impl Ring for R<Rational> {
                     let exponant = &exponant.value;
                     let mut res = base.value.clone();
                     if exponant.sign() == Ordering::Less {
+                        if res == 0 {
+                            // Division by zero, keep the expression unevaluated
+                            return a;
+                        }
                         res = Pow::pow(res, -1_i64);
                     }
                     let (mut num, den) = exponant.to_numerator_and_denominator();

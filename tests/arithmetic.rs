@@ -237,7 +237,6 @@ fn det_of_constant_matrices() {
 }
 
 #[test]
-#[ignore = "known bug: `Term::is_one` is `todo!()` on functions, so products and simplification of `abs(x)` panic"]
 fn abs_of_symbol() {
     assert!(!parse!("abs(x)", R).is_one());
     let _ = parse!("2*abs(x)", R);
@@ -245,7 +244,6 @@ fn abs_of_symbol() {
 }
 
 #[test]
-#[ignore = "known bug: dividing by zero panics inside malachite instead of returning an error"]
 fn division_by_zero_does_not_panic() {
     let _ = formalith::try_parse!("1/0", R);
     let _ = formalith::try_parse!("0^-1", R);
