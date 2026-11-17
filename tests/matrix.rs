@@ -320,6 +320,8 @@ fn matrix_term_product() {
         parse!("[[19,22],[43,50]]", M)
     );
     assert_eq!(parse!("[[1,2],[3,4]]^2", M), parse!("[[7,10],[15,22]]", M));
+    assert_eq!(parse!("[[1,2],[3,4]]^3", M), parse!("[[37,54],[81,118]]", M));
+    assert_eq!(parse!("[[1,1],[0,1]]^1000", M), parse!("[[1,1000],[0,1]]", M));
 }
 
 #[test]

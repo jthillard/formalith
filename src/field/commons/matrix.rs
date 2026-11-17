@@ -319,19 +319,33 @@ impl<T: Ring> Ring for M<T> {
                 ) = (&**base, &***exponant)
                     && matrix.height() == matrix.width()
                 {
-                    // Count the exponant, only evaluating natural powers
+                    // Exponentiation by squaring, only evaluating natural powers
                     let exponant_set = self.get_exponant_set();
-                    let mut remaining = exponant.clone();
-                    let mut count = 0_usize;
-                    while exponant_set.is_strictly_positive(&remaining) {
-                        exponant_set.sub_assign(&mut remaining, &exponant_set.nth(1));
-                        count += 1;
+                    let fits = |power: &_, remaining: &_| {
+                        matches!(
+                            exponant_set.partial_cmp(power, remaining),
+                            Some(Ordering::Less | Ordering::Equal)
+                        )
+                    };
+                    // Powers of two up to the exponant, with the matching powers of the matrix
+                    let mut squares = vec![];
+                    let (mut power, mut square) = (exponant_set.nth(1), matrix.clone());
+                    while fits(&power, exponant) {
+                        let next = (exponant_set.add(&power, &power), &square * &square);
+                        squares.push((power, square));
+                        (power, square) = next;
                     }
-                    if count > 0 && exponant_set.is_zero(&remaining) {
-                        let mut res = matrix.clone();
-                        for _ in 1..count {
-                            res = &res * matrix;
+                    let mut remaining = exponant.clone();
+                    let mut res: Option<Matrix<T>> = None;
+                    for (power, square) in squares.into_iter().rev() {
+                        if fits(&power, &remaining) {
+                            exponant_set.sub_assign(&mut remaining, &power);
+                            res = Some(res.map_or(square.clone(), |res| &res * &square));
                         }
+                    }
+                    if let Some(res) = res
+                        && exponant_set.is_zero(&remaining)
+                    {
                         return Term::Value(Value::new(VectorSpaceElement::Vector(res), *self));
                     }
                 }
