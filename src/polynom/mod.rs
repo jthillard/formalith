@@ -609,6 +609,9 @@ where
 
 impl<V: Monomial, T: Ring, U: Set> Print for MultivariatePolynomial<V, T, U> {
     fn print(&self, options: &PrintOptions, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.terms.is_empty() {
+            return self.set.print(&self.set.zero(), options, f);
+        }
         for (j, (vars, coeff)) in self.terms.iter().enumerate() {
             let has_coeff = !self.set.is_one(coeff) || vars.is_empty();
             if has_coeff {
@@ -624,7 +627,10 @@ impl<V: Monomial, T: Ring, U: Set> Print for MultivariatePolynomial<V, T, U> {
                 write!(f, "^")?;
                 self.exponant_set.print(exponant, options, f)?;
             }
-            if j != self.terms.len() - 1 {
+            // Negative coefficients already print their sign
+            if let Some((_, next_coeff)) = self.terms.get(j + 1)
+                && !self.set.is_strictly_negative(next_coeff)
+            {
                 write!(f, "+")?;
             }
         }
@@ -633,8 +639,18 @@ impl<V: Monomial, T: Ring, U: Set> Print for MultivariatePolynomial<V, T, U> {
 }
 impl<V: Monomial, T: Ring, U: Ring> PrettyPrint for MultivariatePolynomial<V, T, U> {
     fn pretty_print(&self, options: &PrintOptions) -> PrettyPrinter {
+        if self.terms.is_empty() {
+            return self.set.pretty_print(&self.set.zero(), options);
+        }
         let mut res = PrettyPrinter::empty();
-        for (vars, coeff) in &self.terms {
+        for (j, (vars, coeff)) in self.terms.iter().enumerate() {
+            // Print `a - b` instead of `a + -b`
+            let negative = j != 0 && self.set.is_strictly_negative(coeff);
+            let coeff = &if negative {
+                self.set.neg(coeff)
+            } else {
+                coeff.clone()
+            };
             let has_coeff = !self.set.is_one(coeff) || vars.is_empty();
             let mut coeff = if has_coeff {
                 self.set.pretty_print(coeff, options)
@@ -649,7 +665,7 @@ impl<V: Monomial, T: Ring, U: Ring> PrettyPrint for MultivariatePolynomial<V, T,
                 }
                 coeff.concat(if i == 0 && !has_coeff { "" } else { "⋅" }, false, &var);
             }
-            res.concat("+", true, &coeff);
+            res.concat(if negative { "-" } else { "+" }, true, &coeff);
         }
         res
     }

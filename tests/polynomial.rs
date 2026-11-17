@@ -164,7 +164,6 @@ fn printing() {
 }
 
 #[test]
-#[ignore = "known bug: negative coefficients are printed as `+-` and the zero polynomial prints as an empty string"]
 fn printing_signs_and_zero() {
     assert_eq!(line(&poly!("x-1")), "x^1-1");
     let p = poly!("x");
