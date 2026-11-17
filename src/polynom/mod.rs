@@ -1,6 +1,7 @@
 //! Polynom implementation
 
 use std::{
+    cmp::Ordering,
     collections::HashMap,
     fmt::{Debug, Display},
     hash::Hash,
@@ -17,9 +18,23 @@ use crate::{
 /// Types must implement this trait to be used as variables inside polynomials.
 ///
 /// Auto implemented.
-pub trait Monomial: Debug + Clone + PartialEq + Eq + Hash + PartialOrd + PrettyPrint {}
+pub trait Monomial: Debug + Clone + PartialEq + Eq + Hash + PartialOrd + PrettyPrint {
+    /// Total order used to sort variables, so that polynomials have a canonical form.
+    fn monomial_cmp(&self, other: &Self) -> Ordering;
+}
 
-impl<T: Debug + Clone + PartialEq + Eq + Hash + PartialOrd + PrettyPrint> Monomial for T {}
+impl<T: Debug + Clone + PartialEq + Eq + Hash + PartialOrd + PrettyPrint> Monomial for T {
+    default fn monomial_cmp(&self, other: &Self) -> Ordering {
+        self.partial_cmp(other).unwrap_or(Ordering::Equal)
+    }
+}
+
+impl<T: Group> Monomial for Term<T> {
+    fn monomial_cmp(&self, other: &Self) -> Ordering {
+        // Terms are only partially ordered (distinct symbols are not comparable), use the structural order
+        self.cmp(other)
+    }
+}
 
 type Monom<V, U> = (V, <U as Set>::Element);
 type PolynomElement<V, U, T> = (Vec<Monom<V, U>>, <T as Set>::Element);
@@ -105,7 +120,7 @@ impl<V: Monomial, T: Set, U: Group> MultivariatePolynomial<V, T, U> {
 
         let mut sorted: Vec<_> = combined.into_iter().collect();
 
-        sorted.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+        sorted.sort_by(|a, b| a.0.monomial_cmp(&b.0));
         sorted
     }
 
@@ -291,9 +306,7 @@ impl<V: Monomial, T: Ring, U: Ring> MultivariatePolynomial<V, T, U> {
         self.terms.iter_mut().for_each(|monomial| {
             // Remove variables
             monomial.0.retain(|(_, e)| !self.exponant_set.is_zero(e));
-            monomial
-                .0
-                .sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+            monomial.0.sort_by(|a, b| a.0.monomial_cmp(&b.0));
         });
         // Sort monomials
         self.terms.sort_by(|a, b| {
@@ -302,7 +315,13 @@ impl<V: Monomial, T: Ring, U: Ring> MultivariatePolynomial<V, T, U> {
                 .partial_cmp_by(a.0.iter().map(|(_, e)| e.clone()), |a, b| {
                     self.exponant_set.partial_cmp(&a, &b)
                 })
-                .unwrap_or(std::cmp::Ordering::Equal)
+                .unwrap_or(Ordering::Equal)
+                .then_with(|| {
+                    // Break ties on variables, like `x^2` and `y^2`
+                    a.0.iter()
+                        .map(|(v, _)| v)
+                        .cmp_by(b.0.iter().map(|(v, _)| v), Monomial::monomial_cmp)
+                })
         });
     }
 
@@ -339,7 +358,7 @@ impl<V: Monomial, T: Ring, U: Ring> MultivariatePolynomial<V, T, U> {
         }
 
         let mut q_vars: Vec<_> = var_map.into_iter().collect();
-        q_vars.sort_unstable_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+        q_vars.sort_unstable_by(|a, b| a.0.monomial_cmp(&b.0));
 
         Some((q_vars, q_coeff))
     }

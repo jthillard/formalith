@@ -171,7 +171,6 @@ fn printing_signs_and_zero() {
 }
 
 #[test]
-#[ignore = "known bug: variable order inside monomials is not canonical (`Term` sort ties keep `HashMap` order), so multivariate results are nondeterministic"]
 fn multivariate_results_are_canonical() {
     let x = parse!("x", R);
     assert_eq!(poly!("x^2*y+y").derivative(&x), poly!("2*x*y"));
