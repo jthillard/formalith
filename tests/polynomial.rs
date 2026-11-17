@@ -203,3 +203,25 @@ fn multivariate_results_are_canonical() {
         assert_eq!(&poly!("x+y") * &poly!("x-y"), poly!("x^2-y^2"));
     }
 }
+
+#[test]
+fn multivariate_square_free_factorization() {
+    assert_eq!(
+        poly!("(x+y)^2*x*y").square_free_factorization(),
+        vec![(poly!("y"), 1), (poly!("x"), 1), (poly!("x+y"), 2)]
+    );
+    assert_eq!(
+        poly!("(x+y)^2*(x-y)").square_free_factorization(),
+        vec![(poly!("x-y"), 1), (poly!("x+y"), 2)]
+    );
+}
+
+#[test]
+fn multivariate_square_free_factorization_is_stable() {
+    // `x` and `y` appear in as many monomials, the main variable must not depend on hashmap order
+    let poly = poly!("x^2*y+x*y^2");
+    let factors = poly.square_free_factorization();
+    for _ in 0..50 {
+        assert_eq!(poly.square_free_factorization(), factors);
+    }
+}

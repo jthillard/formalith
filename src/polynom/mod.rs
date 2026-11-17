@@ -625,9 +625,12 @@ impl<V: Monomial, T: Ring, U: Ring> MultivariatePolynomial<V, T, U> {
     /// Primitive part of the polynomial
     #[must_use]
     pub fn primitive_part(&self, var: &V) -> Self {
-        let content = self.content(var);
-        self.exact_div(&content)
-            .unwrap_or_else(|| self.quot_rem(&content).0)
+        self.divide(&self.content(var))
+    }
+    /// Divide by a factor of the polynomial, falling back to the euclidian division when the exact division fails.
+    fn divide(&self, divisor: &Self) -> Self {
+        self.exact_div(divisor)
+            .unwrap_or_else(|| self.quot_rem(divisor).0)
     }
 }
 
@@ -767,15 +770,16 @@ where
         let derivative = primitive_part.derivative(&main_var);
         let gcd = primitive_part.gcd(&derivative);
 
-        let (mut current, _) = self.quot_rem(&gcd);
-        let (mut current_derivative, _) = derivative.quot_rem(&gcd);
+        // Factors not containing the main variable are in the content
+        let mut current = primitive_part.divide(&gcd);
+        let mut current_derivative = derivative.divide(&gcd);
         let mut multiplicity = 1;
 
         while !current.is_constant() {
             let tmp = &current_derivative - &current.derivative(&main_var);
             let g = current.gcd(&tmp);
-            current = current.quot_rem(&g).0;
-            current_derivative = tmp.quot_rem(&g).0;
+            current = current.divide(&g);
+            current_derivative = tmp.divide(&g);
 
             if !g.is_one() {
                 factors.push((g, multiplicity));
@@ -800,7 +804,8 @@ where
         }
         var_counts
             .into_iter()
-            .max_by_key(|(_, count)| *count)
+            // Break ties on the variable order, as the hashmap order is random
+            .max_by(|(v1, c1), (v2, c2)| c1.cmp(c2).then_with(|| v2.monomial_cmp(v1)))
             .map(|(v, _)| v)
             .expect("Polynomial must contain at least one variable")
     }
