@@ -421,43 +421,213 @@ impl<V: Monomial, T: Ring, U: Ring> MultivariatePolynomial<V, T, U> {
         );
         (quotient, remainder)
     }
-    /// Compute GCD between self and other using euclide algorithm
-    /// TODO divide by coefficient of higher exponant to get a unitary polynomial
+    /// Divide the polynomial by its leading coefficient.
+    ///
+    /// # Panics
+    /// Panics if the leading coefficient is not invertible.
+    #[must_use]
+    pub fn monic(self) -> Self {
+        if self.is_zero() {
+            return self;
+        }
+        let leading_coeff = self.leading_term().1;
+        if self.set.is_one(&leading_coeff) {
+            return self;
+        }
+        &self
+            * &Self::constant(
+                self.set.try_inv(&leading_coeff).unwrap(),
+                self.set,
+                self.exponant_set,
+            )
+    }
+
+    /// Compute GCD between self and other, normalized with a leading coefficient equal to one.
+    ///
+    /// Univariate polynomials use the euclide algorithm, multivariate ones a recursive algorithm on their main variable.
     ///
     /// # Panics
     /// Panics if the leading coefficient is not invertible.
     #[must_use]
     pub fn gcd(&self, other: &Self) -> Self {
+        if self.is_zero() {
+            return other.clone().monic();
+        }
         if other.is_zero() {
-            return self.clone();
+            return self.clone().monic();
+        }
+        if self.is_constant() || other.is_constant() {
+            return Self::one(self.set, self.exponant_set);
+        }
+        if let Some(var) = self.main_variable(other)
+            && self.variables().union(&other.variables()).count() > 1
+        {
+            return self.multivariate_gcd(other, &var);
         }
 
         let (_, remainder) = self.quot_rem(other);
-        let mut res = other.gcd(&remainder);
-        let leading_coeff = res.leading_term().1;
-        if !self.set.is_one(&leading_coeff) {
-            res = &res
-                * &Self::constant(
-                    self.set.try_inv(&leading_coeff).unwrap(),
-                    self.set,
-                    self.exponant_set,
-                );
-        }
-        res
+        other.gcd(&remainder)
     }
-    /// Compute the content of a polynom
+
+    /// GCD of the contents times the GCD of the primitive parts, computed with pseudo-remainders on `var`.
+    fn multivariate_gcd(&self, other: &Self, var: &V) -> Self {
+        let (self_content, other_content) = (self.content(var), other.content(var));
+        let content = self_content.gcd(&other_content);
+        let primitive_gcd = (|| {
+            let mut a = self.exact_div(&self_content)?;
+            let mut b = other.exact_div(&other_content)?;
+            while !b.is_zero() {
+                let remainder = a.pseudo_rem(&b, var)?;
+                a = b;
+                b = if remainder.is_zero() {
+                    remainder
+                } else {
+                    remainder.primitive_part(var)
+                };
+            }
+            Some(a.primitive_part(var))
+        })();
+        match primitive_gcd {
+            Some(primitive_gcd) => (&content * &primitive_gcd).monic(),
+            None => content,
+        }
+    }
+
+    /// Smallest variable appearing in `self` or `other`.
+    fn main_variable(&self, other: &Self) -> Option<V> {
+        self.variables()
+            .union(&other.variables())
+            .min_by(|a, b| a.monomial_cmp(b))
+            .map(|var| (*var).clone())
+    }
+
+    /// The polynomial `var^exponant`.
+    fn var_power(&self, var: &V, exponant: U::Element) -> Self {
+        Self::from_term(
+            (vec![(var.clone(), exponant)], self.set.one()),
+            self.set,
+            self.exponant_set,
+        )
+    }
+
+    /// Coefficients of the polynomial seen as a polynomial in `var`, as `(exponant, coefficient)`, highest exponants first.
+    fn coefficients_in(&self, var: &V) -> Vec<(U::Element, Self)> {
+        let mut coefficients: Vec<(U::Element, Self)> = vec![];
+        for (vars, coeff) in &self.terms {
+            let exponant = vars
+                .iter()
+                .find(|(v, _)| v == var)
+                .map_or_else(|| self.exponant_set.zero(), |(_, e)| e.clone());
+            let other_vars = vars.iter().filter(|(v, _)| v != var).cloned().collect();
+            let term = Self::from_term((other_vars, coeff.clone()), self.set, self.exponant_set);
+            if let Some((_, coefficient)) = coefficients
+                .iter_mut()
+                .find(|(e, _)| self.exponant_set.element_eq(e, &exponant))
+            {
+                let sum = &*coefficient + &term;
+                *coefficient = sum;
+            } else {
+                coefficients.push((exponant, term));
+            }
+        }
+        coefficients.sort_by(|(a, _), (b, _)| {
+            self.exponant_set
+                .partial_cmp(b, a)
+                .unwrap_or(Ordering::Equal)
+        });
+        coefficients
+    }
+
+    /// Degree and leading coefficient in `var`, `None` if the polynomial is zero or its degree can't be determined.
+    fn leading_in(&self, var: &V) -> Option<(U::Element, Self)> {
+        let mut coefficients = self.coefficients_in(var).into_iter();
+        let leading = coefficients.next()?;
+        coefficients
+            .all(|(e, _)| {
+                self.exponant_set.partial_cmp(&leading.0, &e) == Some(Ordering::Greater)
+            })
+            .then_some(leading)
+    }
+
+    /// Divide the polynomial by `divisor`, returning `None` if the division is not exact.
+    #[must_use]
+    pub fn exact_div(&self, divisor: &Self) -> Option<Self> {
+        if divisor.is_zero() {
+            return None;
+        }
+        if divisor.is_constant() {
+            let inverse = self.set.try_inv(&divisor.terms[0].1)?;
+            return Some(self * &Self::constant(inverse, self.set, self.exponant_set));
+        }
+        let var = self.main_variable(divisor)?;
+        let (divisor_degree, divisor_leading) = divisor.leading_in(&var)?;
+
+        let mut quotient = Self::zero(self.set, self.exponant_set);
+        let mut remainder = self.clone();
+        let mut previous_degree = None;
+        while !remainder.is_zero() {
+            let (degree, leading) = remainder.leading_in(&var)?;
+            // The degree must decrease for the division to terminate
+            if previous_degree.is_some_and(|previous| {
+                self.exponant_set.partial_cmp(&degree, &previous) != Some(Ordering::Less)
+            }) || !matches!(
+                self.exponant_set.partial_cmp(&divisor_degree, &degree),
+                Some(Ordering::Less | Ordering::Equal)
+            ) {
+                return None;
+            }
+            // Leading coefficients don't contain `var`, so this recursion has fewer variables
+            let term = &leading.exact_div(&divisor_leading)?
+                * &self.var_power(&var, self.exponant_set.sub(&degree, &divisor_degree));
+            remainder = &remainder - &(&term * divisor);
+            quotient = quotient + term;
+            previous_degree = Some(degree);
+        }
+        Some(quotient)
+    }
+
+    /// Pseudo-remainder of the division by `divisor`, seen as polynomials in `var`.
+    ///
+    /// Returns `None` if degrees can't be compared.
+    fn pseudo_rem(&self, divisor: &Self, var: &V) -> Option<Self> {
+        let (divisor_degree, divisor_leading) = divisor.leading_in(var)?;
+        let mut remainder = self.clone();
+        let mut previous_degree = None;
+        while !remainder.is_zero() {
+            let (degree, leading) = remainder.leading_in(var)?;
+            if previous_degree.is_some_and(|previous| {
+                self.exponant_set.partial_cmp(&degree, &previous) != Some(Ordering::Less)
+            }) {
+                return None;
+            }
+            match self.exponant_set.partial_cmp(&degree, &divisor_degree) {
+                Some(Ordering::Less) => break,
+                None => return None,
+                _ => {}
+            }
+            // Cancel the leading term: lc(d) * r - lc(r) * var^(deg r - deg d) * d
+            let shift = self.var_power(var, self.exponant_set.sub(&degree, &divisor_degree));
+            remainder = &(&divisor_leading * &remainder) - &(&(&leading * &shift) * divisor);
+            previous_degree = Some(degree);
+        }
+        Some(remainder)
+    }
+
+    /// Compute the content of a polynom, the gcd of its coefficients as a polynomial in `var`.
     #[must_use]
     pub fn content(&self, var: &V) -> Self {
-        let (coeffs, _) = self.separate_variable(var);
-        coeffs
+        self.coefficients_in(var)
             .into_iter()
-            .fold(Self::one(self.set, self.exponant_set), |acc, x| acc.gcd(&x))
+            .fold(Self::zero(self.set, self.exponant_set), |acc, (_, x)| {
+                acc.gcd(&x)
+            })
     }
     /// Primitive part of the polynomial
     #[must_use]
     pub fn primitive_part(&self, var: &V) -> Self {
         let content = self.content(var);
-        self.quot_rem(&content).0
+        self.exact_div(&content)
+            .unwrap_or_else(|| self.quot_rem(&content).0)
     }
 }
 

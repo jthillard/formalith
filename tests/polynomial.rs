@@ -113,6 +113,26 @@ fn gcd() {
 }
 
 #[test]
+fn multivariate_gcd() {
+    assert_eq!(poly!("x^2*y-y").gcd(&poly!("x*y+y")), poly!("x*y+y"));
+    assert!(poly!("x+y").gcd(&poly!("x-y")).is_one());
+    assert_eq!(poly!("x^2-y^2").gcd(&poly!("x^2+2*x*y+y^2")), poly!("x+y"));
+    assert_eq!(
+        poly!("(x+y)*(x+z+1)^2").gcd(&poly!("(x+y)^2*(x+z+1)*z")),
+        poly!("(x+y)*(x+z+1)")
+    );
+}
+
+#[test]
+fn exact_division() {
+    assert_eq!(
+        poly!("x^2-y^2").exact_div(&poly!("x-y")),
+        Some(poly!("x+y"))
+    );
+    assert_eq!(poly!("x^2+y").exact_div(&poly!("x+y")), None);
+}
+
+#[test]
 fn gcd_with_symbolic_exponents() {
     assert_eq!(poly!("x^(2*n)").gcd(&poly!("x^n")), poly!("x^n"));
 }

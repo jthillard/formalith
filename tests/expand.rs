@@ -66,6 +66,8 @@ fn simplify_rational_expressions() {
         parse!("2*x/(x^2-1)", R)
     );
     assert_eq!(parse!("1/x + 1/y", R).simplify(), parse!("(x+y)/(x*y)", R));
+    assert_eq!(parse!("(x^2*y-y)/(x*y+y)", R).simplify(), parse!("x-1", R));
+    assert_eq!(parse!("(x^2-y^2)/(x+y)", R).simplify(), parse!("x-y", R));
     assert_eq!(parse!("x/2+x/3", R).simplify(), parse!("5/6*x", R));
 }
 

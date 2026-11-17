@@ -233,15 +233,14 @@ impl Ring for R<Rational> {
             return a;
         }
         let (num, den) = (num.to_polynomial(), den.to_polynomial());
-        // The polynomial gcd only terminates on univariate polynomials
-        if num.variables().union(&den.variables()).count() > 1 {
-            return a;
-        }
         let gcd = num.gcd(&den);
         if gcd.is_constant() {
             return a;
         }
-        num.quot_rem(&gcd).0.to_term() / den.quot_rem(&gcd).0.to_term()
+        match (num.exact_div(&gcd), den.exact_div(&gcd)) {
+            (Some(num), Some(den)) => num.to_term() / den.to_term(),
+            _ => a,
+        }
     }
 
     fn expand(&self, a: Term<Self>) -> Term<Self> {
