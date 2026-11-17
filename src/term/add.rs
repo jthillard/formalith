@@ -39,7 +39,7 @@ impl<T: Set> Flags for Add<T> {
 }
 
 impl<T: Set> Add<T> {
-    /// Create an empty sum expression.
+    /// Create a sum expression from its terms.
     pub const fn new(terms: Vec<Term<T>>, set: T) -> Self {
         Self {
             flags: 0,
@@ -49,11 +49,7 @@ impl<T: Set> Add<T> {
     }
     /// Create a new empty sum, with an inner vec with a defined capacity.
     pub fn with_capacity(capacity: usize, set: T) -> Self {
-        Self {
-            flags: 0,
-            terms: Vec::with_capacity(capacity),
-            set,
-        }
+        Self::new(Vec::with_capacity(capacity), set)
     }
     /// Returns true if the addition is empty.
     pub const fn is_empty(&self) -> bool {

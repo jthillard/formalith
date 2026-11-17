@@ -10,7 +10,7 @@ use crate::{
 
 use super::{Flags, Term};
 
-/// A product of expressions.
+/// A power expression, `base^exponant`.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Pow<T: Set, E: Set = <T as Set>::ExponantSet> {
     flags: u8,

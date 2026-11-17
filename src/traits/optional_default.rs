@@ -7,7 +7,7 @@ use crate::{
     term::TermSet,
 };
 
-/// Same as [Default], but if no default value is meaningfull, `None` can be returned.
+/// Same as [Default], but if no default value is meaningful, `None` can be returned.
 pub trait OptionalDefault: Sized {
     /// Same as [`Default::default`], but optional.
     fn optional_default() -> Option<Self>;

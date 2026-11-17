@@ -12,54 +12,48 @@ impl<T: Group> std::ops::Add for &Term<T> {
     type Output = Term<T>;
 
     fn add(self, rhs: Self) -> Self::Output {
-        // trace!(
-        //     "Compute the addition between {} and {}",
-        //     self.stdout(),
-        //     rhs.stdout()
-        // );
         debug_assert!(!self.needs_normalization(), "{self:#?}");
         debug_assert!(!rhs.needs_normalization());
         let ring = self.get_set();
         if let Term::Add(a1) = self {
             if let Term::Add(a2) = rhs {
+                // Merge both sorted sums
                 let mut res = Add::with_capacity(a1.len() + a2.len(), ring);
-                let mut a1_iter = a1.terms.iter();
-                let mut a2_iter = a2.terms.iter();
+                let mut a1_iter = a1.iter();
+                let mut a2_iter = a2.iter();
                 let mut a1_cursor = a1_iter.next();
                 let mut a2_cursor = a2_iter.next();
-                while a1_cursor.is_some() || a2_cursor.is_some() {
-                    if let Some(a1) = a1_cursor {
-                        if let Some(a2) = a2_cursor {
-                            match a1.cmp_terms(a2) {
-                                std::cmp::Ordering::Less => {
-                                    res.push(a1.clone());
-                                    a2_cursor = Some(a2); // Give the borrow back to cursor
-                                    a1_cursor = a1_iter.next();
-                                }
-                                std::cmp::Ordering::Equal => {
-                                    let mut a1_clone = a1.clone();
-                                    if a1_clone.merge_terms(a2) {
-                                        res.push(a1_clone);
-                                    } else {
-                                        res.push(a1_clone);
-                                        res.push(a2.clone());
-                                    }
-                                    a1_cursor = a1_iter.next();
-                                    a2_cursor = a2_iter.next();
-                                }
-                                std::cmp::Ordering::Greater => {
-                                    res.push(a2.clone());
-                                    a1_cursor = Some(a1); // Give the borrow back to cursor
-                                    a2_cursor = a2_iter.next();
-                                }
+                loop {
+                    match (a1_cursor, a2_cursor) {
+                        (Some(a1), Some(a2)) => match a1.cmp_terms(a2) {
+                            Ordering::Less => {
+                                res.push(a1.clone());
+                                a1_cursor = a1_iter.next();
                             }
-                        } else {
+                            Ordering::Equal => {
+                                let mut merged = a1.clone();
+                                let has_merged = merged.merge_terms(a2);
+                                res.push(merged);
+                                if !has_merged {
+                                    res.push(a2.clone());
+                                }
+                                a1_cursor = a1_iter.next();
+                                a2_cursor = a2_iter.next();
+                            }
+                            Ordering::Greater => {
+                                res.push(a2.clone());
+                                a2_cursor = a2_iter.next();
+                            }
+                        },
+                        (Some(a1), None) => {
                             res.push(a1.clone());
                             a1_cursor = a1_iter.next();
                         }
-                    } else if let Some(a2) = a2_cursor {
-                        res.push(a2.clone());
-                        a2_cursor = a2_iter.next();
+                        (None, Some(a2)) => {
+                            res.push(a2.clone());
+                            a2_cursor = a2_iter.next();
+                        }
+                        (None, None) => break,
                     }
                 }
                 res.set_normalized(true);
@@ -147,8 +141,8 @@ impl<T: Ring> std::ops::Mul for &Term<T> {
             vec![self.clone(), rhs.clone()],
             self.get_set(),
         ))
-        .normalize()
         // TODO, normalize mul directly like add
+        .normalize()
     }
 }
 
@@ -233,39 +227,12 @@ impl<T: Group> std::ops::Neg for &Term<T> {
         let mut new = self.clone();
         match new {
             Term::Value(ref mut value) => value.set.neg_assign(&mut value.value),
-            Term::Add(ref add) => {
-                let ring = add.set;
-                new = Term::Mul(Mul::new(
-                    ring.get_coefficient_set().nth(-1),
-                    vec![new],
-                    ring,
-                ))
-                .normalize();
-            }
-            Term::Symbol(ref symbol) => {
-                let ring = symbol.set;
-                new = Term::Mul(Mul::new(
-                    ring.get_coefficient_set().nth(-1),
-                    vec![new],
-                    ring,
-                ))
-                .normalize();
-            }
             Term::Mul(ref mut mul) => {
                 let coeff = mul.get_coeff();
                 mul.set_coeff(mul.set.get_coefficient_set().neg(&coeff));
             }
-            Term::Pow(ref pow) => {
-                let ring = pow.set;
-                new = Term::Mul(Mul::new(
-                    ring.get_coefficient_set().nth(-1),
-                    vec![new],
-                    ring,
-                ))
-                .normalize();
-            }
-            Term::Fun(ref fun) => {
-                let set = fun.get_set();
+            Term::Add(_) | Term::Symbol(_) | Term::Pow(_) | Term::Fun(_) => {
+                let set = new.get_set();
                 new = Term::Mul(Mul::new(set.get_coefficient_set().nth(-1), vec![new], set))
                     .normalize();
             }

@@ -68,7 +68,6 @@ fn display_matches_pretty_print_without_colors() {
 }
 
 #[test]
-#[ignore = "known bug: single-line printing of products appends a trailing `*` and omits the one after the coefficient"]
 fn print_products() {
     assert_eq!(line(&parse!("x*y", R)), "x*y");
     assert_eq!(line(&parse!("2*x", R)), "2*x");

@@ -51,18 +51,10 @@ impl<T: Set> dyn Function<T> {
 
 impl<From: Set, T: Set> Function<T> for Fun<From, T> {
     fn normalize(&self) -> Term<T> {
-        let mut new_args = vec![];
-        for arg in &self.args {
-            new_args.push(arg.normalize());
-        }
-        Term::Fun(Box::new(Self::new(self.ident, new_args, self.set)) as Box<dyn Function<T>>)
+        self.map_args(Normalize::normalize)
     }
     fn expand(&self) -> Term<T> {
-        let mut new_args = vec![];
-        for arg in &self.args {
-            new_args.push(arg.expand());
-        }
-        Term::Fun(Box::new(Self::new(self.ident, new_args, self.set)) as Box<dyn Function<T>>)
+        self.map_args(Expand::expand)
     }
     fn get_set(&self) -> T {
         self.set
@@ -94,6 +86,17 @@ impl<From: Set, T> Fun<From, T> {
             args,
             set,
         }
+    }
+}
+
+impl<From: Set, T: Set> Fun<From, T> {
+    /// Apply `f` to every argument, building a new function term.
+    fn map_args(&self, f: impl Fn(&Term<From>) -> Term<From>) -> Term<T> {
+        Term::Fun(Box::new(Self::new(
+            self.ident,
+            self.args.iter().map(f).collect(),
+            self.set,
+        )))
     }
 }
 

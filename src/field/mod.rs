@@ -68,7 +68,7 @@ pub trait PartiallyOrderedSet: Set {
 
 /// A group is a set and a binary operation `+` and :
 /// - `+` is associative
-/// - `*` has an identity element `zero`
+/// - `+` has an identity element `zero`
 /// - Every element has an inverse element
 pub trait Group: PartiallyOrderedSet {
     /// Get the zero (aka identity element for `+`) of this group
@@ -88,17 +88,17 @@ pub trait Group: PartiallyOrderedSet {
     fn add_assign(&self, a: &mut Self::Element, b: &Self::Element) {
         *a = self.add(a, b);
     }
-    /// Computes the symetric (inverse) element of `a` in this group for `+`
+    /// Computes the symmetric (inverse) element of `a` in this group for `+`
     fn neg(&self, a: &Self::Element) -> Self::Element;
-    /// Computes the symetric (inverse) element of `a` in this group for `+` into `a`
+    /// Computes the symmetric (inverse) element of `a` in this group for `+` into `a`
     fn neg_assign(&self, a: &mut Self::Element) {
         *a = self.neg(a);
     }
-    /// Substract two elements of this group.
+    /// Subtract two elements of this group.
     fn sub(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
         self.add(a, &self.neg(b))
     }
-    /// Substract two elements of this group into the first one.
+    /// Subtract two elements of this group into the first one.
     fn sub_assign(&self, a: &mut Self::Element, b: &Self::Element) {
         *a = self.sub(a, b);
     }
@@ -314,9 +314,9 @@ pub trait Derivable: Ring {
     fn derivative(&self, expr: &Self::Element, x: Symbol) -> Self::Element;
 }
 
-/// Wrapper for an element living in a set. This wrapper implements all usefull traits like `Eq` or `Hash` using the implementation of the set itself.
+/// Wrapper for an element living in a set. This wrapper implements all useful traits like `Eq` or `Hash` using the implementation of the set itself.
 ///
-/// It's usefull for sets like `${ZZ/p ZZ}$`, where equality is not the equality on the integer type.
+/// It's useful for sets like `{$ZZ/p ZZ$}`, where equality is not the equality on the integer type.
 #[derive(Eq)]
 pub struct SetElement<T: Set>(T, T::Element);
 

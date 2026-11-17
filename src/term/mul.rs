@@ -42,18 +42,17 @@ impl<T: Set> Mul<T> {
             set: ring,
         }
     }
-    /// Create a new product expression
+    /// Create a new empty product expression
     pub fn empty(ring: T) -> Self {
-        Self::new(ring.get_coefficient_set().nth(1), vec![], ring)
+        Self::with_capacity(0, ring)
     }
     /// Create a new empty product, with an inner Vec with a defined capacity.
     pub fn with_capacity(capacity: usize, ring: T) -> Self {
-        Self {
-            flags: 0,
-            coefficient: ring.get_coefficient_set().nth(1),
-            factors: Vec::with_capacity(capacity),
-            set: ring,
-        }
+        Self::new(
+            ring.get_coefficient_set().nth(1),
+            Vec::with_capacity(capacity),
+            ring,
+        )
     }
     /// Returns true if the multiplication is empty.
     pub const fn is_empty(&self) -> bool {
@@ -120,17 +119,21 @@ impl<'a, T: Set> IntoIterator for &'a Mul<T> {
 
 impl<T: Set> Print for Mul<T> {
     fn print(&self, options: &PrintOptions, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // Print the cefficient at the beginning of the product
+        // Print the coefficient at the beginning of the product, `-1` being printed as a minus sign
         if self.has_coeff() {
-            self.set
-                .get_coefficient_set()
-                .print(&self.coefficient, options, f)?;
-        }
-        for (i, factor) in self.factors.iter().enumerate() {
-            Self::group(factor, options, f)?;
-            if i != self.len() - usize::from(self.has_coeff()) {
+            let coefficient_set = self.set.get_coefficient_set();
+            if coefficient_set.is_one(&coefficient_set.neg(&self.coefficient)) {
+                Self::operator("-", options, f)?;
+            } else {
+                coefficient_set.print(&self.coefficient, options, f)?;
                 Self::operator("*", options, f)?;
             }
+        }
+        for (i, factor) in self.factors.iter().enumerate() {
+            if i != 0 {
+                Self::operator("*", options, f)?;
+            }
+            Self::group(factor, options, f)?;
         }
         Ok(())
     }
@@ -142,7 +145,7 @@ impl<T: Set> Mul<T> {
         options: &PrintOptions,
     ) -> crate::printer::PrettyPrinter {
         let mut den: Option<PrettyPrinter> = None;
-        // Print the cefficient at the beginning of the product
+        // Print the coefficient at the beginning of the product
         let mut num = if self.has_coeff() {
             Some(PrettyPrint::pretty_print(
                 &Term::Value(Value::new(

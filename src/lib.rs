@@ -1,6 +1,11 @@
-//! Complexity is `{$f(x) = (1+ epsilon)abs(x)$}`, where `{$abs(epsilon) < 2^-54$}`, `{$sum x^2$}`
+//! Formalith is a computer algebra system, generic over the algebraic structure
+//! (set, group, ring, field...) expressions live in.
 //!
-//! $ f(x) $
+//! ```
+//! use formalith::{field::real::R, parse, term::Expand};
+//!
+//! assert_eq!(parse!("(x+1)^2", R).expand(), parse!("x^2+2*x+1", R));
+//! ```
 
 // Enable some additional lints for code and documentation clarity
 #![warn(
@@ -17,7 +22,7 @@
 #![allow(clippy::significant_drop_in_scrutinee)]
 // Specialization is incomplete
 #![allow(incomplete_features)]
-// Usefull features. Since specialization is needed and therefore nightly edition too, we use other usefull features.
+// Useful features. Since specialization is needed and therefore nightly edition too, we use other useful features.
 #![feature(specialization, iter_order_by)]
 
 pub mod combinatorics;

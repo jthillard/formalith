@@ -41,9 +41,7 @@ impl<T: PartiallyOrderedSet, Vector: PartialEq> PartialOrd for VectorSpaceElemen
     #[inline]
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         match (self, other) {
-            (Self::Scalar(s1, set), Self::Scalar(s2, _)) => {
-                set.partial_cmp(s1, s2)
-            }
+            (Self::Scalar(s1, set), Self::Scalar(s2, _)) => set.partial_cmp(s1, s2),
             _ => None,
         }
     }

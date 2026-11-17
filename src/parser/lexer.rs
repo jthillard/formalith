@@ -40,9 +40,6 @@ pub enum TokenKind {
     /// An identifier
     Ident(String),
 
-    // Eq,
-    // EqEq,
-    // Bang,
     /// +
     Plus,
     /// -
@@ -109,7 +106,7 @@ impl Lexer<'_> {
         self.len_remaining = self.chars.as_str().len();
     }
 
-    // Return the current position in the input string.
+    /// Return the current position in the input string.
     fn current_pos(&self) -> usize {
         self.pos + self.pos_within_token()
     }
@@ -137,14 +134,6 @@ impl Lexer<'_> {
             '*' => TokenKind::Star,
             ',' => TokenKind::Comma,
             '^' => TokenKind::Caret,
-            // '!' => TokenKind::Bang,
-            // '=' => match self.peek_char() {
-            //     '=' => {
-            //         self.chars.next();
-            //         TokenKind::EqEq
-            //     }
-            //     _ => TokenKind::Eq,
-            // },
             '{' => TokenKind::OpenBrace,
             '}' => TokenKind::CloseBrace,
             '(' => TokenKind::OpenParen,
@@ -160,18 +149,18 @@ impl Lexer<'_> {
         Token::new(token_kind, len)
     }
     fn consume_whitespaces(&mut self) -> TokenKind {
-        while self.peek_char().is_ascii_whitespace() && !self.eof() {
+        while self.peek_char().is_ascii_whitespace() {
             self.chars.next();
         }
         TokenKind::Whitespace
     }
     fn consume_number(&mut self) -> TokenKind {
-        while self.peek_char().is_ascii_digit() && !self.eof() {
+        while self.peek_char().is_ascii_digit() {
             self.chars.next();
         }
         if self.peek_char() == '.' {
             self.chars.next();
-            while self.peek_char().is_ascii_digit() && !self.eof() {
+            while self.peek_char().is_ascii_digit() {
                 self.chars.next();
             }
             TokenKind::Literal {
@@ -184,7 +173,7 @@ impl Lexer<'_> {
         }
     }
     fn consume_ident(&mut self) -> TokenKind {
-        while self.peek_char().is_ascii_alphanumeric() || self.peek_char() == '_' && !self.eof() {
+        while self.peek_char().is_ascii_alphanumeric() || self.peek_char() == '_' {
             self.chars.next();
         }
         let ident = &self.input[self.pos..self.current_pos()];

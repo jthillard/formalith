@@ -1,32 +1,33 @@
 //! Combinatorics iterators and functions
 
-use std::marker::PhantomData;
-
 use malachite::{
     Integer,
     base::num::basic::traits::{One, Zero},
     integer::exhaustive::integer_increasing_inclusive_range,
 };
 
-/// Iterator over compositions.
+/// Iterator over the weak compositions of `k` into `n` parts.
 ///
-/// ```no_test
+/// ```
 /// use formalith::combinatorics::CompositionIterator;
 ///
 /// let mut iterator = CompositionIterator::new(3, 2);
-/// while let Some(composition) = iterator.next() {
-///     println!("{:?}", composition);
+/// let mut compositions = vec![];
+/// while let Some(composition) = iterator.next_composition() {
+///     compositions.push(composition.to_vec());
 /// }
+/// assert_eq!(
+///     compositions,
+///     [[2, 0, 0], [1, 1, 0], [1, 0, 1], [0, 2, 0], [0, 1, 1], [0, 0, 2]]
+/// );
 /// ```
-/// will print
-pub struct CompositionIterator<'a> {
+pub struct CompositionIterator {
     indices: Vec<usize>,
     k: usize,
     init: bool,
-    _phantom: PhantomData<&'a usize>,
 }
 
-impl CompositionIterator<'_> {
+impl CompositionIterator {
     /// Create a new composition iterator.
     #[must_use]
     pub fn new(n: usize, k: usize) -> Self {
@@ -34,7 +35,6 @@ impl CompositionIterator<'_> {
             indices: vec![0; n],
             k,
             init: false,
-            _phantom: PhantomData {},
         }
     }
 

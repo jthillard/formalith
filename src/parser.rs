@@ -18,7 +18,7 @@ use typenum::{Diff, U1, U10};
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Op {
     Add,
-    Substract,
+    Subtract,
     Multiply,
     Divide,
     Pow,
@@ -28,7 +28,7 @@ impl Op {
         match self {
             Self::Pow => 14,
             Self::Multiply | Self::Divide => 13,
-            Self::Add | Self::Substract => 12,
+            Self::Add | Self::Subtract => 12,
         }
     }
 }
@@ -117,18 +117,15 @@ impl Parser<'_> {
     }
     /// Update the current and previous token, skipping unnecessary tokens
     pub fn next_token(&mut self) {
-        let mut next = self.next_token_internal();
         let next = loop {
-            match next {
-                None => {
-                    break Token::new(TokenKind::Eof, 0);
-                }
-                Some(token) => match token.kind {
-                    TokenKind::Whitespace => {}
-                    _ => break token,
-                },
+            match self.next_token_internal() {
+                None => break Token::new(TokenKind::Eof, 0),
+                Some(Token {
+                    kind: TokenKind::Whitespace,
+                    ..
+                }) => {}
+                Some(token) => break token,
             }
-            next = self.next_token_internal();
         };
         self.prev_token = std::mem::replace(&mut self.token, next);
     }
@@ -155,7 +152,7 @@ impl Parser<'_> {
     const fn get_op(&self) -> Option<Op> {
         match self.token.kind {
             TokenKind::Plus => Some(Op::Add),
-            TokenKind::Minus => Some(Op::Substract),
+            TokenKind::Minus => Some(Op::Subtract),
             TokenKind::Star => Some(Op::Multiply),
             TokenKind::Slash => Some(Op::Divide),
             TokenKind::Caret => Some(Op::Pow),
@@ -200,14 +197,15 @@ impl Parser<'_> {
     /// parse arguments of a function, separated by a comma.
     fn parse_args<E: Set, N>(&mut self, arg_set: E) -> Result<Vec<Term<E>>, ParserError> {
         let mut args = vec![];
-        args.push(ParserTraitBounded::<E, N>::parse_expression_bounded(self, 0, arg_set)?.unwrap());
-        while self.token.kind == TokenKind::Comma {
-            self.next_token();
+        loop {
             args.push(
                 ParserTraitBounded::<E, N>::parse_expression_bounded(self, 0, arg_set)?.unwrap(),
             );
+            if self.token.kind != TokenKind::Comma {
+                return Ok(args);
+            }
+            self.next_token();
         }
-        Ok(args)
     }
 }
 
@@ -218,7 +216,7 @@ impl<E: Set, N> ParserTraitBounded<E, N> for Parser<'_> {
         _: E,
     ) -> Result<Option<Term<E>>, ParserError> {
         Err(ParserError::new(
-            "Cannot recurse inside parser more than 10 times".to_string(),
+            "Cannot recurse inside parser more than 10 times",
         ))
     }
 }
@@ -250,7 +248,7 @@ where
             (Some(mut node), mut node_in_coefficient_set) => {
                 if let (TokenKind::OpenParen, Term::Symbol(symbol)) = (&self.token.kind, &node) {
                     self.next_token();
-                    let arg_set = match symbol.symbol {
+                    node = match symbol.symbol {
                         Context::DET => Term::Fun(Box::new(Fun::new(
                             symbol.symbol,
                             self.parse_args::<M<TermSet<E>>, Diff<N, U1>>(
@@ -264,7 +262,6 @@ where
                             set,
                         ))),
                     };
-                    node = arg_set;
                 }
                 let mut op = self.get_op();
                 while self.token.kind != TokenKind::Eof
@@ -280,9 +277,8 @@ where
                         set,
                     )?;
                     if node_in_coefficient_set.is_ok() {
-                        node_in_coefficient_set = Err(ParserError::new(
-                            "node_in_coefficient_set is already used".to_string(),
-                        ));
+                        node_in_coefficient_set =
+                            Err(ParserError::new("node_in_coefficient_set is already used"));
                     }
                     node = new_node;
                     if !parsed {
@@ -349,7 +345,7 @@ impl<E: Ring, N> ParseBinary<E, N> for Parser<'_> {
             return Ok((
                 match op {
                     Op::Add => current + right,
-                    Op::Substract => current - right,
+                    Op::Subtract => current - right,
                     Op::Multiply => {
                         if let Ok(Some(current)) = current_in_coefficient_set {
                             Term::Mul(Mul::new(current, vec![right], set)).normalize()
@@ -398,7 +394,7 @@ impl Parser<'_> {
     ) -> Result<Option<E::Element>, ParserError> {
         set.parse_literal(self).map_err(ParserError::new)
     }
-    /// Calls `f` is the current token is a literal, and advance token if `f`. Returns `Ok(None)` otherwise.
+    /// Calls `f` if the current token is a literal, and advance token if `f`. Returns `Ok(None)` otherwise.
     ///
     /// ```rust
     /// use formalith::parser::Parser;
@@ -448,11 +444,11 @@ impl<E: Group, N> ParseUnary<E, N> for Parser<'_> {
                     set,
                 )
             }
-            Some(Op::Substract) => {
+            Some(Op::Subtract) => {
                 self.next_token();
                 Ok(ParserTraitBounded::<E, N>::parse_expression_bounded(
                     self,
-                    Op::Substract.get_priority(),
+                    Op::Subtract.get_priority(),
                     set,
                 )?
                 .map(|term| -term))
@@ -564,7 +560,7 @@ mod tests {
             &mut parser,
             5.into(),
             Err(ParserError::new("unreachable")),
-            Op::Substract,
+            Op::Subtract,
             R,
         );
 

@@ -24,7 +24,7 @@ pub struct Symbol(usize);
 impl Symbol {
     /// Create a symbol by name in the global context.
     ///
-    /// If the symbol already exists, his identifier is returned, otherwise a new symbol is added in the global context.
+    /// If the symbol already exists, its identifier is returned, otherwise a new symbol is added in the global context.
     /// ```
     /// use formalith::context::Symbol;
     ///
@@ -66,8 +66,8 @@ impl PrettyPrint for Symbol {
     }
 }
 
-// Create a symbol by name in the global context.
-/// If the symbol already exists, his identifier is returned, otherwise a new symbol is added in the global context.
+/// Create a symbol by name in the global context.
+/// If the symbol already exists, its identifier is returned, otherwise a new symbol is added in the global context.
 /// See [Symbol]
 /// ```
 /// use formalith::symbol;
@@ -100,7 +100,7 @@ pub struct SymbolData {
     pub name: String,
 }
 
-/// A context storing variables names in this specific context. By default
+/// A context storing variables names in this specific context.
 pub struct Context {
     symbols: HashMap<String, Symbol>,
 }
@@ -130,14 +130,7 @@ impl Context {
         &GLOBAL_CONTEXT
     }
 
-    /// Return a [Symbol] from its name in a context
-    // / ```
-    // / use formalith::context::Context;
-    // /
-    // / // Create a new global symbol
-    // / let x = symbol!("x");
-    // / assert_eq!(Context::get_global_context().get_symbol("x"), x);
-    // / ```
+    /// Return a [Symbol] from its name in a context, creating it if needed.
     pub fn get_symbol(&mut self, name: String) -> Symbol {
         *self
             .symbols

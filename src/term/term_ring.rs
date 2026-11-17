@@ -11,7 +11,7 @@ use crate::{
 
 use super::{Term, Value};
 
-/// A set where constants are complete expressions, like `2*x^2`. It is usefull for matrix and polynoms, to allow expressions inside coefficients.
+/// A set where constants are complete expressions, like `2*x^2`. It is useful for matrix and polynoms, to allow expressions inside coefficients.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct TermSet<T>(T);
 

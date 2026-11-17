@@ -241,34 +241,16 @@ impl<T: Group> Term<T> {
                 .then_with(|| p1.exponant.cmp(&p2.exponant)),
             (_, Self::Value(_)) | (Self::Pow(_), _) => Ordering::Less,
             (_, Self::Pow(_)) => Ordering::Greater,
-            (Self::Mul(m1), Self::Mul(m2)) => {
-                let len_cmp = m1.len().cmp(&m2.len());
-                if len_cmp != Ordering::Equal {
-                    return len_cmp;
-                }
-                for (a, b) in m1.iter().zip(m2.iter()) {
-                    let cmp = a.cmp(b);
-                    if cmp != Ordering::Equal {
-                        return cmp;
-                    }
-                }
-                Ordering::Equal
-            }
+            (Self::Mul(m1), Self::Mul(m2)) => m1
+                .len()
+                .cmp(&m2.len())
+                .then_with(|| m1.iter().cmp_by(m2, Self::cmp)),
             (Self::Mul(_), _) => Ordering::Less,
             (_, Self::Mul(_)) => Ordering::Greater,
-            (Self::Add(a1), Self::Add(a2)) => {
-                let len_cmp = a1.len().cmp(&a2.len());
-                if len_cmp != Ordering::Equal {
-                    return len_cmp;
-                }
-                for (a, b) in a1.iter().zip(a2.iter()) {
-                    let cmp = a.cmp(b);
-                    if cmp != Ordering::Equal {
-                        return cmp;
-                    }
-                }
-                Ordering::Equal
-            }
+            (Self::Add(a1), Self::Add(a2)) => a1
+                .len()
+                .cmp(&a2.len())
+                .then_with(|| a1.iter().cmp_by(a2, Self::cmp)),
             (Self::Add(_), _) => Ordering::Less,
             (_, Self::Add(_)) => Ordering::Greater,
             (Self::Symbol(_), _) => Ordering::Less,
@@ -339,20 +321,10 @@ impl<T: Group> Term<T> {
             (Self::Pow(p1), Self::Pow(p2)) => p1.base.cmp(&p2.base),
             (Self::Pow(p), _) => p.base.cmp(other).then(Ordering::Greater),
             (_, Self::Pow(p)) => self.cmp(&p.base).then(Ordering::Less),
-            (Self::Add(m1), Self::Add(m2)) => {
-                let len_cmp = m1.len().cmp(&m2.len());
-                if len_cmp != Ordering::Equal {
-                    return len_cmp;
-                }
-                // Compare all terms
-                for (a, b) in m1.iter().zip(m2.iter()) {
-                    let cmp = a.cmp(b);
-                    if cmp != Ordering::Equal {
-                        return cmp;
-                    }
-                }
-                Ordering::Equal
-            }
+            (Self::Add(a1), Self::Add(a2)) => a1
+                .len()
+                .cmp(&a2.len())
+                .then_with(|| a1.iter().cmp_by(a2, Self::cmp)),
             (Self::Symbol(_), _) => Ordering::Less,
             (_, Self::Symbol(_)) => Ordering::Greater,
             _ => todo!(),
@@ -386,11 +358,8 @@ impl<T: Set> Term<T> {
     /// Convert `self` to [Mul], and return a mutable reference to easily edit it.
     fn convert_to_mul(&mut self) -> &mut Mul<T> {
         *self = Self::Mul(Mul::empty(self.get_set()));
-        if let Self::Mul(n) = self {
-            n
-        } else {
-            unreachable!()
-        }
+        let Self::Mul(n) = self else { unreachable!() };
+        n
     }
     /// Convert `self` to [Pow], and return a mutable reference to easily edit it.
     fn convert_to_pow(
@@ -399,11 +368,8 @@ impl<T: Set> Term<T> {
         exponant: Box<Term<<T as Set>::ExponantSet>>,
     ) -> &mut Pow<T> {
         *self = Pow::new(base, exponant, self.get_set()).into();
-        if let Self::Pow(n) = self {
-            n
-        } else {
-            unreachable!()
-        }
+        let Self::Pow(n) = self else { unreachable!() };
+        n
     }
 }
 
@@ -675,61 +641,35 @@ impl<T: Ring<ExponantSet: Ring, ProductCoefficientSet = T>> Term<T> {
     fn to_polynomial_impl(
         &self,
     ) -> MultivariatePolynomial<Self, TermSet<T>, TermSet<T::ExponantSet>> {
+        let set = self.get_set().get_term_set();
+        let exponant_set = self.get_set().get_exponant_set().get_term_set();
         match self {
-            Self::Value(_) => MultivariatePolynomial::constant(
-                self.clone(),
-                self.get_set().get_term_set(),
-                self.get_set().get_exponant_set().get_term_set(),
-            ),
-            Self::Symbol(symbol) => match Context::get_symbol_data(&symbol.symbol).name.as_str() {
-                "n" => MultivariatePolynomial::constant(
-                    self.clone(),
-                    self.get_set().get_term_set(),
-                    self.get_set().get_exponant_set().get_term_set(),
-                ),
-                _ => MultivariatePolynomial::variable(
-                    self.clone(),
-                    self.get_set().get_term_set(),
-                    self.get_set().get_exponant_set().get_term_set(),
-                ),
-            },
-            Self::Fun(_) => MultivariatePolynomial::variable(
-                self.clone(),
-                self.get_set().get_term_set(),
-                self.get_set().get_exponant_set().get_term_set(),
-            ),
-            Self::Add(add) => {
-                let mut res = MultivariatePolynomial::zero(
-                    self.get_set().get_term_set(),
-                    self.get_set().get_exponant_set().get_term_set(),
-                );
-
-                for term in add {
-                    res = res + term.to_polynomial_impl();
-                }
-
-                res
+            Self::Value(_) => MultivariatePolynomial::constant(self.clone(), set, exponant_set),
+            Self::Symbol(symbol) if Context::get_symbol_data(&symbol.symbol).name == "n" => {
+                MultivariatePolynomial::constant(self.clone(), set, exponant_set)
             }
-            Self::Mul(mul) => {
-                let mut res = MultivariatePolynomial::constant(
+            Self::Symbol(_) | Self::Fun(_) => {
+                MultivariatePolynomial::variable(self.clone(), set, exponant_set)
+            }
+            Self::Add(add) => add.iter().fold(
+                MultivariatePolynomial::zero(set, exponant_set),
+                |res, term| res + term.to_polynomial_impl(),
+            ),
+            Self::Mul(mul) => mul.iter().fold(
+                MultivariatePolynomial::constant(
                     Self::Value(Value::new(mul.coefficient.clone(), self.get_set())),
-                    self.get_set().get_term_set(),
-                    self.get_set().get_exponant_set().get_term_set(),
-                );
-
-                for factor in mul {
-                    res = res * factor.to_polynomial_impl();
-                }
-
-                res
-            }
+                    set,
+                    exponant_set,
+                ),
+                |res, factor| res * factor.to_polynomial_impl(),
+            ),
             Self::Pow(pow) => MultivariatePolynomial::new(
                 vec![(
                     vec![(*pow.base.clone(), (**pow.exponant).clone())],
-                    self.get_set().get_term_set().one(),
+                    set.one(),
                 )],
-                self.get_set().get_term_set(),
-                self.get_set().get_exponant_set().get_term_set(),
+                set,
+                exponant_set,
             ),
         }
     }
@@ -852,10 +792,6 @@ impl<T: Set> Normalize for Term<T> {
 }
 impl<T: Ring> Term<T> {
     fn normalize_in_ring(&self) -> Self {
-        // return self.clone();
-        // if !self.needs_normalization() {
-        //     return self.clone();
-        // }
         let mut res = match self {
             Self::Value(_) | Self::Symbol(_) => self.clone(),
             Self::Add(add) => {
@@ -866,10 +802,8 @@ impl<T: Ring> Term<T> {
                         continue;
                     }
                     if let Self::Add(inner_add) = normalized {
-                        for term in inner_add.terms {
-                            // terms are already normalized
-                            res.push(term);
-                        }
+                        // terms are already normalized
+                        res.extend(inner_add.terms);
                     } else {
                         res.push(normalized);
                     }
@@ -909,10 +843,8 @@ impl<T: Ring> Term<T> {
                         continue;
                     }
                     if let Self::Mul(inner_mul) = normalized {
-                        for factor in inner_mul.factors {
-                            // factors are already normalized
-                            res.push(factor);
-                        }
+                        // factors are already normalized
+                        res.extend(inner_mul.factors);
                         mul.set
                             .get_coefficient_set()
                             .mul_assign(&mut coeff, &inner_mul.coefficient);
@@ -928,10 +860,6 @@ impl<T: Ring> Term<T> {
                 }
                 res.sort_by(Self::cmp_factors);
                 res.reverse();
-
-                // if res.len() == 2 {
-                //     println!("{} {:?}", mul, res);
-                // }
 
                 // Merge factors
                 let mut factors = vec![];
@@ -1143,63 +1071,6 @@ impl<T: Ring> Term<T> {
         }
     }
 }
-
-// impl<T: Ring + Derivable> Term<T> {
-//     pub fn derivative(&self, x: Symbol) -> Self {
-//         match self {
-//             Term::Value(value) => Term::Value(Value::new(
-//                 value.ring.derivative(&value.value, x),
-//                 value.ring,
-//             )),
-//             Term::Symbol(symbol) => {
-//                 if symbol.symbol == x {
-//                     Term::Value(Value::new(symbol.ring.one(), symbol.ring))
-//                 } else {
-//                     Term::Value(Value::new(symbol.ring.zero(), symbol.ring))
-//                 }
-//             }
-//             Term::Add(add) => {
-//                 let mut res = Add::with_capacity(add.len(), add.ring);
-//                 for term in add.iter() {
-//                     let derivated = term.derivative(x);
-//                     if !derivated.is_zero() {
-//                         res.push(term.derivative(x));
-//                     }
-//                 }
-//                 Term::Add(res)
-//             }
-//             Term::Mul(mul) => {
-//                 let mut res = Add::new(vec![], mul.ring);
-//                 for i in 0..mul.len() {
-//                     // derivate ith factor
-//                     let mut tmp = Mul::with_capacity(mul.len(), mul.ring);
-//                     let derivated = mul.factors[i].derivative(x);
-
-//                     if derivated.is_zero() {
-//                         continue;
-//                     }
-
-//                     for (j, factor) in mul.iter().enumerate() {
-//                         if j != i {
-//                             tmp.push(factor.clone());
-//                         }
-//                     }
-//                     if !derivated.is_one() {
-//                         tmp.push(derivated);
-//                     }
-//                     res.push(Term::Mul(tmp));
-//                 }
-//                 if res.len() == 0 {
-//                     Term::Value(Value::new(mul.ring.zero(), mul.ring))
-//                 } else if res.len() == 1 {
-//                     res.terms.pop().unwrap()
-//                 } else {
-//                     Term::Add(res)
-//                 }
-//             }
-//         }
-//     }
-// }
 
 impl<T: Set> Display for Term<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
