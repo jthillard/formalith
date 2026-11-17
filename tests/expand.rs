@@ -103,7 +103,6 @@ fn factor() {
 }
 
 #[test]
-#[ignore = "known bug: expansion leaves terms with a zero coefficient (`0x`)"]
 fn expand_removes_zero_terms() {
     assert_eq!(parse!("(x+1)*(x-1)", R).expand(), parse!("x^2-1", R));
     assert_eq!(parse!("x - (x+1)", R).expand(), (-1).into());

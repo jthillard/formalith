@@ -446,12 +446,16 @@ impl<T: Group> MergeTerms for Term<T> {
                     return false;
                 }
 
-                m1.set_coeff(
-                    m1.set
-                        .get_coefficient_set()
-                        .add(&m1.get_coeff(), &m2.get_coeff()),
-                );
-                *self = self.normalize();
+                let set = m1.set;
+                let coeff = set
+                    .get_coefficient_set()
+                    .add(&m1.get_coeff(), &m2.get_coeff());
+                if set.get_coefficient_set().is_zero(&coeff) {
+                    *self = Self::zero(set);
+                } else {
+                    m1.set_coeff(coeff);
+                    *self = self.normalize();
+                }
                 true
             }
             (Self::Mul(m1), _) => {
@@ -462,6 +466,9 @@ impl<T: Group> MergeTerms for Term<T> {
                     let set = m1.set;
                     set.get_coefficient_set()
                         .add_assign(m1.get_coeff_mut(), &set.get_coefficient_set().nth(1));
+                    if set.get_coefficient_set().is_zero(&m1.get_coeff()) {
+                        *self = Self::zero(set);
+                    }
                     true
                 }
             }
@@ -819,13 +826,19 @@ impl<T: Ring> Term<T> {
                 let mut current_merge = res.pop().unwrap();
                 while let Some(next) = res.pop() {
                     if !current_merge.merge_terms(&next) {
-                        terms.push(current_merge);
+                        if !current_merge.is_zero() {
+                            terms.push(current_merge);
+                        }
                         current_merge = next;
                     }
                 }
-                terms.push(current_merge);
+                if !current_merge.is_zero() {
+                    terms.push(current_merge);
+                }
 
-                if terms.len() == 1 {
+                if terms.is_empty() {
+                    Self::zero(self.get_set())
+                } else if terms.len() == 1 {
                     terms.pop().unwrap()
                 } else {
                     Self::Add(Add::new(terms, self.get_set()))

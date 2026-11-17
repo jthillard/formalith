@@ -33,7 +33,9 @@ impl<T: Group> std::ops::Add for &Term<T> {
                             Ordering::Equal => {
                                 let mut merged = a1.clone();
                                 let has_merged = merged.merge_terms(a2);
-                                res.push(merged);
+                                if !merged.is_zero() {
+                                    res.push(merged);
+                                }
                                 if !has_merged {
                                     res.push(a2.clone());
                                 }
@@ -56,8 +58,14 @@ impl<T: Group> std::ops::Add for &Term<T> {
                         (None, None) => break,
                     }
                 }
-                res.set_normalized(true);
-                Term::Add(res)
+                match res.len() {
+                    0 => Term::zero(ring),
+                    1 => res.terms.pop().unwrap(),
+                    _ => {
+                        res.set_normalized(true);
+                        Term::Add(res)
+                    }
+                }
             } else {
                 let mut a1_clone = a1.clone();
                 if !rhs.is_zero() {
