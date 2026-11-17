@@ -252,7 +252,6 @@ fn division_by_zero_does_not_panic() {
 }
 
 #[test]
-#[ignore = "known bug: 3x3 determinant ignores the sign change of row swaps"]
 fn det_with_row_swap() {
     assert_eq!(parse!("det([[0,1,0],[1,0,0],[0,0,1]])", R), (-1).into());
     assert_eq!(parse!("det([[0,1,2],[1,0,3],[4,-3,8]])", R), (-2).into());

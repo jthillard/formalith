@@ -282,16 +282,10 @@ impl<T: Ring> Ring for M<T> {
                     }),
                 ) = (&**base, &***exponant)
                     && self.get_exponant_set().is_strictly_negative(exponant)
+                    && let Ok(inverse) = matrix.inv()
                 {
                     return Term::Pow(term::Pow::new(
-                        Term::Value(Value::new(
-                            VectorSpaceElement::Vector(
-                                matrix
-                                    .inv()
-                                    .unwrap_or_else(|_| panic!("Cannot invert matrix {matrix}")),
-                            ),
-                            *self,
-                        )),
+                        Term::Value(Value::new(VectorSpaceElement::Vector(inverse), *self)),
                         Term::Value(Value::new(
                             self.get_exponant_set().neg(exponant),
                             self.get_exponant_set(),

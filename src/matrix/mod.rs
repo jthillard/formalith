@@ -25,6 +25,8 @@ pub enum MatrixError {
     NotSquare,
     /// A pivot in a row reduction is not invertible.
     NonInvertiblePivot,
+    /// The matrix is singular, so it has no inverse.
+    NotInvertible,
 }
 
 /// Result type of matrix methods.
@@ -128,8 +130,28 @@ impl<T: Ring> std::ops::Mul for Matrix<T> {
 impl<T: Ring> std::ops::Mul for &Matrix<T> {
     type Output = Matrix<T>;
 
-    fn mul(self, _rhs: Self) -> Self::Output {
-        todo!()
+    /// # Panics
+    /// Panics if the width of `self` is not the height of `rhs`.
+    fn mul(self, rhs: Self) -> Self::Output {
+        assert_eq!(
+            self.width(),
+            rhs.height(),
+            "Cannot multiply a {}x{} matrix by a {}x{} matrix",
+            self.height(),
+            self.width(),
+            rhs.height(),
+            rhs.width()
+        );
+        let mut res = Matrix::zero((self.height(), rhs.width()), self.set);
+        for i in 0..self.height() {
+            for j in 0..rhs.width() {
+                for k in 0..self.width() {
+                    let term = self.set.mul(&self[(i, k)], &rhs[(k, j)]);
+                    res[(i, j)] = self.set.add(&res[(i, j)], &term);
+                }
+            }
+        }
+        res
     }
 }
 
@@ -149,9 +171,9 @@ impl<T: Set> Print for Matrix<T> {
         Self::group_delim("[", options, f)?;
         for i in 0..self.size.0 {
             Self::group_delim("[", options, f)?;
-            for j in i * self.size.0..(i + 1) * self.size.0 {
+            for j in i * self.size.1..(i + 1) * self.size.1 {
                 self.set.print(&self.data[j], options, f)?;
-                if j != (i + 1) * self.size.0 - 1 {
+                if j != (i + 1) * self.size.1 - 1 {
                     Self::delimiter(",", options, f)?;
                 }
             }
@@ -276,6 +298,9 @@ impl<T: Ring> Matrix<T> {
             augmented[(line, line + self.width())] = self.set.one();
         }
         augmented.row_reduce()?;
+        if (0..self.height()).any(|line| !self.set.is_one(&augmented[(line, line)])) {
+            return Err(MatrixError::NotInvertible);
+        }
 
         for line in 0..self.height() {
             for column in 0..self.width() {
@@ -283,6 +308,7 @@ impl<T: Ring> Matrix<T> {
                     augmented[(line, column + self.width())].clone();
             }
         }
+        augmented.data.truncate(self.size());
         augmented.size = self.size;
         Ok(augmented)
     }
@@ -294,8 +320,15 @@ impl<T: Ring> Matrix<T> {
     /// # Errors
     /// The method will fail if a pivot is not inversible.
     pub fn partial_row_reduce(&mut self) -> MatrixResult<usize> {
+        self.partial_row_reduce_counting_swaps()
+            .map(|(rank, _)| rank)
+    }
+
+    /// Transform the matrix in place in row echelon form, returning its rank and whether an odd number of rows swaps happened.
+    fn partial_row_reduce_counting_swaps(&mut self) -> MatrixResult<(usize, bool)> {
         let (rows, cols) = self.size;
         let mut pivot_row = 0;
+        let mut odd_swaps = false;
 
         for pivot_col in 0..cols {
             if pivot_row >= rows {
@@ -311,6 +344,7 @@ impl<T: Ring> Matrix<T> {
 
             if pivot != pivot_row {
                 self.swap_rows(pivot_row, pivot);
+                odd_swaps = !odd_swaps;
             }
 
             // Remove coefficient under the pivot
@@ -335,7 +369,7 @@ impl<T: Ring> Matrix<T> {
 
             pivot_row += 1;
         }
-        Ok(pivot_row)
+        Ok((pivot_row, odd_swaps))
     }
 
     /// Compute the determinant of the matrix.
@@ -347,7 +381,7 @@ impl<T: Ring> Matrix<T> {
             return Err(MatrixError::NotSquare);
         }
         match self.height() {
-            0 => unreachable!(),
+            0 => Ok(self.set.one()),
             1 => Ok(self.data[0].clone()),
             2 => Ok(self.set.sub(
                 &self.set.mul(&self.data[0], &self.data[3]),
@@ -365,11 +399,14 @@ impl<T: Ring> Matrix<T> {
             return Err(MatrixError::NotSquare);
         }
 
-        self.partial_row_reduce()?;
+        let (_, odd_swaps) = self.partial_row_reduce_counting_swaps()?;
         let mut det = self.set.one();
         for line in 0..self.width() {
             self.set
                 .mul_assign(&mut det, &self.data[line * self.width() + line]);
+        }
+        if odd_swaps {
+            det = self.set.neg(&det);
         }
         Ok(det)
     }

@@ -250,7 +250,6 @@ fn matrix_term_det() {
 }
 
 #[test]
-#[ignore = "known bug: `det` ignores the sign change of row swaps"]
 fn determinant_with_row_swap() {
     assert_eq!(
         matrix(3, 3, &[0, 1, 0, 1, 0, 0, 0, 0, 1]).det().unwrap(),
@@ -269,13 +268,11 @@ fn determinant_with_row_swap() {
 }
 
 #[test]
-#[ignore = "known bug: `det` of an empty matrix hits `unreachable!()`"]
 fn determinant_of_empty_matrix() {
     assert_eq!(matrix(0, 0, &[]).det().unwrap(), 1);
 }
 
 #[test]
-#[ignore = "known bug: `inv` keeps the augmented half in `data`, so the result is not equal to the expected matrix"]
 fn inverse_equals_expected_matrix() {
     let expected = Matrix::new((2, 2), vec![q(1, 2), q(0, 1), q(0, 1), q(1, 2)], R);
     assert_eq!(matrix(2, 2, &[2, 0, 0, 2]).inv().unwrap(), expected);
@@ -286,7 +283,6 @@ fn inverse_equals_expected_matrix() {
 }
 
 #[test]
-#[ignore = "known bug: `inv` of a singular matrix returns `Ok` instead of an error"]
 fn inverse_of_singular_matrix() {
     assert!(matrix(2, 2, &[1, 2, 2, 4]).inv().is_err());
     assert!(matrix(3, 3, &[2, 0, 1, 1, 3, 2, 1, 1, 1]).inv().is_err());
@@ -294,7 +290,6 @@ fn inverse_of_singular_matrix() {
 }
 
 #[test]
-#[ignore = "known bug: matrix product is `todo!()`"]
 fn multiplication() {
     let a = matrix(2, 2, &[1, 2, 3, 4]);
     assert_eq!(&a * &matrix(2, 2, &[1, 0, 0, 1]), a);
@@ -309,7 +304,6 @@ fn multiplication() {
 }
 
 #[test]
-#[ignore = "known bug: single-line printing uses the height as row length"]
 fn print_non_square_matrix() {
     assert_eq!(line(&matrix(1, 3, &[1, 2, 3])), "[[1,2,3]]");
     assert_eq!(
