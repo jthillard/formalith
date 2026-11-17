@@ -179,20 +179,28 @@ impl<T: Ring> Ring for M<T> {
         VectorSpaceElement::Scalar(self.scalar_sub_set.one(), self.scalar_sub_set)
     }
     fn mul(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
+        self.try_mul(a, b)
+            .unwrap_or_else(|| panic!("Can't multiply {a} and {b} !"))
+    }
+
+    fn try_mul(&self, a: &Self::Element, b: &Self::Element) -> Option<Self::Element> {
         match (a, b) {
-            (VectorSpaceElement::Scalar(a, _), VectorSpaceElement::Scalar(b, _)) => {
-                VectorSpaceElement::Scalar(self.scalar_sub_set.mul(a, b), self.scalar_sub_set)
+            (VectorSpaceElement::Scalar(a, _), VectorSpaceElement::Scalar(b, _)) => Some(
+                VectorSpaceElement::Scalar(self.scalar_sub_set.mul(a, b), self.scalar_sub_set),
+            ),
+            (VectorSpaceElement::Vector(a), VectorSpaceElement::Vector(b))
+                if a.width() == b.height() =>
+            {
+                Some(VectorSpaceElement::Vector(a * b))
             }
-            (VectorSpaceElement::Vector(a), VectorSpaceElement::Vector(b)) => {
-                VectorSpaceElement::Vector(a * b)
-            }
+            (VectorSpaceElement::Vector(_), VectorSpaceElement::Vector(_)) => None,
             (VectorSpaceElement::Scalar(a, _), VectorSpaceElement::Vector(b))
             | (VectorSpaceElement::Vector(b), VectorSpaceElement::Scalar(a, _)) => {
-                VectorSpaceElement::Vector({
+                Some(VectorSpaceElement::Vector({
                     let mut b = b.clone();
                     b.external_product(a);
                     b
-                })
+                }))
             }
         }
     }

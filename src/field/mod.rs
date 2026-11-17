@@ -172,6 +172,10 @@ pub trait Ring: Group {
     }
     /// Multiply two elements of this ring
     fn mul(&self, a: &Self::Element, b: &Self::Element) -> Self::Element;
+    /// Multiply two elements of this ring, returning `None` if they can't be multiplied (like matrices of incompatible sizes).
+    fn try_mul(&self, a: &Self::Element, b: &Self::Element) -> Option<Self::Element> {
+        Some(self.mul(a, b))
+    }
     /// Multiply two elements of this ring into a
     fn mul_assign(&self, a: &mut Self::Element, b: &Self::Element) {
         *a = self.mul(a, b);

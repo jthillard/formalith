@@ -332,3 +332,9 @@ fn invalid_matrix_addition_does_not_panic() {
     let _ = try_parse!("[[1,2],[3,4]]+1", M);
     let _ = try_parse!("[[1,2],[3,4]]+[[1,2,3],[4,5,6]]", M);
 }
+
+#[test]
+fn invalid_matrix_product_does_not_panic() {
+    let _ = try_parse!("[[1,2]]*[[1,2]]", M);
+    let _ = try_parse!("[[1,2],[3,4]]*[[1,2,3]]", M);
+}

@@ -527,8 +527,10 @@ impl<T: Ring> Term<T> {
                 }),
                 Self::Value(Value { value: v2, .. }),
             ) => {
-                set1.mul_assign(v1, v2);
-                return true;
+                return set1.try_mul(v1, v2).is_some_and(|product| {
+                    *v1 = product;
+                    true
+                });
             }
             (Self::Pow(p1), Self::Pow(p2)) => {
                 // Merge x^2 * x^3
@@ -940,16 +942,20 @@ impl<T: Ring<ExponantSet: Ring>> Normalize for Term<T> {
 impl<T: Ring<ExponantSet: Ring, ProductCoefficientSet = T>> Normalize for Term<T> {
     fn normalize(&self) -> Self {
         if let Self::Mul(mut mul) = self.clone() {
+            let coefficient_set = mul.set.get_coefficient_set();
             let mut new_coeff = mul.coefficient.clone();
-            for factor in &mul {
-                if let Self::Value(Value { value, .. }) = factor {
-                    mul.set
-                        .get_coefficient_set()
-                        .mul_assign(&mut new_coeff, value);
+            // Keep values which can't be multiplied with the coefficient, like matrices of incompatible sizes
+            mul.factors.retain(|factor| {
+                if let Self::Value(Value { value, .. }) = factor
+                    && let Some(product) = coefficient_set.try_mul(&new_coeff, value)
+                {
+                    new_coeff = product;
+                    false
+                } else {
+                    true
                 }
-            }
+            });
             mul.coefficient = new_coeff;
-            mul.factors.retain(|elem| !matches!(elem, Self::Value(_)));
             if mul.is_empty() {
                 Self::Value(Value::new(mul.coefficient, self.get_set()))
             } else {
