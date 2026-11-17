@@ -217,3 +217,142 @@ impl Display for Lexer<'_> {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn kinds(input: &str) -> Vec<TokenKind> {
+        Lexer::new(input).map(|token| token.kind).collect()
+    }
+
+    fn lengths(input: &str) -> Vec<usize> {
+        Lexer::new(input).map(|token| token.len).collect()
+    }
+
+    const INT: TokenKind = TokenKind::Literal {
+        kind: LiteralTokenKind::Int,
+    };
+    const FLOAT: TokenKind = TokenKind::Literal {
+        kind: LiteralTokenKind::Float,
+    };
+
+    #[test]
+    fn empty_input() {
+        assert!(kinds("").is_empty());
+        let mut lexer = Lexer::new("");
+        assert_eq!(lexer.lex().kind, TokenKind::Eof);
+        assert_eq!(lexer.lex().kind, TokenKind::Eof);
+    }
+
+    #[test]
+    fn operators_and_delimiters() {
+        assert_eq!(
+            kinds("+-*/^,()[]{}"),
+            vec![
+                TokenKind::Plus,
+                TokenKind::Minus,
+                TokenKind::Star,
+                TokenKind::Slash,
+                TokenKind::Caret,
+                TokenKind::Comma,
+                TokenKind::OpenParen,
+                TokenKind::CloseParen,
+                TokenKind::OpenBracket,
+                TokenKind::CloseBracket,
+                TokenKind::OpenBrace,
+                TokenKind::CloseBrace,
+            ]
+        );
+    }
+
+    #[test]
+    fn numbers() {
+        assert_eq!(kinds("42"), vec![INT]);
+        assert_eq!(kinds("4.2"), vec![FLOAT]);
+        assert_eq!(kinds("4."), vec![FLOAT]);
+        assert_eq!(lengths("123 4.56"), vec![3, 1, 4]);
+        // A leading dot is not part of a number
+        assert_eq!(kinds(".5"), vec![TokenKind::Unknown, INT]);
+        // Only one dot per number
+        assert_eq!(kinds("1.2.3"), vec![FLOAT, TokenKind::Unknown, INT]);
+    }
+
+    #[test]
+    fn identifiers() {
+        assert_eq!(kinds("x"), vec![TokenKind::Ident("x".to_string())]);
+        assert_eq!(
+            kinds("x_1 _y abc2"),
+            vec![
+                TokenKind::Ident("x_1".to_string()),
+                TokenKind::Whitespace,
+                TokenKind::Ident("_y".to_string()),
+                TokenKind::Whitespace,
+                TokenKind::Ident("abc2".to_string()),
+            ]
+        );
+        // A number followed by letters is two tokens
+        assert_eq!(kinds("2x"), vec![INT, TokenKind::Ident("x".to_string())]);
+    }
+
+    #[test]
+    fn booleans() {
+        let bool_literal = TokenKind::Literal {
+            kind: LiteralTokenKind::Bool,
+        };
+        assert_eq!(
+            kinds("true false truex"),
+            vec![
+                bool_literal.clone(),
+                TokenKind::Whitespace,
+                bool_literal,
+                TokenKind::Whitespace,
+                TokenKind::Ident("truex".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn whitespaces_are_merged() {
+        assert_eq!(
+            kinds(" \t\n x  "),
+            vec![
+                TokenKind::Whitespace,
+                TokenKind::Ident("x".to_string()),
+                TokenKind::Whitespace
+            ]
+        );
+        assert_eq!(lengths(" \t\n x  "), vec![4, 1, 2]);
+    }
+
+    #[test]
+    fn unknown_characters() {
+        assert_eq!(kinds("@$=!"), vec![TokenKind::Unknown; 4]);
+        // Length is counted in bytes
+        assert_eq!(lengths("é"), vec![2]);
+    }
+
+    #[test]
+    fn expression() {
+        assert_eq!(
+            kinds("abs(x^2-1.5)"),
+            vec![
+                TokenKind::Ident("abs".to_string()),
+                TokenKind::OpenParen,
+                TokenKind::Ident("x".to_string()),
+                TokenKind::Caret,
+                INT,
+                TokenKind::Minus,
+                FLOAT,
+                TokenKind::CloseParen,
+            ]
+        );
+        assert_eq!(lengths("abs(x^2-1.5)").iter().sum::<usize>(), 12);
+    }
+
+    #[test]
+    fn display() {
+        let lexer = Lexer::new("x+1");
+        assert_eq!(lexer.to_string().lines().count(), 3);
+    }
+}
