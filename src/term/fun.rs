@@ -1,6 +1,6 @@
 //! Function expression.
 
-use std::{fmt::Debug, hash::Hash};
+use std::{cmp::Ordering, fmt::Debug, hash::Hash};
 
 use dyn_clone::DynClone;
 use dyn_eq::DynEq;
@@ -9,7 +9,7 @@ use owo_colors::colors::Cyan;
 
 use crate::{
     context::{Context, Symbol},
-    field::Set,
+    field::{Group, Set},
     printer::{PrettyPrint, PrettyPrinter, Print, PrintOptions},
     term::{Expand, Normalize},
 };
@@ -28,6 +28,8 @@ pub trait Function<T: Set>: Debug + DynClone + DynEq + DynHash + Flags + PrettyP
     fn get_set(&self) -> T;
     /// Get the identifier of the function.
     fn get_ident(&self) -> Symbol;
+    /// Compare two functions, by identifier then by arguments.
+    fn cmp_dyn(&self, other: &dyn Function<T>) -> Ordering;
     /// Get the identifier of the function as a string.
     fn get_ident_as_str(&self) -> &str {
         Context::get_symbol_data(&self.get_ident()).name.as_str()
@@ -61,6 +63,32 @@ impl<From: Set, T: Set> Function<T> for Fun<From, T> {
     }
     fn get_ident(&self) -> Symbol {
         self.ident
+    }
+    fn cmp_dyn(&self, other: &dyn Function<T>) -> Ordering {
+        self.ident.cmp(&other.get_ident()).then_with(|| {
+            other
+                .get_args::<From>()
+                .map_or(Ordering::Equal, |args| Term::cmp_args(&self.args, args))
+        })
+    }
+}
+
+/// Comparison of function arguments, only possible when arguments are ordered.
+trait CmpArgs: Sized {
+    fn cmp_args(a: &[Self], b: &[Self]) -> Ordering;
+}
+
+impl<T: Set> CmpArgs for Term<T> {
+    default fn cmp_args(a: &[Self], b: &[Self]) -> Ordering {
+        a.len().cmp(&b.len())
+    }
+}
+
+impl<T: Group> CmpArgs for Term<T> {
+    fn cmp_args(a: &[Self], b: &[Self]) -> Ordering {
+        a.len()
+            .cmp(&b.len())
+            .then_with(|| a.iter().cmp_by(b, Self::cmp))
     }
 }
 

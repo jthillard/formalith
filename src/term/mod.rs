@@ -255,7 +255,7 @@ impl<T: Group> Term<T> {
             (_, Self::Add(_)) => Ordering::Greater,
             (Self::Symbol(_), _) => Ordering::Less,
             (_, Self::Symbol(_)) => Ordering::Greater,
-            _ => todo!("Compare {:?} with {:?} is not implemented", self, other),
+            (Self::Fun(f1), Self::Fun(f2)) => f1.cmp_dyn(&**f2),
         }
     }
     /// Compare two terms, putting terms which can be merged side by side
@@ -308,7 +308,7 @@ impl<T: Group> Term<T> {
             }
             (Self::Symbol(_), _) => Ordering::Less,
             (_, Self::Symbol(_)) => Ordering::Greater,
-            _ => todo!(),
+            _ => self.cmp(other),
         }
     }
     /// Compare two terms, putting factors which can be merged side by side
@@ -327,7 +327,7 @@ impl<T: Group> Term<T> {
                 .then_with(|| a1.iter().cmp_by(a2, Self::cmp)),
             (Self::Symbol(_), _) => Ordering::Less,
             (_, Self::Symbol(_)) => Ordering::Greater,
-            _ => todo!(),
+            _ => self.cmp(other),
         }
     }
 }

@@ -276,3 +276,11 @@ fn negative_exponent_precedence() {
     assert_eq!(parse!("x^-1*x", R), 1.into());
     assert_eq!(parse!("2^-1*4", R), 2.into());
 }
+
+#[test]
+fn products_and_sums_of_functions() {
+    assert_eq!(parse!("abs(x)*abs(y)", R), parse!("abs(y)*abs(x)", R));
+    assert_eq!(parse!("abs(x)+abs(y)", R), parse!("abs(y)+abs(x)", R));
+    assert_eq!(parse!("abs(x)*abs(x)", R), parse!("abs(x)^2", R));
+    assert_eq!(parse!("(x+1)*abs(x)", R), parse!("abs(x)*(x+1)", R));
+}
