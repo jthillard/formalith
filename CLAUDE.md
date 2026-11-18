@@ -22,7 +22,7 @@ Nightly Rust is required: `src/lib.rs` enables `#![feature(specialization, iter_
 
 ## Architecture
 
-**Sets drive everything** (`src/field/`). An expression type is `Term<T>` where `T: Set` is a zero-sized-ish `Copy` value describing the algebraic structure. Trait hierarchy: `Set` → `PartiallyOrderedSet` → `Group` → `Ring` → `EuclideanRing` / `Field` / `Derivable`. Each `Set` declares its `Element` type plus an `ExponantSet` (where powers live) and `ProductCoefficientSet` (coefficient of `Mul`). Concrete sets in `src/field/commons/`: `Z` (integers), `R` (rationals via `malachite`), `M` (matrices). Sets are used as constants: `parse!("x^2", R)`.
+**Sets drive everything** (`src/field/`). An expression type is `Term<T>` where `T: Set` is a zero-sized-ish `Copy` value describing the algebraic structure. Trait hierarchy: `Set` → `PartiallyOrderedSet` → `Group` → `Ring` → `EuclideanRing` / `Field` / `Derivable`. Each `Set` declares its `Element` type plus an `ExponantSet` (where powers live) and `ProductCoefficientSet` (coefficient of `Mul`). Concrete sets in `src/field/commons/`: `N` (naturals; only `Set` + ordering, no arithmetic), `Z` (integers), `R` (rationals via `malachite`), `M` (matrices). Sets are used as constants: `parse!("x^2", R)`.
 
 **Terms** (`src/term/`). `Term<T>` is an enum: `Value`, `Symbol`, `Add`, `Mul`, `Pow`, `Fun`. `Fun` holds `Box<dyn Function<T>>` (dyn-clone/eq/hash) so a function can take arguments from a different set than its result (e.g. `det` takes matrices, returns reals). Operator overloads are in `term_op.rs`.
 

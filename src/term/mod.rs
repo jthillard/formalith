@@ -799,7 +799,11 @@ impl<T: Set> Expand for Term<T> {
 }
 impl<T: Set> Normalize for Term<T> {
     default fn normalize(&self) -> Self {
-        todo!()
+        match self {
+            // Atoms are already normalized
+            Self::Value(_) | Self::Symbol(_) => self.clone(),
+            _ => todo!(),
+        }
     }
 }
 impl<T: Ring> Term<T> {

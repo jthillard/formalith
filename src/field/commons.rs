@@ -22,6 +22,7 @@ use super::TryElementFrom;
 
 pub mod integer;
 pub mod matrix;
+pub mod natural;
 pub mod real;
 
 /// Failed to convert a term into another term.
