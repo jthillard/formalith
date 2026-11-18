@@ -170,6 +170,10 @@ impl Ring for R<Rational> {
     fn normalize(&self, a: Term<Self>) -> Term<Self> {
         match &a {
             Term::Pow(term::Pow { base, exponant, .. }) => match (&**base, &***exponant) {
+                (Term::Symbol(e), _) if e.symbol == Context::E => {
+                    // `{$e^u = exp u$}`, a single form for exponentials
+                    return self.fun(Context::EXP, (***exponant).clone());
+                }
                 (Term::Mul(mul), Term::Value(value)) if value.value.denominator_ref() == &1 => {
                     // `{$(x y)^n = x^n y^n$}` for integer `n`
                     return Term::distribute_pow(mul, exponant);
@@ -373,7 +377,7 @@ impl Ring for R<Rational> {
                         Err(IntegrateError::Undefined) => {
                             return Term::Symbol(SymbolTerm::new(Context::UNDEFINED, *self));
                         }
-                        Err(IntegrateError::Unsupported) => {}
+                        Err(IntegrateError::Unsupported | IntegrateError::NonElementary) => {}
                     }
                 }
                 Context::DET => {
@@ -526,9 +530,33 @@ impl R<Rational> {
         a.denominator_ref() == &1 && a.numerator_ref().even()
     }
 
+    /// Whether `x` is non-negative for every value of its symbols, checked on positive constants, `exp`, `cosh`,
+    /// even powers, roots, and sums and products of such terms.
+    pub(crate) fn is_non_negative(x: &Term<Self>) -> bool {
+        match x {
+            Term::Value(_) => x.is_positive(),
+            Term::Symbol(s) => matches!(s.symbol, Context::PI | Context::E),
+            Term::Add(add) => add.iter().all(Self::is_non_negative),
+            Term::Mul(mul) => mul.coefficient >= 0 && mul.iter().all(Self::is_non_negative),
+            Term::Pow(pow) => match &**pow.exponant {
+                Term::Value(exponant)
+                    if Self::is_even_integer(&exponant.value)
+                        || exponant.value.denominator_ref().even() =>
+                {
+                    true
+                }
+                _ => Self::is_non_negative(&pow.base),
+            },
+            Term::Fun(fun) => matches!(
+                fun.get_ident(),
+                Context::EXP | Context::COSH | Context::ABS | Context::SQRT
+            ),
+        }
+    }
+
     /// Evaluate `|x|`, returning `None` if it can't be simplified.
     fn eval_abs(self, x: &Term<Self>) -> Option<Term<Self>> {
-        if x.is_positive() {
+        if x.is_positive() || Self::is_non_negative(x) {
             return Some(x.clone());
         }
         if x.is_strictly_negative() {
@@ -623,6 +651,15 @@ impl R<Rational> {
                 if x.is_zero() =>
             {
                 Some(value(Rational::ZERO))
+            }
+            (Context::ERF | Context::ERFI, [x]) if x.is_zero() => Some(value(Rational::ZERO)),
+            // `{$"erf"(oo) = 1$}`
+            (Context::ERF, [Term::Symbol(x)]) if x.symbol == Context::OO => {
+                Some(value(Rational::ONE))
+            }
+            // `{$"erf"(-u) = -"erf"(u)$}`, same for `{$"erfi"$}`
+            (Context::ERF | Context::ERFI, [Term::Mul(mul)]) if mul.coefficient < 0 => {
+                Some(-self.fun(ident, -Term::Mul(mul.clone())))
             }
             (Context::COSH, [x]) if x.is_zero() => Some(value(Rational::ONE)),
             (Context::ACOSH, [x]) if x.is_one() => Some(value(Rational::ZERO)),
@@ -787,12 +824,27 @@ impl R<Rational> {
                 (value(1, 1), angle(2)),
             ]
         };
+        // Squares of the points: radicals have several forms, like `{$sqrt(3)/3 = sqrt(1/3)$}`
+        let squares: &[(i64, i64)] = if ident == Context::ATAN {
+            &[(0, 1), (1, 3), (1, 1), (3, 1)]
+        } else {
+            &[(0, 1), (1, 4), (1, 2), (3, 4), (1, 1)]
+        };
         let opposite = -x;
-        let res = table.into_iter().find_map(|(at, res)| {
+        let square = x * x;
+        let res = table.into_iter().zip(squares).find_map(|((at, res), &(n, d))| {
             if at == *x {
                 Some(res)
             } else if at == opposite {
                 Some(-res)
+            } else if n != 0 && square == value(n, d) {
+                if Self::is_non_negative(x) {
+                    Some(res)
+                } else if Self::is_non_negative(&opposite) {
+                    Some(-res)
+                } else {
+                    None
+                }
             } else {
                 None
             }

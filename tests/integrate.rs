@@ -2,6 +2,7 @@
 use formalith::{
     context::Context,
     field::real::R,
+    integrate::IntegrateError,
     parse, symbol,
     term::{Fun, Normalize, Term},
 };
@@ -96,6 +97,107 @@ fn substitutions_and_parts() {
     ] {
         check(f);
     }
+}
+
+#[test]
+fn risch() {
+    for f in [
+        "(ln(x)-1)/ln(x)^2",
+        "(x-1)*exp(x)/x^2",
+        "(2*x^2+1)*exp(x^2)",
+        "x*exp(x)/(1+x)^2",
+        "exp(x)*ln(x)+exp(x)/x",
+        "ln(x)/(1+ln(x))^2",
+        "(exp(x)+1)^2/exp(x)",
+        "exp(2*x)/(exp(x)+1)^2",
+        "1/(x*ln(x)^2)",
+        "exp(x+exp(x))",
+        "(1+x*ln(x))*exp(x)/x",
+        "(exp(x)-x*exp(x))/(x-exp(x))^2",
+        "exp(x)*(x^2-2*x+1)/(x^2+1)^2",
+        "ln(x)^2+2*ln(x)",
+        "(ln(x)+1)*exp(x*ln(x))*(1+x*ln(x))",
+    ] {
+        check(f);
+    }
+}
+
+#[test]
+fn non_elementary() {
+    let x = symbol!("x");
+    for f in [
+        "exp(x)/x",
+        "1/ln(x)",
+        "ln(x)/(x+1)",
+        "exp(exp(x))",
+        "x^x",
+        "exp(x)*ln(x)",
+        "exp(x^2)*ln(x)",
+        "exp(x^3)",
+    ] {
+        assert_eq!(parse!(f, R).integrate(x), Err(IntegrateError::NonElementary), "{f}");
+        assert!(integrate(&format!("integrate({f}, x)")).contains("integrate"), "{f}");
+    }
+}
+
+#[test]
+fn gaussian_integrals() {
+    for f in [
+        "exp(-x^2)",
+        "exp(x^2)",
+        "exp(-2x^2+x)",
+        "3*exp(-(x-1)^2)",
+        "x^2*exp(-x^2)",
+        "(x^3+1)*exp(x-x^2)",
+        "exp(x)*exp(-x^2)",
+        "exp(x^2)+x",
+    ] {
+        check(f);
+    }
+    assert_eq!(integrate("integrate(exp(-x^2), x)"), integrate("sqrt(pi)/2*erf(x)"));
+    assert_eq!(integrate("integrate(exp(-x^2), x, -oo, oo)"), integrate("sqrt(pi)"));
+    assert_eq!(integrate("integrate(exp(-x^2), x, 0, oo)"), integrate("sqrt(pi)/2"));
+    assert_eq!(integrate("integrate(x^2*exp(-x^2), x, -oo, oo)"), integrate("sqrt(pi)/2"));
+    assert_eq!(integrate("integrate(exp(-(x+1)^2), x, -oo, oo)"), integrate("sqrt(pi)"));
+}
+
+#[test]
+fn error_function() {
+    assert_eq!(integrate("erf(0)"), "0");
+    assert_eq!(integrate("erf(-x)"), integrate("-erf(x)"));
+    assert_eq!(integrate("approx(erf(1))"), "0.842700792949715");
+    assert_eq!(integrate("approx(erf(-2))"), "-0.995322265018953");
+    assert_eq!(integrate("approx(erfi(1))"), "1.65042575879754");
+    assert_eq!(integrate("diff(erf(x), x)"), integrate("2/sqrt(pi)*exp(-x^2)"));
+    assert_eq!(integrate("lim(erf(x), x, oo)"), "1");
+    assert_eq!(integrate("lim(erf(x), x, -oo)"), "-1");
+    assert_eq!(integrate("lim(x*(1-erf(x))*exp(x^2), x, oo)"), integrate("1/sqrt(pi)"));
+    assert_eq!(integrate("lim(erf(1/x), x, 0, 1)"), "1");
+    assert_eq!(
+        integrate("series(erf(x), x, 0, 4)"),
+        integrate("2/sqrt(pi)*x - 2/(3*sqrt(pi))*x^3")
+    );
+}
+
+#[test]
+fn constant_parts_and_symmetry() {
+    assert_eq!(integrate("integrate(1/(e^x+1), x)"), integrate("x - ln(exp(x)+1)"));
+    assert_eq!(integrate("integrate(1/(exp(x)+1), x, -1, 1)"), "1");
+    assert_eq!(
+        integrate(
+            "integrate((acos(2x/(1+x^2))+atan(2x/(1-x^2)))/(e^x+1), x, -1/sqrt(3), 1/sqrt(3))"
+        ),
+        integrate("pi/(2*sqrt(3))")
+    );
+    assert_eq!(integrate("integrate(asin(x)+acos(x), x, 0, 1)"), integrate("pi/2"));
+    assert_eq!(integrate("integrate(atan(x)+atan(1/x), x, 1, 2)"), integrate("pi/2"));
+    assert_eq!(integrate("integrate(atan(x)+atan(1/x), x, -3, -1)"), integrate("-pi"));
+    // Odd, without an elementary antiderivative
+    assert_eq!(integrate("integrate(exp(x^3) - exp(-x^3), x, -1, 1)"), "0");
+    // Not constant across the singularity at 0
+    assert!(integrate("integrate(atan(x)+atan(1/x), x, -1, 1)").contains("integrate"));
+    assert_eq!(integrate("atan(1/sqrt(3))"), integrate("pi/6"));
+    assert_eq!(integrate("acos(-sqrt(3/4))"), integrate("5*pi/6"));
 }
 
 #[test]

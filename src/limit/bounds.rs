@@ -104,7 +104,7 @@ pub(super) fn bounds(term: &Expr) -> Option<(Rational, Rational)> {
             match ident {
                 Context::SIN | Context::COS => Some((Rational::NEGATIVE_ONE, Rational::ONE)),
                 // Increasing functions
-                Context::EXP | Context::LN | Context::ATAN => {
+                Context::EXP | Context::LN | Context::ATAN | Context::ERF | Context::ERFI => {
                     let (lo, hi) = bounds(arg)?;
                     if ident == Context::LN && lo <= Rational::ZERO {
                         return None;

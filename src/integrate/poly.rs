@@ -1,4 +1,7 @@
-//! Dense univariate polynomials with rational coefficients, used by the integration of rational functions.
+//! Dense univariate polynomials over a field, with rational coefficients for the integration of rational
+//! functions, or with coefficients in a differential field for the Risch algorithm.
+
+use std::fmt::Debug;
 
 use malachite::{
     Rational,
@@ -13,14 +16,72 @@ use crate::{
 
 use super::Expr;
 
+/// The elements of a field of characteristic 0, the coefficients of a [`Poly`].
+pub(super) trait Coefficient: Clone + PartialEq + Debug {
+    /// The rational number `r` as an element of the field.
+    fn from_rational(r: Rational) -> Self;
+    fn is_zero(&self) -> bool;
+    fn plus(&self, other: &Self) -> Self;
+    fn negate(&self) -> Self;
+    fn times(&self, other: &Self) -> Self;
+    /// The inverse of a non-zero element.
+    fn inverse(&self) -> Self;
+
+    fn zero() -> Self {
+        Self::from_rational(Rational::ZERO)
+    }
+
+    fn one() -> Self {
+        Self::from_rational(Rational::ONE)
+    }
+
+    fn minus(&self, other: &Self) -> Self {
+        self.plus(&other.negate())
+    }
+
+    fn divide(&self, other: &Self) -> Self {
+        self.times(&other.inverse())
+    }
+
+    fn is_one(&self) -> bool {
+        *self == Self::one()
+    }
+}
+
+impl Coefficient for Rational {
+    fn from_rational(r: Rational) -> Self {
+        r
+    }
+
+    fn is_zero(&self) -> bool {
+        *self == Self::ZERO
+    }
+
+    fn plus(&self, other: &Self) -> Self {
+        self + other
+    }
+
+    fn negate(&self) -> Self {
+        -self
+    }
+
+    fn times(&self, other: &Self) -> Self {
+        self * other
+    }
+
+    fn inverse(&self) -> Self {
+        Self::ONE / self
+    }
+}
+
 /// A polynomial `{$sum_i c_i x^i$}`, its coefficients by increasing degree, without trailing zeros.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(super) struct Poly(Vec<Rational>);
+pub(super) struct Poly<F = Rational>(Vec<F>);
 
-impl Poly {
+impl<F: Coefficient> Poly<F> {
     /// The polynomial with the given coefficients, by increasing degree.
-    pub(super) fn new(mut coefficients: Vec<Rational>) -> Self {
-        while coefficients.last() == Some(&Rational::ZERO) {
+    pub(super) fn new(mut coefficients: Vec<F>) -> Self {
+        while coefficients.last().is_some_and(F::is_zero) {
             coefficients.pop();
         }
         Self(coefficients)
@@ -30,25 +91,42 @@ impl Poly {
         Self(Vec::new())
     }
 
-    pub(super) fn constant(c: Rational) -> Self {
+    pub(super) fn constant(c: F) -> Self {
         Self::new(vec![c])
     }
 
     pub(super) fn one() -> Self {
-        Self::constant(Rational::ONE)
+        Self::constant(F::one())
     }
 
     /// The polynomial `x`.
     pub(super) fn x() -> Self {
-        Self(vec![Rational::ZERO, Rational::ONE])
+        Self(vec![F::zero(), F::one()])
     }
 
-    pub(super) fn coefficients(&self) -> &[Rational] {
+    /// The monomial `{$c x^n$}`.
+    pub(super) fn monomial(c: F, n: usize) -> Self {
+        let mut coefficients = vec![F::zero(); n];
+        coefficients.push(c);
+        Self::new(coefficients)
+    }
+
+    pub(super) fn coefficients(&self) -> &[F] {
         &self.0
+    }
+
+    /// The coefficient of `{$x^i$}`.
+    pub(super) fn coefficient(&self, i: usize) -> F {
+        self.0.get(i).cloned().unwrap_or_else(F::zero)
     }
 
     pub(super) const fn is_zero(&self) -> bool {
         self.0.is_empty()
+    }
+
+    /// Whether the polynomial is a constant, possibly 0.
+    pub(super) const fn is_constant(&self) -> bool {
+        self.0.len() <= 1
     }
 
     /// The degree, 0 for the zero polynomial.
@@ -57,38 +135,52 @@ impl Poly {
     }
 
     /// The leading coefficient, 0 for the zero polynomial.
-    pub(super) fn leading(&self) -> Rational {
-        self.0.last().cloned().unwrap_or(Rational::ZERO)
+    pub(super) fn leading(&self) -> F {
+        self.0.last().cloned().unwrap_or_else(F::zero)
     }
 
-    pub(super) fn scale(&self, c: &Rational) -> Self {
-        Self::new(self.0.iter().map(|a| a * c).collect())
+    /// The largest `n` such that `{$x^n$}` divides the non-zero polynomial.
+    pub(super) fn order_at_zero(&self) -> usize {
+        self.0.iter().take_while(|c| c.is_zero()).count()
+    }
+
+    /// The polynomial divided by `{$x^n$}`, dropping the terms of lower degree.
+    pub(super) fn shift_down(&self, n: usize) -> Self {
+        Self::new(self.0.iter().skip(n).cloned().collect())
+    }
+
+    pub(super) fn scale(&self, c: &F) -> Self {
+        Self::new(self.0.iter().map(|a| a.times(c)).collect())
     }
 
     pub(super) fn add(&self, other: &Self) -> Self {
         let n = self.0.len().max(other.0.len());
         Self::new(
             (0..n)
-                .map(|i| {
-                    self.0.get(i).cloned().unwrap_or(Rational::ZERO)
-                        + other.0.get(i).cloned().unwrap_or(Rational::ZERO)
-                })
+                .map(|i| self.coefficient(i).plus(&other.coefficient(i)))
                 .collect(),
         )
     }
 
+    pub(super) fn neg(&self) -> Self {
+        Self(self.0.iter().map(F::negate).collect())
+    }
+
     pub(super) fn sub(&self, other: &Self) -> Self {
-        self.add(&other.scale(&-Rational::ONE))
+        self.add(&other.neg())
     }
 
     pub(super) fn mul(&self, other: &Self) -> Self {
         if self.is_zero() || other.is_zero() {
             return Self::zero();
         }
-        let mut res = vec![Rational::ZERO; self.0.len() + other.0.len() - 1];
+        let mut res = vec![F::zero(); self.0.len() + other.0.len() - 1];
         for (i, a) in self.0.iter().enumerate() {
+            if a.is_zero() {
+                continue;
+            }
             for (j, b) in other.0.iter().enumerate() {
-                res[i + j] += a * b;
+                res[i + j] = res[i + j].plus(&a.times(b));
             }
         }
         Self::new(res)
@@ -98,27 +190,24 @@ impl Poly {
         (0..n).fold(Self::one(), |res, _| res.mul(self))
     }
 
+    /// The derivative with respect to the variable.
     pub(super) fn derivative(&self) -> Self {
         Self::new(
             self.0
                 .iter()
                 .enumerate()
                 .skip(1)
-                .map(|(i, c)| c * Rational::from(i))
+                .map(|(i, c)| c.times(&F::from_rational(Rational::from(i))))
                 .collect(),
         )
     }
 
-    /// The antiderivative vanishing at 0.
-    pub(super) fn antiderivative(&self) -> Self {
-        let mut res = vec![Rational::ZERO];
-        res.extend(
-            self.0
-                .iter()
-                .enumerate()
-                .map(|(i, c)| c / Rational::from(i + 1)),
-        );
-        Self::new(res)
+    /// The value at `x`.
+    pub(super) fn eval(&self, x: &F) -> F {
+        self.0
+            .iter()
+            .rev()
+            .fold(F::zero(), |res, c| res.times(x).plus(c))
     }
 
     /// Quotient and remainder of the euclidean division by a non-zero `divisor`.
@@ -126,15 +215,17 @@ impl Poly {
         assert!(!divisor.is_zero(), "Division by the zero polynomial");
         let mut rem = self.0.clone();
         let d = divisor.degree();
-        let lead = divisor.leading();
+        let lead = divisor.leading().inverse();
         if rem.len() <= d {
             return (Self::zero(), self.clone());
         }
-        let mut quo = vec![Rational::ZERO; rem.len() - d];
+        let mut quo = vec![F::zero(); rem.len() - d];
         for i in (0..quo.len()).rev() {
-            let c = &rem[i + d] / &lead;
-            for (j, b) in divisor.0.iter().enumerate() {
-                rem[i + j] -= &c * b;
+            let c = rem[i + d].times(&lead);
+            if !c.is_zero() {
+                for (j, b) in divisor.0.iter().enumerate() {
+                    rem[i + j] = rem[i + j].minus(&c.times(b));
+                }
             }
             quo[i] = c;
         }
@@ -153,12 +244,17 @@ impl Poly {
         quo
     }
 
+    /// Whether `divisor` divides the polynomial.
+    pub(super) fn divisible_by(&self, divisor: &Self) -> bool {
+        self.rem(divisor).is_zero()
+    }
+
     /// The polynomial divided by its leading coefficient.
     pub(super) fn monic(&self) -> Self {
         if self.is_zero() {
             return Self::zero();
         }
-        self.scale(&(Rational::ONE / self.leading()))
+        self.scale(&self.leading().inverse())
     }
 
     /// `(s, t, g)` with `{$s a + t b = g$}`, `g` being the monic gcd of `a = self` and `b`.
@@ -177,12 +273,17 @@ impl Poly {
         if r0.is_zero() {
             return (s0, t0, r0);
         }
-        let lead = Rational::ONE / r0.leading();
+        let lead = r0.leading().inverse();
         (s0.scale(&lead), t0.scale(&lead), r0.scale(&lead))
     }
 
+    /// The monic gcd.
     pub(super) fn gcd(&self, other: &Self) -> Self {
-        self.extended_gcd(other).2
+        let (mut a, mut b) = (self.clone(), other.clone());
+        while !b.is_zero() {
+            (a, b) = (b.clone(), a.rem(&b));
+        }
+        a.monic()
     }
 
     /// `(s, t)` with `{$s a + t b = c$}` and `{$deg s < deg b$}`, for `a = self`, when `{$gcd(a, b)$}` divides `c`.
@@ -198,6 +299,30 @@ impl Poly {
     /// The inverse of `self` modulo `m`, which must be coprime with it.
     pub(super) fn inverse_mod(&self, m: &Self) -> Self {
         self.diophantine(m, &Self::one()).0
+    }
+
+    /// The resultant of `self` and `other`, computed with euclidean divisions.
+    pub(super) fn resultant(&self, other: &Self) -> F {
+        if self.is_zero() || other.is_zero() {
+            return F::zero();
+        }
+        let (m, n) = (self.degree(), other.degree());
+        if n == 0 {
+            return power(&other.leading(), m);
+        }
+        if m == 0 {
+            return power(&self.leading(), n);
+        }
+        let sign = |res: F| if m % 2 == 1 && n % 2 == 1 { res.negate() } else { res };
+        if m < n {
+            return sign(other.resultant(self));
+        }
+        // `{$res(f, g) = (-1)^(m n) res(g, f) = (-1)^(m n) lc(g)^(m - deg r) res(g, r)$}` with `{$r = f mod g$}`
+        let r = self.rem(other);
+        if r.is_zero() {
+            return F::zero();
+        }
+        sign(power(&other.leading(), m - r.degree()).times(&other.resultant(&r)))
     }
 
     /// The square-free factorization `{$f = c product_i P_i^i$}` (Yun's algorithm): the monic `P_i` by
@@ -218,6 +343,30 @@ impl Poly {
             res.push(a);
         }
         res
+    }
+
+    /// The polynomial with the coefficients mapped by `f`.
+    pub(super) fn map<G: Coefficient>(&self, f: impl Fn(&F) -> G) -> Poly<G> {
+        Poly::new(self.0.iter().map(f).collect())
+    }
+}
+
+/// `{$c^n$}`.
+fn power<F: Coefficient>(c: &F, n: usize) -> F {
+    (0..n).fold(F::one(), |res, _| res.times(c))
+}
+
+impl Poly<Rational> {
+    /// The antiderivative vanishing at 0.
+    pub(super) fn antiderivative(&self) -> Self {
+        let mut res = vec![Rational::ZERO];
+        res.extend(
+            self.0
+                .iter()
+                .enumerate()
+                .map(|(i, c)| c / Rational::from(i + 1)),
+        );
+        Self::new(res)
     }
 
     /// The polynomial as an expression in `x`.

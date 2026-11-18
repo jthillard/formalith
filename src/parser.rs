@@ -13,7 +13,7 @@ use crate::field::{Group, Ring, Set, SetParseExpression};
 use crate::term::{Fun, Mul, Normalize, SymbolTerm, Term, Value};
 
 use environment::Environment;
-use lexer::{Lexer, Token, TokenKind};
+use lexer::{Lexer, LiteralTokenKind, Token, TokenKind};
 
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Op {
@@ -73,6 +73,8 @@ pub struct Parser<'a> {
     pub token: Token,
     start_span: usize,
     end_span: usize,
+    /// Whether the current token directly follows the previous one, without whitespace
+    adjacent: bool,
     env: Option<&'a Environment>,
 }
 
@@ -87,6 +89,7 @@ impl<'a> Parser<'a> {
             token: Token::new(TokenKind::Unknown, 0),
             start_span: 0,
             end_span: 0,
+            adjacent: false,
             env: None,
         };
         parser.next_token();
@@ -124,6 +127,7 @@ impl Parser<'_> {
     }
     /// Update the current and previous token, skipping unnecessary tokens
     pub fn next_token(&mut self) {
+        let prev_end = self.end_span;
         let next = loop {
             match self.next_token_internal() {
                 None => break Token::new(TokenKind::Eof, 0),
@@ -134,6 +138,7 @@ impl Parser<'_> {
                 Some(token) => break token,
             }
         };
+        self.adjacent = self.start_span == prev_end;
         self.prev_token = std::mem::replace(&mut self.token, next);
     }
     const fn span(&self) -> Range<usize> {
@@ -155,8 +160,30 @@ impl Parser<'_> {
             ))),
         }
     }
-    /// Return the next operator if it exists and consume it
-    const fn get_op(&self) -> Option<Op> {
+    /// Whether the current token starts an implicit product with the number literal just before it, like `2x` or
+    /// `3(x + 1)`. A space (`5 x`) or an exponent-like identifier (`1e3`) is not a product.
+    fn implicit_product(&self) -> bool {
+        self.adjacent
+            && matches!(
+                self.prev_token.kind,
+                TokenKind::Literal {
+                    kind: LiteralTokenKind::Int | LiteralTokenKind::Float
+                }
+            )
+            && match &self.token.kind {
+                TokenKind::OpenParen => true,
+                TokenKind::Ident(name) => !name
+                    .strip_prefix(['e', 'E'])
+                    .is_some_and(|rest| rest.starts_with(|c: char| c.is_ascii_digit())),
+                _ => false,
+            }
+    }
+    /// Return the next operator if it exists, a number literal followed by an identifier or a parenthesis being an
+    /// implicit product
+    fn get_op(&self) -> Option<Op> {
+        if self.implicit_product() {
+            return Some(Op::Multiply);
+        }
         match self.token.kind {
             TokenKind::Plus => Some(Op::Add),
             TokenKind::Minus => Some(Op::Subtract),
@@ -389,7 +416,9 @@ where
                     && priority < op.as_ref().unwrap().get_priority()
                 {
                     let before_op = self.clone();
-                    self.next_token();
+                    if !self.implicit_product() {
+                        self.next_token();
+                    }
                     let (new_node, parsed) = ParseBinary::<E>::parse_binary_expr(
                         self,
                         node,

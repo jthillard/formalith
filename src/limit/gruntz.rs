@@ -334,8 +334,12 @@ impl Gruntz {
     }
 
     fn leadterm_inner(&mut self, f: &Expr) -> LimitResult<(Expr, Expr)> {
-        let mut omega = self.mrv(f)?;
-        let mut f = f.clone();
+        let mut f = self.erf_at_infinity(f)?;
+        if !self.depends(&f) {
+            // The rebuilt expression may normalize to a constant
+            return Ok((f, Term::zero(crate::field::real::R)));
+        }
+        let mut omega = self.mrv(&f)?;
         let x = variable(self.x);
         if omega.contains(&x) {
             // Move up, `{$lim_(x -> oo) f(x) = lim_(x -> oo) f(e^x)$}`, so that every element is an exponential.
@@ -347,6 +351,42 @@ impl Gruntz {
         }
         let (rewritten, logw) = self.rewrite(&f, &omega)?;
         series::leadterm(self, &rewritten, &logw)
+    }
+
+    /// Rewrite each `{$"erf" g$}` with `{$g -> plus.minus oo$}` in `f` as
+    /// `{$plus.minus (1 - e^(-g^2) "erfcx"(plus.minus g))$}`, so that `{$e^(-g^2)$}` is seen by [`Self::mrv`] and
+    /// `{$"erfcx"$}` (see [`erfcx`]) has an asymptotic series.
+    fn erf_at_infinity(&mut self, f: &Expr) -> LimitResult<Expr> {
+        if !self.depends(f) {
+            return Ok(f.clone());
+        }
+        Ok(match f {
+            Term::Value(_) | Term::Symbol(_) => f.clone(),
+            Term::Add(add) => add
+                .iter()
+                .try_fold(Term::zero(crate::field::real::R), |res, term| {
+                    Ok::<_, LimitError>(res + self.erf_at_infinity(term)?)
+                })?,
+            Term::Mul(mul) => mul
+                .iter()
+                .try_fold(value(mul.coefficient.clone()), |res, factor| {
+                    Ok::<_, LimitError>(res * self.erf_at_infinity(factor)?)
+                })?,
+            Term::Pow(pow) => self.erf_at_infinity(&pow.base)?.pow(&pow.exponant),
+            Term::Fun(_) => {
+                let (ident, arg) = unary(f).ok_or(LimitError::Unsupported)?;
+                let arg = self.erf_at_infinity(arg)?;
+                if ident == Context::ERF {
+                    let limit = self.limit_infinity(&arg)?;
+                    if is_infinite(&limit) {
+                        let sign = if limit == infinity() { one() } else { -one() };
+                        let decay = fun(Context::EXP, -(&arg * &arg));
+                        return Ok(&sign * &(one() - decay * fun(erfcx(), &sign * &arg)));
+                    }
+                }
+                fun(ident, arg)
+            }
+        })
     }
 
     /// The most rapidly varying subexpressions of `f`.
@@ -374,7 +414,10 @@ impl Gruntz {
                         self.mrv(g)
                     }
                 }
-                Some((Context::LN | Context::ABS | Context::ATAN, g)) => self.mrv(g),
+                Some((Context::LN | Context::ABS | Context::ATAN | Context::ERF | Context::ERFI, g)) => {
+                    self.mrv(g)
+                }
+                Some((ident, g)) if ident == erfcx() => self.mrv(g),
                 Some((Context::SIN | Context::COS, g)) => {
                     // Oscillates without a limit, or the limit can't be computed by series
                     if is_infinite(&self.limit_infinity(g)?) {
@@ -536,6 +579,12 @@ impl Gruntz {
 }
 
 /// `{$ln a$}`, simplifying `{$ln e^h = h$}`.
+/// The scaled complementary error function `{$"erfcx"(g) = e^(g^2) (1 - "erf" g)$}`, only used internally for
+/// `{$g -> +oo$}`.
+pub(super) fn erfcx() -> Symbol {
+    Symbol::new("@erfcx")
+}
+
 fn log(a: &Expr) -> Expr {
     match unary(a) {
         Some((Context::EXP, h)) => h.clone(),

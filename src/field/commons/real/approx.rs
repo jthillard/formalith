@@ -234,6 +234,48 @@ impl Fixed {
         self.to_rational(sum << (HALVINGS / 2))
     }
 
+    /// `{$"erf"(x) = 2/sqrt(pi) sum_k (-1)^k x^(2 k + 1) / (k! (2 k + 1))$}`, or `{$"erfi"(x)$}` (`imaginary`)
+    /// without the signs. The alternating series loses about `{$x^2 log_2 e$}` bits to cancellation, which are
+    /// added to the working precision; `{$"erf"(x) = plus.minus 1$}` up to `{$2^(-1000)$}` for `{$|x| > 27$}`.
+    fn erf(self, x: &Rational, imaginary: bool) -> Option<Rational> {
+        if *x < 0 {
+            return self.erf(&-x, imaginary).map(|y| -y);
+        }
+        let square = x * x;
+        if !imaginary && square > 27 * 27 {
+            return Some(Rational::ONE);
+        }
+        if square > MAX_EXP_ARGUMENT {
+            return None;
+        }
+        let extra = if imaginary {
+            0
+        } else {
+            u64::try_from(&(square * Rational::from(3) / Rational::from(2)).floor()).ok()? + 1
+        };
+        let fixed = Self {
+            bits: self.bits + extra + GUARD_BITS,
+        };
+        let y = fixed.from_rational(x);
+        let y2 = fixed.mul(&y, &y);
+        let mut power = y;
+        let mut sum = Integer::ZERO;
+        let mut k = 0_u64;
+        while power != 0 {
+            let term = &power / Integer::from(2 * k + 1);
+            if imaginary || k % 2 == 0 {
+                sum += term;
+            } else {
+                sum -= term;
+            }
+            k += 1;
+            power = fixed.mul(&power, &y2) / Integer::from(k);
+        }
+        // `{$sqrt(pi) 2^"bits" = sqrt(pi 2^(2 "bits"))$}`
+        let sqrt_pi = Integer::from((fixed.pi() << fixed.bits).unsigned_abs().floor_root(2));
+        Some(fixed.to_rational(fixed.div(&(sum << 1_u64), &sqrt_pi)))
+    }
+
     /// `{$arcsin(x)$}` for `{$|x| <= 1$}`, `{$arcsin(x) = arctan(x / sqrt(1 - x^2))$}`.
     fn arcsin(self, x: &Rational) -> Option<Rational> {
         let cos = self.root(&(Rational::ONE - x * x), 2)?;
@@ -251,6 +293,8 @@ impl Fixed {
         let half = |y: Rational| y >> 1_u64;
         Some(match ident {
             Context::ATAN => self.arctan(x),
+            Context::ERF => self.erf(x, false)?,
+            Context::ERFI => self.erf(x, true)?,
             Context::ASIN => self.arcsin(x)?,
             Context::ACOS => self.to_rational(self.pi() >> 1_u64) - self.arcsin(x)?,
             Context::SINH | Context::COSH | Context::TANH => {
@@ -491,7 +535,9 @@ impl Fixed {
                         | Context::TANH
                         | Context::ASINH
                         | Context::ACOSH
-                        | Context::ATANH),
+                        | Context::ATANH
+                        | Context::ERF
+                        | Context::ERFI),
                         [x],
                     ) => self.eval_elementary(ident, &self.evaluate(x)?),
                     (ident, args) => {

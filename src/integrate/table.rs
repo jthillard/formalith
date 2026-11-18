@@ -1,5 +1,6 @@
-//! Integrals of elementary functions of a linear argument, of square roots of quadratic polynomials, and of
-//! products `{$e^u sin v$}` and `{$e^u cos v$}`.
+//! Integrals of elementary functions of a linear argument, of square roots of quadratic polynomials, of
+//! products `{$e^u sin v$}` and `{$e^u cos v$}`, and of `{$p e^q$}` for polynomials `p` and quadratic
+//! polynomials `q` with the error functions `{$"erf"$}` and `{$"erfi"$}`.
 
 use std::cmp::Ordering;
 
@@ -44,10 +45,17 @@ pub(super) fn integrate(_: &mut Integrator, f: &Expr, x: Symbol) -> Option<Expr>
         }
         Term::Fun(_) => {
             let (ident, u) = unary(f)?;
+            if ident == Context::EXP
+                && let Some(res) = gaussian(u, x)
+            {
+                return Some(res);
+            }
             let a = linear(u, x)?;
             Some(elementary(ident, u)? / a)
         }
-        Term::Mul(_) => exp_trig(f, x).or_else(|| linear_quadratic(f, x)),
+        Term::Mul(_) => exp_trig(f, x)
+            .or_else(|| linear_quadratic(f, x))
+            .or_else(|| polynomial_gaussian(f, x)),
         Term::Value(_) | Term::Add(_) => None,
     }
 }
@@ -113,6 +121,57 @@ fn quadratic(q: &Expr, x: Symbol) -> Option<(Rational, Rational, Rational)> {
     let h = c1 / (Rational::from(2) * c2);
     let k = c0 - c1 * c1 / (Rational::from(4) * c2);
     Some((c2.clone(), h, k))
+}
+
+/// `{$integral e^q$}` for a quadratic polynomial `{$q = c (x + h)^2 + k$}`:
+/// `{$e^k sqrt(pi) / (2 sqrt(-c)) "erf"(sqrt(-c) (x + h))$}` for `{$c < 0$}`, and the same with `{$"erfi"$}` and
+/// `{$sqrt(c)$}` for `{$c > 0$}`.
+fn gaussian(q: &Expr, x: Symbol) -> Option<Expr> {
+    let (c, h, k) = quadratic(q, x)?;
+    let (ident, c) = if c < 0 {
+        (Context::ERF, -c)
+    } else {
+        (Context::ERFI, c)
+    };
+    let half = ratio(1, 2);
+    let sqrt_c = value(c).pow(&half);
+    let pi = Term::Symbol(crate::term::SymbolTerm::new(Context::PI, crate::field::real::R));
+    let erf = fun(ident, &sqrt_c * &(variable(x) + value(h)));
+    Some(fun(Context::EXP, value(k)) * pi.pow(&half) / (ratio(2, 1) * sqrt_c) * erf)
+}
+
+/// `{$integral p e^q$}` for a polynomial `p` and a quadratic polynomial `q`: dividing `p` by `{$q'$}`,
+/// `{$p = a q' + r$}` with a constant `r`, `{$integral a q' e^q = a e^q - integral a' e^q$}`, so the degree of the
+/// remaining polynomial decreases until only `{$r integral e^q$}` is left.
+fn polynomial_gaussian(f: &Expr, x: Symbol) -> Option<Expr> {
+    // Products of exponentials `{$e^u e^v = e^(u + v)$}` and their powers are merged
+    let mut q = Term::zero(crate::field::real::R);
+    let mut rest = Term::one(crate::field::real::R);
+    for factor in factors(f) {
+        let (base, n) = match &factor {
+            Term::Pow(pow) if pow.exponant.to_i64().is_some() => (&*pow.base, (**pow.exponant).clone()),
+            _ => (&factor, Term::one(crate::field::real::R)),
+        };
+        match unary(base) {
+            Some((Context::EXP, u)) => q = q + n * u,
+            _ => rest = rest * &factor,
+        }
+    }
+    quadratic(&q, x)?;
+    let mut p = Poly::from_term(&rest, x)?;
+    let dq = Poly::from_term(&q, x)?.derivative();
+    let mut part = Poly::zero();
+    let mut constant = Rational::from(0);
+    while !p.is_zero() {
+        if p.degree() == 0 {
+            constant = p.coefficient(0);
+            break;
+        }
+        let (a, r) = p.div_rem(&dq);
+        p = r.sub(&a.derivative());
+        part = part.add(&a);
+    }
+    Some(part.to_term(x) * fun(Context::EXP, q.clone()) + value(constant) * gaussian(&q, x)?)
 }
 
 /// `{$integral q^e$}` for a quadratic polynomial `q` and `{$e in {1/2, -1/2, -3/2}$}`, completing the square.

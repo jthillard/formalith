@@ -104,9 +104,24 @@ fn test_parse_nested_det() {
 #[test]
 fn test_parse_trailing_input() {
     for input in [
-        "5 x", "5)", "5 5", "x y", "2x", "5 $ 3", "x,y", "1..2", "1e3", "abs 3",
+        "5 x", "5)", "5 5", "x y", "5 $ 3", "x,y", "1..2", "1e3", "abs 3", "2 (x)",
     ] {
         assert!(try_parse!(input, R).is_err(), "{input:?}");
+    }
+}
+
+#[test]
+fn test_parse_implicit_product() {
+    for (input, expected) in [
+        ("2x", "2*x"),
+        ("2(x + 1)", "2*(x + 1)"),
+        ("3sqrt(x)", "3*sqrt(x)"),
+        ("2x^2", "2*x^2"),
+        ("1/2x", "x/2"),
+        ("-2x", "-2*x"),
+        ("acos(2x/(1+x^2))", "acos(2*x/(1+x^2))"),
+    ] {
+        assert_eq!(parse!(input, R), parse!(expected, R), "{input:?}");
     }
 }
 

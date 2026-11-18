@@ -92,7 +92,7 @@ pub(super) fn integrate_rewritten(integrator: &mut Integrator, f: &Expr, x: Symb
 }
 
 /// `f` with its hyperbolic functions of `x` written with `exp`, if it has any.
-fn hyperbolic_as_exp(f: &Expr, x: Symbol) -> Option<Expr> {
+pub(super) fn hyperbolic_as_exp(f: &Expr, x: Symbol) -> Option<Expr> {
     let rewritten = map_tree(f, &|t| {
         let (ident, u) = unary(t)?;
         if !depends(u, x) {

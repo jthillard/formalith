@@ -6,7 +6,7 @@ use crate::{
     term::Term,
 };
 
-use super::{Expr, Integrator, linear, map_tree, replace_symbol, unary};
+use super::{Expr, Integrator, is_positive, linear, map_tree, replace_symbol, unary};
 
 /// Maximum number of substitutions tried for an integrand.
 const MAX_CANDIDATES: usize = 8;
@@ -81,9 +81,9 @@ fn substitute(integrator: &mut Integrator, f: &Expr, x: Symbol, u: &Expr) -> Opt
     let t_symbol = integrator.fresh_symbol();
     let t = variable(t_symbol);
     let quotient = f / &du;
-    let mut h = replace(&quotient, u, &t);
+    let mut h = replace(&quotient, u, &t, x);
     if depends(&h, x) {
-        h = replace(&quotient.simplify(), u, &t);
+        h = replace(&quotient.simplify(), u, &t, x);
     }
     // `{$x = (t - b) / a$}` for a linear `{$u = a x + b$}`
     if depends(&h, x)
@@ -100,19 +100,23 @@ fn substitute(integrator: &mut Integrator, f: &Expr, x: Symbol, u: &Expr) -> Opt
 }
 
 /// Replace `u` by `t` in `term`, also writing related subexpressions as powers of `t`: `{$b^q = t^(q/p)$}` for
-/// `{$u = b^p$}` (and `{$b = t^(1/p)$}`), and `{$exp(c) = t^(c/a)$}` for `{$u = exp(a)$}`.
-fn replace(term: &Expr, u: &Expr, t: &Expr) -> Expr {
+/// `{$u = b^p$}` (and `{$b = t^(1/p)$}`) when `{$q / p$}` is an integer or `b` is positive (`{$x = sqrt(x^2)$}`
+/// only holds for `{$x >= 0$}`), and `{$exp(c) = t^(c/a)$}` for `{$u = exp(a)$}`.
+fn replace(term: &Expr, u: &Expr, t: &Expr, x: Symbol) -> Expr {
     map_tree(term, &|s| {
         if s == u {
             return Some(t.clone());
         }
         if let Term::Pow(pu) = u {
+            let valid = |ratio: &Expr| ratio.to_i64().is_some() || is_positive(&pu.base, x);
             if s == &*pu.base {
-                return Some(t.pow(&(Term::one(crate::field::real::R) / &**pu.exponant)));
+                let ratio = Term::one(crate::field::real::R) / &**pu.exponant;
+                return valid(&ratio).then(|| t.pow(&ratio));
             }
             if let Term::Pow(ps) = s
                 && ps.base == pu.base
                 && let ratio @ Term::Value(_) = &**ps.exponant / &**pu.exponant
+                && valid(&ratio)
             {
                 return Some(t.pow(&ratio));
             }

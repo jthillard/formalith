@@ -206,14 +206,18 @@ impl Context {
     pub const BINOMIAL: Symbol = Symbol(47);
     /// Integral `integrate(f, x)` (an antiderivative) or `integrate(f, x, a, b)` (from `a` to `b`)
     pub const INTEGRATE: Symbol = Symbol(48);
+    /// Error function `{$"erf"(x) = 2/sqrt(pi) integral_0^x e^(-t^2) d t$}`
+    pub const ERF: Symbol = Symbol(49);
+    /// Imaginary error function `{$"erfi"(x) = 2/sqrt(pi) integral_0^x e^(t^2) d t$}`
+    pub const ERFI: Symbol = Symbol(50);
 
     #[rustfmt::skip]
-    const BUILTIN_NAMES: [&'static str; 49] = [
+    const BUILTIN_NAMES: [&'static str; 51] = [
         "abs", "det", "expand", "factor", "simplify", "re", "im", "conj", "sqrt", "root", "sign",
         "floor", "ceil", "min", "max", "gcd", "lcm", "quo", "rem", "diff", "solve", "approx",
         "exp", "ln", "sin", "cos", "tan", "pi", "e", "lim", "oo", "undefined",
         "series", "asin", "acos", "atan", "sinh", "cosh", "tanh", "asinh", "acosh", "atanh", "cot",
-        "sec", "csc", "log", "factorial", "binomial", "integrate",
+        "sec", "csc", "log", "factorial", "binomial", "integrate", "erf", "erfi",
     ];
 
     /// Return `true` if `symbol` is a builtin constant, like `{$pi$}`, which is not a function.

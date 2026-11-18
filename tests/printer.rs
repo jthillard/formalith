@@ -99,8 +99,8 @@ fn pretty_print_constants() {
 #[test]
 fn pretty_print_integrals() {
     assert_eq!(
-        pretty(&parse!("integrate(exp(x^2), x)", R)),
-        "⌠           \n⎮    ⎛ 2⎞   \n⎮ exp⎝x ⎠ dx\n⌡           "
+        pretty(&parse!("integrate(exp(x^3), x)", R)),
+        "⌠           \n⎮    ⎛ 3⎞   \n⎮ exp⎝x ⎠ dx\n⌡           "
     );
     assert_eq!(
         pretty(&parse!("integrate(f(x), x, 0, 1)", R)),

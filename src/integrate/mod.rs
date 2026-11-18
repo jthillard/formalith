@@ -5,22 +5,28 @@
 //! - rational functions of `x` with rational coefficients are always integrated, see [`rational`]: the
 //!   Hermite reduction gives the rational part, and the logarithmic part is written with `ln` and `atan`, as long
 //!   as the roots of the irreducible factors of the denominator can be expressed with radicals,
-//! - a table of elementary functions of a linear argument, square roots of quadratic polynomials, and products
-//!   `{$e^u sin v$}`,
+//! - a table of elementary functions of a linear argument, square roots of quadratic polynomials, products
+//!   `{$e^u sin v$}`, and Gaussian integrals `{$integral p e^q$}` (polynomial `p`, quadratic `q`) with
+//!   `{$"erf"$}` and `{$"erfi"$}`,
 //! - products of powers of `sin` and `cos` of a same argument, substituting `cos`, `sin` or `tan`, or reducing the
 //!   powers,
 //! - substitutions `{$u = g(x)$}` when `{$f / g'$}` is an expression of `u` (derivative-divides),
 //! - integration by parts, of logarithms and inverse functions, or of polynomials times functions that can be
 //!   integrated,
 //! - rewrites: hyperbolic functions as exponentials, products of trigonometric functions as sums, and the
-//!   substitution `{$t = tan(x / 2)$}` for rational functions of `sin` and `cos`.
+//!   substitution `{$t = tan(x / 2)$}` for rational functions of `sin` and `cos`,
+//! - the Risch algorithm for towers of exponentials and logarithms over `{$QQ(x)$}` (module `risch`), which also
+//!   proves that integrals like `{$integral e^x / x dif x$}` aren't elementary
+//!   ([`IntegrateError::NonElementary`]).
 //!
 //! Logarithms of expressions that may be negative are written `{$ln|u|$}`. Integrals which aren't found stay
-//! unevaluated: this is not a proof that there is no elementary antiderivative.
+//! unevaluated: unless the error is [`IntegrateError::NonElementary`], this is not a proof that there is no
+//! elementary antiderivative.
 //!
 //! Definite integrals evaluate the antiderivative at the bounds with limits, so bounds may be `{$plus.minus oo$}`,
 //! after splitting the interval at the points where the integrand or the antiderivative is singular (poles, and
-//! `tan` of the substitution `{$t = tan(x / 2)$}`). `approx` evaluates definite integrals numerically when no
+//! `tan` of the substitution `{$t = tan(x / 2)$}`). Parts of the integrand constant on the interval are replaced by
+//! their value, and symmetric intervals use `{$f(x) + f(-x)$}` when it is simpler. `approx` evaluates definite integrals numerically when no
 //! antiderivative is found.
 //!
 //! ```
@@ -35,6 +41,7 @@ mod definite;
 mod parts;
 mod poly;
 mod rational;
+mod risch;
 mod substitution;
 mod table;
 mod trig;
@@ -69,6 +76,8 @@ pub enum IntegrateError {
     Divergent(Ordering),
     /// The definite integral doesn't exist, like `{$integral_(-1)^1 1/x dif x$}`.
     Undefined,
+    /// The integrand is proved to have no elementary antiderivative, like `{$e^(x^2)$}`, by the Risch algorithm.
+    NonElementary,
 }
 
 impl fmt::Display for IntegrateError {
@@ -77,6 +86,7 @@ impl fmt::Display for IntegrateError {
             Self::Unsupported => f.write_str("the integral can't be computed"),
             Self::Divergent(_) => f.write_str("the integral diverges"),
             Self::Undefined => f.write_str("the integral doesn't exist"),
+            Self::NonElementary => f.write_str("the integral has no elementary antiderivative"),
         }
     }
 }
@@ -90,23 +100,30 @@ impl Term<Real> {
     /// An antiderivative of the expression with respect to `x`.
     ///
     /// # Errors
-    /// [`IntegrateError::Unsupported`] when no antiderivative is found.
+    /// [`IntegrateError::NonElementary`] when the antiderivative is proved not to be elementary,
+    /// [`IntegrateError::Unsupported`] when no antiderivative is found otherwise.
     ///
     /// ```
-    /// use formalith::{field::real::R, parse, symbol};
+    /// use formalith::{field::real::R, integrate::IntegrateError, parse, symbol};
     ///
     /// let x = symbol!("x");
     /// assert_eq!(parse!("cos(x)", R).integrate(x), Ok(parse!("sin(x)", R)));
     /// assert_eq!(parse!("x*exp(x)", R).integrate(x), Ok(parse!("x*exp(x) - exp(x)", R)));
-    /// assert!(parse!("exp(x^2)", R).integrate(x).is_err());
+    /// assert_eq!(parse!("exp(x)/x", R).integrate(x), Err(IntegrateError::NonElementary));
     /// ```
     pub fn integrate(&self, x: Symbol) -> IntegrateResult<Self> {
         if depends(self, Context::OO) || depends(self, Context::UNDEFINED) {
             return Err(IntegrateError::Unsupported);
         }
-        Integrator::default()
-            .integrate(self, x)
-            .ok_or(IntegrateError::Unsupported)
+        let mut integrator = Integrator::default();
+        if let Some(res) = integrator.integrate(self, x) {
+            return Ok(res);
+        }
+        match integrator.risch(self, x) {
+            Ok(res) => Ok(res),
+            Err(risch::RischError::NonElementary) => Err(IntegrateError::NonElementary),
+            Err(risch::RischError::Unsupported) => Err(IntegrateError::Unsupported),
+        }
     }
 
     /// The integral of the expression with respect to `x` from `a` to `b`, which may be infinite.
@@ -136,6 +153,7 @@ impl Term<Real> {
 struct Integrator {
     depth: usize,
     cache: HashMap<(Symbol, Expr), Option<Expr>>,
+    risch_cache: HashMap<(Symbol, Expr), risch::RischResult<Expr>>,
 }
 
 impl Integrator {
@@ -185,11 +203,27 @@ impl Integrator {
                 return Some(res);
             }
         }
+        match self.risch(f, x) {
+            Ok(res) => return Some(res),
+            Err(risch::RischError::NonElementary) => return None,
+            Err(risch::RischError::Unsupported) => {}
+        }
         let expanded = f.expand();
         if expanded != *f {
             return self.integrate(&expanded, x);
         }
         None
+    }
+
+    /// The Risch algorithm on `f`, cached.
+    fn risch(&mut self, f: &Expr, x: Symbol) -> risch::RischResult<Expr> {
+        let key = (x, f.clone());
+        if let Some(res) = self.risch_cache.get(&key) {
+            return res.clone();
+        }
+        let res = risch::integrate(f, x);
+        self.risch_cache.insert(key, res.clone());
+        res
     }
 
     /// A fresh symbol for a substitution, distinct for each depth of the search. Not a valid identifier, so it

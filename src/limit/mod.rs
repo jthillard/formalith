@@ -413,9 +413,13 @@ fn eval_at(term: &Expr, x: Symbol, a: &Expr) -> Option<Expr> {
             let (ident, arg) = unary(term)?;
             let arg = eval_at(arg, x, a)?;
             match ident {
-                Context::EXP | Context::SIN | Context::COS | Context::ABS | Context::ATAN => {
-                    Some(fun(ident, arg))
-                }
+                Context::EXP
+                | Context::SIN
+                | Context::COS
+                | Context::ABS
+                | Context::ATAN
+                | Context::ERF
+                | Context::ERFI => Some(fun(ident, arg)),
                 Context::LN if positive(&arg) => Some(fun(ident, arg)),
                 _ => None,
             }

@@ -7,12 +7,21 @@
 
 use std::cmp::Ordering;
 
-use malachite::{Rational, base::num::basic::traits::One};
+use malachite::{
+    Rational,
+    base::num::{arithmetic::traits::Pow, basic::traits::One},
+};
 
-use crate::{context::Context, field::real::R, term::Term};
+use crate::{
+    context::{Context, Symbol},
+    field::real::R,
+    term::Term,
+};
 
 use super::{
-    Expr, LimitError, LimitResult, const_cmp, depends, fun, gruntz::Gruntz, one, rational_bound,
+    Expr, LimitError, LimitResult, const_cmp, depends, fun,
+    gruntz::{Gruntz, erfcx},
+    one, rational_bound,
     unary, value, variable,
 };
 
@@ -282,6 +291,8 @@ impl Expander<'_> {
                 Some((ident @ (Context::SIN | Context::COS), a)) => self.sin_cos(ident, a, n)?,
                 Some((Context::ABS, a)) => self.abs(a, n)?,
                 Some((Context::ATAN, a)) => self.atan(a, n)?,
+                Some((ident @ (Context::ERF | Context::ERFI), a)) => self.erf(ident, a, n)?,
+                Some((ident, a)) if ident == erfcx() => self.erfcx(a, n)?,
                 _ => return Err(LimitError::Unsupported),
             },
         };
@@ -549,6 +560,72 @@ impl Expander<'_> {
             &n,
         )?;
         res.add(&Series::constant(fun(Context::ATAN, a0)))
+    }
+
+    /// `{$"erf" a$}` or `{$"erfi" a$}` for a bounded `a`, with the Taylor series
+    /// `{$"erf"(a_0 + u) = "erf" a_0 + 2/sqrt(pi) e^(-a_0^2) sum_(j >= 1) (-1)^(j - 1) H_(j - 1)(a_0) u^j / j!$}`,
+    /// `{$H_n$}` being the Hermite polynomials, and the same without the signs and with `{$e^(a_0^2)$}` for
+    /// `{$"erfi"$}`.
+    fn erf(&mut self, ident: Symbol, a: &Expr, n: &Rational) -> LimitResult<Series> {
+        let n = n.max(&Rational::ONE).clone();
+        let series = self.series(a, &n)?;
+        let (a0, u) = self.split_constant(series)?;
+        let imaginary = ident == Context::ERFI;
+        let square = &a0 * &a0;
+        let scale = value(Rational::from(2))
+            * variable(Context::PI).pow(&value(Rational::from_signeds(-1, 2)))
+            * fun(Context::EXP, if imaginary { square } else { -square });
+        Self::compose(
+            &u,
+            |j| {
+                if j == 0 {
+                    return Some(fun(ident, a0.clone()));
+                }
+                // `{$H_n(t) / (n + 1)! = 1/(n + 1) sum_m (-1)^m (2 t)^(n - 2 m) / (m! (n - 2 m)!)$}`
+                let degree = j - 1;
+                let hermite = (0..=degree / 2).fold(Term::zero(R), |res, m| {
+                    let power = degree - 2 * m;
+                    let sign = if imaginary || (degree + m) % 2 == 0 { 1 } else { -1 };
+                    let c = Rational::from(sign)
+                        * Rational::from(2_u32).pow(u64::try_from(power).unwrap_or(0))
+                        * inverse_factorial(m)
+                        * inverse_factorial(power);
+                    res + value(c) * a0.pow(&value(Rational::from(power)))
+                });
+                Some(&scale * &hermite / value(Rational::from(j)))
+            },
+            &n,
+        )
+    }
+
+    /// `{$"erfcx" a$}` for `{$a -> +oo$}`, with the asymptotic series
+    /// `{$"erfcx" a = 1/sqrt(pi) sum_k (-1)^k (2 k - 1)!! / 2^k a^(-2 k - 1)$}`.
+    fn erfcx(&mut self, a: &Expr, n: &Rational) -> LimitResult<Series> {
+        let n = n.max(&Rational::ONE).clone();
+        let (_, e0, c0) = self.with_lead(a, &n)?;
+        if const_cmp(&e0, &Term::zero(R))? != Ordering::Less
+            || self.gruntz.sign(&c0)? != Ordering::Greater
+        {
+            return Err(LimitError::Unsupported);
+        }
+        let v = self.series(&a.inv(), &n)?;
+        let inv_sqrt_pi = variable(Context::PI).pow(&value(Rational::from_signeds(-1, 2)));
+        Self::compose(
+            &v,
+            |j| {
+                if j % 2 == 0 {
+                    return Some(Term::zero(R));
+                }
+                let k = (j - 1) / 2;
+                // `{$(2 k - 1)!! / 2^k = prod_(i < k) (i + 1/2)$}`
+                let c = (0..k).fold(Rational::ONE, |res, i| {
+                    res * (Rational::from(i) + Rational::from_signeds(1, 2))
+                });
+                let c = if k % 2 == 0 { c } else { -c };
+                Some(value(c) * &inv_sqrt_pi)
+            },
+            &n,
+        )
     }
 
     /// `{$|a|$}`, the sign of the leading coefficient of `a`.

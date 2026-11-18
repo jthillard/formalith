@@ -82,6 +82,21 @@ impl<T: Derivable<ExponantSet = T, ProductCoefficientSet = T>> Term<T> {
                         Context::ASINH => Some(inv_sqrt(u * u + one.clone())),
                         Context::ACOSH => Some(inv_sqrt(u * u - one.clone())),
                         Context::ATANH => Some((&one - &(u * u)).inv()),
+                        // `{$"erf"' = 2/sqrt(pi) e^(-u^2)$}`, `{$"erfi"' = 2/sqrt(pi) e^(u^2)$}`
+                        Context::ERF | Context::ERFI => {
+                            let square = if fun.get_ident() == Context::ERF {
+                                -(u * u)
+                            } else {
+                                u * u
+                            };
+                            let pi = Self::Symbol(SymbolTerm::new(Context::PI, set));
+                            Some(
+                                (&one + &one)
+                                    * inv_sqrt(pi)
+                                    * Self::Fun(Box::new(Fun::new(Context::EXP, vec![square], set)))
+                                        .normalize(),
+                            )
+                        }
                         // `{$|u|' = sign(u) u'$}`, except at 0
                         Context::ABS => Some(apply(Context::SIGN)),
                         // `{$sign' = 0$}`, except at 0

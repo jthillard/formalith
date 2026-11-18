@@ -79,7 +79,7 @@ fn hermite_reduce(mut a: Poly, d: &Poly, x: Symbol) -> (Expr, Poly, Poly) {
 }
 
 /// The monic irreducible factors over `{$QQ$}` of a square-free polynomial.
-fn factor(d: &Poly, x: Symbol) -> Vec<Poly> {
+pub(super) fn factor(d: &Poly, x: Symbol) -> Vec<Poly> {
     if d.degree() <= 1 {
         return vec![d.monic()];
     }

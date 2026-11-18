@@ -4,14 +4,19 @@
 //! polynomial denominators, zeros of `sin` and `cos` in denominators, and poles of `tan` in the antiderivative
 //! (from the substitution `{$t = tan(u / 2)$}`). Other denominators must keep the same sign on the interval, which
 //! is checked at sample points.
+//!
+//! Before that, parts of the integrand made of inverse trigonometric functions which are constant on the interval
+//! are replaced by their value, and on symmetric intervals `{$[-b, b]$}`, `{$f(x) + f(-x)$}` is integrated on
+//! `{$[0, b]$}` when it simplifies to a rational function.
 
 use std::cmp::Ordering;
 
 use malachite::{
     Rational,
+    rational::arithmetic::traits::SimplestRationalInInterval,
     base::{
         num::{
-            arithmetic::traits::{Abs, Ceiling, PowerOf2},
+            arithmetic::traits::{Abs, Ceiling, CheckedSqrt, Floor, PowerOf2},
             conversion::traits::RoundingFrom,
         },
         rounding_modes::RoundingMode,
@@ -30,8 +35,9 @@ use crate::{
 };
 
 use super::{
-    DIGITS, Expr, IntegrateError, IntegrateResult, Real, constant_sign, factors, linear, poly::Poly,
-    unary,
+    DIGITS, Expr, IntegrateError, IntegrateResult, Real, constant_sign, factors, linear, map_tree,
+    poly::{Poly, rational_function},
+    risch, unary,
 };
 
 /// Bits of the numerical check of values computed by substitution.
@@ -48,10 +54,10 @@ pub(super) fn integrate(f: &Expr, x: Symbol, a: &Expr, b: &Expr) -> IntegrateRes
     if a == b {
         return Ok(Term::zero(R));
     }
-    let antiderivative = f.integrate(x)?;
     let numeric = |t: &Expr| is_infinite(t) || is_constant(t);
     if !(numeric(a) && numeric(b)) {
         // Symbolic bounds: only without any possible singularity
+        let antiderivative = f.integrate(x)?;
         if !regular(f, x) || !regular(&antiderivative, x) {
             return Err(IntegrateError::Unsupported);
         }
@@ -63,6 +69,12 @@ pub(super) fn integrate(f: &Expr, x: Symbol, a: &Expr, b: &Expr) -> IntegrateRes
         Some(Ordering::Greater) => return integrate(f, x, b, a).map(|res| -res),
         _ => {}
     }
+    let interval = (a_value, b_value);
+    let f = &constant_parts(f, x, interval);
+    if let Some(res) = symmetric(f, x, a, b, interval) {
+        return res;
+    }
+    let antiderivative = f.integrate(x)?;
     let mut points = vec![];
     singular_points(f, x, (a_value, b_value), &mut points)?;
     singular_points(&antiderivative, x, (a_value, b_value), &mut points)?;
@@ -357,4 +369,207 @@ fn same_sign(term: &Expr, x: Symbol, interval: (f64, f64)) -> IntegrateResult<()
         }
     }
     Ok(())
+}
+
+/// Whether `p` is strictly inside the interval, away from its bounds.
+fn interior(p: f64, interval: (f64, f64)) -> bool {
+    interval.0 + 1e-12 < p && p < interval.1 - 1e-12
+}
+
+/// A simple rational point strictly inside the interval, 0 when possible.
+fn interior_point(interval: (f64, f64)) -> Option<Rational> {
+    Some(match (interval.0.is_finite(), interval.1.is_finite()) {
+        (true, true) => Rational::simplest_rational_in_open_interval(
+            &Rational::try_from(interval.0).ok()?,
+            &Rational::try_from(interval.1).ok()?,
+        ),
+        (false, true) => Rational::from((&Rational::try_from(interval.1).ok()?).floor()) - Rational::from(1),
+        (true, false) => Rational::from((&Rational::try_from(interval.0).ok()?).ceiling()) + Rational::from(1),
+        (false, false) => Rational::from(0),
+    })
+}
+
+/// Whether `term` contains `asin`, `acos` or `atan`.
+fn has_inverse_trig(term: &Expr) -> bool {
+    match term {
+        Term::Value(_) | Term::Symbol(_) => false,
+        Term::Add(add) => add.iter().any(has_inverse_trig),
+        Term::Mul(mul) => mul.iter().any(has_inverse_trig),
+        Term::Pow(pow) => has_inverse_trig(&pow.base) || has_inverse_trig(&pow.exponant),
+        Term::Fun(fun) => {
+            matches!(fun.get_ident(), Context::ASIN | Context::ACOS | Context::ATAN)
+                || fun.get_args::<Real>().into_iter().flatten().any(has_inverse_trig)
+        }
+    }
+}
+
+/// `f` with its sums and functions of inverse trigonometric functions which are constant on the open interval
+/// replaced by their value, like `{$acos(2x / (1 + x^2)) + atan(2x / (1 - x^2)) = pi/2$}` on `{$(-1, 1)$}`.
+fn constant_parts(f: &Expr, x: Symbol, interval: (f64, f64)) -> Expr {
+    if !has_inverse_trig(f) {
+        return f.clone();
+    }
+    let Some(point) = interior_point(interval) else {
+        return f.clone();
+    };
+    // Points where inverse trigonometric functions have exact values, tried first for a value without them
+    let sqrt = |n: i64| value(Rational::from(n)).pow(&value(Rational::from_signeds(1, 2)));
+    let mut candidates = vec![value(point)];
+    for p in [
+        Term::zero(R),
+        Term::one(R),
+        value(Rational::from_signeds(1, 2)),
+        sqrt(3),
+        sqrt(3) / value(Rational::from(3)),
+        sqrt(2) / value(Rational::from(2)),
+        sqrt(3) / value(Rational::from(2)),
+    ] {
+        candidates.insert(candidates.len() - 1, -&p);
+        candidates.insert(candidates.len() - 1, p);
+    }
+    candidates.retain(|p| to_f64(p).is_some_and(|p| interior(p, interval)));
+    map_tree(f, &|t| {
+        if !depends(t, x) {
+            return Some(t.clone());
+        }
+        if matches!(t, Term::Add(_) | Term::Fun(_))
+            && has_inverse_trig(t)
+            && locally_constant(t, x, interval)
+        {
+            let values = candidates.iter().filter_map(|p| t.substitute(x, p));
+            let values: Vec<_> = values.collect();
+            return values
+                .iter()
+                .find(|v| !has_inverse_trig(v))
+                .or_else(|| values.last())
+                .cloned();
+        }
+        None
+    })
+}
+
+/// Whether `g` is constant on the open interval: it has no singular point there, and its derivative is exactly
+/// zero once square roots of squares are written with the sign they have on the interval.
+fn locally_constant(g: &Expr, x: Symbol, interval: (f64, f64)) -> bool {
+    let mut points = vec![];
+    if singular_points(g, x, interval, &mut points).is_err()
+        || points.iter().any(|(p, _)| interior(*p, interval))
+    {
+        return false;
+    }
+    let derivative = map_tree(&g.derivative(x), &|t| square_root(t, x, interval));
+    rational_function(&derivative, x).is_some_and(|(p, _)| p.is_zero())
+}
+
+/// `{$r^(n/2)$}` as `{$(plus.minus c p / q)^n$}` for a rational function `{$r = c^2 p^2 / q^2$}` of `x`, the sign
+/// of `{$p / q$}` being constant on the interval.
+fn square_root(t: &Expr, x: Symbol, interval: (f64, f64)) -> Option<Expr> {
+    let Term::Pow(pow) = t else {
+        return None;
+    };
+    let Term::Value(exponant) = &**pow.exponant else {
+        return None;
+    };
+    if exponant.value.denominator_ref() != &2 || !depends(&pow.base, x) {
+        return None;
+    }
+    let (p, q) = rational_function(&pow.base, x)?;
+    let (c, p) = polynomial_sqrt(&p)?;
+    let (d, q) = polynomial_sqrt(&q)?;
+    let mut points = vec![];
+    polynomial_zeros(&p, x, interval, &mut points).ok()?;
+    polynomial_zeros(&q, x, interval, &mut points).ok()?;
+    if points.iter().any(|(p, _)| interior(*p, interval)) {
+        return None;
+    }
+    let point = interior_point(interval)?;
+    let c = match (p.eval(&point) * q.eval(&point)).partial_cmp(&0)? {
+        Ordering::Greater => c / d,
+        Ordering::Less => -c / d,
+        Ordering::Equal => return None,
+    };
+    let root = value(c) * p.to_term(x) / q.to_term(x);
+    Some(root.pow(&value(Rational::from(2) * &exponant.value)))
+}
+
+/// `{$(c, q)$}` with `{$p = c^2 q^2$}`, `c` rational and `q` monic, if `p` is such a square.
+fn polynomial_sqrt(p: &Poly) -> Option<(Rational, Poly)> {
+    if p.is_zero() {
+        return None;
+    }
+    let c = (&p.leading()).checked_sqrt()?;
+    let mut root = Poly::one();
+    for (i, factor) in p.square_free().iter().enumerate() {
+        let multiplicity = i + 1;
+        if factor.degree() > 0 {
+            if multiplicity % 2 == 1 {
+                return None;
+            }
+            root = root.mul(&factor.pow(multiplicity / 2));
+        }
+    }
+    Some((c, root))
+}
+
+/// Whether `term` is continuous wherever its denominators don't vanish (which [`singular_points`] checks): it has
+/// no `ln`, no fractional power, and only functions continuous on their argument (or `tan`, whose poles are found
+/// by [`singular_points`]).
+fn continuous(term: &Expr, x: Symbol) -> bool {
+    if !depends(term, x) {
+        return true;
+    }
+    match term {
+        Term::Value(_) | Term::Symbol(_) => true,
+        Term::Add(add) => add.iter().all(|t| continuous(t, x)),
+        Term::Mul(mul) => mul.iter().all(|t| continuous(t, x)),
+        Term::Pow(pow) => {
+            !depends(&pow.exponant, x) && pow.exponant.to_i64().is_some() && continuous(&pow.base, x)
+        }
+        Term::Fun(_) => match unary(term) {
+            Some((
+                Context::EXP
+                | Context::SIN
+                | Context::COS
+                | Context::TAN
+                | Context::ATAN
+                | Context::ABS
+                | Context::ERF
+                | Context::ERFI,
+                u,
+            )) => continuous(u, x),
+            _ => false,
+        },
+    }
+}
+
+/// `{$integral_(-b)^b f = integral_0^b (f(x) + f(-x))$}` when `f` is continuous on the finite interval, is not a
+/// rational function, and `{$f(x) + f(-x)$}` is one (like `{$1/(e^x + 1) + 1/(e^(-x) + 1) = 1$}`), checked by
+/// writing it in its Risch tower. Constant factors are left out.
+fn symmetric(
+    f: &Expr,
+    x: Symbol,
+    a: &Expr,
+    b: &Expr,
+    interval: (f64, f64),
+) -> Option<IntegrateResult<Expr>> {
+    if !(interval.0.is_finite() && interval.1.is_finite()) || !(a + b).is_zero() || !continuous(f, x) {
+        return None;
+    }
+    let mut points = vec![];
+    singular_points(f, x, interval, &mut points).ok()?;
+    if !points.is_empty() {
+        return None;
+    }
+    let one = Term::one(R);
+    let (constant, g) = factors(f).into_iter().partition::<Vec<_>, _>(|t| !depends(t, x));
+    let constant = constant.iter().fold(one.clone(), |res, t| res * t);
+    let g = g.iter().fold(one, |res, t| res * t);
+    if risch::canonical(&g, x).is_none_or(|(_, level)| level <= 1) {
+        return None;
+    }
+    let (s, level) = risch::canonical(&(&g + &g.substitute(x, &-variable(x))?), x)?;
+    if level > 1 {
+        return None;
+    }
+    Some(integrate(&s, x, &Term::zero(R), b).map(|res| constant * res))
 }
