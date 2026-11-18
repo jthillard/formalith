@@ -150,6 +150,33 @@ impl<From: Set, T: Set> Print for Fun<From, T> {
         let mut args: Vec<_> = self.args.iter().collect();
         if options.typst {
             let name = self.get_ident_as_str();
+            if let (Context::LIM, [fun, x, point, direction @ ..]) = (self.ident, args.as_slice()) {
+                let side = match direction {
+                    [] => Some(""),
+                    [direction] => {
+                        match direction
+                            .with_options(PrintOptions::typst())
+                            .to_string()
+                            .as_str()
+                        {
+                            "1" => Some("^+"),
+                            "-1" => Some("^-"),
+                            _ => None,
+                        }
+                    }
+                    _ => None,
+                };
+                if let Some(side) = side {
+                    // `{$lim_(x -> a^+) (f)$}`
+                    f.write_str("lim_(")?;
+                    x.print(options, f)?;
+                    f.write_str(" -> ")?;
+                    point.print(options, f)?;
+                    write!(f, "{side}) (")?;
+                    fun.print(options, f)?;
+                    return f.write_str(")");
+                }
+            }
             match self.ident {
                 Context::CONJ => f.write_str("overline")?,
                 Context::RE => f.write_str("Re")?,

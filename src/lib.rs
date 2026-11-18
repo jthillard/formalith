@@ -28,6 +28,7 @@ pub mod combinatorics;
 pub mod context;
 pub mod field;
 mod iter;
+pub mod limit;
 pub mod matrix;
 pub mod parser;
 pub mod polynom;

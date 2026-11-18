@@ -1,6 +1,6 @@
 //! The real field `{$RR$}`.
 
-mod approx;
+pub(crate) mod approx;
 
 use std::{cmp::Ordering, marker::PhantomData};
 
@@ -18,6 +18,7 @@ use crate::{
     field::{
         Derivable, Field, Group, PartiallyOrderedSet, Ring, Set, SetParseExpression, matrix::M,
     },
+    limit::Direction,
     parser::Parser,
     polynom::ToTerm,
     printer::PrettyPrinter,
@@ -315,6 +316,15 @@ impl Ring for R<Rational> {
                         }
                     }
                 }
+                Context::LIM => {
+                    if let Some([f, Term::Symbol(x), point, direction @ ..]) =
+                        fun.get_args::<Self>().map(Vec::as_slice)
+                        && let Some(direction) = Direction::from_args(direction)
+                        && let Ok(res) = f.limit(x.symbol, point, direction)
+                    {
+                        return res;
+                    }
+                }
                 Context::DET => {
                     if let Some(Term::Value(matrix)) = fun.get_arg::<M<TermSet<Self>>>()
                         && let Ok(res) = matrix.value.det()
@@ -523,6 +533,19 @@ impl R<Rational> {
             (Context::LN, [x]) if x.is_one() => Some(value(Rational::ZERO)),
             (Context::LN, [Term::Symbol(x)]) if x.symbol == Context::E => {
                 Some(value(Rational::ONE))
+            }
+            // `{$e^(ln c) = c$}` for a positive constant `c`
+            (Context::EXP, [Term::Fun(inner)])
+                if inner.get_ident() == Context::LN
+                    && inner.get_arg::<Self>().is_some_and(|arg| {
+                        matches!(arg, Term::Value(_)) && arg.is_strictly_positive()
+                    }) =>
+            {
+                inner.get_arg::<Self>().cloned()
+            }
+            // `{$ln(e^u) = u$}` for a real `u`
+            (Context::LN, [Term::Fun(inner)]) if inner.get_ident() == Context::EXP => {
+                inner.get_arg::<Self>().cloned()
             }
             (Context::SQRT, [x]) => Some(x.pow(&value(Rational::from_signeds(1, 2)))),
             (Context::ROOT, [x, n]) => Some(x.pow(&n.inv())),

@@ -165,17 +165,21 @@ impl Context {
     pub const PI: Symbol = Symbol(27);
     /// Euler's number `{$e$}`
     pub const E: Symbol = Symbol(28);
+    /// Limit `lim(f, x, a)`, or `lim(f, x, a, 1)` and `lim(f, x, a, -1)` for right and left limits
+    pub const LIM: Symbol = Symbol(29);
+    /// Infinity `{$oo$}`, a limit point or the result of a limit
+    pub const OO: Symbol = Symbol(30);
 
-    const BUILTIN_NAMES: [&'static str; 29] = [
+    const BUILTIN_NAMES: [&'static str; 31] = [
         "abs", "det", "expand", "factor", "simplify", "re", "im", "conj", "sqrt", "root", "sign",
         "floor", "ceil", "min", "max", "gcd", "lcm", "quo", "rem", "diff", "solve", "approx",
-        "exp", "ln", "sin", "cos", "tan", "pi", "e",
+        "exp", "ln", "sin", "cos", "tan", "pi", "e", "lim", "oo",
     ];
 
     /// Return `true` if `symbol` is a builtin constant, like `{$pi$}`, which is not a function.
     #[must_use]
     pub const fn is_builtin_constant(symbol: Symbol) -> bool {
-        matches!(symbol, Self::PI | Self::E)
+        matches!(symbol, Self::PI | Self::E | Self::OO)
     }
 
     /// Return the minimum and maximum number of arguments of a builtin function, or `None` if `symbol` isn't a builtin.
@@ -185,7 +189,8 @@ impl Context {
             Self::ROOT | Self::GCD | Self::LCM | Self::QUO | Self::REM | Self::DIFF => Some((2, 2)),
             Self::MIN | Self::MAX | Self::SOLVE => Some((1, usize::MAX)),
             Self::APPROX => Some((1, 2)),
-            Self::PI | Self::E => Some((0, 0)),
+            Self::LIM => Some((3, 4)),
+            Self::PI | Self::E | Self::OO => Some((0, 0)),
             Symbol(id) if id < Self::BUILTIN_NAMES.len() => Some((1, 1)),
             _ => None,
         }

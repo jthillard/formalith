@@ -273,7 +273,7 @@ fn bits_for_digits(digits: u64) -> u64 {
 
 /// Approximate a term without symbols, other than builtin constants, to `digits` significant digits. Return `None`
 /// if the term contains symbols or can't be evaluated, like `{$ln(-1)$}`.
-pub(super) fn approximate(term: &Term<Real>, digits: u64) -> Option<Rational> {
+pub(crate) fn approximate(term: &Term<Real>, digits: u64) -> Option<Rational> {
     let needed = bits_for_digits(digits) + GUARD_BITS / 2;
     let max_bits = 4 * needed + 4096;
     let mut bits = needed + GUARD_BITS;
