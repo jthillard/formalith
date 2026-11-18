@@ -10,7 +10,7 @@ use super::{Flags, Fun, Normalize, SymbolTerm, Term, Value};
 impl<T: Derivable<ExponantSet = T, ProductCoefficientSet = T>> Term<T> {
     /// Derivative of the expression with respect to `x`.
     ///
-    /// Parts which can't be differentiated, like functions other than `exp`, `ln`, `sin`, `cos` and `tan`, or `{$x^x$}`,
+    /// Parts which can't be differentiated, like `abs` or `{$x^x$}`,
     /// are kept as an unevaluated `diff(f, x)`.
     #[must_use]
     pub fn derivative(&self, x: Symbol) -> Self {
@@ -53,6 +53,9 @@ impl<T: Derivable<ExponantSet = T, ProductCoefficientSet = T>> Term<T> {
                     let apply = |ident| {
                         Self::Fun(Box::new(Fun::new(ident, vec![u.clone()], set))).normalize()
                     };
+                    let one = Self::one(set);
+                    // `{$1 / sqrt(v)$}`
+                    let inv_sqrt = |v: Self| v.pow(&-(&one + &one).inv());
                     // `{$f(u)' = f'(u) u'$}`
                     let outer = match fun.get_ident() {
                         Context::EXP => Some(self.clone()),
@@ -60,7 +63,18 @@ impl<T: Derivable<ExponantSet = T, ProductCoefficientSet = T>> Term<T> {
                         Context::SIN => Some(apply(Context::COS)),
                         Context::COS => Some(-apply(Context::SIN)),
                         // `{$tan' = 1 + tan^2$}`
-                        Context::TAN => Some(Self::one(set) + self * self),
+                        Context::TAN => Some(one.clone() + self * self),
+                        Context::SINH => Some(apply(Context::COSH)),
+                        Context::COSH => Some(apply(Context::SINH)),
+                        // `{$tanh' = 1 - tanh^2$}`
+                        Context::TANH => Some(one.clone() - self * self),
+                        // `{$asin' = 1 / sqrt(1 - u^2)$}`, `{$acos' = -1 / sqrt(1 - u^2)$}`
+                        Context::ASIN => Some(inv_sqrt(&one - &(u * u))),
+                        Context::ACOS => Some(-inv_sqrt(&one - &(u * u))),
+                        Context::ATAN => Some((&one + &(u * u)).inv()),
+                        Context::ASINH => Some(inv_sqrt(u * u + one.clone())),
+                        Context::ACOSH => Some(inv_sqrt(u * u - one.clone())),
+                        Context::ATANH => Some((&one - &(u * u)).inv()),
                         _ => None,
                     };
                     if let Some(outer) = outer {

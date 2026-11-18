@@ -5,9 +5,12 @@ pub(crate) mod approx;
 use std::{cmp::Ordering, marker::PhantomData};
 
 use malachite::{
-    Natural, Rational,
+    Integer, Natural, Rational,
     base::num::{
-        arithmetic::traits::{Abs, Ceiling, CheckedRoot, Floor, Gcd, Lcm, Parity, Pow, Sign},
+        arithmetic::traits::{
+            Abs, BinomialCoefficient, Ceiling, CheckedRoot, Factorial, Floor, Gcd, Lcm, Parity,
+            Pow, Reciprocal, Sign,
+        },
         basic::traits::{NegativeOne, One, Zero},
         conversion::traits::FromSciString,
     },
@@ -24,6 +27,11 @@ use crate::{
     printer::PrettyPrinter,
     term::{self, Expand, Fun, Normalize, SymbolTerm, Term, TermSet, Value, flags::Flags},
 };
+
+/// Largest `n` for which `{$n!$}` is evaluated, to avoid huge computations.
+const MAX_FACTORIAL: u64 = 100_000;
+/// Maximum exponent tried when evaluating `{$log_b(x)$}` as an integer.
+const MAX_LOG_ITERATIONS: i64 = 4096;
 
 /// The real field `{$RR$}`.
 #[derive(Clone, PartialEq, Eq, Hash)]
@@ -337,10 +345,9 @@ impl Ring for R<Rational> {
                     {
                         let (order, direction) = match rest {
                             [] => (Some(Rational::from(6)), Some(Direction::Both)),
-                            [Term::Value(order), direction @ ..] => (
-                                Some(order.value.clone()),
-                                Direction::from_args(direction),
-                            ),
+                            [Term::Value(order), direction @ ..] => {
+                                (Some(order.value.clone()), Direction::from_args(direction))
+                            }
                             _ => (None, None),
                         };
                         if let (Some(order), Some(direction)) = (order, direction)
@@ -585,6 +592,40 @@ impl R<Rational> {
             (Context::FLOOR, [Term::Value(x)]) => Some(value(Rational::from((&x.value).floor()))),
             (Context::CEIL, [Term::Value(x)]) => Some(value(Rational::from((&x.value).ceiling()))),
             (Context::MIN | Context::MAX, args) => self.eval_extremum(ident, args),
+            (Context::SINH | Context::TANH | Context::ASINH | Context::ATANH, [x])
+                if x.is_zero() =>
+            {
+                Some(value(Rational::ZERO))
+            }
+            (Context::COSH, [x]) if x.is_zero() => Some(value(Rational::ONE)),
+            (Context::ACOSH, [x]) if x.is_one() => Some(value(Rational::ZERO)),
+            (Context::ASIN | Context::ACOS | Context::ATAN, [x]) => {
+                self.eval_inverse_trig(ident, x)
+            }
+            (Context::COT, [x]) => {
+                Some(self.fun(Context::COS, x.clone()) / self.fun(Context::SIN, x.clone()))
+            }
+            (Context::SEC, [x]) => Some(self.fun(Context::COS, x.clone()).inv()),
+            (Context::CSC, [x]) => Some(self.fun(Context::SIN, x.clone()).inv()),
+            (Context::LOG, [x]) => Some(self.eval_log(x, &value(Rational::from(10)))),
+            (Context::LOG, [x, base]) => Some(self.eval_log(x, base)),
+            (Context::FACTORIAL, [Term::Value(n)]) => {
+                let n = u64::try_from(&n.value)
+                    .ok()
+                    .filter(|n| *n <= MAX_FACTORIAL)?;
+                Some(value(Rational::from(Natural::factorial(n))))
+            }
+            (Context::BINOMIAL, [Term::Value(n), Term::Value(k)]) => {
+                let (n, k) = (
+                    Integer::try_from(&n.value).ok()?,
+                    Integer::try_from(&k.value).ok()?,
+                );
+                if k < 0 || (n >= 0 && k > n) {
+                    return Some(value(Rational::ZERO));
+                }
+                let (n, k) = (Natural::try_from(n).ok()?, Natural::try_from(k).ok()?);
+                Some(value(Rational::from(Natural::binomial_coefficient(n, k))))
+            }
             (Context::GCD, [Term::Value(a), Term::Value(b)]) => {
                 Some(value(Self::gcd_rational(&a.value, &b.value)))
             }
@@ -607,6 +648,84 @@ impl R<Rational> {
             }
             _ => None,
         }
+    }
+
+    /// Evaluate `{$log_b(x) = ln(x) / ln(b)$}`, an integer `k` when `{$x = b^k$}` for rational `x` and `b`.
+    fn eval_log(self, x: &Term<Self>, base: &Term<Self>) -> Term<Self> {
+        if let (Term::Value(x), Term::Value(base)) = (x, base)
+            && let Some(k) = Self::integer_log(&x.value, &base.value)
+        {
+            return Term::Value(Value::new(Rational::from(k), self));
+        }
+        self.fun(Context::LN, x.clone()) / self.fun(Context::LN, base.clone())
+    }
+
+    /// The integer `k` such that `{$x = b^k$}`, if any, for positive `x` and `{$b != 1$}`.
+    fn integer_log(x: &Rational, b: &Rational) -> Option<i64> {
+        if *x <= 0 || *b <= 0 || *b == 1 {
+            return None;
+        }
+        // `{$log_b(x) = -log_b(1/x) = -log_(1/b)(x)$}`, reduce to `{$x >= 1$}` and `{$b > 1$}`
+        let (x, sign) = if *x < 1 {
+            (x.reciprocal(), -1)
+        } else {
+            (x.clone(), 1)
+        };
+        let (b, sign) = if *b < 1 {
+            (b.reciprocal(), -sign)
+        } else {
+            (b.clone(), sign)
+        };
+        let mut power = Rational::ONE;
+        for k in 0..MAX_LOG_ITERATIONS {
+            match power.cmp(&x) {
+                Ordering::Equal => return Some(sign * k),
+                Ordering::Greater => return None,
+                Ordering::Less => power *= &b,
+            }
+        }
+        None
+    }
+
+    /// Evaluate `asin`, `acos` or `atan` at the classic values, like `{$asin(1/2) = pi/6$}`.
+    fn eval_inverse_trig(self, ident: Symbol, x: &Term<Self>) -> Option<Term<Self>> {
+        let value = |n, d| Term::Value(Value::new(Rational::from_signeds(n, d), self));
+        let sqrt = |n| value(n, 1).pow(&value(1, 2));
+        let pi = Term::Symbol(SymbolTerm::new(Context::PI, self));
+        let angle = |d| &pi / &value(d, 1);
+        // Pairs `{$(x, f(x))$}` for non-negative `x`, `f` being odd
+        let table = if ident == Context::ATAN {
+            vec![
+                (value(0, 1), value(0, 1)),
+                (sqrt(3) / value(3, 1), angle(6)),
+                (value(1, 1), angle(4)),
+                (sqrt(3), angle(3)),
+            ]
+        } else {
+            vec![
+                (value(0, 1), value(0, 1)),
+                (value(1, 2), angle(6)),
+                (sqrt(2) / value(2, 1), angle(4)),
+                (sqrt(3) / value(2, 1), angle(3)),
+                (value(1, 1), angle(2)),
+            ]
+        };
+        let opposite = -x;
+        let res = table.into_iter().find_map(|(at, res)| {
+            if at == *x {
+                Some(res)
+            } else if at == opposite {
+                Some(-res)
+            } else {
+                None
+            }
+        })?;
+        Some(if ident == Context::ACOS {
+            // `{$acos(x) = pi/2 - asin(x)$}`
+            angle(2) - res
+        } else {
+            res
+        })
     }
 
     /// Evaluate `min(args)` or `max(args)`, merging every constant argument into one.

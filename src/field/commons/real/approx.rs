@@ -9,7 +9,8 @@ use malachite::{
     base::{
         num::{
             arithmetic::traits::{
-                Abs, DivRound, DivisibleBy, Floor, FloorLogBase2, FloorRoot, Pow, UnsignedAbs,
+                Abs, DivRound, DivisibleBy, Floor, FloorLogBase2, FloorRoot, Pow, Reciprocal,
+                UnsignedAbs,
             },
             basic::traits::{One, Zero},
         },
@@ -18,7 +19,7 @@ use malachite::{
 };
 
 use crate::{
-    context::Context,
+    context::{Context, Symbol},
     term::{Add, Fun, Mul, Normalize, Term, Value, flags::Flags},
 };
 
@@ -178,6 +179,86 @@ impl Fixed {
         Some(if *x < 0 { -root } else { root })
     }
 
+    /// `{$arctan(x)$}`, using `{$arctan(x) = plus.minus pi/2 - arctan(1/x)$}` for `{$|x| > 1$}`, then
+    /// `{$arctan(y) = 2 arctan(y / (1 + sqrt(1 + y^2)))$}` to make the Taylor series converge faster.
+    fn arctan(self, x: &Rational) -> Rational {
+        // Odd, and the Taylor series needs a non-negative argument: shifts round down, so negative terms never
+        // reach zero
+        if *x < 0 {
+            return -self.arctan(&-x);
+        }
+        if *x > 1 {
+            let half_pi = self.to_rational(self.pi() >> 1_u64);
+            return half_pi - self.arctan(&x.reciprocal());
+        }
+        let mut y = self.from_rational(x);
+        for _ in 0..HALVINGS / 2 {
+            // `{$sqrt(1 + y^2) 2^"bits" = sqrt((1 + y^2) 2^(2 "bits"))$}`
+            let square = (self.one() + self.mul(&y, &y)) << self.bits;
+            let sqrt = Integer::from(square.unsigned_abs().floor_root(2));
+            y = self.div(&y, &(self.one() + sqrt));
+        }
+        let y2 = self.mul(&y, &y);
+        let mut power = y;
+        let mut sum = Integer::ZERO;
+        let mut k = 0_u64;
+        while power != 0 {
+            let term = &power / Integer::from(2 * k + 1);
+            if k % 2 == 0 {
+                sum += term;
+            } else {
+                sum -= term;
+            }
+            power = self.mul(&power, &y2);
+            k += 1;
+        }
+        self.to_rational(sum << (HALVINGS / 2))
+    }
+
+    /// `{$arcsin(x)$}` for `{$|x| <= 1$}`, `{$arcsin(x) = arctan(x / sqrt(1 - x^2))$}`.
+    fn arcsin(self, x: &Rational) -> Option<Rational> {
+        let cos = self.root(&(Rational::ONE - x * x), 2)?;
+        if cos == 0 {
+            let half_pi = self.to_rational(self.pi() >> 1_u64);
+            return (x.abs() == 1).then(|| if *x > 0 { half_pi } else { -half_pi });
+        }
+        Some(self.arctan(&(x / cos)))
+    }
+
+    /// Evaluate the hyperbolic functions and the inverse trigonometric and hyperbolic functions at `x`, `None`
+    /// outside of their domain.
+    fn eval_elementary(self, ident: Symbol, x: &Rational) -> Option<Rational> {
+        let ln = |y: &Rational| (*y > 0).then(|| self.to_rational(self.ln(y)));
+        let half = |y: Rational| y >> 1_u64;
+        Some(match ident {
+            Context::ATAN => self.arctan(x),
+            Context::ASIN => self.arcsin(x)?,
+            Context::ACOS => self.to_rational(self.pi() >> 1_u64) - self.arcsin(x)?,
+            Context::SINH | Context::COSH | Context::TANH => {
+                let exp = self.exp_rational(x)?;
+                if exp == 0 {
+                    return None;
+                }
+                let inv = exp.clone().reciprocal();
+                match ident {
+                    Context::SINH => half(exp - inv),
+                    Context::COSH => half(exp + inv),
+                    _ => (&exp - &inv) / (exp + inv),
+                }
+            }
+            // `{$"asinh"(x) = ln(x + sqrt(x^2 + 1))$}`, odd to avoid a cancellation for negative `x`
+            Context::ASINH => {
+                let res = ln(&(x.abs() + self.root(&(x * x + Rational::ONE), 2)?))?;
+                if *x < 0 { -res } else { res }
+            }
+            Context::ACOSH if *x >= 1 => ln(&(x + self.root(&(x * x - Rational::ONE), 2)?))?,
+            Context::ATANH if x.abs() < 1 => {
+                half(ln(&((Rational::ONE + x) / (Rational::ONE - x)))?)
+            }
+            _ => return None,
+        })
+    }
+
     /// `{$e^x$}` for a rational `x`.
     fn exp_rational(self, x: &Rational) -> Option<Rational> {
         if x.abs() > MAX_EXP_ARGUMENT {
@@ -247,6 +328,18 @@ impl Fixed {
                             _ => (cos != 0).then(|| self.to_rational(self.div(&sin, &cos))),
                         }
                     }
+                    (
+                        ident @ (Context::ASIN
+                        | Context::ACOS
+                        | Context::ATAN
+                        | Context::SINH
+                        | Context::COSH
+                        | Context::TANH
+                        | Context::ASINH
+                        | Context::ACOSH
+                        | Context::ATANH),
+                        [x],
+                    ) => self.eval_elementary(ident, &self.evaluate(x)?),
                     (ident, args) => {
                         // Other builtins, like `abs` or `floor`, are evaluated on approximated arguments
                         let set = fun.get_set();

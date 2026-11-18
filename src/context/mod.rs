@@ -174,13 +174,44 @@ impl Context {
     /// Series expansion `series(f, x, a, n)` up to `{$O((x - a)^n)$}`, `series(f, x, a, n, 1)` and
     /// `series(f, x, a, n, -1)` for right and left expansions
     pub const SERIES: Symbol = Symbol(32);
+    /// Arcsine function
+    pub const ASIN: Symbol = Symbol(33);
+    /// Arccosine function
+    pub const ACOS: Symbol = Symbol(34);
+    /// Arctangent function
+    pub const ATAN: Symbol = Symbol(35);
+    /// Hyperbolic sine function
+    pub const SINH: Symbol = Symbol(36);
+    /// Hyperbolic cosine function
+    pub const COSH: Symbol = Symbol(37);
+    /// Hyperbolic tangent function
+    pub const TANH: Symbol = Symbol(38);
+    /// Inverse hyperbolic sine function
+    pub const ASINH: Symbol = Symbol(39);
+    /// Inverse hyperbolic cosine function
+    pub const ACOSH: Symbol = Symbol(40);
+    /// Inverse hyperbolic tangent function
+    pub const ATANH: Symbol = Symbol(41);
+    /// Cotangent function, rewritten as `{$cos / sin$}`
+    pub const COT: Symbol = Symbol(42);
+    /// Secant function, rewritten as `{$1 / cos$}`
+    pub const SEC: Symbol = Symbol(43);
+    /// Cosecant function, rewritten as `{$1 / sin$}`
+    pub const CSC: Symbol = Symbol(44);
+    /// Logarithm `log(x, b)` in base `b` (10 by default), rewritten as `{$ln(x) / ln(b)$}`
+    pub const LOG: Symbol = Symbol(45);
+    /// Factorial `{$n!$}` of a natural number
+    pub const FACTORIAL: Symbol = Symbol(46);
+    /// Binomial coefficient `binomial(n, k)`
+    pub const BINOMIAL: Symbol = Symbol(47);
 
     #[rustfmt::skip]
-    const BUILTIN_NAMES: [&'static str; 33] = [
+    const BUILTIN_NAMES: [&'static str; 48] = [
         "abs", "det", "expand", "factor", "simplify", "re", "im", "conj", "sqrt", "root", "sign",
         "floor", "ceil", "min", "max", "gcd", "lcm", "quo", "rem", "diff", "solve", "approx",
         "exp", "ln", "sin", "cos", "tan", "pi", "e", "lim", "oo", "undefined",
-        "series",
+        "series", "asin", "acos", "atan", "sinh", "cosh", "tanh", "asinh", "acosh", "atanh", "cot",
+        "sec", "csc", "log", "factorial", "binomial",
     ];
 
     /// Return `true` if `symbol` is a builtin constant, like `{$pi$}`, which is not a function.
@@ -193,9 +224,15 @@ impl Context {
     #[must_use]
     pub const fn builtin_arity(symbol: Symbol) -> Option<(usize, usize)> {
         match symbol {
-            Self::ROOT | Self::GCD | Self::LCM | Self::QUO | Self::REM | Self::DIFF => Some((2, 2)),
+            Self::ROOT
+            | Self::GCD
+            | Self::LCM
+            | Self::QUO
+            | Self::REM
+            | Self::DIFF
+            | Self::BINOMIAL => Some((2, 2)),
             Self::MIN | Self::MAX | Self::SOLVE => Some((1, usize::MAX)),
-            Self::APPROX => Some((1, 2)),
+            Self::APPROX | Self::LOG => Some((1, 2)),
             Self::LIM => Some((3, 4)),
             Self::SERIES => Some((3, 5)),
             Self::PI | Self::E | Self::OO | Self::UNDEFINED => Some((0, 0)),
