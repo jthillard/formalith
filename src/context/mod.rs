@@ -123,9 +123,40 @@ impl Context {
     /// Complex conjugate function
     pub const CONJ: Symbol = Symbol(7);
 
-    const BUILTIN_NAMES: [&'static str; 8] = [
-        "abs", "det", "expand", "factor", "simplify", "re", "im", "conj",
+    /// Square root function, evaluating to `{$x^(1/2)$}`
+    pub const SQRT: Symbol = Symbol(8);
+    /// Nth root function, `root(x, n)` evaluating to `{$x^(1/n)$}`
+    pub const ROOT: Symbol = Symbol(9);
+    /// Sign function
+    pub const SIGN: Symbol = Symbol(10);
+    /// Floor function
+    pub const FLOOR: Symbol = Symbol(11);
+    /// Ceiling function
+    pub const CEIL: Symbol = Symbol(12);
+    /// Minimum of its arguments
+    pub const MIN: Symbol = Symbol(13);
+    /// Maximum of its arguments
+    pub const MAX: Symbol = Symbol(14);
+    /// Greatest common divisor of two numbers or polynomials
+    pub const GCD: Symbol = Symbol(15);
+    /// Least common multiple of two numbers or polynomials
+    pub const LCM: Symbol = Symbol(16);
+
+    const BUILTIN_NAMES: [&'static str; 17] = [
+        "abs", "det", "expand", "factor", "simplify", "re", "im", "conj", "sqrt", "root", "sign",
+        "floor", "ceil", "min", "max", "gcd", "lcm",
     ];
+
+    /// Return the minimum and maximum number of arguments of a builtin function, or `None` if `symbol` isn't a builtin.
+    #[must_use]
+    pub const fn builtin_arity(symbol: Symbol) -> Option<(usize, usize)> {
+        match symbol {
+            Self::ROOT | Self::GCD | Self::LCM => Some((2, 2)),
+            Self::MIN | Self::MAX => Some((1, usize::MAX)),
+            Symbol(id) if id < Self::BUILTIN_NAMES.len() => Some((1, 1)),
+            _ => None,
+        }
+    }
 
     /// Create a new empty context
     #[must_use]

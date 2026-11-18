@@ -339,6 +339,17 @@ impl Ring for C<R<Rational>> {
                             .pow(&Term::Value(Value::new(half, *self)));
                     }
                 }
+                Context::SQRT => {
+                    if let Some(arg) = fun.get_arg::<Self>() {
+                        let half = [Rational::from_signeds(1, 2), Rational::ZERO];
+                        return arg.pow(&Term::Value(Value::new(half, *self)));
+                    }
+                }
+                Context::ROOT => {
+                    if let Some([arg, n]) = fun.get_args::<Self>().map(Vec::as_slice) {
+                        return arg.pow(&n.inv());
+                    }
+                }
                 ident @ (Context::RE | Context::IM | Context::CONJ) => {
                     if let Some(res) = fun
                         .get_arg::<Self>()

@@ -265,20 +265,17 @@ where
                         }
                     };
                     self.expect_token(&TokenKind::CloseParen)?;
-                    if matches!(
-                        ident,
-                        Context::ABS
-                            | Context::DET
-                            | Context::EXPAND
-                            | Context::FACTOR
-                            | Context::SIMPLIFY
-                            | Context::RE
-                            | Context::IM
-                            | Context::CONJ
-                    ) && args_count != 1
+                    if let Some((min, max)) = Context::builtin_arity(ident)
+                        && !(min..=max).contains(&args_count)
                     {
+                        let plural = if max == 1 { "" } else { "s" };
+                        let expected = match (min, max) {
+                            (min, usize::MAX) => format!("at least {min} argument{plural}"),
+                            (min, max) if min == max => format!("{min} argument{plural}"),
+                            (min, max) => format!("{min} to {max} arguments"),
+                        };
                         return Err(ParserError::new(format!(
-                            "Function {} expects 1 argument, found {args_count}",
+                            "Function {} expects {expected}, found {args_count}",
                             Context::get_symbol_data(&ident).name
                         )));
                     }

@@ -5,7 +5,7 @@ use std::{cmp::Ordering, marker::PhantomData};
 use malachite::{
     Natural, Rational,
     base::num::{
-        arithmetic::traits::{CheckedRoot, Parity, Pow, Sign},
+        arithmetic::traits::{Ceiling, CheckedRoot, Floor, Gcd, Lcm, Parity, Pow, Sign},
         basic::traits::{NegativeOne, One, Zero},
         conversion::traits::FromSciString,
     },
@@ -17,6 +17,7 @@ use crate::{
         Derivable, Field, Group, PartiallyOrderedSet, Ring, Set, SetParseExpression, matrix::M,
     },
     parser::Parser,
+    polynom::ToTerm,
     printer::PrettyPrinter,
     term::{self, Expand, Fun, Mul, Normalize, Term, TermSet, Value},
 };
@@ -232,7 +233,14 @@ impl Ring for R<Rational> {
                         return res;
                     }
                 }
-                _ => {}
+                ident => {
+                    if let Some(res) = fun
+                        .get_args::<Self>()
+                        .and_then(|args| self.eval_builtin(ident, args))
+                    {
+                        return res;
+                    }
+                }
             },
             _ => {}
         }
@@ -282,6 +290,73 @@ impl Ring for R<Rational> {
             }
             _ => a,
         }
+    }
+}
+
+impl R<Rational> {
+    /// Evaluate the builtin function `ident` on `args`, returning `None` if it can't be evaluated.
+    fn eval_builtin(self, ident: Symbol, args: &[Term<Self>]) -> Option<Term<Self>> {
+        let value = |value| Term::Value(Value::new(value, self));
+        match (ident, args) {
+            (Context::SQRT, [x]) => Some(x.pow(&value(Rational::from_signeds(1, 2)))),
+            (Context::ROOT, [x, n]) => Some(x.pow(&n.inv())),
+            (Context::SIGN, [x]) => PartialOrd::partial_cmp(x, &Term::zero(self))
+                .map(|sign| value(Rational::from(sign as i8))),
+            (Context::FLOOR, [Term::Value(x)]) => Some(value(Rational::from((&x.value).floor()))),
+            (Context::CEIL, [Term::Value(x)]) => Some(value(Rational::from((&x.value).ceiling()))),
+            (Context::MIN | Context::MAX, args) => self.eval_extremum(ident, args),
+            (Context::GCD | Context::LCM, [Term::Value(a), Term::Value(b)]) => {
+                // Over the rationals, `{$gcd(a/b, c/d) = gcd(a, c)/lcm(b, d)$}`
+                let (an, ad) = a.value.numerator_and_denominator_ref();
+                let (bn, bd) = b.value.numerator_and_denominator_ref();
+                Some(value(if ident == Context::GCD {
+                    Rational::from_naturals(an.gcd(bn), ad.lcm(bd))
+                } else {
+                    Rational::from_naturals(an.lcm(bn), ad.gcd(bd))
+                }))
+            }
+            (Context::GCD | Context::LCM, [a, b]) => {
+                let (a, b) = (a.to_polynomial(), b.to_polynomial());
+                let gcd = a.gcd(&b);
+                if ident == Context::GCD {
+                    Some(gcd.to_term())
+                } else if a.is_zero() || b.is_zero() {
+                    Some(Term::zero(self))
+                } else {
+                    Some((a.exact_div(&gcd)? * b).monic().to_term())
+                }
+            }
+            _ => None,
+        }
+    }
+
+    /// Evaluate `min(args)` or `max(args)`, merging every constant argument into one.
+    fn eval_extremum(self, ident: Symbol, args: &[Term<Self>]) -> Option<Term<Self>> {
+        let keep = if ident == Context::MIN {
+            Ordering::Less
+        } else {
+            Ordering::Greater
+        };
+        let mut extremum: Option<&Term<Self>> = None;
+        let mut rest: Vec<Term<Self>> = vec![];
+        for arg in args {
+            if let Term::Value(_) = arg {
+                if extremum.is_none_or(|e| PartialOrd::partial_cmp(arg, e) == Some(keep)) {
+                    extremum = Some(arg);
+                }
+            } else if !rest.contains(arg) {
+                rest.push(arg.clone());
+            }
+        }
+        if rest.is_empty() || (extremum.is_none() && rest.len() == 1) {
+            return extremum.cloned().or_else(|| rest.pop());
+        }
+        rest.extend(extremum.cloned());
+        if rest.len() == args.len() {
+            // Nothing was merged, keep the original term to avoid normalizing forever
+            return None;
+        }
+        Some(Term::Fun(Box::new(Fun::new(ident, rest, self))))
     }
 }
 
