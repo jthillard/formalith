@@ -181,9 +181,9 @@ impl Integrator {
             return rational::integrate(&num, &den, x);
         }
         if let Term::Add(add) = f
-            && let Some(res) = add
-                .iter()
-                .try_fold(Term::zero(R), |res, term| Some(res + self.integrate(term, x)?))
+            && let Some(res) = add.iter().try_fold(Term::zero(R), |res, term| {
+                Some(res + self.integrate(term, x)?)
+            })
         {
             return Some(res);
         }
@@ -243,7 +243,10 @@ fn split_constant(f: &Expr, x: Symbol) -> (Expr, Expr) {
                 .fold(value(mul.coefficient.clone()), |res, factor| res * factor);
             let rest = Term::Mul(Mul::new(
                 Rational::from(1),
-                mul.iter().filter(|factor| depends(factor, x)).cloned().collect(),
+                mul.iter()
+                    .filter(|factor| depends(factor, x))
+                    .cloned()
+                    .collect(),
                 R,
             ))
             .normalize();
@@ -295,9 +298,9 @@ fn map_tree(term: &Expr, rewrite: &impl Fn(&Expr) -> Option<Expr>) -> Expr {
         Term::Add(add) => add
             .iter()
             .fold(Term::zero(R), |res, t| res + map_tree(t, rewrite)),
-        Term::Mul(mul) => mul
-            .iter()
-            .fold(value(mul.coefficient.clone()), |res, t| res * map_tree(t, rewrite)),
+        Term::Mul(mul) => mul.iter().fold(value(mul.coefficient.clone()), |res, t| {
+            res * map_tree(t, rewrite)
+        }),
         Term::Pow(pow) => map_tree(&pow.base, rewrite).pow(&map_tree(&pow.exponant, rewrite)),
         Term::Fun(f) => match f.get_args::<Real>() {
             Some(args) => Term::Fun(Box::new(Fun::new(

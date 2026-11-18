@@ -9,8 +9,9 @@
 use malachite::Rational;
 
 use super::{
-    Kind, Risch, RischError, RischResult, rational_roots,
+    Kind, Risch, RischError, RischResult,
     field::{EPoly, Elem},
+    rational_roots,
     tower::sample_points,
 };
 use crate::integrate::poly::{Coefficient, Poly};
@@ -60,7 +61,13 @@ impl Risch<'_> {
     }
 
     /// A solution of `{$D y + f y = g$}`, `sure` being set to `false` when `None` isn't a proof.
-    fn solve_rde(&self, f: &Elem, g: &Elem, level: usize, sure: &mut bool) -> RischResult<Option<Elem>> {
+    fn solve_rde(
+        &self,
+        f: &Elem,
+        g: &Elem,
+        level: usize,
+        sure: &mut bool,
+    ) -> RischResult<Option<Elem>> {
         // `{$z = q y$}` with `{$D z + (f - D q / q) z = q g$}`
         let q = self.weak_normalizer(f, level)?;
         let q_elem = Elem::from_poly(level, q.clone());
@@ -122,7 +129,11 @@ impl Risch<'_> {
             .map(|c| c.as_rational().cloned())
             .collect::<Option<Vec<_>>>()
         {
-            return Ok(rational_roots(&Poly::new(q), x).0.into_iter().filter(positive).collect());
+            return Ok(rational_roots(&Poly::new(q), x)
+                .0
+                .into_iter()
+                .filter(positive)
+                .collect());
         }
         // The constant roots of `r` are roots of `r` evaluated at a point
         for point in sample_points(self.tower.height()).take(8) {
@@ -149,7 +160,12 @@ impl Risch<'_> {
 
     /// `{$(a, b, c, h)$}` such that the solutions are `{$y = z / h$}` with `{$a D z + b z = c$}`, `a` being a
     /// polynomial, and `b`, `c` having special denominators, or `None` when there is no solution.
-    fn normal_denominator(&self, f: &Elem, g: &Elem, level: usize) -> Option<(EPoly, Elem, Elem, EPoly)> {
+    fn normal_denominator(
+        &self,
+        f: &Elem,
+        g: &Elem,
+        level: usize,
+    ) -> Option<(EPoly, Elem, Elem, EPoly)> {
         let (_, fd) = f.fraction(level);
         let (_, gd) = g.fraction(level);
         let (dn, _) = self.tower.split_factor(&fd, level);
@@ -179,7 +195,11 @@ impl Risch<'_> {
     ) -> RischResult<(EPoly, EPoly, EPoly, EPoly)> {
         let poly = |e: &Elem| {
             let (num, den) = e.fraction(level);
-            if den.is_one_poly() { Ok(num) } else { Err(RischError::Unsupported) }
+            if den.is_one_poly() {
+                Ok(num)
+            } else {
+                Err(RischError::Unsupported)
+            }
         };
         if !matches!(self.tower.kind(level), Kind::Exp(_)) {
             return Ok((a.clone(), poly(b)?, poly(c)?, EPoly::one()));
@@ -189,14 +209,20 @@ impl Risch<'_> {
                 return -ZERO_DEGREE;
             }
             let (num, den) = e.fraction(level);
-            i64::try_from(num.order_at_zero()).unwrap_or(0) - i64::try_from(den.order_at_zero()).unwrap_or(0)
+            i64::try_from(num.order_at_zero()).unwrap_or(0)
+                - i64::try_from(den.order_at_zero()).unwrap_or(0)
         };
         let (nb, nc) = (order(b), order(c));
         let mut n = 0.min(nc - 0.min(nb));
         let eta = self.tower.eta(level);
         if nb == 0 {
             // `{$alpha = -b(0) / a(0) = D z / z + m eta$}` allows `{$t^(-m)$}` in the denominator
-            let alpha = b.fraction(level).0.coefficient(0).divide(&a.coefficient(0)).negate();
+            let alpha = b
+                .fraction(level)
+                .0
+                .coefficient(0)
+                .divide(&a.coefficient(0))
+                .negate();
             if let Some(m) = log_derivative_multiple(&alpha, &eta, sure) {
                 n = n.min(m);
             }
@@ -206,14 +232,23 @@ impl Risch<'_> {
         let a_elem = Elem::from_poly(level, a.clone());
         let tn = t.pow(big_n);
         let big_a = a.mul(&EPoly::monomial(Elem::one(), to_usize(big_n)));
-        let big_b = b.plus(&Elem::integer(n).times(&a_elem).times(&eta)).times(&tn);
+        let big_b = b
+            .plus(&Elem::integer(n).times(&a_elem).times(&eta))
+            .times(&tn);
         let big_c = c.times(&t.pow(big_n - n));
         let h = EPoly::monomial(Elem::one(), to_usize(-n));
         Ok((big_a, poly(&big_b)?, poly(&big_c)?, h))
     }
 
     /// A bound on the degree of the polynomial solutions of `{$a D q + b q = c$}`.
-    fn bound_degree(&self, a: &EPoly, b: &EPoly, c: &EPoly, level: usize, sure: &mut bool) -> RischResult<i64> {
+    fn bound_degree(
+        &self,
+        a: &EPoly,
+        b: &EPoly,
+        c: &EPoly,
+        level: usize,
+        sure: &mut bool,
+    ) -> RischResult<i64> {
         let (da, db, dc) = (degree(a), degree(b), degree(c));
         let alpha = || b.leading().divide(&a.leading()).negate();
         let eta = self.tower.eta(level);
@@ -228,7 +263,11 @@ impl Risch<'_> {
                 n
             }
             Kind::Ln(_) => {
-                let mut n = if db > da { 0.max(dc - db) } else { 0.max(dc - da + 1) };
+                let mut n = if db > da {
+                    0.max(dc - db)
+                } else {
+                    0.max(dc - da + 1)
+                };
                 if db == da - 1 {
                     // `{$alpha = m D t + D z$}`, `z` in the field below
                     match self.limited_integrate(&alpha(), &eta, level - 1) {
@@ -349,7 +388,13 @@ impl Risch<'_> {
     }
 
     /// A polynomial `q` with `{$D q = c$}` and `{$deg q <= n$}`, found by integrating `c`.
-    fn derivative_of_polynomial(&self, c: &EPoly, n: i64, level: usize, sure: &mut bool) -> RischResult<Option<EPoly>> {
+    fn derivative_of_polynomial(
+        &self,
+        c: &EPoly,
+        n: i64,
+        level: usize,
+        sure: &mut bool,
+    ) -> RischResult<Option<EPoly>> {
         let c = Elem::from_poly(level, c.clone());
         let integral = match self.integrate(&c) {
             Ok(integral) => integral,
@@ -471,7 +516,10 @@ mod tests {
         let risch = Risch { tower: &tower };
         // `{$y' + 2 x y = 2 x^2 + 1$}` is solved by `x`, `{$y' + 2 x y = 1$}` and `{$y' + y = 1 / x$}` have no
         // rational solution
-        assert_eq!(risch.rde(&two_x, &two_x2_1, 1), Ok(Some(Elem::generator(1))));
+        assert_eq!(
+            risch.rde(&two_x, &two_x2_1, 1),
+            Ok(Some(Elem::generator(1)))
+        );
         assert_eq!(risch.rde(&two_x, &one, 1), Ok(None));
         assert_eq!(risch.rde(&one, &inv_x, 1), Ok(None));
     }

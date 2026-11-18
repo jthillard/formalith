@@ -59,10 +59,7 @@ fn exact_division_and_euclidean_operations() {
     assert_eq!(line(&parse!("quo(7, 2)", Z)), "3");
     assert_eq!(line(&parse!("rem(-7, 2)", Z)), "1");
     assert_eq!(line(&parse!("(-3)^3", Z)), "-27");
-    assert_eq!(
-        line(&parse!("2^100", Z)),
-        "1267650600228229401496703205376"
-    );
+    assert_eq!(line(&parse!("2^100", Z)), "1267650600228229401496703205376");
 }
 
 #[test]

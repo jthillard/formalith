@@ -316,9 +316,7 @@ impl Ring for R<Rational> {
                     }
                     return res;
                 }
-                let is_exp = |factor: &&Term<Self>| {
-                    matches!(factor, Term::Fun(fun) if fun.get_ident() == Context::EXP)
-                };
+                let is_exp = |factor: &&Term<Self>| matches!(factor, Term::Fun(fun) if fun.get_ident() == Context::EXP);
                 if mul.iter().filter(is_exp).count() > 1 {
                     // `{$exp(a) exp(b) = exp(a + b)$}`, so that exponentials cancel like powers of a single base
                     let mut res = Term::Value(Value::new(mul.coefficient.clone(), *self));
@@ -886,23 +884,26 @@ impl R<Rational> {
         };
         let opposite = -x;
         let square = x * x;
-        let res = table.into_iter().zip(squares).find_map(|((at, res), &(n, d))| {
-            if at == *x {
-                Some(res)
-            } else if at == opposite {
-                Some(-res)
-            } else if n != 0 && square == value(n, d) {
-                if Self::is_non_negative(x) {
+        let res = table
+            .into_iter()
+            .zip(squares)
+            .find_map(|((at, res), &(n, d))| {
+                if at == *x {
                     Some(res)
-                } else if Self::is_non_negative(&opposite) {
+                } else if at == opposite {
                     Some(-res)
+                } else if n != 0 && square == value(n, d) {
+                    if Self::is_non_negative(x) {
+                        Some(res)
+                    } else if Self::is_non_negative(&opposite) {
+                        Some(-res)
+                    } else {
+                        None
+                    }
                 } else {
                     None
                 }
-            } else {
-                None
-            }
-        })?;
+            })?;
         Some(if ident == Context::ACOS {
             // `{$acos(x) = pi/2 - asin(x)$}`
             angle(2) - res

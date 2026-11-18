@@ -113,8 +113,12 @@ impl Risch<'_> {
             Term::zero(R)
         } else {
             let (num, den) = h.fraction(1);
-            rational::integrate(&to_rational_poly(&num), &to_rational_poly(&den), self.tower.x())
-                .ok_or(RischError::Unsupported)?
+            rational::integrate(
+                &to_rational_poly(&num),
+                &to_rational_poly(&den),
+                self.tower.x(),
+            )
+            .ok_or(RischError::Unsupported)?
         };
         Ok(Integral { part, logs })
     }
@@ -155,7 +159,8 @@ impl Risch<'_> {
                     if c.is_zero() {
                         continue;
                     }
-                    let i = i64::try_from(j).unwrap_or(i64::MAX) - i64::try_from(shift).unwrap_or(0);
+                    let i =
+                        i64::try_from(j).unwrap_or(i64::MAX) - i64::try_from(shift).unwrap_or(0);
                     if i == 0 {
                         rest = c.clone();
                         continue;
@@ -231,7 +236,11 @@ impl Risch<'_> {
         let dd = self.d_poly(&d, level);
         let r = self.resultant_in_z(&d, &a, &dd);
         let r = r.monic();
-        let r: Option<Vec<_>> = r.coefficients().iter().map(|c| c.as_rational().cloned()).collect();
+        let r: Option<Vec<_>> = r
+            .coefficients()
+            .iter()
+            .map(|c| c.as_rational().cloned())
+            .collect();
         let r = Poly::new(r.ok_or(RischError::NonElementary)?);
         let (roots, split) = rational_roots(&r, self.tower.x());
         if !split {
@@ -271,7 +280,9 @@ impl Risch<'_> {
                 .times(&t.pow(m_elem + 1))
                 .plus(&b.times(&t.pow(m_elem)));
             q = q.plus(&q0);
-            let (num, den) = Elem::from_poly(level, p).minus(&self.d(&q0)).fraction(level);
+            let (num, den) = Elem::from_poly(level, p)
+                .minus(&self.d(&q0))
+                .fraction(level);
             if !den.is_one_poly() || (!num.is_zero() && num.degree() >= m) {
                 return Err(RischError::Unsupported);
             }
@@ -285,7 +296,12 @@ impl Risch<'_> {
     ///
     /// # Errors
     /// [`RischError::NonElementary`] when there are none.
-    fn limited_integrate(&self, a: &Elem, eta: &Elem, level: usize) -> RischResult<(Elem, Rational)> {
+    fn limited_integrate(
+        &self,
+        a: &Elem,
+        eta: &Elem,
+        level: usize,
+    ) -> RischResult<(Elem, Rational)> {
         let integral = self.integrate(a)?;
         let c = a.minus(&self.d(&integral.part)).divide(eta);
         match c.as_rational() {

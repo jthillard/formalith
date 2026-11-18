@@ -247,7 +247,9 @@ fn limits_from_the_gruntz_thesis() {
         "oo"
     );
     assert_eq!(
-        lim("lim(ln(x)^2*exp(sqrt(ln(x))*ln(ln(x))^2*exp(sqrt(ln(ln(x)))*ln(ln(ln(x)))^3))/sqrt(x), x, oo)"),
+        lim(
+            "lim(ln(x)^2*exp(sqrt(ln(x))*ln(ln(x))^2*exp(sqrt(ln(ln(x)))*ln(ln(ln(x)))^3))/sqrt(x), x, oo)"
+        ),
         "0"
     );
     assert_eq!(lim("lim((sin(tan(x))-tan(sin(x)))/x^7, x, 0)"), "-1/30");

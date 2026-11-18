@@ -81,7 +81,10 @@ fn characteristic_two() {
 
 #[test]
 fn fermat_little_theorem() {
-    assert_eq!(eval("factor(x^7-x)", 7), eval("x*(x+1)*(x+2)*(x+3)*(x+4)*(x+5)*(x+6)", 7));
+    assert_eq!(
+        eval("factor(x^7-x)", 7),
+        eval("x*(x+1)*(x+2)*(x+3)*(x+4)*(x+5)*(x+6)", 7)
+    );
     assert_eq!(eval("123456^(13-1)", 13), "1");
     assert_eq!(eval("3^1000000006", 1_000_000_007), "1");
 }

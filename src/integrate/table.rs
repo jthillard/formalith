@@ -135,7 +135,10 @@ fn gaussian(q: &Expr, x: Symbol) -> Option<Expr> {
     };
     let half = ratio(1, 2);
     let sqrt_c = value(c).pow(&half);
-    let pi = Term::Symbol(crate::term::SymbolTerm::new(Context::PI, crate::field::real::R));
+    let pi = Term::Symbol(crate::term::SymbolTerm::new(
+        Context::PI,
+        crate::field::real::R,
+    ));
     let erf = fun(ident, &sqrt_c * &(variable(x) + value(h)));
     Some(fun(Context::EXP, value(k)) * pi.pow(&half) / (ratio(2, 1) * sqrt_c) * erf)
 }
@@ -149,7 +152,9 @@ fn polynomial_gaussian(f: &Expr, x: Symbol) -> Option<Expr> {
     let mut rest = Term::one(crate::field::real::R);
     for factor in factors(f) {
         let (base, n) = match &factor {
-            Term::Pow(pow) if pow.exponant.to_i64().is_some() => (&*pow.base, (**pow.exponant).clone()),
+            Term::Pow(pow) if pow.exponant.to_i64().is_some() => {
+                (&*pow.base, (**pow.exponant).clone())
+            }
             _ => (&factor, Term::one(crate::field::real::R)),
         };
         match unary(base) {
@@ -179,23 +184,26 @@ fn quadratic_power(q: &Expr, e: &Expr, x: Symbol) -> Option<Expr> {
     let (c2, h, k) = quadratic(q, x)?;
     let t = variable(x) + value(h);
     let sqrt_q = q.pow(&ratio(1, 2));
-    let (c2_sign, k_sign) = (constant_sign(&value(c2.clone()))?, constant_sign(&value(k.clone()))?);
+    let (c2_sign, k_sign) = (
+        constant_sign(&value(c2.clone()))?,
+        constant_sign(&value(k.clone()))?,
+    );
     let sqrt = |v: Rational| value(v).pow(&ratio(1, 2));
     if *e == ratio(-1, 2) {
         return match (c2_sign, k_sign) {
             // `{$integral 1 / sqrt(c_2 t^2 + k) = "asinh"(t sqrt(c_2 / k)) / sqrt(c_2)$}`
-            (Ordering::Greater, Ordering::Greater) => Some(
-                fun(Context::ASINH, t * sqrt(&c2 / &k)) / sqrt(c2),
-            ),
+            (Ordering::Greater, Ordering::Greater) => {
+                Some(fun(Context::ASINH, t * sqrt(&c2 / &k)) / sqrt(c2))
+            }
             // `{$ln|sqrt(c_2) t + sqrt(q)| / sqrt(c_2)$}`
             (Ordering::Greater, Ordering::Less) => {
                 let s = sqrt(c2);
                 Some(fun(Context::LN, fun(Context::ABS, &s * &t + sqrt_q)) / s)
             }
             // `{$arcsin(t sqrt(-c_2 / k)) / sqrt(-c_2)$}`
-            (Ordering::Less, Ordering::Greater) => Some(
-                fun(Context::ASIN, t * sqrt(-&c2 / &k)) / sqrt(-c2),
-            ),
+            (Ordering::Less, Ordering::Greater) => {
+                Some(fun(Context::ASIN, t * sqrt(-&c2 / &k)) / sqrt(-c2))
+            }
             _ => None,
         };
     }

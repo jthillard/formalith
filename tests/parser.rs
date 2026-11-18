@@ -140,8 +140,24 @@ fn test_parse_function_arity() {
 #[test]
 fn test_parse_more_errors() {
     for input in [
-        "f(", "f()", "sin()", "log()", "3 4", "x == y", "x = y", "x :=", "sin x", "((x)",
-        "x))", "(,)", "sin(,)", "1 +* 2", "lim(x, x)", "integrate(x)", "x^^2", "x**2",
+        "f(",
+        "f()",
+        "sin()",
+        "log()",
+        "3 4",
+        "x == y",
+        "x = y",
+        "x :=",
+        "sin x",
+        "((x)",
+        "x))",
+        "(,)",
+        "sin(,)",
+        "1 +* 2",
+        "lim(x, x)",
+        "integrate(x)",
+        "x^^2",
+        "x**2",
     ] {
         assert!(try_parse!(input, R).is_err(), "{input:?}");
     }
@@ -204,7 +220,10 @@ fn test_parse_implicit_product_of_parentheses() {
 
 #[test]
 fn test_parse_long_input() {
-    let sum = (1..=200).map(|k| format!("{k}*x^{k}")).collect::<Vec<_>>().join("+");
+    let sum = (1..=200)
+        .map(|k| format!("{k}*x^{k}"))
+        .collect::<Vec<_>>()
+        .join("+");
     let term = parse!(&sum, R);
     assert_eq!(parse!(&format!("expand(({sum}) - ({sum}))"), R), 0.into());
     assert_ne!(term, 0.into());

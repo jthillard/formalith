@@ -107,7 +107,10 @@ fn gcd_corner_cases() {
 #[test]
 fn large_powers_are_expanded() {
     let printed = eval("(x+1)^20");
-    assert!(printed.starts_with("x^20+20*(x^19)+190*(x^18)"), "{printed}");
+    assert!(
+        printed.starts_with("x^20+20*(x^19)+190*(x^18)"),
+        "{printed}"
+    );
     assert!(printed.contains("184756*(x^10)"), "{printed}");
     assert_eq!(eval("(x+1)^20-(x+1)^20"), "0");
 }

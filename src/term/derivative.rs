@@ -51,7 +51,8 @@ impl<T: Derivable<ExponantSet = T, ProductCoefficientSet = T>> Term<T> {
             Self::Fun(fun) => {
                 // `{$d/dx integral f dif x = f$}`
                 if fun.get_ident() == Context::INTEGRATE
-                    && let Some([f, Self::Symbol(variable)]) = fun.get_args::<T>().map(Vec::as_slice)
+                    && let Some([f, Self::Symbol(variable)]) =
+                        fun.get_args::<T>().map(Vec::as_slice)
                     && variable.symbol == x
                 {
                     return f.clone();
@@ -93,8 +94,12 @@ impl<T: Derivable<ExponantSet = T, ProductCoefficientSet = T>> Term<T> {
                             Some(
                                 (&one + &one)
                                     * inv_sqrt(pi)
-                                    * Self::Fun(Box::new(Fun::new(Context::EXP, vec![square], set)))
-                                        .normalize(),
+                                    * Self::Fun(Box::new(Fun::new(
+                                        Context::EXP,
+                                        vec![square],
+                                        set,
+                                    )))
+                                    .normalize(),
                             )
                         }
                         // `{$|u|' = sign(u) u'$}`, except at 0

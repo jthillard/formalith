@@ -13,7 +13,6 @@ use std::cmp::Ordering;
 
 use malachite::{
     Rational,
-    rational::arithmetic::traits::SimplestRationalInInterval,
     base::{
         num::{
             arithmetic::traits::{Abs, Ceiling, CheckedSqrt, Floor, PowerOf2},
@@ -21,6 +20,7 @@ use malachite::{
         },
         rounding_modes::RoundingMode,
     },
+    rational::arithmetic::traits::SimplestRationalInInterval,
 };
 
 use crate::{
@@ -96,7 +96,11 @@ pub(super) fn integrate(f: &Expr, x: Symbol, a: &Expr, b: &Expr) -> IntegrateRes
 /// `{$sum_i F(p_(i+1)^-) - F(p_i^+)$}` for the increasing points `p_i`, with whether `F` is regular there.
 fn evaluate(antiderivative: &Expr, x: Symbol, points: &[(Expr, bool)]) -> IntegrateResult<Expr> {
     let limit = |(point, regular): &(Expr, bool), direction: Direction| {
-        let direction = if is_infinite(point) { Direction::Both } else { direction };
+        let direction = if is_infinite(point) {
+            Direction::Both
+        } else {
+            direction
+        };
         match antiderivative.limit(x, point, direction) {
             Ok(res) if *regular => Ok(nicer_value(antiderivative, x, point, res)),
             Ok(res) => Ok(res),
@@ -196,9 +200,10 @@ fn regular(term: &Expr, x: Symbol) -> bool {
                 && regular(&pow.base, x)
         }
         Term::Fun(_) => match unary(term) {
-            Some((Context::EXP | Context::SIN | Context::COS | Context::ATAN | Context::ABS, u)) => {
-                regular(u, x)
-            }
+            Some((
+                Context::EXP | Context::SIN | Context::COS | Context::ATAN | Context::ABS,
+                u,
+            )) => regular(u, x),
             _ => false,
         },
     }
@@ -247,7 +252,12 @@ fn singular_points(
 }
 
 /// Add to `points` the zeros of `term` in the closed interval.
-fn zeros(term: &Expr, x: Symbol, interval: (f64, f64), points: &mut Vec<(f64, Expr)>) -> IntegrateResult<()> {
+fn zeros(
+    term: &Expr,
+    x: Symbol,
+    interval: (f64, f64),
+    points: &mut Vec<(f64, Expr)>,
+) -> IntegrateResult<()> {
     for factor in factors(term) {
         let factor = match &factor {
             Term::Pow(pow) if !depends(&pow.exponant, x) => (*pow.base).clone(),
@@ -321,7 +331,9 @@ fn periodic_zeros(
     if !interval.0.is_finite() || !interval.1.is_finite() {
         return Err(IntegrateError::Unsupported);
     }
-    let b = u.substitute(x, &Term::zero(R)).ok_or(IntegrateError::Unsupported)?;
+    let b = u
+        .substitute(x, &Term::zero(R))
+        .ok_or(IntegrateError::Unsupported)?;
     let (a_value, b_value) = (
         to_f64(&a).ok_or(IntegrateError::Unsupported)?,
         to_f64(&b).ok_or(IntegrateError::Unsupported)?,
@@ -329,9 +341,17 @@ fn periodic_zeros(
     let offset_value = to_f64(offset).ok_or(IntegrateError::Unsupported)?;
     let pi = std::f64::consts::PI;
     // `{$k pi + "offset" pi$}` between `u(a)` and `u(b)`
-    let (u0, u1) = (a_value * interval.0 + b_value, a_value * interval.1 + b_value);
-    let (low, high) = (u0.min(u1) / pi - offset_value, u0.max(u1) / pi - offset_value);
-    let first = Rational::try_from(low).map_err(|_| IntegrateError::Unsupported)?.ceiling();
+    let (u0, u1) = (
+        a_value * interval.0 + b_value,
+        a_value * interval.1 + b_value,
+    );
+    let (low, high) = (
+        u0.min(u1) / pi - offset_value,
+        u0.max(u1) / pi - offset_value,
+    );
+    let first = Rational::try_from(low)
+        .map_err(|_| IntegrateError::Unsupported)?
+        .ceiling();
     let first = i64::try_from(&first).map_err(|_| IntegrateError::Unsupported)?;
     let last = high.floor() as i64;
     if last - first > MAX_PERIODS {
@@ -383,8 +403,12 @@ fn interior_point(interval: (f64, f64)) -> Option<Rational> {
             &Rational::try_from(interval.0).ok()?,
             &Rational::try_from(interval.1).ok()?,
         ),
-        (false, true) => Rational::from((&Rational::try_from(interval.1).ok()?).floor()) - Rational::from(1),
-        (true, false) => Rational::from((&Rational::try_from(interval.0).ok()?).ceiling()) + Rational::from(1),
+        (false, true) => {
+            Rational::from((&Rational::try_from(interval.1).ok()?).floor()) - Rational::from(1)
+        }
+        (true, false) => {
+            Rational::from((&Rational::try_from(interval.0).ok()?).ceiling()) + Rational::from(1)
+        }
         (false, false) => Rational::from(0),
     })
 }
@@ -397,8 +421,14 @@ fn has_inverse_trig(term: &Expr) -> bool {
         Term::Mul(mul) => mul.iter().any(has_inverse_trig),
         Term::Pow(pow) => has_inverse_trig(&pow.base) || has_inverse_trig(&pow.exponant),
         Term::Fun(fun) => {
-            matches!(fun.get_ident(), Context::ASIN | Context::ACOS | Context::ATAN)
-                || fun.get_args::<Real>().into_iter().flatten().any(has_inverse_trig)
+            matches!(
+                fun.get_ident(),
+                Context::ASIN | Context::ACOS | Context::ATAN
+            ) || fun
+                .get_args::<Real>()
+                .into_iter()
+                .flatten()
+                .any(has_inverse_trig)
         }
     }
 }
@@ -523,7 +553,9 @@ fn continuous(term: &Expr, x: Symbol) -> bool {
         Term::Add(add) => add.iter().all(|t| continuous(t, x)),
         Term::Mul(mul) => mul.iter().all(|t| continuous(t, x)),
         Term::Pow(pow) => {
-            !depends(&pow.exponant, x) && pow.exponant.to_i64().is_some() && continuous(&pow.base, x)
+            !depends(&pow.exponant, x)
+                && pow.exponant.to_i64().is_some()
+                && continuous(&pow.base, x)
         }
         Term::Fun(_) => match unary(term) {
             Some((
@@ -552,7 +584,10 @@ fn symmetric(
     b: &Expr,
     interval: (f64, f64),
 ) -> Option<IntegrateResult<Expr>> {
-    if !(interval.0.is_finite() && interval.1.is_finite()) || !(a + b).is_zero() || !continuous(f, x) {
+    if !(interval.0.is_finite() && interval.1.is_finite())
+        || !(a + b).is_zero()
+        || !continuous(f, x)
+    {
         return None;
     }
     let mut points = vec![];
@@ -561,7 +596,9 @@ fn symmetric(
         return None;
     }
     let one = Term::one(R);
-    let (constant, g) = factors(f).into_iter().partition::<Vec<_>, _>(|t| !depends(t, x));
+    let (constant, g) = factors(f)
+        .into_iter()
+        .partition::<Vec<_>, _>(|t| !depends(t, x));
     let constant = constant.iter().fold(one.clone(), |res, t| res * t);
     let g = g.iter().fold(one, |res, t| res * t);
     if risch::canonical(&g, x).is_none_or(|(_, level)| level <= 1) {

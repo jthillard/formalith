@@ -11,18 +11,15 @@ use super::{Expr, Integrator, factors, poly::Poly, unary};
 pub(super) fn integrate(integrator: &mut Integrator, f: &Expr, x: Symbol) -> Option<Expr> {
     let factors = factors(f);
     // Logarithms and inverse functions are differentiated, then polynomials
-    let u_index = factors
-        .iter()
-        .position(is_logarithmic)
-        .or_else(|| {
-            (factors.len() > 1)
-                .then(|| {
-                    factors
-                        .iter()
-                        .position(|factor| Poly::from_term(factor, x).is_some_and(|p| p.degree() > 0))
-                })
-                .flatten()
-        })?;
+    let u_index = factors.iter().position(is_logarithmic).or_else(|| {
+        (factors.len() > 1)
+            .then(|| {
+                factors
+                    .iter()
+                    .position(|factor| Poly::from_term(factor, x).is_some_and(|p| p.degree() > 0))
+            })
+            .flatten()
+    })?;
     let u = &factors[u_index];
     let dv = Term::Mul(Mul::new(
         malachite::Rational::from(1),

@@ -33,8 +33,12 @@ fn collect_candidates(f: &Expr, x: Symbol, candidates: &mut Vec<Expr>) {
     };
     match f {
         Term::Value(_) | Term::Symbol(_) => {}
-        Term::Add(add) => add.iter().for_each(|t| collect_candidates(t, x, candidates)),
-        Term::Mul(mul) => mul.iter().for_each(|t| collect_candidates(t, x, candidates)),
+        Term::Add(add) => add
+            .iter()
+            .for_each(|t| collect_candidates(t, x, candidates)),
+        Term::Mul(mul) => mul
+            .iter()
+            .for_each(|t| collect_candidates(t, x, candidates)),
         Term::Pow(pow) => {
             let (base, exponant) = (&*pow.base, &**pow.exponant);
             if depends(exponant, x) {

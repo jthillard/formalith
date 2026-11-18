@@ -18,10 +18,7 @@ use malachite::{
 use crate::{
     context::{Context, Symbol},
     field::real::R,
-    integrate::{
-        Expr,
-        poly::Coefficient,
-    },
+    integrate::{Expr, poly::Coefficient},
     limit::{fun, value, variable},
     term::Term,
 };
@@ -208,10 +205,11 @@ impl Tower {
             Term::Add(add) => add
                 .iter()
                 .try_fold(Elem::zero(), |res, t| Ok(res.plus(&self.elem(t)?))),
-            Term::Mul(mul) => mul.iter().try_fold(
-                Elem::rational(mul.coefficient.clone()),
-                |res, t| Ok(res.times(&self.elem(t)?)),
-            ),
+            Term::Mul(mul) => mul
+                .iter()
+                .try_fold(Elem::rational(mul.coefficient.clone()), |res, t| {
+                    Ok(res.times(&self.elem(t)?))
+                }),
             Term::Pow(pow) => {
                 let base = self.elem(&pow.base)?;
                 if let Some(n) = pow.exponant.to_i64() {
@@ -250,7 +248,11 @@ impl Tower {
     /// `{$e^a$}`, `term` being it as an expression.
     fn exp(&mut self, a: &Elem, term: Expr) -> RischResult<Elem> {
         if a.level() == 0 {
-            return if a.is_zero() { Ok(Elem::one()) } else { Err(RischError::Unsupported) };
+            return if a.is_zero() {
+                Ok(Elem::one())
+            } else {
+                Err(RischError::Unsupported)
+            };
         }
         let da = self.derivative(a);
         if let Some(r) = self.dependence(&da)? {
@@ -281,7 +283,11 @@ impl Tower {
                 }
             }
             // `{$e^c$}` is a transcendental constant for a rational `{$c != 0$}`
-            return if rest.is_zero() { Ok(res) } else { Err(RischError::Unsupported) };
+            return if rest.is_zero() {
+                Ok(res)
+            } else {
+                Err(RischError::Unsupported)
+            };
         }
         for i in 0..self.hints.len() {
             let hint = self.hints[i].clone();
@@ -305,7 +311,11 @@ impl Tower {
     /// `{$ln u$}`, `term` being it as an expression.
     fn ln(&mut self, u: &Elem, term: Expr) -> RischResult<Elem> {
         if u.level() == 0 {
-            return if u.is_one() { Ok(Elem::zero()) } else { Err(RischError::Unsupported) };
+            return if u.is_one() {
+                Ok(Elem::zero())
+            } else {
+                Err(RischError::Unsupported)
+            };
         }
         let eta = self.derivative(u).divide(u);
         if let Some(r) = self.dependence(&eta)? {
@@ -334,7 +344,11 @@ impl Tower {
                 }
             }
             let n = integer(&n).ok_or(RischError::Unsupported)?;
-            return if u.pow(n) == product { Ok(res) } else { Err(RischError::Unsupported) };
+            return if u.pow(n) == product {
+                Ok(res)
+            } else {
+                Err(RischError::Unsupported)
+            };
         }
         self.push(Monomial {
             kind: Kind::Ln(u.clone()),
@@ -375,10 +389,9 @@ impl Tower {
         let Some(r) = solve_linear(rows, etas.len()) else {
             return Ok(None);
         };
-        let combination = etas
-            .iter()
-            .zip(&r)
-            .fold(Elem::zero(), |res, (eta, r)| res.plus(&eta.times(&Elem::rational(r.clone()))));
+        let combination = etas.iter().zip(&r).fold(Elem::zero(), |res, (eta, r)| {
+            res.plus(&eta.times(&Elem::rational(r.clone())))
+        });
         if combination == *f {
             Ok(Some(r))
         } else {
@@ -471,7 +484,10 @@ mod tests {
         // `{$ln(x^2) = 2 ln x$}`
         let (tower, e) = build("ln(x) + ln(x^2)");
         assert_eq!(tower.height(), 2);
-        assert_eq!(tower.derivative(&e), Elem::integer(3).divide(&Elem::generator(1)));
+        assert_eq!(
+            tower.derivative(&e),
+            Elem::integer(3).divide(&Elem::generator(1))
+        );
         // `{$t = e^(x + ln x)$}` comes first, then `{$e^x = t / x$}`
         let (tower, e) = build("ln(x) + exp(x) + exp(x + ln(x))");
         assert_eq!(tower.height(), 3);
@@ -480,14 +496,24 @@ mod tests {
         // `{$ln(x^2 e^(2x)) = 2 ln x + 2 x$}`
         let (tower, e) = build("ln(x) + exp(x) + ln(x^2*exp(2*x))");
         assert_eq!(tower.height(), 3);
-        let expected = Elem::integer(3).divide(&x).plus(&Elem::generator(2)).plus(&Elem::integer(2));
+        let expected = Elem::integer(3)
+            .divide(&x)
+            .plus(&Elem::generator(2))
+            .plus(&Elem::integer(2));
         assert_eq!(tower.derivative(&e), expected);
     }
 
     #[test]
     fn unsupported() {
         let mut tower = Tower::new(symbol!("x"));
-        for f in ["sqrt(x)", "sin(x)", "exp(x)+exp(x+1)", "ln(2)*x", "a*x", "exp(ln(x)/2)"] {
+        for f in [
+            "sqrt(x)",
+            "sin(x)",
+            "exp(x)+exp(x+1)",
+            "ln(2)*x",
+            "a*x",
+            "exp(ln(x)/2)",
+        ] {
             assert!(tower.clone().elem(&parse!(f, R)).is_err(), "{f}");
         }
         tower.elem(&parse!("x", R)).unwrap();

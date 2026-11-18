@@ -40,8 +40,8 @@ pub use pow::*;
 pub mod fun;
 pub use fun::*;
 pub mod derivative;
-pub mod substitute;
 pub mod flags;
+pub mod substitute;
 use flags::{Flags, NORMALIZED};
 
 /// A mathematical expression.

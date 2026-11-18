@@ -127,10 +127,7 @@ fn square_roots_of_negative_values() {
 
 #[test]
 fn complex_polynomials() {
-    assert_eq!(
-        parse!("expand((x+i)*(x-i))", C),
-        parse!("x^2+1", C)
-    );
+    assert_eq!(parse!("expand((x+i)*(x-i))", C), parse!("x^2+1", C));
     assert_eq!(parse!("factor(x^2+1)", C), parse!("(x-i)*(x+i)", C));
 }
 

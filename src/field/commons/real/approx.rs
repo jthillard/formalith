@@ -376,7 +376,13 @@ impl Fixed {
     /// `{$x = sinh(pi/2 sinh s)$}` on `{$RR$}` (sinh-sinh). The step is halved until two results agree to half of
     /// the precision, the error being roughly squared at each step, so integrands must be smooth inside the
     /// interval. Slowly decaying oscillations, like `{$sin(x) / x$}` on `{$[0, oo)$}`, don't converge.
-    fn integrate(self, f: &Term<Real>, x: Symbol, a: &Term<Real>, b: &Term<Real>) -> Option<Rational> {
+    fn integrate(
+        self,
+        f: &Term<Real>,
+        x: Symbol,
+        a: &Term<Real>,
+        b: &Term<Real>,
+    ) -> Option<Rational> {
         let oo = Term::Symbol(SymbolTerm::new(Context::OO, super::R));
         let infinity = |t: &Term<Real>| {
             if *t == oo {
@@ -402,9 +408,8 @@ impl Fixed {
             (Some(_), None) => Quadrature::Left(bound(b)?),
             (Some(_), Some(_)) => Quadrature::Whole,
         };
-        let eval = |node: Rational| {
-            self.evaluate(&bind(f, x, &Term::Value(Value::new(node, super::R))))
-        };
+        let eval =
+            |node: Rational| self.evaluate(&bind(f, x, &Term::Value(Value::new(node, super::R))));
         let pi = self.to_rational(self.pi());
         let half_pi = &pi >> 1_u64;
         // `{$f(x(s)) x'(s)$}`, plus the symmetric node for finite intervals
@@ -451,7 +456,11 @@ impl Fixed {
             let directions: &[i64] = if symmetric { &[1] } else { &[1, -1] };
             for &direction in directions {
                 let mut zeros = 0;
-                let mut k = if level == 0 && direction == -1 { 1 } else { first };
+                let mut k = if level == 0 && direction == -1 {
+                    1
+                } else {
+                    first
+                };
                 loop {
                     let s = Rational::from(direction * k) * &h;
                     if (&s).abs() > MAX_QUADRATURE_S {
@@ -568,7 +577,10 @@ fn bind(term: &Term<Real>, x: Symbol, value: &Term<Real>) -> Term<Real> {
     match term {
         Term::Value(_) => term.clone(),
         Term::Symbol(_) => value.clone(),
-        Term::Add(add) => Term::Add(Add::new(add.iter().map(|t| bind(t, x, value)).collect(), set)),
+        Term::Add(add) => Term::Add(Add::new(
+            add.iter().map(|t| bind(t, x, value)).collect(),
+            set,
+        )),
         Term::Mul(mul) => Term::Mul(Mul::new(
             mul.coefficient.clone(),
             mul.iter().map(|t| bind(t, x, value)).collect(),

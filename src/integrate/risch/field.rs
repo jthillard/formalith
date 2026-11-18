@@ -113,12 +113,15 @@ impl Elem {
             Self::Fraction(f) => {
                 let t = &point[f.level - 1];
                 let eval = |p: &EPoly| {
-                    p.coefficients().iter().rev().try_fold(Rational::ZERO, |res, c| {
-                        Some(res * t + c.eval(point)?)
-                    })
+                    p.coefficients()
+                        .iter()
+                        .rev()
+                        .try_fold(Rational::ZERO, |res, c| Some(res * t + c.eval(point)?))
                 };
                 let den = eval(&f.den)?;
-                (den != 0).then(|| eval(&f.num).map(|num| num / den)).flatten()
+                (den != 0)
+                    .then(|| eval(&f.num).map(|num| num / den))
+                    .flatten()
             }
         }
     }

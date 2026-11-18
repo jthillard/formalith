@@ -420,9 +420,10 @@ impl Gruntz {
                         self.mrv(g)
                     }
                 }
-                Some((Context::LN | Context::ABS | Context::ATAN | Context::ERF | Context::ERFI, g)) => {
-                    self.mrv(g)
-                }
+                Some((
+                    Context::LN | Context::ABS | Context::ATAN | Context::ERF | Context::ERFI,
+                    g,
+                )) => self.mrv(g),
                 Some((ident, g)) if ident == erfcx() || ident == erfix() => self.mrv(g),
                 Some((Context::SIN | Context::COS, g)) => {
                     // Oscillates without a limit, or the limit can't be computed by series

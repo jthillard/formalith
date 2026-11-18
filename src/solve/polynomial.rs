@@ -156,7 +156,8 @@ impl PolynomialRoots for R<Rational> {
                     Some(Ordering::Less) => vec![],
                     Some(Ordering::Equal) => vec![b / a],
                     _ => {
-                        let root = discriminant.pow(&Term::constant(Rational::from_signeds(1, 2), R));
+                        let root =
+                            discriminant.pow(&Term::constant(Rational::from_signeds(1, 2), R));
                         vec![(&b - &root) / &a, (b + root) / a]
                     }
                 })
@@ -266,7 +267,12 @@ impl PolynomialRoots for Z<Integer> {
             }
             divisor += Natural::ONE;
         }
-        Some(roots.into_iter().map(|root| Term::constant(root, Z)).collect())
+        Some(
+            roots
+                .into_iter()
+                .map(|root| Term::constant(root, Z))
+                .collect(),
+        )
     }
 }
 
@@ -283,12 +289,8 @@ fn values<T: Ring>(coefficients: &[Term<T>]) -> Option<Vec<T::Element>> {
 
 /// The real solutions of `{$x^k = t$}`.
 fn real_roots(t: &Term<R<Rational>>, k: usize) -> Vec<Term<R<Rational>>> {
-    let root = |t: &Term<R<Rational>>| {
-        t.pow(&Term::constant(
-            Rational::from_unsigneds(1u64, k as u64),
-            R,
-        ))
-    };
+    let root =
+        |t: &Term<R<Rational>>| t.pow(&Term::constant(Rational::from_unsigneds(1u64, k as u64), R));
     let even = k % 2 == 0;
     match sign(t) {
         Some(Ordering::Equal) => vec![Term::zero(R)],
@@ -384,7 +386,14 @@ fn complex_sqrt(t: &Term<C<R<Rational>>>) -> Term<C<R<Rational>>> {
         let modulus = (&a * &a + &b * &b).expand().pow(&half);
         let re = ((&modulus + &a) / complex(2)).pow(&half);
         let im = ((modulus - a) / complex(2)).pow(&half);
-        let i = Term::constant(if b_sign == Ordering::Greater { C.i() } else { C.conj(&C.i()) }, C);
+        let i = Term::constant(
+            if b_sign == Ordering::Greater {
+                C.i()
+            } else {
+                C.conj(&C.i())
+            },
+            C,
+        );
         return re + i * im;
     }
     // Real values are handled by the normalization, `{$sqrt(-3) = i sqrt(3)$}`
@@ -515,7 +524,11 @@ impl<T: Ring> Branch<T> {
     }
 
     /// Add the solutions of the branch to `solutions`.
-    fn solve(mut self, depth: usize, solutions: &mut Vec<Assignments<T>>) -> Result<(), SolveError> {
+    fn solve(
+        mut self,
+        depth: usize,
+        solutions: &mut Vec<Assignments<T>>,
+    ) -> Result<(), SolveError> {
         if depth > MAX_DEPTH {
             return Err(SolveError::Unsolvable(plain(&self.equations[0].term)));
         }
@@ -611,7 +624,9 @@ impl<T: Ring> Branch<T> {
         for factor in all {
             // `f^k = 0` iff `f = 0`
             let factor = match factor {
-                Term::Pow(pow) if pow.exponant.to_i64().is_some_and(|k| k > 0) => (*pow.base).clone(),
+                Term::Pow(pow) if pow.exponant.to_i64().is_some_and(|k| k > 0) => {
+                    (*pow.base).clone()
+                }
                 factor => factor,
             };
             if self.has_unknown(&factor) && !factors.contains(&factor) {
@@ -883,9 +898,15 @@ fn sylvester_determinant<T: Ring>(p: &[Term<T>], q: &[Term<T>]) -> Term<T> {
             if mask & (1 << column) != 0 {
                 continue;
             }
-            if let (Some(value), Some(sub)) = (entry(row, column), minors.get(&(mask | 1 << column))) {
+            if let (Some(value), Some(sub)) =
+                (entry(row, column), minors.get(&(mask | 1 << column)))
+            {
                 let product = (value * sub).expand();
-                minor = if free % 2 == 0 { minor + product } else { minor - product };
+                minor = if free % 2 == 0 {
+                    minor + product
+                } else {
+                    minor - product
+                };
             }
             free += 1;
         }

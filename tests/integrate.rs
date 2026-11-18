@@ -19,7 +19,10 @@ fn check(f: &str) {
     let x = symbol!("x");
     let integral = parse!(&format!("integrate({f}, x)"), R);
     let printed = line(&integral);
-    assert!(!printed.contains("integrate"), "{f} not integrated: {printed}");
+    assert!(
+        !printed.contains("integrate"),
+        "{f} not integrated: {printed}"
+    );
     let difference = integral.derivative(x) - parse!(f, R);
     for point in ["3/10", "7/10", "13/10", "21/10"] {
         let at = difference.substitute(x, &parse!(point, R)).unwrap();
@@ -31,7 +34,10 @@ fn check(f: &str) {
             .parse::<f64>()
             .unwrap_or_else(|_| panic!("{f}: {printed}, derivative at {point}: {approximated}"))
             - 1.;
-        assert!(value.abs() < 1e-10, "{f}: {printed}, derivative error at {point}: {value}");
+        assert!(
+            value.abs() < 1e-10,
+            "{f}: {printed}, derivative error at {point}: {value}"
+        );
     }
 }
 
@@ -59,18 +65,46 @@ fn rational_functions() {
 #[test]
 fn parameters() {
     assert_eq!(integrate("integrate(2^x, x)"), integrate("2^x/ln(2)"));
-    assert_eq!(integrate("integrate(a*x^n, x)"), integrate("a*x^(n+1)/(n+1)"));
+    assert_eq!(
+        integrate("integrate(a*x^n, x)"),
+        integrate("a*x^(n+1)/(n+1)")
+    );
     assert_eq!(integrate("integrate(exp(a*x), x)"), integrate("exp(a*x)/a"));
-    assert_eq!(integrate("integrate(1/(x+a), x)"), integrate("ln(abs(x+a))"));
+    assert_eq!(
+        integrate("integrate(1/(x+a), x)"),
+        integrate("ln(abs(x+a))")
+    );
 }
 
 #[test]
 fn elementary_functions() {
     for f in [
-        "cos(x)", "sin(2*x+1)", "exp(3*x)", "tan(x)", "sinh(x)", "cosh(2*x)", "tanh(x)", "ln(x)",
-        "asin(x/3)", "acos(x/3)", "atan(x)", "asinh(x)", "acosh(x+1)", "atanh(x/3)", "sqrt(x)", "(2*x+1)^(3/2)",
-        "1/sqrt(1-x^2/9)", "1/sqrt(x^2+1)", "1/sqrt(x^2-1/20)", "sqrt(9-x^2)", "sqrt(x^2+x+1)", "(x^2+1)^(-3/2)",
-        "x/sqrt(x^2+x+1)", "exp(x)*sin(2*x)", "exp(-x)*cos(x)", "abs(x)",
+        "cos(x)",
+        "sin(2*x+1)",
+        "exp(3*x)",
+        "tan(x)",
+        "sinh(x)",
+        "cosh(2*x)",
+        "tanh(x)",
+        "ln(x)",
+        "asin(x/3)",
+        "acos(x/3)",
+        "atan(x)",
+        "asinh(x)",
+        "acosh(x+1)",
+        "atanh(x/3)",
+        "sqrt(x)",
+        "(2*x+1)^(3/2)",
+        "1/sqrt(1-x^2/9)",
+        "1/sqrt(x^2+1)",
+        "1/sqrt(x^2-1/20)",
+        "sqrt(9-x^2)",
+        "sqrt(x^2+x+1)",
+        "(x^2+1)^(-3/2)",
+        "x/sqrt(x^2+x+1)",
+        "exp(x)*sin(2*x)",
+        "exp(-x)*cos(x)",
+        "abs(x)",
     ] {
         check(f);
     }
@@ -79,9 +113,20 @@ fn elementary_functions() {
 #[test]
 fn trigonometric_powers() {
     for f in [
-        "sin(x)^2", "sin(x)^3*cos(x)^2", "cos(x)^4", "sin(x)^2*cos(x)^2", "1/cos(x)^2", "tan(x)^2", "tan(x)^3",
-        "1/sin(x)", "sin(x)/cos(x)^3", "sin(x)*cos(x)", "sin(2*x)*cos(3*x)", "sin(x)*sin(3*x)",
-        "1/(2+cos(x))", "1/(1+sin(x)+cos(x))",
+        "sin(x)^2",
+        "sin(x)^3*cos(x)^2",
+        "cos(x)^4",
+        "sin(x)^2*cos(x)^2",
+        "1/cos(x)^2",
+        "tan(x)^2",
+        "tan(x)^3",
+        "1/sin(x)",
+        "sin(x)/cos(x)^3",
+        "sin(x)*cos(x)",
+        "sin(2*x)*cos(3*x)",
+        "sin(x)*sin(3*x)",
+        "1/(2+cos(x))",
+        "1/(1+sin(x)+cos(x))",
     ] {
         check(f);
     }
@@ -90,10 +135,28 @@ fn trigonometric_powers() {
 #[test]
 fn substitutions_and_parts() {
     for f in [
-        "x*exp(x^2)", "2*x*cos(x^2)", "ln(x)/x", "exp(x)/(1+exp(x))", "1/(1+exp(x))", "exp(2*x)/(exp(x)+1)",
-        "x*sqrt(x+1)", "sin(x)*exp(cos(x))", "1/(x*ln(x))", "cos(sqrt(x))/sqrt(x)", "x/(2*x+3)^(1/2)",
-        "x*exp(x)", "x^2*sin(x)", "x*ln(x)", "ln(x)^2", "x*atan(x)", "x^2*exp(x)*cos(x)", "1/cosh(x)",
-        "sinh(x)^2", "exp(x)*sinh(x)", "atan(x)/(1+x^2)", "sqrt(1+sqrt(x))",
+        "x*exp(x^2)",
+        "2*x*cos(x^2)",
+        "ln(x)/x",
+        "exp(x)/(1+exp(x))",
+        "1/(1+exp(x))",
+        "exp(2*x)/(exp(x)+1)",
+        "x*sqrt(x+1)",
+        "sin(x)*exp(cos(x))",
+        "1/(x*ln(x))",
+        "cos(sqrt(x))/sqrt(x)",
+        "x/(2*x+3)^(1/2)",
+        "x*exp(x)",
+        "x^2*sin(x)",
+        "x*ln(x)",
+        "ln(x)^2",
+        "x*atan(x)",
+        "x^2*exp(x)*cos(x)",
+        "1/cosh(x)",
+        "sinh(x)^2",
+        "exp(x)*sinh(x)",
+        "atan(x)/(1+x^2)",
+        "sqrt(1+sqrt(x))",
     ] {
         check(f);
     }
@@ -135,8 +198,15 @@ fn non_elementary() {
         "exp(x^2)*ln(x)",
         "exp(x^3)",
     ] {
-        assert_eq!(parse!(f, R).integrate(x), Err(IntegrateError::NonElementary), "{f}");
-        assert!(integrate(&format!("integrate({f}, x)")).contains("integrate"), "{f}");
+        assert_eq!(
+            parse!(f, R).integrate(x),
+            Err(IntegrateError::NonElementary),
+            "{f}"
+        );
+        assert!(
+            integrate(&format!("integrate({f}, x)")).contains("integrate"),
+            "{f}"
+        );
     }
 }
 
@@ -154,12 +224,30 @@ fn gaussian_integrals() {
     ] {
         check(f);
     }
-    assert_eq!(integrate("integrate(exp(-x^2), x)"), integrate("sqrt(pi)/2*erf(x)"));
-    assert_eq!(integrate("integrate(exp(-x^2), x, -oo, oo)"), integrate("sqrt(pi)"));
-    assert_eq!(integrate("integrate(exp(-x^2), x, 0, oo)"), integrate("sqrt(pi)/2"));
-    assert_eq!(integrate("integrate(x^2*exp(-x^2), x, -oo, oo)"), integrate("sqrt(pi)/2"));
-    assert_eq!(integrate("integrate(exp(-(x+1)^2), x, -oo, oo)"), integrate("sqrt(pi)"));
-    assert_eq!(integrate("integrate(exp(-x^2/2), x, -oo, oo)/sqrt(2*pi)"), "1");
+    assert_eq!(
+        integrate("integrate(exp(-x^2), x)"),
+        integrate("sqrt(pi)/2*erf(x)")
+    );
+    assert_eq!(
+        integrate("integrate(exp(-x^2), x, -oo, oo)"),
+        integrate("sqrt(pi)")
+    );
+    assert_eq!(
+        integrate("integrate(exp(-x^2), x, 0, oo)"),
+        integrate("sqrt(pi)/2")
+    );
+    assert_eq!(
+        integrate("integrate(x^2*exp(-x^2), x, -oo, oo)"),
+        integrate("sqrt(pi)/2")
+    );
+    assert_eq!(
+        integrate("integrate(exp(-(x+1)^2), x, -oo, oo)"),
+        integrate("sqrt(pi)")
+    );
+    assert_eq!(
+        integrate("integrate(exp(-x^2/2), x, -oo, oo)/sqrt(2*pi)"),
+        "1"
+    );
     assert_eq!(integrate("integrate(exp(x^2), x, 0, oo)"), "oo");
     assert_eq!(integrate("integrate(exp(x^2), x, -oo, oo)"), "oo");
 }
@@ -171,13 +259,22 @@ fn error_function() {
     assert_eq!(integrate("approx(erf(1))"), "0.842700792949715");
     assert_eq!(integrate("approx(erf(-2))"), "-0.995322265018953");
     assert_eq!(integrate("approx(erfi(1))"), "1.65042575879754");
-    assert_eq!(integrate("diff(erf(x), x)"), integrate("2/sqrt(pi)*exp(-x^2)"));
+    assert_eq!(
+        integrate("diff(erf(x), x)"),
+        integrate("2/sqrt(pi)*exp(-x^2)")
+    );
     assert_eq!(integrate("lim(erf(x), x, oo)"), "1");
     assert_eq!(integrate("lim(erf(x), x, -oo)"), "-1");
-    assert_eq!(integrate("lim(x*(1-erf(x))*exp(x^2), x, oo)"), integrate("1/sqrt(pi)"));
+    assert_eq!(
+        integrate("lim(x*(1-erf(x))*exp(x^2), x, oo)"),
+        integrate("1/sqrt(pi)")
+    );
     assert_eq!(integrate("lim(erfi(x), x, oo)"), "oo");
     assert_eq!(integrate("lim(erfi(x), x, -oo)"), "-oo");
-    assert_eq!(integrate("lim(x*exp(-x^2)*erfi(x), x, oo)"), integrate("1/sqrt(pi)"));
+    assert_eq!(
+        integrate("lim(x*exp(-x^2)*erfi(x), x, oo)"),
+        integrate("1/sqrt(pi)")
+    );
     assert_eq!(integrate("lim(erf(1/x), x, 0, 1)"), "1");
     assert_eq!(
         integrate("series(erf(x), x, 0, 4)"),
@@ -187,7 +284,10 @@ fn error_function() {
 
 #[test]
 fn constant_parts_and_symmetry() {
-    assert_eq!(integrate("integrate(1/(e^x+1), x)"), integrate("x - ln(exp(x)+1)"));
+    assert_eq!(
+        integrate("integrate(1/(e^x+1), x)"),
+        integrate("x - ln(exp(x)+1)")
+    );
     assert_eq!(integrate("integrate(1/(exp(x)+1), x, -1, 1)"), "1");
     assert_eq!(
         integrate(
@@ -195,9 +295,18 @@ fn constant_parts_and_symmetry() {
         ),
         integrate("pi/(2*sqrt(3))")
     );
-    assert_eq!(integrate("integrate(asin(x)+acos(x), x, 0, 1)"), integrate("pi/2"));
-    assert_eq!(integrate("integrate(atan(x)+atan(1/x), x, 1, 2)"), integrate("pi/2"));
-    assert_eq!(integrate("integrate(atan(x)+atan(1/x), x, -3, -1)"), integrate("-pi"));
+    assert_eq!(
+        integrate("integrate(asin(x)+acos(x), x, 0, 1)"),
+        integrate("pi/2")
+    );
+    assert_eq!(
+        integrate("integrate(atan(x)+atan(1/x), x, 1, 2)"),
+        integrate("pi/2")
+    );
+    assert_eq!(
+        integrate("integrate(atan(x)+atan(1/x), x, -3, -1)"),
+        integrate("-pi")
+    );
     // Odd, without an elementary antiderivative
     assert_eq!(integrate("integrate(exp(x^3) - exp(-x^3), x, -1, 1)"), "0");
     // Not constant across the singularity at 0
@@ -221,19 +330,43 @@ fn definite_integrals() {
     assert_eq!(integrate("integrate(1/x^2, x, -1, 1)"), "oo");
     assert_eq!(integrate("integrate(1/x, x, 1, oo)"), "oo");
     assert_eq!(integrate("integrate(sin(x), x, 0, oo)"), "undefined");
-    assert_eq!(integrate("integrate(1/(2+cos(x)), x, 0, 2*pi)"), integrate("2*pi*sqrt(3)/3"));
-    assert_eq!(integrate("integrate(tan(x)^2, x, 0, 1)"), integrate("tan(1) - 1"));
+    assert_eq!(
+        integrate("integrate(1/(2+cos(x)), x, 0, 2*pi)"),
+        integrate("2*pi*sqrt(3)/3")
+    );
+    assert_eq!(
+        integrate("integrate(tan(x)^2, x, 0, 1)"),
+        integrate("tan(1) - 1")
+    );
     assert_eq!(integrate("integrate(x*exp(-x^2), x, -oo, oo)"), "0");
 }
 
 #[test]
 fn numerical_integrals() {
-    assert_eq!(integrate("approx(integrate(exp(-x^2), x, 0, 1))"), "0.746824132812427");
-    assert_eq!(integrate("approx(integrate(exp(-x^2), x, -oo, oo))"), "1.77245385090552");
-    assert_eq!(integrate("approx(integrate(exp(-x)*ln(x), x, 0, oo))"), "-0.577215664901533");
-    assert_eq!(integrate("approx(integrate(exp(-x^2), x, 1, 0))"), "-0.746824132812427");
-    assert_eq!(integrate("approx(integrate(x^x, x, 0, 1))"), "0.783430510712134");
-    assert_eq!(integrate("approx(integrate(exp(-x)/sqrt(x), x, 0, 1))"), "1.49364826562485");
+    assert_eq!(
+        integrate("approx(integrate(exp(-x^2), x, 0, 1))"),
+        "0.746824132812427"
+    );
+    assert_eq!(
+        integrate("approx(integrate(exp(-x^2), x, -oo, oo))"),
+        "1.77245385090552"
+    );
+    assert_eq!(
+        integrate("approx(integrate(exp(-x)*ln(x), x, 0, oo))"),
+        "-0.577215664901533"
+    );
+    assert_eq!(
+        integrate("approx(integrate(exp(-x^2), x, 1, 0))"),
+        "-0.746824132812427"
+    );
+    assert_eq!(
+        integrate("approx(integrate(x^x, x, 0, 1))"),
+        "0.783430510712134"
+    );
+    assert_eq!(
+        integrate("approx(integrate(exp(-x)/sqrt(x), x, 0, 1))"),
+        "1.49364826562485"
+    );
     // Slowly decaying oscillations don't converge, the integral stays unevaluated
     assert!(integrate("approx(integrate(sin(x)/x, x, 0, oo))").contains("integrate"));
 }
@@ -340,7 +473,10 @@ fn trigonometric_substitution() {
 #[test]
 fn non_elementary_integrals_stay_unevaluated() {
     for f in ["sin(x^2)", "x^x", "exp(x)/x", "1/ln(x)"] {
-        assert!(integrate(&format!("integrate({f}, x)")).contains("integrate"), "{f}");
+        assert!(
+            integrate(&format!("integrate({f}, x)")).contains("integrate"),
+            "{f}"
+        );
     }
 }
 
@@ -352,16 +488,31 @@ fn improper_integrals() {
     assert_eq!(integrate("integrate(exp(-x)*x^5, x, 0, oo)"), "120");
     assert_eq!(integrate("integrate(x*exp(-x^2), x, 0, oo)"), "1/2");
     assert_eq!(integrate("integrate(ln(x)/x^2, x, 1, oo)"), "1");
-    assert_eq!(integrate("integrate(1/(1+x^2)^2, x, -oo, oo)"), integrate("pi/2"));
-    assert_eq!(integrate("integrate(1/(1+x^4), x, 0, oo)"), integrate("pi/(2*sqrt(2))"));
-    assert_eq!(integrate("integrate(1/(x^3+1), x, 0, oo)"), integrate("2*pi*sqrt(3)/9"));
+    assert_eq!(
+        integrate("integrate(1/(1+x^2)^2, x, -oo, oo)"),
+        integrate("pi/2")
+    );
+    assert_eq!(
+        integrate("integrate(1/(1+x^4), x, 0, oo)"),
+        integrate("pi/(2*sqrt(2))")
+    );
+    assert_eq!(
+        integrate("integrate(1/(x^3+1), x, 0, oo)"),
+        integrate("2*pi*sqrt(3)/9")
+    );
     assert_eq!(
         integrate("integrate(exp(-x^2/2), x, -oo, oo)"),
         integrate("sqrt(2*pi)")
     );
-    assert_eq!(integrate("integrate(sqrt(1-x^2), x, -1, 1)"), integrate("pi/2"));
+    assert_eq!(
+        integrate("integrate(sqrt(1-x^2), x, -1, 1)"),
+        integrate("pi/2")
+    );
     assert_eq!(integrate("integrate(abs(x), x, -1, 1)"), "1");
-    assert_eq!(integrate("integrate(1/(x*ln(x)^2), x, 2, 3)"), integrate("1/ln(2)-1/ln(3)"));
+    assert_eq!(
+        integrate("integrate(1/(x*ln(x)^2), x, 2, 3)"),
+        integrate("1/ln(2)-1/ln(3)")
+    );
 }
 
 #[test]
@@ -372,7 +523,10 @@ fn divergent_integrals_across_singularities() {
 
 #[test]
 fn famous_definite_integrals() {
-    assert_eq!(integrate("integrate(x^4/(1+x^2), x, 0, 1)"), integrate("pi/4 - 2/3"));
+    assert_eq!(
+        integrate("integrate(x^4/(1+x^2), x, 0, 1)"),
+        integrate("pi/4 - 2/3")
+    );
     // The classic proof that 22/7 > pi
     assert_eq!(
         integrate("integrate(x^4*(1-x)^4/(1+x^2), x, 0, 1)"),
@@ -383,7 +537,10 @@ fn famous_definite_integrals() {
 #[test]
 #[ignore = "bug: -1/ln(x) has a limit at oo but the improper integral stays unevaluated"]
 fn improper_integral_with_logarithmic_antiderivative() {
-    assert_eq!(integrate("integrate(1/(x*ln(x)^2), x, 2, oo)"), integrate("1/ln(2)"));
+    assert_eq!(
+        integrate("integrate(1/(x*ln(x)^2), x, 2, oo)"),
+        integrate("1/ln(2)")
+    );
 }
 
 #[test]
@@ -399,7 +556,10 @@ fn definite_integral_with_symbolic_bound_and_erf() {
 #[test]
 #[ignore = "future: definite integrals without elementary antiderivatives (Dirichlet, ln(sin), Bose)"]
 fn definite_integrals_without_antiderivatives() {
-    assert_eq!(integrate("integrate(sin(x)/x, x, 0, oo)"), integrate("pi/2"));
+    assert_eq!(
+        integrate("integrate(sin(x)/x, x, 0, oo)"),
+        integrate("pi/2")
+    );
     assert_eq!(
         integrate("integrate(ln(sin(x)), x, 0, pi/2)"),
         integrate("-pi/2*ln(2)")
@@ -414,5 +574,8 @@ fn definite_integrals_without_antiderivatives() {
 #[test]
 #[ignore = "future: improper integrals with a parameter, assuming a > 0"]
 fn improper_integral_with_parameter() {
-    assert_eq!(integrate("integrate(exp(-a*x), x, 0, oo)"), integrate("1/a"));
+    assert_eq!(
+        integrate("integrate(exp(-a*x), x, 0, oo)"),
+        integrate("1/a")
+    );
 }

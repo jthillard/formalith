@@ -313,7 +313,13 @@ impl<F: Coefficient> Poly<F> {
         if m == 0 {
             return power(&self.leading(), n);
         }
-        let sign = |res: F| if m % 2 == 1 && n % 2 == 1 { res.negate() } else { res };
+        let sign = |res: F| {
+            if m % 2 == 1 && n % 2 == 1 {
+                res.negate()
+            } else {
+                res
+            }
+        };
         if m < n {
             return sign(other.resultant(self));
         }
@@ -390,13 +396,14 @@ impl Poly<Rational> {
         match term {
             Term::Value(v) => Some(Self::constant(v.value.clone())),
             Term::Symbol(s) if s.symbol == x => Some(Self::x()),
-            Term::Add(add) => add
+            Term::Add(add) => add.iter().try_fold(Self::zero(), |res, t| {
+                Some(res.add(&Self::from_expanded(t, x)?))
+            }),
+            Term::Mul(mul) => mul
                 .iter()
-                .try_fold(Self::zero(), |res, t| Some(res.add(&Self::from_expanded(t, x)?))),
-            Term::Mul(mul) => mul.iter().try_fold(
-                Self::constant(mul.coefficient.clone()),
-                |res, t| Some(res.mul(&Self::from_expanded(t, x)?)),
-            ),
+                .try_fold(Self::constant(mul.coefficient.clone()), |res, t| {
+                    Some(res.mul(&Self::from_expanded(t, x)?))
+                }),
             Term::Pow(pow) => match &**pow.exponant {
                 Term::Value(n) => {
                     let n = usize::try_from(&n.value).ok()?;

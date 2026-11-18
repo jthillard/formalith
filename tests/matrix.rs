@@ -386,10 +386,7 @@ fn determinant_is_multiplicative() {
 
 #[test]
 fn invalid_operations_stay_unevaluated() {
-    assert_eq!(
-        line(&parse!("[[1,2,3]]+[[1,2]]", M)),
-        "[[1,2,3]]+[[1,2]]"
-    );
+    assert_eq!(line(&parse!("[[1,2,3]]+[[1,2]]", M)), "[[1,2,3]]+[[1,2]]");
     assert_eq!(
         line(&parse!("det([[1,2,3],[4,5,6]])", M)),
         "det([[1,2,3],[4,5,6]])"
@@ -408,7 +405,10 @@ fn symbolic_matrices_are_simplified() {
         parse!("(b-a)*(c-a)*(c-b)", R)
     );
     assert_eq!(
-        parse!("simplify(det([[1,1,1,1],[a,b,c,d],[a^2,b^2,c^2,d^2],[a^3,b^3,c^3,d^3]]))", R),
+        parse!(
+            "simplify(det([[1,1,1,1],[a,b,c,d],[a^2,b^2,c^2,d^2],[a^3,b^3,c^3,d^3]]))",
+            R
+        ),
         parse!("expand((b-a)*(c-a)*(d-a)*(c-b)*(d-b)*(d-c))", R)
     );
     assert_eq!(

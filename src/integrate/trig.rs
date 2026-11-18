@@ -81,7 +81,11 @@ pub(super) fn integrate_powers(integrator: &mut Integrator, f: &Expr, x: Symbol)
 
 /// Integrals after rewriting `f`: hyperbolic functions as exponentials, products of `sin` and `cos` of
 /// different arguments as sums, or rational functions of `sin u` and `cos u` with `{$t = tan(u / 2)$}`.
-pub(super) fn integrate_rewritten(integrator: &mut Integrator, f: &Expr, x: Symbol) -> Option<Expr> {
+pub(super) fn integrate_rewritten(
+    integrator: &mut Integrator,
+    f: &Expr,
+    x: Symbol,
+) -> Option<Expr> {
     if let Some(rewritten) = hyperbolic_as_exp(f, x) {
         return integrator.integrate(&rewritten, x);
     }

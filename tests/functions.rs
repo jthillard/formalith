@@ -316,7 +316,10 @@ fn derivatives_of_compositions() {
     assert_eq!(parse!("diff(abs(x), x)", R), parse!("sign(x)", R));
     assert_eq!(parse!("diff(sign(x), x)", R), parse!("0", R));
     assert_eq!(parse!("diff(x^n, x)", R), parse!("n*x^(n-1)", R));
-    assert_eq!(parse!("diff(exp(exp(x)), x)", R), parse!("exp(x+exp(x))", R));
+    assert_eq!(
+        parse!("diff(exp(exp(x)), x)", R),
+        parse!("exp(x+exp(x))", R)
+    );
     assert_eq!(
         parse!("diff(sin(x)*cos(x), x)", R),
         parse!("cos(x)^2-sin(x)^2", R)
@@ -325,7 +328,10 @@ fn derivatives_of_compositions() {
         parse!("diff(x/(x+1), x)", R),
         parse!("1/(x+1)-x/(x+1)^2", R)
     );
-    assert_eq!(parse!("diff(sqrt(1+x^2), x)", R), parse!("x/sqrt(x^2+1)", R));
+    assert_eq!(
+        parse!("diff(sqrt(1+x^2), x)", R),
+        parse!("x/sqrt(x^2+1)", R)
+    );
     assert_eq!(parse!("diff(ln(sin(x)), x)", R), parse!("cos(x)/sin(x)", R));
     assert_eq!(parse!("diff(log(x, 2), x)", R), parse!("1/(x*ln(2))", R));
     assert_eq!(parse!("diff(x^(1/3), x)", R), parse!("1/3*x^(-2/3)", R));

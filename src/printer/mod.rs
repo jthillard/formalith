@@ -431,7 +431,8 @@ impl PrettyPrinter {
             *line += &" ".repeat(width - self.width);
         }
         for line in &other.lines {
-            self.lines.push(line.clone() + &" ".repeat(width - other.width));
+            self.lines
+                .push(line.clone() + &" ".repeat(width - other.width));
         }
         self.width = width;
     }

@@ -21,8 +21,7 @@ use crate::{
 use super::{
     Expr, LimitError, LimitResult, const_cmp, depends, fun,
     gruntz::{Gruntz, erfcx, erfix},
-    one, rational_bound,
-    unary, value, variable,
+    one, rational_bound, unary, value, variable,
 };
 
 /// Maximum number of times the order of a series is raised to find a non-zero leading term.
@@ -586,7 +585,11 @@ impl Expander<'_> {
                 let degree = j - 1;
                 let hermite = (0..=degree / 2).fold(Term::zero(R), |res, m| {
                     let power = degree - 2 * m;
-                    let sign = if imaginary || (degree + m) % 2 == 0 { 1 } else { -1 };
+                    let sign = if imaginary || (degree + m) % 2 == 0 {
+                        1
+                    } else {
+                        -1
+                    };
                     let c = Rational::from(sign)
                         * Rational::from(2_u32).pow(u64::try_from(power).unwrap_or(0))
                         * inverse_factorial(m)

@@ -273,7 +273,7 @@ impl<From: Set, T: Set> PrettyPrint for Fun<From, T> {
             });
             return res;
         }
-        let mut args =self.args.iter().map(|x| x.pretty_print(options));
+        let mut args = self.args.iter().map(|x| x.pretty_print(options));
         let mut res = args.next().unwrap();
         for mut arg in args {
             arg.left(' ');

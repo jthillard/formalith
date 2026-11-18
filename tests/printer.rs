@@ -70,7 +70,10 @@ fn pretty_print_fractions() {
     );
     assert_eq!(pretty(&parse!("1/x", R)), "1\n─\nx");
     assert_eq!(pretty(&parse!("(x+1)/(x-1)", R)), "x + 1\n─────\nx - 1");
-    assert_eq!(pretty(&parse!("2*(x+1)/3", R)), "2⋅(x + 1)\n─────────\n    3    ");
+    assert_eq!(
+        pretty(&parse!("2*(x+1)/3", R)),
+        "2⋅(x + 1)\n─────────\n    3    "
+    );
 }
 
 #[test]

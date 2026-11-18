@@ -169,10 +169,7 @@ fn expand_large_powers() {
         parse!("x^2+y^2+z^2+2*x*y+2*x*z+2*y*z", R)
     );
     assert_eq!(parse!("expand((x-1)*(x^2+x+1))", R), parse!("x^3-1", R));
-    assert_eq!(
-        parse!("expand((a+b)^20 - (b+a)^20)", R),
-        parse!("0", R)
-    );
+    assert_eq!(parse!("expand((a+b)^20 - (b+a)^20)", R), parse!("0", R));
 }
 
 #[test]
@@ -182,16 +179,16 @@ fn expand_with_radicals() {
         parse!("expand((sqrt(2)+sqrt(3))^4)", R),
         parse!("49+20*sqrt(6)", R)
     );
-    assert_eq!(parse!("expand((1+sqrt(2))*(1-sqrt(2)))", R), parse!("-1", R));
+    assert_eq!(
+        parse!("expand((1+sqrt(2))*(1-sqrt(2)))", R),
+        parse!("-1", R)
+    );
 }
 
 #[test]
 fn expand_negative_powers_and_quotients() {
     assert_eq!(parse!("expand(x*(1/x+1))", R), parse!("x+1", R));
-    assert_eq!(
-        parse!("expand((x+1)^(-2))", R),
-        parse!("1/(x^2+2*x+1)", R)
-    );
+    assert_eq!(parse!("expand((x+1)^(-2))", R), parse!("1/(x^2+2*x+1)", R));
 }
 
 #[test]
@@ -214,7 +211,10 @@ fn simplify_corner_cases() {
 #[ignore = "future: trigonometric simplification"]
 fn simplify_trigonometric_identities() {
     assert_eq!(parse!("simplify(sin(x)^2+cos(x)^2)", R), parse!("1", R));
-    assert_eq!(parse!("simplify(sin(2*x)-2*sin(x)*cos(x))", R), parse!("0", R));
+    assert_eq!(
+        parse!("simplify(sin(2*x)-2*sin(x)*cos(x))", R),
+        parse!("0", R)
+    );
     assert_eq!(parse!("simplify(cosh(x)^2-sinh(x)^2)", R), parse!("1", R));
 }
 
@@ -293,8 +293,5 @@ fn factor_irreducible_polynomials() {
 #[test]
 #[ignore = "bug: factor of a determinant keeps a factor (a-b)^2/(b-a) instead of cancelling it"]
 fn factor_cancels_opposite_factors() {
-    assert_eq!(
-        parse!("factor((a-b)^2/(b-a))", R),
-        parse!("-(a-b)", R)
-    );
+    assert_eq!(parse!("factor((a-b)^2/(b-a))", R), parse!("-(a-b)", R));
 }
