@@ -1,10 +1,10 @@
 //! A minimal command line interface evaluating expressions over the reals.
 //!
-//! Expressions given as arguments are evaluated and printed, otherwise expressions are read from stdin line by line.
-
-use std::io::{self, BufRead, IsTerminal, Write};
+//! Expressions given as arguments are evaluated and printed, otherwise expressions are read line by line,
+//! with line editing and history.
 
 use formalith::{field::real::R, try_parse};
+use rustyline::{DefaultEditor, error::ReadlineError};
 
 fn eval(input: &str) {
     match try_parse!(input, R) {
@@ -13,27 +13,28 @@ fn eval(input: &str) {
     }
 }
 
-fn main() {
+fn main() -> Result<(), ReadlineError> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if !args.is_empty() {
         args.iter().for_each(|arg| eval(arg));
-        return;
+        return Ok(());
     }
 
-    let interactive = io::stdin().is_terminal();
-    let mut lines = io::stdin().lock().lines();
+    let mut editor = DefaultEditor::new()?;
     loop {
-        if interactive {
-            print!("> ");
-            io::stdout().flush().unwrap();
-        }
-        let Some(Ok(line)) = lines.next() else {
-            break;
+        let line = match editor.readline("> ") {
+            Ok(line) => line,
+            Err(ReadlineError::Eof | ReadlineError::Interrupted) => break,
+            Err(err) => return Err(err),
         };
         match line.trim() {
             "" => {}
             "exit" | "quit" => break,
-            input => eval(input),
+            input => {
+                editor.add_history_entry(input)?;
+                eval(input);
+            }
         }
     }
+    Ok(())
 }

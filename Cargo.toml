@@ -21,10 +21,16 @@ supports-color = "3"
 typenum = "1.19"
 tracing = "0.1"
 tracing-subscriber = "0.3"
+rustyline = { version = "19.0.0", default-features = false, optional = true }
 
 # [profile.release]
 # debug = 1
 
 [features]
-default = []
+default = ["cli"]
 concise-debug = []
+cli = ["dep:rustyline"]
+
+[[bin]]
+name = "cli"
+required-features = ["cli"]
