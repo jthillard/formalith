@@ -438,6 +438,69 @@ impl PrettyPrinter {
         }
         self.width += other.width;
     }
+    /// Put self under a radical sign, with an optional `index` (`None` for a square root).
+    ///
+    /// ```no_test
+    ///       ___
+    ///      ╱ a                 _____
+    ///    n╱  ─      n _____   ∛x + 1
+    ///   ╲╱   b       √x + 1
+    /// ```
+    pub fn root(&mut self, index: Option<&Self>) {
+        let height = self.height();
+        let sign = match index.map(|index| index.lines.as_slice()) {
+            _ if height > 1 => None,
+            None => Some('√'),
+            Some([index]) if index == "3" => Some('∛'),
+            Some([index]) if index == "4" => Some('∜'),
+            Some(_) => Some('√'),
+        };
+        let index = index.filter(|_| !matches!(sign, Some('∛' | '∜')));
+        // A diagonal sign is one column wider than the radicand's height, plus a space before the radicand
+        let sign_width = if height == 1 { 1 } else { height + 2 };
+        let mut lines = Vec::with_capacity(height + 1);
+        // The overline starts at the top of the sign, covering the space before the radicand
+        let overline_start = if height == 1 { 1 } else { height + 1 };
+        lines.push(" ".repeat(overline_start) + &"_".repeat(self.width() + sign_width - overline_start));
+        for (i, line) in self.lines.iter().enumerate() {
+            let prefix = if let Some(sign) = sign {
+                sign.to_string()
+            } else if i == height - 1 {
+                "╲╱".to_string() + &" ".repeat(height)
+            } else {
+                " ".repeat(height - i) + "╱" + &" ".repeat(i + 1)
+            };
+            lines.push(prefix + line);
+        }
+        self.lines = lines;
+        self.width += sign_width;
+        self.baseline += 1;
+
+        let Some(index) = index else {
+            return;
+        };
+        // The index ends on the line above the bottom of the sign, where the free space at the
+        // left of the sign is the smallest, it only grows on the lines above.
+        let (bottom, free) = if height == 1 { (0, 0) } else { (height - 1, 2) };
+        let extra = index.width().saturating_sub(free);
+        for line in &mut self.lines {
+            line.insert_str(0, &" ".repeat(extra));
+        }
+        self.width += extra;
+        let missing = (index.height() - 1).saturating_sub(bottom);
+        for _ in 0..missing {
+            self.lines.insert(0, " ".repeat(self.width));
+        }
+        self.baseline += missing;
+        let bottom = bottom + missing;
+        let end = free + extra;
+        for (i, index_line) in index.lines.iter().enumerate() {
+            let line = &mut self.lines[bottom + 1 + i - index.height()];
+            let mut chars: Vec<char> = line.chars().collect();
+            chars.splice(end - index.width()..end, index_line.chars());
+            *line = chars.into_iter().collect();
+        }
+    }
     /// Add `sym` at the left of self, converting it to unicode drawings chars.
     pub fn left(&mut self, sym: char) {
         let or = (sym, sym, sym);

@@ -52,34 +52,53 @@ impl<T: Set, E: Set> Drop for Pow<T, E> {
         }
     }
 }
-impl<T: Set> Print for Pow<T> {
-    fn print(&self, options: &PrintOptions, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if options.typst && self.exponant.is_strictly_negative() {
-            let mut pow = self.clone();
-            **pow.exponant = -&**pow.exponant;
-            f.write_str("frac(1, ")?;
-            Print::print(&Term::Pow(pow).normalize(), options, f)?;
-            return f.write_str(")");
-        }
-        Self::group(&self.base, options, f)?;
-        Self::operator("^", options, f)?;
-        Self::group(&**self.exponant, options, f)?;
-        Ok(())
+/// Split a fractional exponant `num/index` to print a power as a root.
+trait RootExponant: Sized {
+    /// Return `(num, index)` if `self` is a fraction, `num` being `None` if it is one and `index` being `None`
+    /// for a square root.
+    fn root_split(&self) -> Option<(Option<Self>, Option<Self>)>;
+}
+
+impl<E: Set> RootExponant for Term<E> {
+    default fn root_split(&self) -> Option<(Option<Self>, Option<Self>)> {
+        None
     }
 }
 
-impl<T: Set> PrettyPrint for Pow<T> {
-    default fn pretty_print(&self, options: &PrintOptions) -> crate::printer::PrettyPrinter {
-        let pow = match **self.exponant {
-            Term::Value(_) if self.exponant.is_strictly_negative() => {
-                let mut pow = self.clone();
-                **pow.exponant = -&**pow.exponant;
-                pow
-            }
-            _ => self.clone(),
-        };
+impl<E: Ring> RootExponant for Term<E> {
+    fn root_split(&self) -> Option<(Option<Self>, Option<Self>)> {
+        // `x^(a + b/2)` reads better than a root of `x^(2a + b)`
+        if matches!(self, Self::Add(_)) || self.needs_normalization() {
+            return None;
+        }
+        let (num, den) = self.as_fraction(false);
+        if den.is_one() {
+            return None;
+        }
+        Some((
+            (!num.is_one()).then_some(num),
+            (den.to_i64() != Some(2)).then_some(den),
+        ))
+    }
+}
+
+impl<T: Set> Pow<T> {
+    /// The expression under the radical sign when printing `self` as a root of index the denominator of its exponant.
+    fn radicand(&self, num: Option<Term<T::ExponantSet>>) -> Term<T> {
+        num.map_or_else(
+            || (*self.base).clone(),
+            |num| Term::Pow(Self::new(self.base.clone(), num, self.set)),
+        )
+    }
+    /// Pretty print `self` assuming its exponant is positive, as a root if the exponant is a fraction.
+    fn pretty_print_positive(&self, options: &PrintOptions) -> crate::printer::PrettyPrinter {
+        if let Some((num, index)) = self.exponant.root_split() {
+            let mut radicand = PrettyPrint::pretty_print(&self.radicand(num), options);
+            radicand.root(index.map(|index| index.pretty_print(options)).as_ref());
+            return radicand;
+        }
         let mut base = (*self.base).pretty_print(options);
-        let exponant = (**pow.exponant).pretty_print(options);
+        let exponant = (**self.exponant).pretty_print(options);
         if match &*self.base {
             Term::Mul(_) | Term::Add(_) => true,
             Term::Value(value) => !value.set.is_atomic(&value.value),
@@ -92,42 +111,63 @@ impl<T: Set> PrettyPrint for Pow<T> {
     }
 }
 
-impl<T: Ring> PrettyPrint for Pow<T> {
-    fn pretty_print(&self, options: &PrintOptions) -> crate::printer::PrettyPrinter {
-        // If exponant is negative, print as a fraction
-        let pow = match **self.exponant {
+impl<T: Set> Print for Pow<T> {
+    fn print(&self, options: &PrintOptions, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if options.typst && self.exponant.is_strictly_negative() {
+            let mut pow = self.clone();
+            **pow.exponant = -&**pow.exponant;
+            f.write_str("frac(1, ")?;
+            Print::print(&Term::Pow(pow).normalize(), options, f)?;
+            return f.write_str(")");
+        }
+        if options.typst
+            && let Some((num, index)) = self.exponant.root_split()
+        {
+            if let Some(index) = index {
+                f.write_str("root(")?;
+                index.print(options, f)?;
+                f.write_str(", ")?;
+            } else {
+                f.write_str("sqrt(")?;
+            }
+            self.radicand(num).print(options, f)?;
+            return f.write_str(")");
+        }
+        Self::group(&self.base, options, f)?;
+        Self::operator("^", options, f)?;
+        Self::group(&**self.exponant, options, f)?;
+        Ok(())
+    }
+}
+
+impl<T: Set> PrettyPrint for Pow<T> {
+    default fn pretty_print(&self, options: &PrintOptions) -> crate::printer::PrettyPrinter {
+        match **self.exponant {
             Term::Value(_) if self.exponant.is_strictly_negative() => {
                 let mut pow = self.clone();
                 **pow.exponant = -&**pow.exponant;
-                match Term::Pow(pow.clone()).normalize() {
-                    Term::Pow(pow) => pow,
-                    normalized => {
-                        let mut res = PrettyPrint::pretty_print(&Term::one(self.set), options);
-                        res.vertical_concat("─", &PrettyPrint::pretty_print(&normalized, options));
-                        return res;
-                    }
-                }
+                pow.pretty_print_positive(options)
             }
-            _ => self.clone(),
-        };
-        let mut base = (*self.base).pretty_print(options);
-        let exponant = (**pow.exponant).pretty_print(options);
-        if match &*self.base {
-            Term::Mul(_) | Term::Add(_) => true,
-            Term::Value(value) => !value.set.is_atomic(&value.value),
-            _ => false,
-        } {
-            base.paren();
+            _ => self.pretty_print_positive(options),
         }
-        base.pow(&exponant);
-        match **self.exponant {
-            Term::Value(_) if self.exponant.is_strictly_negative() => {
-                let mut res = PrettyPrint::pretty_print(&Term::one(self.set), options);
-                res.vertical_concat("─", &base);
-                res
-            }
-            _ => base,
+    }
+}
+
+impl<T: Ring> PrettyPrint for Pow<T> {
+    fn pretty_print(&self, options: &PrintOptions) -> crate::printer::PrettyPrinter {
+        // If exponant is negative, print as a fraction
+        if matches!(**self.exponant, Term::Value(_)) && self.exponant.is_strictly_negative() {
+            let mut pow = self.clone();
+            **pow.exponant = -&**pow.exponant;
+            let den = match Term::Pow(pow).normalize() {
+                Term::Pow(pow) => pow.pretty_print_positive(options),
+                normalized => PrettyPrint::pretty_print(&normalized, options),
+            };
+            let mut res = PrettyPrint::pretty_print(&Term::one(self.set), options);
+            res.vertical_concat("─", &den);
+            return res;
         }
+        self.pretty_print_positive(options)
     }
 }
 

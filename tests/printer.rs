@@ -50,6 +50,22 @@ fn pretty_print_powers() {
 }
 
 #[test]
+fn pretty_print_roots() {
+    assert_eq!(pretty(&parse!("x^(1/2)", R)), " _\n√x");
+    assert_eq!(pretty(&parse!("(x+1)^(1/3)", R)), " _____\n∛x + 1");
+    assert_eq!(pretty(&parse!("x^(1/n)", R)), "n _\n √x");
+    assert_eq!(pretty(&parse!("1/x^(1/2)", R)), "1 \n──\n _\n√x");
+    assert_eq!(
+        pretty(&parse!("x^(2/n)", R)),
+        "   ___\n n╱  2\n╲╱  x "
+    );
+    assert_eq!(
+        pretty(&parse!("(a/b)^(1/(n+1))", R)),
+        "       __\n      ╱ a\nn + 1╱  ─\n   ╲╱   b"
+    );
+}
+
+#[test]
 fn pretty_print_fractions() {
     assert_eq!(
         pretty(&parse!("x/2+1/(x+1)", R)),
@@ -85,7 +101,10 @@ fn print_typst() {
         "frac(1, 2) x+frac(1, x+1)"
     );
     assert_eq!(typst(&parse!("x^-2", R)), "frac(1, x^2)");
-    assert_eq!(typst(&parse!("(x+1)^(1/2)", R)), "(x+1)^frac(1, 2)");
+    assert_eq!(typst(&parse!("(x+1)^(1/2)", R)), "sqrt(x+1)");
+    assert_eq!(typst(&parse!("x^(2/3)", R)), "root(3, x^2)");
+    assert_eq!(typst(&parse!("x^(1/n)", R)), "root(n, x)");
+    assert_eq!(typst(&parse!("x^(-1/2)", R)), "frac(1, sqrt(x))");
     assert_eq!(typst(&parse!("x^(y+1)", R)), "x^(y+1)");
     assert_eq!(typst(&parse!("(-2)^x", R)), "(-2)^x");
     assert_eq!(typst(&parse!("2*x*y", R)), "2 x y");
