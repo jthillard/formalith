@@ -1,28 +1,121 @@
-//! A minimal command line interface evaluating expressions over the reals.
+//! A minimal command line interface evaluating expressions in a chosen set (the reals by default).
 //!
 //! Expressions given as arguments are evaluated and printed, otherwise expressions are read line by line,
-//! with line editing and history.
+//! with line editing and history. The set is chosen with `--set <name>` on the command line, or `:set <name>`
+//! in the interactive mode.
 
-use formalith::{field::real::R, try_parse};
+use std::{panic, process::ExitCode, str::FromStr};
+
+use formalith::{
+    field::{Set, complex::C, integer::Z, matrix::M, natural::N, real::R},
+    try_parse,
+};
 use rustyline::{DefaultEditor, error::ReadlineError};
 
-fn eval(input: &str) {
-    match try_parse!(input, R) {
-        Ok(term) => println!("{term}"),
-        Err(err) => eprintln!("error: {err}"),
+/// The sets expressions can be evaluated in.
+#[derive(Clone, Copy)]
+enum SetChoice {
+    N,
+    Z,
+    R,
+    C,
+    M,
+}
+
+impl SetChoice {
+    const ALL: [Self; 5] = [Self::N, Self::Z, Self::R, Self::C, Self::M];
+
+    const fn name(self) -> &'static str {
+        match self {
+            Self::N => "N",
+            Self::Z => "Z",
+            Self::R => "R",
+            Self::C => "C",
+            Self::M => "M",
+        }
+    }
+
+    const fn description(self) -> &'static str {
+        match self {
+            Self::N => "natural integers",
+            Self::Z => "integers",
+            Self::R => "rationals",
+            Self::C => "complex numbers, `i` is the imaginary unit",
+            Self::M => "matrices with rational coefficients, like [[1, 2], [3, 4]]",
+        }
+    }
+
+    fn eval(self, input: &str) -> Result<String, String> {
+        match self {
+            Self::N => eval_in(input, N),
+            Self::Z => eval_in(input, Z),
+            Self::R => eval_in(input, R),
+            Self::C => eval_in(input, C),
+            Self::M => eval_in(input, M),
+        }
     }
 }
 
-fn main() -> Result<(), ReadlineError> {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+impl FromStr for SetChoice {
+    type Err = String;
+
+    fn from_str(name: &str) -> Result<Self, Self::Err> {
+        Self::ALL
+            .into_iter()
+            .find(|set| set.name().eq_ignore_ascii_case(name))
+            .ok_or_else(|| format!("unknown set `{name}`\n{}", sets_help()))
+    }
+}
+
+fn sets_help() -> String {
+    let mut help = String::from("available sets:");
+    for set in SetChoice::ALL {
+        help.push_str(&format!("\n  {}  {}", set.name(), set.description()));
+    }
+    help
+}
+
+fn eval_in<E: Set>(input: &str, set: E) -> Result<String, String> {
+    try_parse!(input, set)
+        .map(|term| term.to_string())
+        .map_err(|err| err.to_string())
+}
+
+/// Evaluate and print an expression. Operations unsupported by the set panic, so panics are caught to keep the
+/// interface running.
+fn eval(input: &str, set: SetChoice) {
+    match panic::catch_unwind(|| set.eval(input)) {
+        Ok(Ok(term)) => println!("{term}"),
+        Ok(Err(err)) => eprintln!("error: {err}"),
+        Err(_) => eprintln!("error: this operation is not supported in {}", set.name()),
+    }
+}
+
+fn main() -> Result<ExitCode, ReadlineError> {
+    let mut args = std::env::args().skip(1).peekable();
+    let mut set = SetChoice::R;
+    if let Some(flag) = args.next_if(|arg| arg == "--set" || arg == "-s") {
+        match args.next().as_deref().map(str::parse) {
+            Some(Ok(choice)) => set = choice,
+            Some(Err(err)) => {
+                eprintln!("error: {err}");
+                return Ok(ExitCode::FAILURE);
+            }
+            None => {
+                eprintln!("error: missing set after `{flag}`\n{}", sets_help());
+                return Ok(ExitCode::FAILURE);
+            }
+        }
+    }
+    let args: Vec<String> = args.collect();
     if !args.is_empty() {
-        args.iter().for_each(|arg| eval(arg));
-        return Ok(());
+        args.iter().for_each(|arg| eval(arg, set));
+        return Ok(ExitCode::SUCCESS);
     }
 
     let mut editor = DefaultEditor::new()?;
     loop {
-        let line = match editor.readline("> ") {
+        let line = match editor.readline(&format!("{}> ", set.name())) {
             Ok(line) => line,
             Err(ReadlineError::Eof | ReadlineError::Interrupted) => break,
             Err(err) => return Err(err),
@@ -32,9 +125,19 @@ fn main() -> Result<(), ReadlineError> {
             "exit" | "quit" => break,
             input => {
                 editor.add_history_entry(input)?;
-                eval(input);
+                if let Some(name) = input.strip_prefix(":set") {
+                    match name.trim() {
+                        "" => println!("current set: {}\n{}", set.name(), sets_help()),
+                        name => match name.parse() {
+                            Ok(choice) => set = choice,
+                            Err(err) => eprintln!("error: {err}"),
+                        },
+                    }
+                } else {
+                    eval(input, set);
+                }
             }
         }
     }
-    Ok(())
+    Ok(ExitCode::SUCCESS)
 }
