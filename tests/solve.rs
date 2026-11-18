@@ -249,8 +249,23 @@ fn polynomials_in_other_sets() {
         solve_in("C", "x^2 + y^2 = 0, x - y = 2"),
         ok("x = 1+i, y = -1+i \\ x = 1-i, y = -1-i")
     );
-    // Roots are Gaussian rationals
-    assert_eq!(solve_in("C", "x^2 = 2"), ok("\"no solution\""));
+    // Radicals
+    assert_eq!(solve_in("C", "x^2 = 2"), ok("x = sqrt(2) \\ x = -sqrt(2)"));
+    assert_eq!(
+        solve_in("C", "x^2 = -2"),
+        ok("x = -i sqrt(2) \\ x = i sqrt(2)")
+    );
+    assert_eq!(
+        solve_in("C", "x^2 + x + 1 = 0"),
+        ok("x = -frac(1, 2) i sqrt(3)-frac(1, 2) \\ x = frac(1, 2) i sqrt(3)-frac(1, 2)")
+    );
+    // Square roots of non-real values, `{$sqrt(3 + 4 i) = 2 + i$}`
+    assert_eq!(
+        solve_in("C", "x^2 - 2*x = 2 + 4*i"),
+        ok("x = -1-i \\ x = 3+i")
+    );
+    assert_eq!(solve_in("C", "x^3 = 2").map(|s| s.matches(" \\ ").count()), Ok(2));
+    assert!(solve_in("C", "x^5 = 2").unwrap_err().contains("can't solve"));
     assert_eq!(solve_in("Z/7", "x^2 = 2"), ok("x = 3 \\ x = 4"));
     assert_eq!(solve_in("Z/7", "x^2 = 3"), ok("\"no solution\""));
     assert_eq!(solve_in("Z/6", "x^2 = 1"), ok("x = 1 \\ x = 5"));

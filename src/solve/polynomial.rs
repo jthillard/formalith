@@ -30,7 +30,9 @@ use malachite::{
 
 use crate::{
     context::Symbol,
-    field::{Group, Ring, TryElementFrom, integer::Z, modular::Zn, real::R},
+    field::{
+        Group, Ring, TryElementFrom, TryExprFrom, complex::C, integer::Z, modular::Zn, real::R,
+    },
     term::{Expand, Mul, Normalize, Term, TermSet},
 };
 
@@ -164,6 +166,39 @@ impl PolynomialRoots for R<Rational> {
     }
 }
 
+impl PolynomialRoots for C<R<Rational>> {
+    /// Polynomials of degree one or two, and polynomials of these degrees in `{$x^k$}` with `{$k$}` a product of
+    /// twos and threes, like `{$x^2 + 2$}` or `{$x^6 - 2$}`, are solved with radicals. Other polynomials aren't solved.
+    fn roots(coefficients: &[Term<Self>]) -> Option<Vec<Term<Self>>> {
+        // A polynomial in `x^k`
+        let k = (1..coefficients.len())
+            .filter(|degree| !coefficients[*degree].is_zero())
+            .fold(0, |k, degree| gcd(k, degree));
+        if k > 1 {
+            let coefficients: Vec<_> = coefficients.iter().step_by(k).cloned().collect();
+            let roots = Self::roots(&coefficients)?;
+            return roots
+                .iter()
+                .map(|t| complex_roots(t, k))
+                .collect::<Option<Vec<_>>>()
+                .map(|roots| roots.into_iter().flatten().collect());
+        }
+        match coefficients {
+            [c, b] => Some(vec![-c / b]),
+            [c, b, a] => {
+                let discriminant = (b * b - complex(4) * a * c).expand();
+                let (b, a) = (-b, complex(2) * a);
+                if discriminant.is_zero() {
+                    return Some(vec![b / a]);
+                }
+                let root = complex_sqrt(&discriminant);
+                Some(vec![(&b - &root) / &a, (b + root) / a])
+            }
+            _ => None,
+        }
+    }
+}
+
 impl PolynomialRoots for Zn {
     fn factor_term(term: &Term<Self>) -> Option<Term<Self>> {
         let set = term.get_set();
@@ -266,6 +301,101 @@ fn real_roots(t: &Term<R<Rational>>, k: usize) -> Vec<Term<R<Rational>>> {
         }
         _ => vec![root(t)],
     }
+}
+
+/// The integer `value` in `{$CC$}`.
+fn complex(value: i64) -> Term<C<R<Rational>>> {
+    Term::constant([Rational::from(value), Rational::ZERO], C)
+}
+
+/// The solutions of `{$x^k = t$}` in `{$CC$}`, if `{$k$}` is a product of twos and threes.
+fn complex_roots(t: &Term<C<R<Rational>>>, k: usize) -> Option<Vec<Term<C<R<Rational>>>>> {
+    if k == 1 {
+        return Some(vec![t.clone()]);
+    }
+    if t.is_zero() {
+        return Some(vec![Term::zero(C)]);
+    }
+    // Cube roots last, so that they are taken on real values when possible (`{$x^6 = 2$}`)
+    if k % 3 == 0 {
+        // The primitive cube roots of unity `{$(-1 plus.minus i sqrt(3)) / 2$}`
+        let i_sqrt_3 = complex(-3).pow(&Term::constant(
+            [Rational::from_signeds(1, 2), Rational::ZERO],
+            C,
+        ));
+        let omega = [
+            (complex(-1) + &i_sqrt_3) / complex(2),
+            (complex(-1) - i_sqrt_3) / complex(2),
+        ];
+        return Some(
+            complex_roots(t, k / 3)?
+                .iter()
+                .flat_map(|t| {
+                    let root = complex_cbrt(t);
+                    let others = omega.clone().map(|omega| (&root * &omega).expand());
+                    std::iter::once(root).chain(others)
+                })
+                .collect(),
+        );
+    }
+    if k % 2 == 0 {
+        return Some(
+            complex_roots(t, k / 2)?
+                .iter()
+                .flat_map(|t| {
+                    let root = complex_sqrt(t);
+                    [-&root, root]
+                })
+                .collect(),
+        );
+    }
+    None
+}
+
+/// A square root of `t` in `{$CC$}`. For a non-real value `{$a + b i$}`, it is
+/// `{$sqrt((|z| + a) / 2) + "sgn"(b) i sqrt((|z| - a) / 2)$}`.
+fn complex_sqrt(t: &Term<C<R<Rational>>>) -> Term<C<R<Rational>>> {
+    let half = Term::constant([Rational::from_signeds(1, 2), Rational::ZERO], C);
+    if let Term::Value(value) = t
+        && let [a, b] = &value.value
+        && *b != 0
+    {
+        let modulus = Term::constant([a * a + b * b, Rational::ZERO], C).pow(&half);
+        let a = Term::constant([a.clone(), Rational::ZERO], C);
+        let re = ((&modulus + &a) / complex(2)).pow(&half);
+        let im = ((modulus - a) / complex(2)).pow(&half);
+        let i = Term::constant(if *b > 0 { C.i() } else { C.conj(&C.i()) }, C);
+        return re + i * im;
+    }
+    // `{$sqrt(v r) = sqrt(v) sqrt(r)$}` for a non-real coefficient `{$v$}` and a positive real `{$r$}`
+    if let Term::Mul(mul) = t
+        && mul.coefficient[1] != 0
+    {
+        let coefficient = Term::constant(mul.coefficient.clone(), C);
+        let rest = t / &coefficient;
+        if real_sign(&rest) == Some(Ordering::Greater) {
+            return complex_sqrt(&coefficient) * rest.pow(&half);
+        }
+    }
+    // Real values are handled by the normalization, `{$sqrt(-3) = i sqrt(3)$}`
+    match real_sign(t) {
+        Some(Ordering::Less) => Term::constant(C.i(), C) * (-t).pow(&half),
+        _ => t.pow(&half),
+    }
+}
+
+/// A cube root of `t` in `{$CC$}`, real when `t` is real.
+fn complex_cbrt(t: &Term<C<R<Rational>>>) -> Term<C<R<Rational>>> {
+    let third = Term::constant([Rational::from_signeds(1, 3), Rational::ZERO], C);
+    match real_sign(t) {
+        Some(Ordering::Less) => -(-t).pow(&third),
+        _ => t.pow(&third),
+    }
+}
+
+/// The sign of `t`, if it is real and can be approximated.
+fn real_sign(t: &Term<C<R<Rational>>>) -> Option<Ordering> {
+    sign(&TryExprFrom::<C<R<Rational>>>::try_from_expr(&R, t.clone()).ok()?)
 }
 
 /// The sign of `term`, if it is zero or can be approximated. Symbols are generic, their sign is unknown.
