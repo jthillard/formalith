@@ -176,7 +176,7 @@ fn infinity_is_a_constant() {
     let eval = |input| SetChoice::R.eval(input, false, &mut Environment::new());
     assert!(eval("oo := 1").is_err());
     assert!(eval("undefined := 1").is_err());
-    assert_eq!(eval("x + 1 = oo"), Ok("x = oo - 1".to_string()));
+    assert_eq!(eval("x + 1 = oo"), Ok("x = ∞ - 1".to_string()));
 }
 
 #[test]

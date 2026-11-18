@@ -88,6 +88,35 @@ fn pretty_print_signs() {
 }
 
 #[test]
+fn pretty_print_constants() {
+    assert_eq!(pretty(&parse!("pi", R)), "π");
+    assert_eq!(pretty(&parse!("2*pi", R)), "2⋅π");
+    assert_eq!(pretty(&parse!("-oo", R)), "-∞");
+    assert_eq!(line(&parse!("pi", R)), "pi");
+    assert_eq!(line(&parse!("-oo", R)), "-oo");
+}
+
+#[test]
+fn pretty_print_integrals() {
+    assert_eq!(
+        pretty(&parse!("integrate(exp(x^2), x)", R)),
+        "⌠           \n⎮    ⎛ 2⎞   \n⎮ exp⎝x ⎠ dx\n⌡           "
+    );
+    assert_eq!(
+        pretty(&parse!("integrate(f(x), x, 0, 1)", R)),
+        "1        \n⌠        \n⎮ f(x) dx\n⌡        \n0        "
+    );
+    assert_eq!(
+        pretty(&parse!("integrate(f(x)+1, x, -oo, oo)", R)),
+        "∞               \n⌠               \n⎮  (f(x) + 1) dx\n⌡               \n-∞              "
+    );
+    assert_eq!(
+        pretty(&parse!("integrate(f(x)/x, x, 0, pi)", R)),
+        "π        \n⌠        \n⎮ f(x)   \n⎮ ──── dx\n⎮  x     \n⌡        \n0        "
+    );
+}
+
+#[test]
 fn display_matches_pretty_print_without_colors() {
     // `Display` uses default options, which only enable colors on a terminal.
     let term = parse!("x/2+1/(x+1)", R);
@@ -139,6 +168,14 @@ fn print_typst_functions() {
     assert_eq!(typst(&parse!("f(x)", R)), "f(x)");
     assert_eq!(typst(&parse!("conj(x)", R)), "overline(x)");
     assert_eq!(typst(&parse!("sign(x)", R)), "op(\"sign\")(x)");
+    assert_eq!(
+        typst(&parse!("integrate(f(x), x, 0, 1)", R)),
+        "integral_(0)^(1) f(x) dif x"
+    );
+    assert_eq!(
+        typst(&parse!("integrate(f(x)+1, x, 0, 1)", R)),
+        "integral_(0)^(1) (f(x)+1) dif x"
+    );
 }
 
 #[test]

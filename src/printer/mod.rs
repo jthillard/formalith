@@ -521,6 +521,41 @@ impl PrettyPrinter {
             *line = chars.into_iter().collect();
         }
     }
+    /// Put self (the integrand followed by `dx`) after an integral sign, with optional
+    /// `(lower, upper)` bounds below and above the sign.
+    ///
+    /// ```no_test
+    /// 1
+    /// ⌠
+    /// ⎮ f(x) dx
+    /// ⌡
+    /// 0
+    /// ```
+    pub fn integral(&mut self, bounds: Option<(&Self, &Self)>) {
+        let height = self.height();
+        let mut sign_lines = Vec::with_capacity(height + 2);
+        sign_lines.push("⌠".to_string());
+        sign_lines.extend(std::iter::repeat_n("⎮".to_string(), height));
+        sign_lines.push("⌡".to_string());
+        let sign = Self {
+            lines: sign_lines,
+            width: 1,
+            baseline: 0,
+        };
+        let (mut column, upper_height) = match bounds {
+            Some((lower, upper)) => {
+                let mut column = upper.clone();
+                column.stack(&sign);
+                column.stack(lower);
+                (column, upper.height())
+            }
+            None => (sign, 0),
+        };
+        // The body starts on the line below `⌠`
+        column.baseline = upper_height + 1 + self.baseline;
+        column.concat(" ", false, self);
+        *self = column;
+    }
     /// Add `sym` at the left of self, converting it to unicode drawings chars.
     pub fn left(&mut self, sym: char) {
         let or = (sym, sym, sym);

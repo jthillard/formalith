@@ -47,7 +47,11 @@ impl<T: Debug> Print for SymbolTerm<T> {
 }
 impl<T: Debug> PrettyPrint for SymbolTerm<T> {
     fn pretty_print(&self, _options: &PrintOptions) -> crate::printer::PrettyPrinter {
-        PrettyPrinter::from(Context::get_symbol_data(&self.symbol).name.clone())
+        PrettyPrinter::from(match self.symbol {
+            Context::PI => "π".to_string(),
+            Context::OO => "∞".to_string(),
+            _ => Context::get_symbol_data(&self.symbol).name.clone(),
+        })
     }
 }
 impl<T: Debug> Display for SymbolTerm<T> {

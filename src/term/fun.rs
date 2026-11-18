@@ -195,9 +195,15 @@ impl<From: Set, T: Set> Print for Fun<From, T> {
                     b.print(options, f)?;
                     f.write_str(")")?;
                 }
-                f.write_str(" (")?;
-                fun.print(options, f)?;
-                f.write_str(") dif ")?;
+                f.write_str(" ")?;
+                if matches!(fun, Term::Add(_)) {
+                    f.write_str("(")?;
+                    fun.print(options, f)?;
+                    f.write_str(")")?;
+                } else {
+                    fun.print(options, f)?;
+                }
+                f.write_str(" dif ")?;
                 return x.print(options, f);
             }
             match self.ident {
@@ -248,7 +254,26 @@ impl<From: Set, T: Set> Print for Fun<From, T> {
 }
 impl<From: Set, T: Set> PrettyPrint for Fun<From, T> {
     fn pretty_print(&self, options: &PrintOptions) -> crate::printer::PrettyPrinter {
-        let mut args = self.args.iter().map(|x| x.pretty_print(options));
+        if self.ident == Context::INTEGRATE
+            && let [fun, x, bounds @ ..] = self.args.as_slice()
+            && matches!(bounds.len(), 0 | 2)
+        {
+            let mut res = fun.pretty_print(options);
+            if matches!(fun, Term::Add(_)) {
+                res.paren();
+            }
+            res.concat(" d", false, &x.pretty_print(options));
+            let bounds = bounds
+                .iter()
+                .map(|bound| bound.pretty_print(options))
+                .collect::<Vec<_>>();
+            res.integral(match bounds.as_slice() {
+                [lower, upper] => Some((lower, upper)),
+                _ => None,
+            });
+            return res;
+        }
+        let mut args =self.args.iter().map(|x| x.pretty_print(options));
         let mut res = args.next().unwrap();
         for mut arg in args {
             arg.left(' ');
