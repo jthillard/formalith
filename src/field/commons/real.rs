@@ -20,7 +20,7 @@ use crate::{
     parser::Parser,
     polynom::ToTerm,
     printer::PrettyPrinter,
-    term::{self, Fun, Mul, Normalize, Term, TermSet, Value},
+    term::{self, Expand, Fun, Mul, Normalize, Term, TermSet, Value},
 };
 
 /// The real field `{$RR$}`.
@@ -210,6 +210,21 @@ impl Ring for R<Rational> {
                         } else if content < &0.into() {
                             return -content;
                         }
+                    }
+                }
+                Context::EXPAND => {
+                    if let Some(arg) = fun.get_arg::<Self>() {
+                        return arg.expand();
+                    }
+                }
+                Context::FACTOR => {
+                    if let Some(arg) = fun.get_arg::<Self>() {
+                        return arg.factor();
+                    }
+                }
+                Context::SIMPLIFY => {
+                    if let Some(arg) = fun.get_arg::<Self>() {
+                        return arg.simplify();
                     }
                 }
                 Context::DET => {

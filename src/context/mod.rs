@@ -110,8 +110,14 @@ impl Context {
     pub const ABS: Symbol = Symbol(0);
     /// Determinant function
     pub const DET: Symbol = Symbol(1);
+    /// Expansion function, evaluating to its expanded argument
+    pub const EXPAND: Symbol = Symbol(2);
+    /// Factorization function, evaluating to its factored argument
+    pub const FACTOR: Symbol = Symbol(3);
+    /// Simplification function, evaluating to its simplified argument
+    pub const SIMPLIFY: Symbol = Symbol(4);
 
-    const BUILTIN_NAMES: [&'static str; 2] = ["abs", "det"];
+    const BUILTIN_NAMES: [&'static str; 5] = ["abs", "det", "expand", "factor", "simplify"];
 
     /// Create a new empty context
     #[must_use]

@@ -285,7 +285,14 @@ where
                         }
                     };
                     self.expect_token(&TokenKind::CloseParen)?;
-                    if matches!(ident, Context::ABS | Context::DET) && args_count != 1 {
+                    if matches!(
+                        ident,
+                        Context::ABS
+                            | Context::DET
+                            | Context::EXPAND
+                            | Context::FACTOR
+                            | Context::SIMPLIFY
+                    ) && args_count != 1 {
                         return Err(ParserError::new(format!(
                             "Function {} expects 1 argument, found {args_count}",
                             Context::get_symbol_data(&ident).name

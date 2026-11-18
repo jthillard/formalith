@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Formalith is a computer algebra system (CAS) library in Rust, generic over the algebraic structure (set/group/ring/field) that expressions live in. `src/main.rs` is a scratch binary for manual experiments, not a real CLI.
+Formalith is a computer algebra system (CAS) library in Rust, generic over the algebraic structure (set/group/ring/field) that expressions live in. `src/main.rs` is a scratch binary for manual experiments (`cargo run`). `src/bin/cli.rs` is a minimal REPL over `R` (`cargo run --bin cli`, or pass expressions as arguments); it only parses and prints, so operations are exposed as builtin functions.
 
 ## Toolchain and commands
 
@@ -32,7 +32,7 @@ Nightly Rust is required: `src/lib.rs` enables `#![feature(specialization, iter_
 
 **Parser** (`src/parser.rs`, `parser/lexer.rs`). Pratt-style parser; entry points are the `parse!` / `try_parse!` macros. Parsing is dispatched per set through `SetParseExpression<N>` (`parse_literal`, optional custom `parse_expression`, e.g. matrix literals `[[a, b], [c, d]]`). `N` is a `typenum` recursion-depth counter so parsing a function argument in another set (like `det(...)`) is type-level bounded; nesting beyond 10 levels fails.
 
-**Symbols** (`src/context/`). `Symbol` is a `usize` id interned in a global `RwLock<Context>`; data stored in an `AppendOnlyVec`. Built-in function symbols are fixed ids: `Context::ABS = 0`, `Context::DET = 1` (order of `BUILTIN_NAMES` matters). Create symbols with `symbol!("x")`.
+**Symbols** (`src/context/`). `Symbol` is a `usize` id interned in a global `RwLock<Context>`; data stored in an `AppendOnlyVec`. Built-in function symbols are fixed ids: `ABS`, `DET`, `EXPAND`, `FACTOR`, `SIMPLIFY` (order of `BUILTIN_NAMES` matters). Builtins are evaluated in the set's `normalize` (see `R::normalize`), and their arity is checked in the parser. Create symbols with `symbol!("x")`.
 
 **Other modules.** `polynom/`: `MultivariatePolynomial` (gcd, quotient/remainder, square-free factorization; complete factorization over ℚ in `polynom/factor/` with Zassenhaus for univariate and Wang/EEZ lifting for multivariate, falling back to square-free when coefficients aren't rational), converted from/to terms via `Term::to_polynomial` and `ToTerm`. `matrix/`: generic `Matrix<T: Set>` (det, inverse, row reduction). `printer/`: `Print` (single-line) and `PrettyPrint` (2D box layout via `PrettyPrinter`), colored with `owo-colors`. `combinatorics.rs`: composition iterators used by expansion.
 
