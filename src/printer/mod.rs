@@ -111,7 +111,8 @@ pub trait Print {
         Self: Sized,
     {
         let need_paren = match elem {
-            Term::Value(_) | Term::Symbol(_) | Term::Fun(_) => false,
+            Term::Value(value) => !value.set.is_atomic(&value.value),
+            Term::Symbol(_) | Term::Fun(_) => false,
             Term::Add(_) | Term::Pow(_) | Term::Mul(_) => true,
         };
         if need_paren {

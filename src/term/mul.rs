@@ -5,7 +5,7 @@ use std::fmt::Display;
 use crate::{
     field::{Group, Ring, Set},
     printer::{PrettyPrint, PrettyPrinter, Print, PrintOptions},
-    term::{Normalize, Value},
+    term::Normalize,
 };
 
 use super::{Flags, Term};
@@ -125,7 +125,14 @@ impl<T: Set> Print for Mul<T> {
             if coefficient_set.is_one(&coefficient_set.neg(&self.coefficient)) {
                 Self::operator("-", options, f)?;
             } else {
+                let is_sum = coefficient_set.is_sum(&self.coefficient);
+                if is_sum {
+                    Self::group_delim("(", options, f)?;
+                }
                 coefficient_set.print(&self.coefficient, options, f)?;
+                if is_sum {
+                    Self::group_delim(")", options, f)?;
+                }
                 Self::operator("*", options, f)?;
             }
         }
@@ -147,13 +154,12 @@ impl<T: Set> Mul<T> {
         let mut den: Option<PrettyPrinter> = None;
         // Print the coefficient at the beginning of the product
         let mut num = if self.has_coeff() {
-            Some(PrettyPrint::pretty_print(
-                &Term::Value(Value::new(
-                    self.coefficient.clone(),
-                    self.set.get_coefficient_set(),
-                )),
-                options,
-            ))
+            let coefficient_set = self.set.get_coefficient_set();
+            let mut coefficient = coefficient_set.pretty_print(&self.coefficient, options);
+            if coefficient_set.is_sum(&self.coefficient) {
+                coefficient.paren();
+            }
+            Some(coefficient)
         } else {
             None
         };

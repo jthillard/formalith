@@ -8,16 +8,19 @@ use std::{
     fmt::{Debug, Display},
 };
 
+use malachite::Integer;
+
 use crate::{
+    combinatorics::{Combinatorics, CompositionIterator},
     context::{Context, Symbol},
     field::{
         Group, PartiallyOrderedSet, Ring, Set, TryElementFrom,
         matrix::{M, VectorSpaceElement},
     },
+    iter,
     matrix::MatrixResult,
     polynom::{MultivariatePolynomial, ToTerm},
     printer::{PrettyPrint, PrettyPrinter, Print, PrintOptions},
-    iter,
 };
 
 pub mod term_op;
@@ -788,6 +791,49 @@ impl<T: Ring<ExponantSet: Ring, ProductCoefficientSet = T>> Term<T> {
             ));
         }
         res
+    }
+
+    /// Cancel common polynomial factors of the numerator and the denominator of the expression.
+    pub(crate) fn cancel_common_factors(&self) -> Self {
+        let (num, den) = self.as_fraction(true);
+        if den.is_one() {
+            return self.clone();
+        }
+        let (num, den) = (num.to_polynomial(), den.to_polynomial());
+        let gcd = num.gcd(&den);
+        if gcd.is_constant() {
+            return self.clone();
+        }
+        match (num.exact_div(&gcd), den.exact_div(&gcd)) {
+            (Some(num), Some(den)) => num.to_term() / den.to_term(),
+            _ => self.clone(),
+        }
+    }
+}
+
+impl<T: Ring> Term<T> {
+    /// Expand `add^n` with the multinomial formula. `from_integer` converts the multinomial coefficients to elements of `T`.
+    pub(crate) fn expand_sum_power(
+        add: &Add<T>,
+        n: usize,
+        from_integer: impl Fn(Integer) -> T::Element,
+    ) -> Self {
+        let set = add.set;
+        let exponant_set = set.get_exponant_set();
+        let mut terms = Self::zero(set);
+        let mut iterator = CompositionIterator::new(add.len(), n);
+        while let Some(k) = iterator.next_composition() {
+            let ik = k.iter().map(|x| Integer::from(*x)).collect::<Vec<_>>();
+            let mut result = Self::Value(Value::new(from_integer(Integer::multinom(&ik)), set));
+            for (term, k) in add.iter().zip(k) {
+                result *= term.pow(&Term::Value(Value::new(
+                    exponant_set.nth(i64::try_from(*k).expect("Exponant is too large")),
+                    exponant_set,
+                )));
+            }
+            terms += result;
+        }
+        terms
     }
 }
 impl<T: Set> Expand for Term<T> {

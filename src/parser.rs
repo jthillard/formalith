@@ -272,6 +272,9 @@ where
                             | Context::EXPAND
                             | Context::FACTOR
                             | Context::SIMPLIFY
+                            | Context::RE
+                            | Context::IM
+                            | Context::CONJ
                     ) && args_count != 1
                     {
                         return Err(ParserError::new(format!(

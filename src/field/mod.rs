@@ -4,7 +4,7 @@ use std::{cmp::Ordering, fmt, hash::Hash};
 
 use crate::{
     context::Symbol,
-    field::matrix::M,
+    field::{cartesian::CartesianPower, matrix::M},
     parser::{Parser, ParserError},
     printer::{PrettyPrinter, PrintOptions},
     term::{Add, Mul, Pow, SymbolTerm, Term, TermSet, Value},
@@ -56,8 +56,24 @@ pub trait Set: Clone + Copy + fmt::Debug + PartialEq + Eq + Hash + 'static {
         TermSet::new(*self)
     }
 
+    /// Get the cartesian power `{$T^K$}` of this set
+    fn get_cartesian_power<const K: usize>(&self) -> CartesianPower<Self, K> {
+        CartesianPower::new(*self)
+    }
+
     /// Compares two elements of this set and returns true if they are equals.
     fn element_eq(&self, a: &Self::Element, b: &Self::Element) -> bool;
+
+    /// Checks if an element is printed as a single operand. Non atomic elements, like `2*i`, are wrapped in parentheses
+    /// when used as an operand of a power or of a product.
+    fn is_atomic(&self, _elem: &Self::Element) -> bool {
+        true
+    }
+
+    /// Checks if an element is printed as a sum, like `1+2*i`, and needs parentheses when used as a product coefficient.
+    fn is_sum(&self, _elem: &Self::Element) -> bool {
+        false
+    }
 }
 
 /// A set with a partial ordering.

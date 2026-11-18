@@ -73,7 +73,11 @@ impl<T: Set> PrettyPrint for Pow<T> {
         };
         let mut base = (*self.base).pretty_print(options);
         let exponant = (**pow.exponant).pretty_print(options);
-        if matches!(*self.base, Term::Mul(_) | Term::Add(_)) {
+        if match &*self.base {
+            Term::Mul(_) | Term::Add(_) => true,
+            Term::Value(value) => !value.set.is_atomic(&value.value),
+            _ => false,
+        } {
             base.paren();
         }
         base.pow(&exponant);
@@ -101,7 +105,11 @@ impl<T: Ring> PrettyPrint for Pow<T> {
         };
         let mut base = (*self.base).pretty_print(options);
         let exponant = (**pow.exponant).pretty_print(options);
-        if matches!(*self.base, Term::Mul(_) | Term::Add(_)) {
+        if match &*self.base {
+            Term::Mul(_) | Term::Add(_) => true,
+            Term::Value(value) => !value.set.is_atomic(&value.value),
+            _ => false,
+        } {
             base.paren();
         }
         base.pow(&exponant);

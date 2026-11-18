@@ -11,7 +11,7 @@ use std::{collections::HashMap, fmt::Debug};
 use malachite::{Integer, Rational, base::num::arithmetic::traits::Pow};
 
 use crate::{
-    field::{Ring, Set, TryElementFrom, integer::Z, real::R},
+    field::{Ring, Set, TryElementFrom, complex::C, integer::Z, real::R},
     polynom::{Monomial, MultivariatePolynomial},
     term::{Term, TermSet},
 };
@@ -43,6 +43,15 @@ impl RationalSet for R<Rational> {
     }
     fn from_rational(&self, value: Rational) -> Option<Self::Element> {
         Some(value)
+    }
+}
+
+impl RationalSet for C<R<Rational>> {
+    fn to_rational(&self, element: &Self::Element) -> Option<Rational> {
+        (element[1] == 0).then(|| element[0].clone())
+    }
+    fn from_rational(&self, value: Rational) -> Option<Self::Element> {
+        Some([value, Rational::from(0)])
     }
 }
 

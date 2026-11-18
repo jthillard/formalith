@@ -1,7 +1,7 @@
 //! Most commons groups, rings and fields like [struct@R] or [struct@M].
 //! These are currently only implemented using malachite arbitrary precision numbers.
 
-use malachite::rational::Rational;
+use malachite::{base::num::basic::traits::Zero, rational::Rational};
 use std::{
     error::Error,
     fmt::{self, Debug},
@@ -10,6 +10,7 @@ use std::{
 use crate::{
     field::{
         Set, TryExprFrom,
+        complex::C,
         matrix::{M, VectorSpaceElement},
         real::R,
         try_from_expr_default,
@@ -20,6 +21,8 @@ use crate::{
 
 use super::TryElementFrom;
 
+pub mod cartesian;
+pub mod complex;
 pub mod integer;
 pub mod matrix;
 pub mod natural;
@@ -71,6 +74,12 @@ impl<T: Set> TryElementFrom<TermSet<T>> for T {
 impl<T: Into<Rational>> From<T> for Term<R<Rational>> {
     fn from(value: T) -> Self {
         Self::Value(Value::new(value.into(), R))
+    }
+}
+
+impl<T: Into<Rational>> From<T> for Term<C<R<Rational>>> {
+    fn from(value: T) -> Self {
+        Self::Value(Value::new([value.into(), Rational::ZERO], C))
     }
 }
 

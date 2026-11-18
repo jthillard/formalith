@@ -3,7 +3,7 @@
 use std::{cmp::Ordering, marker::PhantomData};
 
 use malachite::{
-    Integer, Natural, Rational,
+    Natural, Rational,
     base::num::{
         arithmetic::traits::{CheckedRoot, Parity, Pow, Sign},
         basic::traits::{NegativeOne, One, Zero},
@@ -12,13 +12,11 @@ use malachite::{
 };
 
 use crate::{
-    combinatorics,
     context::{Context, Symbol},
     field::{
         Derivable, Field, Group, PartiallyOrderedSet, Ring, Set, SetParseExpression, matrix::M,
     },
     parser::Parser,
-    polynom::ToTerm,
     printer::PrettyPrinter,
     term::{self, Expand, Fun, Mul, Normalize, Term, TermSet, Value},
 };
@@ -242,20 +240,7 @@ impl Ring for R<Rational> {
     }
 
     fn simplify(&self, a: Term<Self>) -> Term<Self> {
-        // Cancel common polynomial factors of the numerator and the denominator
-        let (num, den) = a.as_fraction(true);
-        if den.is_one() {
-            return a;
-        }
-        let (num, den) = (num.to_polynomial(), den.to_polynomial());
-        let gcd = num.gcd(&den);
-        if gcd.is_constant() {
-            return a;
-        }
-        match (num.exact_div(&gcd), den.exact_div(&gcd)) {
-            (Some(num), Some(den)) => num.to_term() / den.to_term(),
-            _ => a,
-        }
+        a.cancel_common_factors()
     }
 
     fn expand(&self, a: Term<Self>) -> Term<Self> {
@@ -266,28 +251,7 @@ impl Ring for R<Rational> {
                         && value.value.numerator_ref() != &Natural::ONE
                         && let Ok(num) = usize::try_from(value.value.numerator_ref())
                     {
-                        let mut terms = Term::zero(*self);
-
-                        let mut iterator = combinatorics::CompositionIterator::new(add.len(), num);
-
-                        while let Some(k) = iterator.next_composition() {
-                            let ik = k
-                                .iter()
-                                .map(|x| Integer::from(*x))
-                                .collect::<Vec<Integer>>();
-                            let mut result = Term::Value(Value::new(
-                                combinatorics::Combinatorics::multinom(&ik).into(),
-                                *self,
-                            ));
-
-                            for (i, term) in add.iter().enumerate() {
-                                result *= term.pow(
-                                    &Value::new(Rational::from_unsigneds(k[i], 1), *self).into(),
-                                );
-                            }
-
-                            terms += result;
-                        }
+                        let terms = Term::expand_sum_power(add, num, Rational::from);
                         if value.value.sign() == Ordering::Less {
                             return term::Pow::new(
                                 terms,

@@ -116,8 +116,16 @@ impl Context {
     pub const FACTOR: Symbol = Symbol(3);
     /// Simplification function, evaluating to its simplified argument
     pub const SIMPLIFY: Symbol = Symbol(4);
+    /// Real part function
+    pub const RE: Symbol = Symbol(5);
+    /// Imaginary part function
+    pub const IM: Symbol = Symbol(6);
+    /// Complex conjugate function
+    pub const CONJ: Symbol = Symbol(7);
 
-    const BUILTIN_NAMES: [&'static str; 5] = ["abs", "det", "expand", "factor", "simplify"];
+    const BUILTIN_NAMES: [&'static str; 8] = [
+        "abs", "det", "expand", "factor", "simplify", "re", "im", "conj",
+    ];
 
     /// Create a new empty context
     #[must_use]
