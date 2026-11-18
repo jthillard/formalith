@@ -14,7 +14,7 @@ use super::{
     rational_roots,
     tower::sample_points,
 };
-use crate::integrate::poly::{Coefficient, Poly};
+use crate::polynom::dense::{Coefficient, Poly};
 
 /// Maximum degree bound of a polynomial solution.
 const MAX_BOUND: i64 = 40;
@@ -195,7 +195,7 @@ impl Risch<'_> {
     ) -> RischResult<(EPoly, EPoly, EPoly, EPoly)> {
         let poly = |e: &Elem| {
             let (num, den) = e.fraction(level);
-            if den.is_one_poly() {
+            if den.is_one() {
                 Ok(num)
             } else {
                 Err(RischError::Unsupported)
@@ -356,13 +356,7 @@ impl Risch<'_> {
         match kind {
             Kind::X => {
                 // `{$D q = c$}`
-                let q = EPoly::new(
-                    std::iter::once(Elem::zero())
-                        .chain(c.coefficients().iter().enumerate().map(|(i, c)| {
-                            c.times(&Elem::rational(Rational::from(1) / Rational::from(i + 1)))
-                        }))
-                        .collect(),
-                );
+                let q = c.antiderivative();
                 Ok((degree(&q) <= n).then_some(q))
             }
             _ if b.is_zero() => self.derivative_of_polynomial(c, n, level, sure),
@@ -419,7 +413,7 @@ impl Risch<'_> {
             }
         };
         let (num, den) = y.fraction(level);
-        Ok((den.is_one_poly() && degree(&num) <= n).then_some(num))
+        Ok((den.is_one() && degree(&num) <= n).then_some(num))
     }
 
     /// `{$D q + b q = c$}` for `{$t = ln u$}` and `b` of a lower level, solving for each coefficient of `q`

@@ -213,7 +213,7 @@ impl<V: Monomial, T: Ring, U: Ring> MultivariatePolynomial<V, T, U> {
                 if !univariate::is_square_free(&dense) {
                     return None;
                 }
-                let (_, primitive) = univariate::to_primitive(&dense);
+                let (_, primitive) = univariate::to_primitive(dense.coefficients());
                 Some(
                     univariate::zassenhaus(&primitive)
                         .iter()

@@ -14,6 +14,7 @@ use super::{
     modular::Rng,
     univariate::{self, QPoly, ZPoly},
 };
+use crate::combinatorics::next_combination;
 
 /// A sparse polynomial in `n` variables over `{$QQ$}`, mapping exponent vectors to non-zero coefficients.
 ///
@@ -210,15 +211,12 @@ impl SparsePoly {
             debug_assert!(e.iter().enumerate().all(|(i, x)| i == var || *x == 0));
             res[e[var] as usize] += c;
         }
-        while res.last().is_some_and(|c| *c == 0u32) {
-            res.pop();
-        }
-        res
+        QPoly::new(res)
     }
     /// Create a polynomial in `n` variables from a dense polynomial in `var`.
     pub fn from_dense(n: usize, var: usize, a: &QPoly) -> Self {
         let mut res = Self::zero(n);
-        for (i, c) in a.iter().enumerate() {
+        for (i, c) in a.coefficients().iter().enumerate() {
             let mut e = vec![0; n];
             e[var] = u32::try_from(i).expect("Degree fits in u32");
             res.add_term(e, c.clone());
@@ -258,7 +256,7 @@ impl SparsePoly {
     /// Write the polynomial as `c * p`, with `p` having coprime integer coefficients and a positive leading coefficient.
     #[must_use]
     pub fn primitive(&self) -> (Rational, Self) {
-        let coefficients: QPoly = self.terms.values().cloned().collect();
+        let coefficients: Vec<Rational> = self.terms.values().cloned().collect();
         // `to_primitive` uses the last coefficient for the sign, which is the leading one here
         let (c, _) = univariate::to_primitive(&coefficients);
         (c.clone(), self.scale(&(Rational::ONE / c)))
@@ -337,14 +335,12 @@ pub fn wang(f: &SparsePoly) -> Option<WangResult> {
                         .iter()
                         .enumerate()
                         .filter(|(i, _)| subset.contains(i) == inside)
-                        .fold(vec![Rational::ONE], |acc, (_, x)| {
-                            univariate::qmul(&acc, &univariate::to_q(x))
-                        })
+                        .fold(QPoly::one(), |acc, (_, x)| acc.mul(&univariate::to_q(x)))
                 };
                 if let Some(res) = lift_at(f, &lc, &image.point, &[product(true), product(false)]) {
                     return Some(WangResult::Split(res));
                 }
-                if !next_subset(&mut subset, r) {
+                if !next_combination(&mut subset, r) {
                     break;
                 }
             }
@@ -352,20 +348,6 @@ pub fn wang(f: &SparsePoly) -> Option<WangResult> {
         return Some(WangResult::Irreducible);
     }
     None
-}
-
-fn next_subset(indices: &mut [usize], n: usize) -> bool {
-    let k = indices.len();
-    for i in (0..k).rev() {
-        if indices[i] < n - k + i {
-            indices[i] += 1;
-            for j in i + 1..k {
-                indices[j] = indices[j - 1] + 1;
-            }
-            return true;
-        }
-    }
-    false
 }
 
 /// Deterministic sequence of evaluation points for variables `1..n`, starting at zero and growing.
@@ -398,7 +380,7 @@ fn image_at(f: &SparsePoly, lc: &SparsePoly, point: &[Integer]) -> Option<Image>
     if !univariate::is_square_free(&image) {
         return None;
     }
-    let (_, primitive) = univariate::to_primitive(&image);
+    let (_, primitive) = univariate::to_primitive(image.coefficients());
     Some(Image {
         point: point.to_vec(),
         factors: univariate::zassenhaus(&primitive),
@@ -428,7 +410,7 @@ fn lift_at(
     // Every image factor gets the leading coefficient of `f` at the point
     let images: Vec<QPoly> = images
         .iter()
-        .map(|u| univariate::qscale(u, &(&lc_image / u.last().expect("Non zero"))))
+        .map(|u| u.scale(&(&lc_image / u.leading())))
         .collect();
     let bezout = univariate::multi_bezout(&images);
     let degrees: Vec<u32> = (0..n).map(|v| target.degree_in(v)).collect();
@@ -444,7 +426,7 @@ fn lift_at(
         let lc_k = restrict(&lc);
         // Replace leading coefficients
         for (factor, image) in factors.iter_mut().zip(&images) {
-            let d = u32::try_from(image.len() - 1).expect("Degree fits in u32");
+            let d = u32::try_from(image.degree()).expect("Degree fits in u32");
             *factor = factor
                 .sub(&factor.coefficient_in(0, d).mul_var(0, d))
                 .add(&lc_k.mul_var(0, d));
@@ -496,9 +478,7 @@ fn diophantine(
         return images
             .iter()
             .zip(bezout)
-            .map(|(a, s)| {
-                SparsePoly::from_dense(n, 0, &univariate::qdiv_rem(&univariate::qmul(&c, s), a).1)
-            })
+            .map(|(a, s)| SparsePoly::from_dense(n, 0, &c.mul(s).rem(a)))
             .collect();
     }
     let others: Vec<SparsePoly> = (0..a.len())

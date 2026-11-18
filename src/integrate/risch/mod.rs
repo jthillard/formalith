@@ -140,7 +140,7 @@ impl Risch<'_> {
         let (num, den) = p.fraction(level);
         let rest = match self.tower.kind(level) {
             Kind::Ln(_) => {
-                if !den.is_one_poly() {
+                if !den.is_one() {
                     return Err(RischError::Unsupported);
                 }
                 let (q, rest) = self.primitive_polynomial(num, level)?;
@@ -283,7 +283,7 @@ impl Risch<'_> {
             let (num, den) = Elem::from_poly(level, p)
                 .minus(&self.d(&q0))
                 .fraction(level);
-            if !den.is_one_poly() || (!num.is_zero() && num.degree() >= m) {
+            if !den.is_one() || (!num.is_zero() && num.degree() >= m) {
                 return Err(RischError::Unsupported);
             }
             p = num;

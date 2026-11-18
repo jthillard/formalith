@@ -145,11 +145,7 @@ impl GaussianPoly {
         }
         let monic = self.scale(&gdiv(&gaussian_one(), &self.leading_coefficient()));
         let coefficients = || monic.re.terms().chain(monic.im.terms()).map(|(_, c)| c);
-        let denominator = coefficients().fold(Natural::ONE, |acc, c| {
-            let d = c.denominator_ref();
-            let g = (&acc).gcd(d);
-            acc * d / g
-        });
+        let denominator = super::univariate::lcm_denominators(coefficients());
         let numerator = coefficients().fold(Natural::ZERO, |acc, c| {
             acc.gcd(c.numerator_ref() * &denominator / c.denominator_ref())
         });

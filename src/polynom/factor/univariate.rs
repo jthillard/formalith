@@ -1,6 +1,7 @@
-//! Dense univariate polynomials over `{$ZZ$}` and `{$QQ$}`, and the Zassenhaus factorization algorithm.
+//! Dense univariate polynomials over `{$ZZ$}`, and the Zassenhaus factorization algorithm.
 //!
-//! Polynomials are coefficient vectors, lowest degree first, without trailing zeros: the zero polynomial is empty.
+//! Integer polynomials are coefficient vectors, lowest degree first, without trailing zeros: the zero
+//! polynomial is empty. Rational polynomials are [`Poly`]s.
 
 use malachite::{
     Integer, Natural, Rational,
@@ -11,13 +12,14 @@ use malachite::{
 };
 
 use super::modular::{self, ModPoly, Rng};
+use crate::{combinatorics::next_combination, polynom::dense::Poly};
 
 /// A polynomial with integer coefficients, lowest degree first.
 pub type ZPoly = Vec<Integer>;
-/// A polynomial with rational coefficients, lowest degree first.
-pub type QPoly = Vec<Rational>;
+/// A polynomial with rational coefficients.
+pub type QPoly = Poly<Rational>;
 
-fn trim<C: PartialEq<u32>>(mut a: Vec<C>) -> Vec<C> {
+fn trim(mut a: ZPoly) -> ZPoly {
     while a.last().is_some_and(|c| *c == 0u32) {
         a.pop();
     }
@@ -145,99 +147,24 @@ pub fn exact_div(a: &ZPoly, b: &ZPoly) -> Option<ZPoly> {
 // Rational polynomials
 // ---------------------------------------------------------------------------
 
-/// `a - b`
-pub fn qsub(a: &QPoly, b: &QPoly) -> QPoly {
-    let zero = Rational::ZERO;
-    trim(
-        (0..a.len().max(b.len()))
-            .map(|i| a.get(i).unwrap_or(&zero) - b.get(i).unwrap_or(&zero))
-            .collect(),
-    )
-}
-
-/// `a * b`
-pub fn qmul(a: &QPoly, b: &QPoly) -> QPoly {
-    if a.is_empty() || b.is_empty() {
-        return vec![];
-    }
-    let mut res = vec![Rational::ZERO; a.len() + b.len() - 1];
-    for (i, x) in a.iter().enumerate() {
-        for (j, y) in b.iter().enumerate() {
-            res[i + j] += x * y;
-        }
-    }
-    trim(res)
-}
-
-/// `c * a`
-pub fn qscale(a: &QPoly, c: &Rational) -> QPoly {
-    trim(a.iter().map(|x| x * c).collect())
-}
-
-/// Euclidean division, returning quotient and remainder.
-///
-/// # Panics
-/// Panics if `b` is zero.
-pub fn qdiv_rem(a: &QPoly, b: &QPoly) -> (QPoly, QPoly) {
-    let db = b.len().checked_sub(1).expect("Division by zero");
-    let mut rem = a.clone();
-    if rem.len() <= db {
-        return (vec![], rem);
-    }
-    let mut quot = vec![Rational::ZERO; rem.len() - db];
-    for i in (db..rem.len()).rev() {
-        if rem[i] == 0u32 {
-            continue;
-        }
-        let q = &rem[i] / &b[db];
-        for (j, y) in b.iter().enumerate() {
-            rem[i - db + j] -= &q * y;
-        }
-        quot[i - db] = q;
-    }
-    rem.truncate(db);
-    (trim(quot), trim(rem))
-}
-
-/// Extended gcd: returns `(g, s, t)` with `s*a + t*b = g`, `g` monic.
-pub fn qext_gcd(a: &QPoly, b: &QPoly) -> (QPoly, QPoly, QPoly) {
-    let (mut r0, mut r1) = (a.clone(), b.clone());
-    let (mut s0, mut s1) = (vec![Rational::ONE], vec![]);
-    let (mut t0, mut t1) = (vec![], vec![Rational::ONE]);
-    while !r1.is_empty() {
-        let (q, r) = qdiv_rem(&r0, &r1);
-        let s = qsub(&s0, &qmul(&q, &s1));
-        let t = qsub(&t0, &qmul(&q, &t1));
-        (r0, r1) = (r1, r);
-        (s0, s1) = (s1, s);
-        (t0, t1) = (t1, t);
-    }
-    let inv = r0.last().map_or(Rational::ONE, |lc| Rational::ONE / lc);
-    (qscale(&r0, &inv), qscale(&s0, &inv), qscale(&t0, &inv))
-}
-
-fn qderivative(a: &QPoly) -> QPoly {
-    trim(
-        a.iter()
-            .enumerate()
-            .skip(1)
-            .map(|(i, c)| c * Rational::from(i))
-            .collect(),
-    )
-}
-
 /// Check that `a` has no repeated factor.
 pub fn is_square_free(a: &QPoly) -> bool {
-    qext_gcd(a, &qderivative(a)).0.len() <= 1
+    a.gcd(&a.derivative()).is_constant()
 }
 
-/// Write `a` as `c * z`, with `z` primitive over `{$ZZ$}` and a positive leading coefficient.
-pub fn to_primitive(a: &QPoly) -> (Rational, ZPoly) {
-    let denominator = a.iter().fold(Natural::ONE, |acc, c| {
+/// The lcm of the denominators of rational numbers.
+pub fn lcm_denominators<'a>(numbers: impl IntoIterator<Item = &'a Rational>) -> Natural {
+    numbers.into_iter().fold(Natural::ONE, |acc, c| {
         let d = c.denominator_ref();
         let g = (&acc).gcd(d);
         acc * d / g
-    });
+    })
+}
+
+/// Write the polynomial with coefficients `a`, lowest degree first, as `c * z`, with `z` primitive over
+/// `{$ZZ$}` and a positive leading coefficient.
+pub fn to_primitive(a: &[Rational]) -> (Rational, ZPoly) {
+    let denominator = lcm_denominators(a);
     let scaled: ZPoly = a
         .iter()
         .map(|c| Integer::try_from(c * Rational::from(&denominator)).expect("Denominators cleared"))
@@ -251,23 +178,21 @@ pub fn to_primitive(a: &QPoly) -> (Rational, ZPoly) {
 
 /// Convert an integer polynomial to a rational one.
 pub fn to_q(a: &ZPoly) -> QPoly {
-    a.iter().map(Rational::from).collect()
+    Poly::new(a.iter().map(Rational::from).collect())
 }
 
 /// Bézout coefficients for pairwise coprime `a_i`: returns `s_i` with `{$sum_i s_i product_(j != i) a_j = 1$}` and `{$deg s_i < deg a_i$}`.
 pub fn multi_bezout(a: &[QPoly]) -> Vec<QPoly> {
     match a {
         [] => vec![],
-        [_] => vec![vec![Rational::ONE]],
+        [_] => vec![Poly::one()],
         [first, rest @ ..] => {
-            let product = rest
-                .iter()
-                .fold(vec![Rational::ONE], |acc, x| qmul(&acc, x));
+            let product = rest.iter().fold(Poly::one(), |acc, x| acc.mul(x));
             // u * first + v * product = 1
-            let (_, u, v) = qext_gcd(first, &product);
+            let (u, v, _) = first.extended_gcd(&product);
             let mut res = vec![v];
             for (s, x) in multi_bezout(rest).iter().zip(rest) {
-                res.push(qdiv_rem(&qmul(&u, s), x).1);
+                res.push(u.mul(s).rem(x));
             }
             res
         }
@@ -328,37 +253,8 @@ fn hensel_multi(f: &ZPoly, factors: &[ModPoly], p: u64, k: u32, m: &Integer) -> 
     res
 }
 
-const fn is_prime(n: u64) -> bool {
-    if n < 2 {
-        return false;
-    }
-    let mut d = 2;
-    while d * d <= n {
-        if n % d == 0 {
-            return false;
-        }
-        d += 1;
-    }
-    true
-}
-
 /// Number of good primes tried, the one giving the fewest modular factors is kept.
 const PRIME_TRIES: usize = 5;
-
-/// Advance `indices` to the next combination of its size among `0..n`, in lexicographic order.
-fn next_combination(indices: &mut [usize], n: usize) -> bool {
-    let k = indices.len();
-    for i in (0..k).rev() {
-        if indices[i] < n - k + i {
-            indices[i] += 1;
-            for j in i + 1..k {
-                indices[j] = indices[j - 1] + 1;
-            }
-            return true;
-        }
-    }
-    false
-}
 
 /// Factor a primitive square-free polynomial with a positive leading coefficient into irreducible factors over `{$ZZ$}`.
 ///
@@ -374,7 +270,7 @@ pub fn zassenhaus(f: &ZPoly) -> Vec<ZPoly> {
     // Choose the prime giving the fewest modular factors
     let mut best: Option<(u64, Vec<ModPoly>)> = None;
     let mut tries = 0;
-    for p in (3..).step_by(2).filter(|p| is_prime(*p)) {
+    for p in (3..).step_by(2).filter(|p| modular::is_prime(*p)) {
         if (&lc).divisible_by(Integer::from(p)) {
             continue;
         }

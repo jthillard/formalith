@@ -18,8 +18,9 @@ use malachite::{
 use crate::{
     context::{Context, Symbol},
     field::real::R,
-    integrate::{Expr, poly::Coefficient},
+    integrate::Expr,
     limit::{fun, value, variable},
+    polynom::dense::Coefficient,
     term::Term,
 };
 
@@ -166,7 +167,7 @@ impl Tower {
                 let level = f.level();
                 let (num, den) = f.fraction(level);
                 let num = self.poly_to_term(&num, level);
-                if den.is_one_poly() {
+                if den.is_one() {
                     num
                 } else {
                     num / self.poly_to_term(&den, level)
@@ -453,13 +454,6 @@ pub(super) fn solve_linear(mut rows: Vec<Vec<Rational>>, n: usize) -> Option<Vec
         res[column] = rows[i][n].clone();
     }
     Some(res)
-}
-
-impl EPoly {
-    /// Whether the polynomial is 1.
-    pub(super) fn is_one_poly(&self) -> bool {
-        self.coefficients().len() == 1 && self.coefficients()[0].is_one()
-    }
 }
 
 #[cfg(test)]

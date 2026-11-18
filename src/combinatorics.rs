@@ -128,3 +128,19 @@ impl Combinatorics for Integer {
         result
     }
 }
+
+/// Advance `indices`, a strictly increasing combination of `indices.len()` elements among `0..n`, to the
+/// next one in lexicographic order. Returns `false`, leaving `indices` unchanged, after the last one.
+pub fn next_combination(indices: &mut [usize], n: usize) -> bool {
+    let k = indices.len();
+    for i in (0..k).rev() {
+        if indices[i] < n - k + i {
+            indices[i] += 1;
+            for j in i + 1..k {
+                indices[j] = indices[j - 1] + 1;
+            }
+            return true;
+        }
+    }
+    false
+}

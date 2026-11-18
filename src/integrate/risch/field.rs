@@ -11,7 +11,7 @@ use malachite::{
     base::num::basic::traits::{One, Zero},
 };
 
-use crate::integrate::poly::{Coefficient, Poly};
+use crate::polynom::dense::{Coefficient, Poly};
 
 /// An element of `{$K_n$}`.
 #[derive(Clone, Debug, PartialEq, Eq)]
