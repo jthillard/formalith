@@ -1,5 +1,7 @@
 //! Polynom implementation
 
+pub mod factor;
+
 use std::{
     cmp::Ordering,
     collections::{HashMap, HashSet},
@@ -351,14 +353,19 @@ impl<V: Monomial, T: Ring, U: Ring> MultivariatePolynomial<V, T, U> {
         for (v, e) in denom_vars {
             match var_map.get_mut(v) {
                 Some(current_exp) => {
-                    // println!("{} < {} : {}", current_exp, e, *current_exp < *e);
-                    if matches!(
-                        exponant_set.partial_cmp(current_exp, e),
-                        Some(std::cmp::Ordering::Less)
-                    ) {
+                    let difference = exponant_set.sub(current_exp, e);
+                    let divides = match exponant_set.partial_cmp(current_exp, e) {
+                        Some(ordering) => ordering != Ordering::Less,
+                        // Symbolic exponants, like `x^(2*n)` divided by `x^n`: the difference must be exact and not negative
+                        None => {
+                            exponant_set.element_eq(&exponant_set.add(&difference, e), current_exp)
+                                && !exponant_set.is_strictly_negative(&difference)
+                        }
+                    };
+                    if !divides {
                         return None;
                     }
-                    *current_exp = exponant_set.sub(current_exp, e);
+                    *current_exp = difference;
                     if exponant_set.is_zero(current_exp) {
                         var_map.remove(v);
                     }
@@ -375,6 +382,12 @@ impl<V: Monomial, T: Ring, U: Ring> MultivariatePolynomial<V, T, U> {
 
     /// Euclidian division, returning quotient and remainder
     pub fn quot_rem(&self, divisor: &Self) -> (Self, Self) {
+        let (quotient, remainder, _) = self.quot_rem_checked(divisor);
+        (quotient, remainder)
+    }
+
+    /// Euclidian division, also returning `false` if some leading terms didn't cancel, which happens with symbolic coefficients.
+    fn quot_rem_checked(&self, divisor: &Self) -> (Self, Self, bool) {
         trace!(
             "Computing euclidian division between {} and {}",
             self.stdout(),
@@ -383,6 +396,7 @@ impl<V: Monomial, T: Ring, U: Ring> MultivariatePolynomial<V, T, U> {
         let mut quotient = Self::zero(self.set, self.exponant_set);
         let mut remainder = Self::zero(self.set, self.exponant_set);
         let mut current_dividend = self.clone();
+        let mut exact = true;
 
         while !current_dividend.is_zero() {
             let (lead_vars, lead_coeff) = current_dividend.leading_term();
@@ -405,6 +419,16 @@ impl<V: Monomial, T: Ring, U: Ring> MultivariatePolynomial<V, T, U> {
                 let to_subtract = &term_poly * divisor;
                 // trace!("{:#?} / {:#?}", current_dividend, to_subtract);
                 current_dividend = &current_dividend - &to_subtract;
+                // A symbolic coefficient times its inverse may not simplify, move what is left to the remainder to terminate
+                if let Some(i) = current_dividend
+                    .terms
+                    .iter()
+                    .position(|(vars, _)| *vars == lead_vars)
+                {
+                    let leftover = current_dividend.terms.remove(i);
+                    remainder = remainder + &Self::from_term(leftover, self.set, self.exponant_set);
+                    exact = false;
+                }
             } else {
                 let term = Self::from_term((lead_vars, lead_coeff), self.set, self.exponant_set);
                 remainder = remainder + &term;
@@ -419,7 +443,7 @@ impl<V: Monomial, T: Ring, U: Ring> MultivariatePolynomial<V, T, U> {
             quotient.stdout(),
             remainder.stdout()
         );
-        (quotient, remainder)
+        (quotient, remainder, exact)
     }
     /// Divide the polynomial by its leading coefficient.
     ///
@@ -429,6 +453,10 @@ impl<V: Monomial, T: Ring, U: Ring> MultivariatePolynomial<V, T, U> {
     pub fn monic(self) -> Self {
         if self.is_zero() {
             return self;
+        }
+        // Symbolic coefficients times their inverse may not simplify to one
+        if self.is_constant() {
+            return Self::one(self.set, self.exponant_set);
         }
         let leading_coeff = self.leading_term().1;
         if self.set.is_one(&leading_coeff) {
@@ -459,14 +487,24 @@ impl<V: Monomial, T: Ring, U: Ring> MultivariatePolynomial<V, T, U> {
         if self.is_constant() || other.is_constant() {
             return Self::one(self.set, self.exponant_set);
         }
-        if let Some(var) = self.main_variable(other)
-            && self.variables().union(&other.variables()).count() > 1
+        if self.variables().union(&other.variables()).count() > 1
+            && let Some(var) = self.gcd_variable(other)
         {
             return self.multivariate_gcd(other, &var);
         }
 
-        let (_, remainder) = self.quot_rem(other);
-        other.gcd(&remainder)
+        let (mut a, mut b) = (self.clone(), other.clone());
+        let mut previous_quotient_zero = false;
+        while !b.is_zero() {
+            let (quotient, remainder, exact) = a.quot_rem_checked(&b);
+            // Without progress the gcd is unknown, consider polynomials coprime
+            if !exact || (quotient.is_zero() && previous_quotient_zero) {
+                return Self::one(self.set, self.exponant_set);
+            }
+            previous_quotient_zero = quotient.is_zero();
+            (a, b) = (b, remainder);
+        }
+        a.monic()
     }
 
     /// GCD of the contents times the GCD of the primitive parts, computed with pseudo-remainders on `var`.
@@ -499,6 +537,53 @@ impl<V: Monomial, T: Ring, U: Ring> MultivariatePolynomial<V, T, U> {
             .union(&other.variables())
             .min_by(|a, b| a.monomial_cmp(b))
             .map(|var| (*var).clone())
+    }
+
+    /// Variable of lowest degree in `self` and `other`, the cheapest to compute a gcd on.
+    ///
+    /// Variables whose degree can't be determined come last, ties are broken by the variable order.
+    fn gcd_variable(&self, other: &Self) -> Option<V> {
+        let mut vars: Vec<&V> = self
+            .variables()
+            .union(&other.variables())
+            .copied()
+            .collect();
+        vars.sort_by(|a, b| a.monomial_cmp(b));
+        let degree = |var: &V| {
+            let (a, b) = (self.degree_in(var)?, other.degree_in(var)?);
+            match self.exponant_set.partial_cmp(&a, &b)? {
+                Ordering::Less => Some(b),
+                _ => Some(a),
+            }
+        };
+        let mut best: Option<(&V, Option<U::Element>)> = None;
+        for var in vars {
+            let d = degree(var);
+            let is_better = match (&best, &d) {
+                (None, _) | (Some((_, None)), Some(_)) => true,
+                (Some((_, Some(best))), Some(d)) => {
+                    self.exponant_set.partial_cmp(d, best) == Some(Ordering::Less)
+                }
+                _ => false,
+            };
+            if is_better {
+                best = Some((var, d));
+            }
+        }
+        best.map(|(var, _)| var.clone())
+    }
+
+    /// Degree in `var`, `None` if exponants can't be compared.
+    fn degree_in(&self, var: &V) -> Option<U::Element> {
+        let mut degree = self.exponant_set.zero();
+        for (vars, _) in &self.terms {
+            if let Some((_, e)) = vars.iter().find(|(v, _)| v == var)
+                && self.exponant_set.partial_cmp(e, &degree)? == Ordering::Greater
+            {
+                degree = e.clone();
+            }
+        }
+        Some(degree)
     }
 
     /// The polynomial `var^exponant`.
@@ -543,9 +628,7 @@ impl<V: Monomial, T: Ring, U: Ring> MultivariatePolynomial<V, T, U> {
         let mut coefficients = self.coefficients_in(var).into_iter();
         let leading = coefficients.next()?;
         coefficients
-            .all(|(e, _)| {
-                self.exponant_set.partial_cmp(&leading.0, &e) == Some(Ordering::Greater)
-            })
+            .all(|(e, _)| self.exponant_set.partial_cmp(&leading.0, &e) == Some(Ordering::Greater))
             .then_some(leading)
     }
 
@@ -743,13 +826,6 @@ where
     V: Monomial + TryFrom<U::Element>,
     <V as TryFrom<U::Element>>::Error: Debug,
 {
-    /// Factor the polynomial, returning factors as `(factor, multiplicity)`
-    ///
-    /// Incomplete implementation !!!
-    pub fn factor(&self) -> Vec<(Self, u32)> {
-        self.square_free_factorization()
-        // TODO add cantor-zassenhaus or/and tragger algorithm
-    }
     /// Return square free factors as `(factor, multiplicity)`
     pub fn square_free_factorization(&self) -> Vec<(Self, u32)> {
         let mut factors = Vec::new();
@@ -766,6 +842,7 @@ where
         for (factor, power) in content.square_free_factorization() {
             factors.push((factor, power));
         }
+        let content_factors = factors.len();
 
         let derivative = primitive_part.derivative(&main_var);
         let gcd = primitive_part.gcd(&derivative);
@@ -775,7 +852,18 @@ where
         let mut current_derivative = derivative.divide(&gcd);
         let mut multiplicity = 1;
 
+        // Multiplicities are bounded by the degree, coefficients that don't cancel could exceed it
+        let degree = primitive_part.degree_in(&main_var);
         while !current.is_constant() {
+            if degree.as_ref().is_some_and(|degree| {
+                self.exponant_set
+                    .partial_cmp(&self.exponant_set.nth(multiplicity.into()), degree)
+                    == Some(Ordering::Greater)
+            }) {
+                factors.truncate(content_factors);
+                factors.push((primitive_part, 1));
+                break;
+            }
             let tmp = &current_derivative - &current.derivative(&main_var);
             let g = current.gcd(&tmp);
             current = current.divide(&g);

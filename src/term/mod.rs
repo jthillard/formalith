@@ -490,6 +490,7 @@ impl<T: Group> MergeTerms for Term<T> {
                         let mul = self.convert_to_mul();
                         mul.push(m2.factors[0].clone());
                         mul.set_coeff(coeff);
+                        *self = self.normalize();
                     }
                     true
                 }

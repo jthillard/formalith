@@ -225,3 +225,129 @@ fn multivariate_square_free_factorization_is_stable() {
         assert_eq!(poly.square_free_factorization(), factors);
     }
 }
+
+type Poly = MultivariatePolynomial<
+    formalith::term::Term<R<Rational>>,
+    formalith::term::TermSet<R<Rational>>,
+    formalith::term::TermSet<R<Rational>>,
+>;
+
+/// Check that factors multiply back to `input`, and that they are the `expected` ones, in any order.
+fn assert_factors(input: &str, expected: &[(&str, u32)]) {
+    let poly: Poly = poly!(input);
+    let factors = poly.factor();
+    let product = factors.iter().fold(poly!("1"), |acc: Poly, (f, m)| {
+        (0..*m).fold(acc, |acc, _| &acc * f)
+    });
+    assert_eq!(product, poly, "{input}: product of factors");
+    let mut expected: Vec<(Poly, u32)> = expected.iter().map(|(f, m)| (poly!(*f), *m)).collect();
+    for factor in &factors {
+        let position = expected
+            .iter()
+            .position(|e| e == factor)
+            .unwrap_or_else(|| panic!("{input}: unexpected factor {} ^ {}", factor.0, factor.1));
+        expected.remove(position);
+    }
+    assert!(expected.is_empty(), "{input}: missing factors");
+}
+
+#[test]
+fn factor_univariate() {
+    assert_factors("x^4-1", &[("x-1", 1), ("x+1", 1), ("x^2+1", 1)]);
+    assert_factors(
+        "x^6-1",
+        &[("x-1", 1), ("x+1", 1), ("x^2+x+1", 1), ("x^2-x+1", 1)],
+    );
+    assert_factors("2*x^2-2", &[("2", 1), ("x-1", 1), ("x+1", 1)]);
+    assert_factors("x^2-1/4", &[("1/4", 1), ("2*x-1", 1), ("2*x+1", 1)]);
+    assert_factors("-x^2+1", &[("-1", 1), ("x-1", 1), ("x+1", 1)]);
+    assert_factors("x^3-x^2-x+1", &[("x+1", 1), ("x-1", 2)]);
+    assert_factors("7", &[("7", 1)]);
+}
+
+#[test]
+fn factor_univariate_irreducible() {
+    for input in ["x^4+1", "x^5-x-1", "x^4-10*x^2+1", "x^2+x+1", "3*x+2"] {
+        assert_factors(input, &[(input, 1)]);
+    }
+}
+
+#[test]
+fn factor_univariate_products() {
+    assert_factors(
+        "(x^3+2*x+5)*(x^4-3*x+7)*(x^2+1)",
+        &[("x^2+1", 1), ("x^3+2*x+5", 1), ("x^4-3*x+7", 1)],
+    );
+    assert_factors("(x^2+1)^2*(x^3-2)^3", &[("x^2+1", 2), ("x^3-2", 3)]);
+    assert_factors(
+        "(2*x+3)*(3*x-5)*(x^2-2)",
+        &[("2*x+3", 1), ("3*x-5", 1), ("x^2-2", 1)],
+    );
+    assert_factors(
+        "x^8-1",
+        &[("x-1", 1), ("x+1", 1), ("x^2+1", 1), ("x^4+1", 1)],
+    );
+}
+
+#[test]
+fn factor_multivariate() {
+    assert_factors("x^2-y^2", &[("x-y", 1), ("x+y", 1)]);
+    assert_factors("x^4-y^4", &[("x-y", 1), ("x+y", 1), ("x^2+y^2", 1)]);
+    assert_factors("x^2+y^2", &[("x^2+y^2", 1)]);
+    assert_factors("6*x^2*y-6*y", &[("6", 1), ("y", 1), ("x-1", 1), ("x+1", 1)]);
+    assert_factors("(x+y)^2*(x-y)", &[("x-y", 1), ("x+y", 2)]);
+    assert_factors(
+        "(x*y+1)*(x+y+z)*(x^2-z)",
+        &[("x*y+1", 1), ("x+y+z", 1), ("x^2-z", 1)],
+    );
+    assert_factors(
+        "(x^2*y+3*y^2+1)*(x^2-y*x+2)",
+        &[("x^2*y+3*y^2+1", 1), ("x^2-y*x+2", 1)],
+    );
+    assert_factors(
+        "(x^2+y^2+1)*(x^2-y^2+x)*(x*y-2)",
+        &[("x^2+y^2+1", 1), ("x^2-y^2+x", 1), ("x*y-2", 1)],
+    );
+}
+
+#[test]
+fn factor_falls_back_to_square_free() {
+    // `n` is a constant for `to_polynomial`, so coefficients aren't rational
+    for input in ["n*x+n", "n*x", "x^2+n*x", "n*x^2-n", "x^(2*n)-1"] {
+        let poly = poly!(input);
+        assert_eq!(poly.factor(), poly.square_free_factorization(), "{input}");
+    }
+}
+
+#[test]
+fn square_free_factorization_with_symbolic_coefficients() {
+    // `n` is a constant, so it is dropped like other units
+    assert_eq!(
+        poly!("x^2+n*x").square_free_factorization(),
+        vec![(poly!("x^2+n*x"), 1)]
+    );
+    assert_eq!(
+        poly!("n*x^2-n").square_free_factorization(),
+        vec![(poly!("x^2-1"), 1)]
+    );
+    assert_eq!(
+        poly!("x^(2*n)-1").square_free_factorization(),
+        vec![(poly!("x^(2*n)-1"), 1)]
+    );
+}
+
+#[test]
+fn factor_is_stable() {
+    for input in [
+        "x^6-1",
+        "(x^2+y^2+1)*(x^2-y^2+x)*(x*y-2)",
+        "(x*y+1)*(x+y+z)*(x^2-z)",
+        "x^4-10*x^2+1",
+    ] {
+        let poly = poly!(input);
+        let factors = poly.factor();
+        for _ in 0..10 {
+            assert_eq!(poly.factor(), factors, "{input}");
+        }
+    }
+}

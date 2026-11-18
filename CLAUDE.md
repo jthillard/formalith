@@ -34,7 +34,7 @@ Nightly Rust is required: `src/lib.rs` enables `#![feature(specialization, iter_
 
 **Symbols** (`src/context/`). `Symbol` is a `usize` id interned in a global `RwLock<Context>`; data stored in an `AppendOnlyVec`. Built-in function symbols are fixed ids: `Context::ABS = 0`, `Context::DET = 1` (order of `BUILTIN_NAMES` matters). Create symbols with `symbol!("x")`.
 
-**Other modules.** `polynom/`: `MultivariatePolynomial` (gcd, quotient/remainder, square-free factorization), converted from/to terms via `Term::to_polynomial` and `ToTerm`. `matrix/`: generic `Matrix<T: Set>` (det, inverse, row reduction). `printer/`: `Print` (single-line) and `PrettyPrint` (2D box layout via `PrettyPrinter`), colored with `owo-colors`. `combinatorics.rs`: composition iterators used by expansion.
+**Other modules.** `polynom/`: `MultivariatePolynomial` (gcd, quotient/remainder, square-free factorization; complete factorization over ℚ in `polynom/factor/` with Zassenhaus for univariate and Wang/EEZ lifting for multivariate, falling back to square-free when coefficients aren't rational), converted from/to terms via `Term::to_polynomial` and `ToTerm`. `matrix/`: generic `Matrix<T: Set>` (det, inverse, row reduction). `printer/`: `Print` (single-line) and `PrettyPrint` (2D box layout via `PrettyPrinter`), colored with `owo-colors`. `combinatorics.rs`: composition iterators used by expansion.
 
 ## Known quirks
 
