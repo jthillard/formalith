@@ -235,11 +235,12 @@ impl Ring for R<Rational> {
                         let (sn, rn) = Self::extract_power(res.numerator_ref(), root_exponant);
                         let (sd, rd) = Self::extract_power(res.denominator_ref(), root_exponant);
                         if sn != 1 || sd != 1 {
-                            let root = Term::Value(Value::new(Rational::from_naturals(rn, rd), *self))
-                                .pow(&Term::Value(Value::new(
-                                    Rational::from_naturals(Natural::ONE, den),
-                                    *self,
-                                )));
+                            let root =
+                                Term::Value(Value::new(Rational::from_naturals(rn, rd), *self))
+                                    .pow(&Term::Value(Value::new(
+                                        Rational::from_naturals(Natural::ONE, den),
+                                        *self,
+                                    )));
                             return Term::Value(Value::new(Rational::from_naturals(sn, sd), *self))
                                 * root;
                         }
@@ -371,7 +372,8 @@ impl R<Rational> {
                 && let (Term::Value(base), Term::Value(exponant)) = (&*pow.base, &**pow.exponant)
                 && base.value > 0
             {
-                if let Some((_, product)) = radicals.iter_mut().find(|(e, _)| **e == exponant.value) {
+                if let Some((_, product)) = radicals.iter_mut().find(|(e, _)| **e == exponant.value)
+                {
                     *product *= &base.value;
                     merged = true;
                 } else {
@@ -424,9 +426,10 @@ impl R<Rational> {
                     Some(x.clone())
                 }
                 // `{$|x^n| = |x|^n$}`
-                Term::Value(exponant) if exponant.value.denominator_ref() == &1 => {
-                    Some(self.fun(Context::ABS, (*pow.base).clone()).pow(&pow.exponant))
-                }
+                Term::Value(exponant) if exponant.value.denominator_ref() == &1 => Some(
+                    self.fun(Context::ABS, (*pow.base).clone())
+                        .pow(&pow.exponant),
+                ),
                 _ => None,
             },
             _ => None,

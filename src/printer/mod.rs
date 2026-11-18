@@ -461,7 +461,9 @@ impl PrettyPrinter {
         let mut lines = Vec::with_capacity(height + 1);
         // The overline starts at the top of the sign, covering the space before the radicand
         let overline_start = if height == 1 { 1 } else { height + 1 };
-        lines.push(" ".repeat(overline_start) + &"_".repeat(self.width() + sign_width - overline_start));
+        lines.push(
+            " ".repeat(overline_start) + &"_".repeat(self.width() + sign_width - overline_start),
+        );
         for (i, line) in self.lines.iter().enumerate() {
             let prefix = if let Some(sign) = sign {
                 sign.to_string()

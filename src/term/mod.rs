@@ -277,7 +277,10 @@ impl<T: Group> Term<T> {
             (Self::Value(_), _) => Ordering::Greater,
             (_, Self::Value(_)) => Ordering::Less,
             _ => {
-                let (f1, f2) = (self.non_coefficient_factors(), other.non_coefficient_factors());
+                let (f1, f2) = (
+                    self.non_coefficient_factors(),
+                    other.non_coefficient_factors(),
+                );
                 f1.len()
                     .cmp(&f2.len())
                     .then_with(|| iter::cmp_by(f1.iter(), f2.iter(), Self::cmp_term_factors))

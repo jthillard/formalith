@@ -55,10 +55,7 @@ fn pretty_print_roots() {
     assert_eq!(pretty(&parse!("(x+1)^(1/3)", R)), " _____\n∛x + 1");
     assert_eq!(pretty(&parse!("x^(1/n)", R)), "n _\n √x");
     assert_eq!(pretty(&parse!("1/x^(1/2)", R)), "1 \n──\n _\n√x");
-    assert_eq!(
-        pretty(&parse!("x^(2/n)", R)),
-        "   ___\n n╱  2\n╲╱  x "
-    );
+    assert_eq!(pretty(&parse!("x^(2/n)", R)), "   ___\n n╱  2\n╲╱  x ");
     assert_eq!(
         pretty(&parse!("(a/b)^(1/(n+1))", R)),
         "       __\n      ╱ a\nn + 1╱  ─\n   ╲╱   b"
