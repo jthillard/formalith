@@ -1,0 +1,3 @@
+# clippy hangs on this crate (recursive types), so use plain `cargo check` for diagnostics.
+[language-server.rust-analyzer.config]
+check.command = "check"

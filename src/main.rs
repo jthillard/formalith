@@ -36,6 +36,12 @@ pub fn main() {
             .quot_rem(&parse!("n*x", R).to_polynomial())
             .0
     );
+    println!(
+        "{}",
+        parse!("6*(x^2+1)^2*(x^4-2)*(x^3-x+1)^3", R)
+            .expand()
+            .factor()
+    );
     let matrix = parse!("[[x, 4], [2, 3]]", M);
     let det = matrix.det().unwrap();
     println!("{det}");

@@ -292,7 +292,8 @@ where
                             | Context::EXPAND
                             | Context::FACTOR
                             | Context::SIMPLIFY
-                    ) && args_count != 1 {
+                    ) && args_count != 1
+                    {
                         return Err(ParserError::new(format!(
                             "Function {} expects 1 argument, found {args_count}",
                             Context::get_symbol_data(&ident).name
