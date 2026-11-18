@@ -5,6 +5,7 @@
 use std::{
     borrow::BorrowMut,
     cmp::Ordering,
+    collections::BTreeSet,
     fmt::{Debug, Display},
 };
 
@@ -189,6 +190,37 @@ impl<T: Set> Term<T> {
             Self::Mul(mul) => mul.set,
             Self::Pow(pow) => pow.set,
             Self::Fun(fun) => fun.get_set(),
+        }
+    }
+    /// The symbols of the expression, including those in exponents and function arguments.
+    ///
+    /// ```
+    /// use formalith::{field::real::R, parse, symbol};
+    ///
+    /// let symbols = parse!("x^n + abs(y)", R).symbols();
+    /// assert_eq!(symbols.len(), 3);
+    /// assert!(symbols.contains(&symbol!("n")) && symbols.contains(&symbol!("y")));
+    /// ```
+    #[must_use]
+    pub fn symbols(&self) -> BTreeSet<Symbol> {
+        let mut symbols = BTreeSet::new();
+        self.collect_symbols(&mut symbols);
+        symbols
+    }
+    /// Add the symbols of the expression to `symbols`.
+    pub(crate) fn collect_symbols(&self, symbols: &mut BTreeSet<Symbol>) {
+        match self {
+            Self::Value(_) => {}
+            Self::Symbol(symbol) => {
+                symbols.insert(symbol.symbol);
+            }
+            Self::Add(add) => add.iter().for_each(|term| term.collect_symbols(symbols)),
+            Self::Mul(mul) => mul.iter().for_each(|term| term.collect_symbols(symbols)),
+            Self::Pow(pow) => {
+                pow.base.collect_symbols(symbols);
+                pow.exponant.collect_symbols(symbols);
+            }
+            Self::Fun(fun) => fun.collect_symbols(symbols),
         }
     }
     /// Create a new empty product expression

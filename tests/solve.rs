@@ -113,3 +113,66 @@ fn definitions() {
         ok("x = 2")
     );
 }
+
+#[test]
+fn solve_function() {
+    // Other symbols are parameters. Parameters are only used in this test, since the order of factors depends on
+    // the order symbols are created in, and tests run in parallel.
+    assert_eq!(solve("solve(k*x = h, x)"), ok("x = frac(h, k)"));
+    assert_eq!(
+        solve("solve(m*x + y = 1, x - y = w, x, y)"),
+        ok("x = frac((w+1), (m+1)), y = frac((-m w+1), (m+1))")
+    );
+    assert_eq!(
+        solve("solve(p*x + q*y = r, s*x + v*y = u, x, y)"),
+        ok("x = frac((-q u+r v), (p v-q s)), y = frac((p u-r s), (p v-q s))")
+    );
+    assert_eq!(solve("solve(y = x + g, y)"), ok("y = x+g"));
+    assert_eq!(solve("solve(x + y = 1, y)"), ok("y = -x+1"));
+    // Without unknowns, every symbol is an unknown
+    assert_eq!(solve("solve(x + y = 3, x - y = 1)"), ok("x = 2, y = 1"));
+    // Unknowns are in the order given
+    assert_eq!(
+        solve("solve(x + y = 3, x - y = 1, y, x)"),
+        ok("y = 1, x = 2")
+    );
+    assert_eq!(
+        solve("solve(x + k*y = 1, x + k*y = 2, x, y)"),
+        ok("\"no solution\"")
+    );
+    // Coefficients can be any expression without unknowns
+    assert_eq!(solve("sqrt(2)*x = 1"), solve("x = sqrt(1/2)"));
+    assert_eq!(
+        eval_in("R", &["c := 3", "solve(c*x = 2, x)"], true),
+        ok("x = frac(2, 3)")
+    );
+}
+
+#[test]
+fn solve_function_errors() {
+    assert!(
+        solve("solve(a*x = 1, x, a)")
+            .unwrap_err()
+            .contains("not linear")
+    );
+    assert_eq!(
+        solve("solve(x = 1, 2)"),
+        Err("`2` is not an unknown, expected an equation or a symbol".to_owned())
+    );
+    assert_eq!(
+        solve("solve(x = 1, x, x)"),
+        Err("Unknown `x` is repeated".to_owned())
+    );
+    assert_eq!(
+        solve("solve(x)"),
+        Err("solve expects at least one equation".to_owned())
+    );
+    assert!(solve("solve(x = 1, x) + 1").is_err());
+    assert!(solve("solve(x = 1, x").is_err());
+    assert_eq!(
+        solve("solve := 2"),
+        Err("`solve` is a builtin function".to_owned())
+    );
+    // `i` is a constant of C, not an unknown
+    assert!(solve_in("C", "solve(x = i, i)").is_err());
+}

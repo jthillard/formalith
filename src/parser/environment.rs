@@ -10,7 +10,7 @@ use std::{collections::BTreeMap, fmt, rc::Rc};
 use crate::{
     context::{Context, Symbol},
     field::{Set, SetParseExpression},
-    solve::{Equation, Solution, Solve},
+    solve::{Equation, Solution, Solve, plain},
     term::{Normalize, Term},
 };
 
@@ -251,26 +251,15 @@ impl<'a> Parser<'a> {
         })
     }
 
-    /// Parse comma-separated equations `lhs = rhs` and solve them, or a single expression.
+    /// Parse comma-separated equations `lhs = rhs` and solve them, a call to `solve`, or a single expression.
     fn parse_equations<E: Set>(&mut self, set: E) -> Result<Statement<E>, ParserError> {
         if self.token.kind == TokenKind::Eof {
             return Err(ParserError::new("Input was empty"));
         }
-        let mut items = vec![];
-        loop {
-            let lhs = self.parse_side(set)?;
-            let rhs = if self.token.kind == TokenKind::Equal {
-                self.next_token();
-                Some(self.parse_side(set)?)
-            } else {
-                None
-            };
-            items.push((lhs, rhs));
-            if self.token.kind != TokenKind::Comma {
-                break;
-            }
-            self.next_token();
+        if self.is_solve_call() {
+            return self.parse_solve(set);
         }
+        let mut items = self.parse_items(set)?;
         self.expect_eof()?;
         if let [(_, None)] = items.as_slice() {
             let (term, _) = items.pop().expect("There is one item");
@@ -288,6 +277,82 @@ impl<'a> Parser<'a> {
             equations,
             solution,
         })
+    }
+
+    /// Check if the input starts with `solve(`.
+    fn is_solve_call(&self) -> bool {
+        let TokenKind::Ident(name) = &self.token.kind else {
+            return false;
+        };
+        let mut parser = self.clone();
+        parser.next_token();
+        Symbol::new(name.as_str()) == Context::SOLVE && parser.token.kind == TokenKind::OpenParen
+    }
+
+    /// Parse `solve(equations, unknowns)`, where the unknowns are symbols to solve for, other symbols being
+    /// parameters. Without unknowns, every symbol is an unknown.
+    fn parse_solve<E: Set>(&mut self, set: E) -> Result<Statement<E>, ParserError> {
+        // `solve(`
+        self.next_token();
+        self.next_token();
+        let items = self.parse_items(set)?;
+        self.expect_token(&TokenKind::CloseParen)?;
+        self.expect_eof()?;
+        let mut equations = vec![];
+        let mut unknowns = vec![];
+        for (lhs, rhs) in items {
+            if let Some(rhs) = rhs {
+                equations.push(Equation::new(lhs, rhs));
+                continue;
+            }
+            let Term::Symbol(symbol) = lhs else {
+                return Err(ParserError::new(format!(
+                    "`{}` is not an unknown, expected an equation or a symbol",
+                    plain(&lhs)
+                )));
+            };
+            if unknowns.contains(&symbol.symbol) {
+                return Err(ParserError::new(format!(
+                    "Unknown `{}` is repeated",
+                    Context::get_symbol_data(&symbol.symbol).name
+                )));
+            }
+            unknowns.push(symbol.symbol);
+        }
+        if equations.is_empty() {
+            return Err(ParserError::new("solve expects at least one equation"));
+        }
+        let solution = if unknowns.is_empty() {
+            set.solve(&equations)?
+        } else {
+            set.solve_for(&equations, &unknowns)?
+        };
+        Ok(Statement::System {
+            equations,
+            solution,
+        })
+    }
+
+    /// Parse comma-separated items, which are equations `lhs = rhs` or expressions.
+    fn parse_items<E: Set>(
+        &mut self,
+        set: E,
+    ) -> Result<Vec<(Term<E>, Option<Term<E>>)>, ParserError> {
+        let mut items = vec![];
+        loop {
+            let lhs = self.parse_side(set)?;
+            let rhs = if self.token.kind == TokenKind::Equal {
+                self.next_token();
+                Some(self.parse_side(set)?)
+            } else {
+                None
+            };
+            items.push((lhs, rhs));
+            if self.token.kind != TokenKind::Comma {
+                return Ok(items);
+            }
+            self.next_token();
+        }
     }
 
     /// Parse a side of an equation, normalized.

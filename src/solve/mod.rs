@@ -1,7 +1,8 @@
 //! Solving systems of equations, like `x + y = 3, x - y = 1`.
 //!
-//! Systems are solved for every symbol they contain, through [`Solve`]. Only linear systems are supported for now:
-//! new strategies (like polynomial equations) should be added in [`Solve::solve`].
+//! Systems are solved for every symbol they contain ([`Solve::solve`]), or for chosen unknowns, other symbols being
+//! parameters ([`Solve::solve_for`]). Only linear systems are supported for now: new strategies (like polynomial
+//! equations) should be added in the implementation of [`Solve::solve_for`] for rings.
 //!
 //! ```
 //! use formalith::{field::real::R, parse, solve::{Equation, Solution, Solve}, symbol};
@@ -21,17 +22,15 @@
 
 mod linear;
 
-use std::{error::Error, fmt};
+use std::{collections::BTreeSet, error::Error, fmt};
 
 use crate::{
-    context::Symbol,
-    field::{Ring, Set, TryElementFrom, matrix::M},
+    context::{Context, Symbol},
+    field::{Ring, Set, matrix::M},
     parser::ParserError,
     printer::{PrettyPrint, PrettyPrinter, Print, PrintOptions},
     term::{Expand, Normalize, SymbolTerm, Term},
 };
-
-use linear::LinearSystem;
 
 /// An equation `lhs = rhs`.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -185,24 +184,67 @@ impl From<SolveError> for ParserError {
     }
 }
 
+/// Print `term` on one line, without colors, for error messages.
+pub(crate) fn plain<T: PrettyPrint>(term: &T) -> String {
+    term.with_options(PrintOptions {
+        colors: false,
+        typst: false,
+        pretty_print: false,
+    })
+    .to_string()
+}
+
 /// Sets in which systems of equations can be solved. Implemented for every set, but solving fails at runtime
-/// for sets that aren't rings.
+/// for sets that aren't commutative rings.
 pub trait Solve: Set {
-    /// Solve `equations` for every symbol they contain.
+    /// Solve `equations` for every symbol they contain, sorted by name.
     ///
     /// # Errors
     /// Returns an error if the system is not supported, like a non-linear system.
-    fn solve(&self, equations: &[Equation<Self>]) -> Result<Solution<Self>, SolveError>;
+    fn solve(&self, equations: &[Equation<Self>]) -> Result<Solution<Self>, SolveError> {
+        let mut unknowns: Vec<Symbol> = equations
+            .iter()
+            .flat_map(|equation| [&equation.lhs, &equation.rhs])
+            .flat_map(Term::symbols)
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect();
+        unknowns.sort_by(|a, b| {
+            Context::get_symbol_data(a)
+                .name
+                .cmp(&Context::get_symbol_data(b).name)
+        });
+        self.solve_for(equations, &unknowns)
+    }
+
+    /// Solve `equations` for `unknowns`, without repetition. Other symbols are parameters, assumed generic: a
+    /// symbolic pivot, like `a` in `a*x = 1`, is assumed to be non-zero.
+    ///
+    /// # Errors
+    /// Returns an error if the system is not supported, like a non-linear system.
+    fn solve_for(
+        &self,
+        equations: &[Equation<Self>],
+        unknowns: &[Symbol],
+    ) -> Result<Solution<Self>, SolveError>;
 }
 
 impl<T: Set> Solve for T {
-    default fn solve(&self, _: &[Equation<Self>]) -> Result<Solution<Self>, SolveError> {
+    default fn solve_for(
+        &self,
+        _: &[Equation<Self>],
+        _: &[Symbol],
+    ) -> Result<Solution<Self>, SolveError> {
         Err(SolveError::Unsupported)
     }
 }
 
-impl<T: Ring + TryElementFrom<<T as Set>::ProductCoefficientSet>> Solve for T {
-    default fn solve(&self, equations: &[Equation<Self>]) -> Result<Solution<Self>, SolveError> {
+impl<T: Ring> Solve for T {
+    default fn solve_for(
+        &self,
+        equations: &[Equation<Self>],
+        unknowns: &[Symbol],
+    ) -> Result<Solution<Self>, SolveError> {
         // Solve `lhs - rhs = 0`
         let expressions: Vec<_> = equations
             .iter()
@@ -212,16 +254,13 @@ impl<T: Ring + TryElementFrom<<T as Set>::ProductCoefficientSet>> Solve for T {
                     .expand()
             })
             .collect();
-        LinearSystem::new(&expressions, *self)?.solve()
+        linear::solve(&expressions, unknowns, *self)
     }
 }
 
 // Matrices aren't commutative, so Gaussian elimination doesn't apply
-impl<T: Ring> Solve for M<T>
-where
-    Self: TryElementFrom<<Self as Set>::ProductCoefficientSet>,
-{
-    fn solve(&self, _: &[Equation<Self>]) -> Result<Solution<Self>, SolveError> {
+impl<T: Ring> Solve for M<T> {
+    fn solve_for(&self, _: &[Equation<Self>], _: &[Symbol]) -> Result<Solution<Self>, SolveError> {
         Err(SolveError::Unsupported)
     }
 }

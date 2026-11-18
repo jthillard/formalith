@@ -1,6 +1,6 @@
 //! Function expression.
 
-use std::{cmp::Ordering, fmt::Debug, hash::Hash};
+use std::{cmp::Ordering, collections::BTreeSet, fmt::Debug, hash::Hash};
 
 use dyn_clone::DynClone;
 use dyn_eq::DynEq;
@@ -31,6 +31,8 @@ pub trait Function<T: Set>: Debug + DynClone + DynEq + DynHash + Flags + PrettyP
     fn get_ident(&self) -> Symbol;
     /// Compare two functions, by identifier then by arguments.
     fn cmp_dyn(&self, other: &dyn Function<T>) -> Ordering;
+    /// Add the symbols of the arguments to `symbols`.
+    fn collect_symbols(&self, symbols: &mut BTreeSet<Symbol>);
     /// Get the identifier of the function as a string.
     fn get_ident_as_str(&self) -> &str {
         Context::get_symbol_data(&self.get_ident()).name.as_str()
@@ -64,6 +66,11 @@ impl<From: Set, T: Set> Function<T> for Fun<From, T> {
     }
     fn get_ident(&self) -> Symbol {
         self.ident
+    }
+    fn collect_symbols(&self, symbols: &mut BTreeSet<Symbol>) {
+        for arg in &self.args {
+            arg.collect_symbols(symbols);
+        }
     }
     fn cmp_dyn(&self, other: &dyn Function<T>) -> Ordering {
         self.ident.cmp(&other.get_ident()).then_with(|| {
