@@ -215,6 +215,23 @@ pub(super) fn leadterm(gruntz: &mut Gruntz, f: &Expr, logw: &Expr) -> LimitResul
     Err(LimitError::Unknown)
 }
 
+/// The terms `{$(e_i, c_i)$}` of the series of `f` up to `{$O(w^n)$}`, sorted by increasing exponent, without zero
+/// coefficients, `{$ln w$}` being `logw`.
+pub(super) fn expand(
+    gruntz: &mut Gruntz,
+    f: &Expr,
+    logw: &Expr,
+    n: &Rational,
+) -> LimitResult<Vec<(Expr, Expr)>> {
+    let series = Expander { gruntz, logw }.series(f, n)?;
+    Ok(series
+        .terms
+        .into_iter()
+        .filter(|(_, coefficient)| !gruntz.is_zero(coefficient))
+        .map(|(exponant, coefficient)| (exponant, coefficient.simplify()))
+        .collect())
+}
+
 /// A higher order to retry an expansion with.
 fn refine(order: &Rational) -> Rational {
     if *order >= 1 {
@@ -382,6 +399,10 @@ impl Expander<'_> {
         let needed = rational_bound(&e0, true)? + &relative;
         if series.order.as_ref().is_some_and(|order| *order < needed) {
             (series, e0, c0) = self.with_lead(base, &needed)?;
+        }
+        // Roots of negative values aren't real
+        if k.to_i64().is_none() && self.gruntz.sign(&c0) == Ok(Ordering::Less) {
+            return Err(LimitError::Unsupported);
         }
         let u = series.rest(&e0, &c0)?;
         let natural = k.to_i64().filter(|k| *k >= 0);

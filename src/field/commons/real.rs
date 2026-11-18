@@ -331,6 +331,25 @@ impl Ring for R<Rational> {
                         }
                     }
                 }
+                Context::SERIES => {
+                    if let Some([f, Term::Symbol(x), point, rest @ ..]) =
+                        fun.get_args::<Self>().map(Vec::as_slice)
+                    {
+                        let (order, direction) = match rest {
+                            [] => (Some(Rational::from(6)), Some(Direction::Both)),
+                            [Term::Value(order), direction @ ..] => (
+                                Some(order.value.clone()),
+                                Direction::from_args(direction),
+                            ),
+                            _ => (None, None),
+                        };
+                        if let (Some(order), Some(direction)) = (order, direction)
+                            && let Ok(res) = f.series(x.symbol, point, &order, direction)
+                        {
+                            return res;
+                        }
+                    }
+                }
                 Context::DET => {
                     if let Some(Term::Value(matrix)) = fun.get_arg::<M<TermSet<Self>>>()
                         && let Ok(res) = matrix.value.det()

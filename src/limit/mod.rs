@@ -15,6 +15,8 @@
 //! every `{$theta$}`. A result depending on `{$theta$}` means that the limit doesn't exist. A limit whose sign
 //! depends on parameters is `{$sign(a) oo$}`.
 //!
+//! The same series give expansions `series(f, x, a, n)`, see [`Term::series`].
+//!
 //! ```
 //! use formalith::{field::real::R, parse};
 //!
@@ -26,6 +28,7 @@
 //! ```
 
 mod bounds;
+mod expansion;
 mod gruntz;
 mod series;
 

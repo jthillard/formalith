@@ -171,12 +171,16 @@ impl Context {
     pub const OO: Symbol = Symbol(30);
     /// The result of a limit that doesn't exist, like `lim(1/x, x, 0)`
     pub const UNDEFINED: Symbol = Symbol(31);
+    /// Series expansion `series(f, x, a, n)` up to `{$O((x - a)^n)$}`, `series(f, x, a, n, 1)` and
+    /// `series(f, x, a, n, -1)` for right and left expansions
+    pub const SERIES: Symbol = Symbol(32);
 
     #[rustfmt::skip]
-    const BUILTIN_NAMES: [&'static str; 32] = [
+    const BUILTIN_NAMES: [&'static str; 33] = [
         "abs", "det", "expand", "factor", "simplify", "re", "im", "conj", "sqrt", "root", "sign",
         "floor", "ceil", "min", "max", "gcd", "lcm", "quo", "rem", "diff", "solve", "approx",
         "exp", "ln", "sin", "cos", "tan", "pi", "e", "lim", "oo", "undefined",
+        "series",
     ];
 
     /// Return `true` if `symbol` is a builtin constant, like `{$pi$}`, which is not a function.
@@ -193,6 +197,7 @@ impl Context {
             Self::MIN | Self::MAX | Self::SOLVE => Some((1, usize::MAX)),
             Self::APPROX => Some((1, 2)),
             Self::LIM => Some((3, 4)),
+            Self::SERIES => Some((3, 5)),
             Self::PI | Self::E | Self::OO | Self::UNDEFINED => Some((0, 0)),
             Symbol(id) if id < Self::BUILTIN_NAMES.len() => Some((1, 1)),
             _ => None,
