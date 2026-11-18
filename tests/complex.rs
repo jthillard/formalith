@@ -79,3 +79,20 @@ fn expand_factor_simplify() {
     assert_eq!(parse!("(x^2-1)/(x-1)", C).simplify(), parse!("x+1", C));
     assert_eq!(parse!("factor(x^2-1)", C), parse!("(x+1)*(x-1)", C));
 }
+
+#[test]
+fn factor_over_gaussian_rationals() {
+    assert_eq!(parse!("factor(x^2+1)", C), parse!("(x-i)*(x+i)", C));
+    assert_eq!(
+        parse!("factor(x^4-1)", C),
+        parse!("(x-i)*(x-1)*(x+1)*(x+i)", C)
+    );
+    assert_eq!(parse!("factor(x^2+y^2)", C), parse!("(x+i*y)*(x-i*y)", C));
+    assert_eq!(parse!("factor(x^2-2*i*x-1)", C), parse!("(x-i)^2", C));
+    assert_eq!(
+        parse!("factor((1+i)*x^2+2*i*x)", C),
+        parse!("(1+i)*x*(x+1+i)", C)
+    );
+    assert_eq!(parse!("factor(2*x^2+2)", C), parse!("2*(x-i)*(x+i)", C));
+    assert_eq!(parse!("factor(x^2+x+1)", C), parse!("x^2+x+1", C));
+}
