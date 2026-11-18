@@ -686,17 +686,37 @@ impl<T: Ring<ExponantSet: Ring, ProductCoefficientSet = T>> Term<T> {
     pub fn to_polynomial(
         &self,
     ) -> MultivariatePolynomial<Self, TermSet<T>, TermSet<T::ExponantSet>> {
-        self.expand().to_polynomial_impl()
+        self.to_polynomial_with_constants(&[])
+    }
+
+    /// Convert the expression to a multivariate polynomial, whose coefficients may contain the symbols of `constants`.
+    ///
+    /// ```
+    /// use formalith::{field::real::R, parse, symbol};
+    ///
+    /// assert!(parse!("n^2 + 1", R).to_polynomial_with_constants(&[symbol!("n")]).is_constant());
+    /// assert!(!parse!("n^2 + 1", R).to_polynomial().is_constant());
+    /// ```
+    pub fn to_polynomial_with_constants(
+        &self,
+        constants: &[Symbol],
+    ) -> MultivariatePolynomial<Self, TermSet<T>, TermSet<T::ExponantSet>> {
+        self.expand().to_polynomial_impl(constants)
     }
 
     fn to_polynomial_impl(
         &self,
+        constants: &[Symbol],
     ) -> MultivariatePolynomial<Self, TermSet<T>, TermSet<T::ExponantSet>> {
         let set = self.get_set().get_term_set();
         let exponant_set = self.get_set().get_exponant_set().get_term_set();
+        let is_constant = |term: &Self| matches!(term, Self::Symbol(symbol) if constants.contains(&symbol.symbol));
         match self {
             Self::Value(_) => MultivariatePolynomial::constant(self.clone(), set, exponant_set),
-            Self::Symbol(symbol) if Context::get_symbol_data(&symbol.symbol).name == "n" => {
+            Self::Symbol(_) if is_constant(self) => {
+                MultivariatePolynomial::constant(self.clone(), set, exponant_set)
+            }
+            Self::Pow(pow) if is_constant(&pow.base) => {
                 MultivariatePolynomial::constant(self.clone(), set, exponant_set)
             }
             Self::Symbol(_) | Self::Fun(_) => {
@@ -704,7 +724,7 @@ impl<T: Ring<ExponantSet: Ring, ProductCoefficientSet = T>> Term<T> {
             }
             Self::Add(add) => add.iter().fold(
                 MultivariatePolynomial::zero(set, exponant_set),
-                |res, term| res + term.to_polynomial_impl(),
+                |res, term| res + term.to_polynomial_impl(constants),
             ),
             Self::Mul(mul) => mul.iter().fold(
                 MultivariatePolynomial::constant(
@@ -712,7 +732,7 @@ impl<T: Ring<ExponantSet: Ring, ProductCoefficientSet = T>> Term<T> {
                     set,
                     exponant_set,
                 ),
-                |res, factor| res * factor.to_polynomial_impl(),
+                |res, factor| res * factor.to_polynomial_impl(constants),
             ),
             Self::Pow(pow) => MultivariatePolynomial::new(
                 vec![(

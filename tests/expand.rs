@@ -135,6 +135,7 @@ fn factor() {
         parse!("(x-1)*(x+1)*(x^2+1)", R)
     );
     assert_eq!(parse!("x^2-y^2", R).factor(), parse!("(x-y)*(x+y)", R));
+    assert_eq!(parse!("n^2-1", R).factor(), parse!("(n-1)*(n+1)", R));
     assert_eq!(parse!("2*x^2-2", R).factor(), parse!("2*(x-1)*(x+1)", R));
 }
 

@@ -17,6 +17,13 @@ macro_rules! poly {
     };
 }
 
+/// A polynomial whose coefficients may contain the symbol `n`.
+macro_rules! poly_n {
+    ($input:expr) => {
+        parse!($input, R).to_polynomial_with_constants(&[symbol!("n")])
+    };
+}
+
 #[test]
 fn constants() {
     let c: MultivariatePolynomial<Symbol, _, _> =
@@ -312,9 +319,9 @@ fn factor_multivariate() {
 
 #[test]
 fn factor_falls_back_to_square_free() {
-    // `n` is a constant for `to_polynomial`, so coefficients aren't rational
+    // `n` is a constant, so coefficients aren't rational
     for input in ["n*x+n", "n*x", "x^2+n*x", "n*x^2-n", "x^(2*n)-1"] {
-        let poly = poly!(input);
+        let poly = poly_n!(input);
         assert_eq!(poly.factor(), poly.square_free_factorization(), "{input}");
     }
 }
@@ -323,16 +330,16 @@ fn factor_falls_back_to_square_free() {
 fn square_free_factorization_with_symbolic_coefficients() {
     // `n` is a constant, so it is dropped like other units
     assert_eq!(
-        poly!("x^2+n*x").square_free_factorization(),
-        vec![(poly!("x^2+n*x"), 1)]
+        poly_n!("x^2+n*x").square_free_factorization(),
+        vec![(poly_n!("x^2+n*x"), 1)]
     );
     assert_eq!(
-        poly!("n*x^2-n").square_free_factorization(),
-        vec![(poly!("x^2-1"), 1)]
+        poly_n!("n*x^2-n").square_free_factorization(),
+        vec![(poly_n!("x^2-1"), 1)]
     );
     assert_eq!(
-        poly!("x^(2*n)-1").square_free_factorization(),
-        vec![(poly!("x^(2*n)-1"), 1)]
+        poly_n!("x^(2*n)-1").square_free_factorization(),
+        vec![(poly_n!("x^(2*n)-1"), 1)]
     );
 }
 
