@@ -65,8 +65,10 @@ fn other_sets() {
 
 #[test]
 fn errors() {
-    assert!(solve("x*y = 1").unwrap_err().contains("not linear"));
-    assert!(solve("x^2 = 1").unwrap_err().contains("not linear"));
+    assert!(solve("abs(x) = 1").unwrap_err().contains("not polynomial"));
+    assert!(solve("2^x = 1").unwrap_err().contains("not polynomial"));
+    // Irreducible over the rationals, and not a polynomial in `x^k`
+    assert!(solve("x^3 + x + 1 = 0").unwrap_err().contains("can't solve"));
     assert!(
         solve_in("Z/6", "2*x = 1")
             .unwrap_err()
@@ -146,15 +148,16 @@ fn solve_function() {
         eval_in("R", &["c := 3", "solve(c*x = 2, x)"], true),
         ok("x = frac(2, 3)")
     );
+    // Non-linear in the unknowns, `a` being free
+    assert_eq!(solve("solve(a*x = 1, x, a)"), ok("x = frac(1, a)"));
+    assert_eq!(
+        solve("solve(x^2 = c, x)"),
+        ok("x = sqrt(c) \\ x = -sqrt(c)")
+    );
 }
 
 #[test]
 fn solve_function_errors() {
-    assert!(
-        solve("solve(a*x = 1, x, a)")
-            .unwrap_err()
-            .contains("not linear")
-    );
     assert_eq!(
         solve("solve(x = 1, 2)"),
         Err("`2` is not an unknown, expected an equation or a symbol".to_owned())
@@ -175,4 +178,92 @@ fn solve_function_errors() {
     );
     // `i` is a constant of C, not an unknown
     assert!(solve_in("C", "solve(x = i, i)").is_err());
+}
+
+#[test]
+fn univariate_polynomials() {
+    assert_eq!(solve("x^2 = 1"), ok("x = -1 \\ x = 1"));
+    assert_eq!(solve("x^2 - 3*x + 2 = 0"), ok("x = 1 \\ x = 2"));
+    assert_eq!(
+        solve("x^3 - 6*x^2 + 11*x - 6 = 0"),
+        ok("x = 1 \\ x = 2 \\ x = 3")
+    );
+    // Multiple roots are given once
+    assert_eq!(solve("x^2 = 0"), ok("x = 0"));
+    assert_eq!(solve("x^2 + 1 = 0"), ok("\"no solution\""));
+}
+
+#[test]
+fn radicals() {
+    assert_eq!(solve("x^2 = 2"), ok("x = sqrt(2) \\ x = -sqrt(2)"));
+    assert_eq!(
+        solve("x^2 - x - 1 = 0"),
+        ok("x = -frac(1, 2) sqrt(5)+frac(1, 2) \\ x = frac(1, 2) sqrt(5)+frac(1, 2)")
+    );
+    // Polynomials in `x^k`
+    assert_eq!(solve("x^4 = 16"), ok("x = -2 \\ x = 2"));
+    assert_eq!(solve("x^3 = -8"), ok("x = -2"));
+    assert_eq!(solve("x^3 = 2"), ok("x = root(3, 2)"));
+    // The sign of a radical is approximated, `2 sqrt(2) - 3 < 0`
+    assert_eq!(solve("x^2 = 2*sqrt(2) - 3"), ok("\"no solution\""));
+}
+
+#[test]
+fn polynomial_systems() {
+    // Products are split
+    assert_eq!(
+        solve("x*y = 0, x + y = 1"),
+        ok("x = 0, y = 1 \\ x = 1, y = 0")
+    );
+    // Substitution
+    assert_eq!(
+        solve("x^2 + y^2 = 1, x = y"),
+        ok("x = sqrt(frac(1, 2)), y = sqrt(frac(1, 2)) \\ x = -sqrt(frac(1, 2)), y = -sqrt(frac(1, 2))")
+    );
+    assert_eq!(
+        solve("x^2 + y^2 = 5, x*y = 2"),
+        ok("x = -2, y = -1 \\ x = -1, y = -2 \\ x = 1, y = 2 \\ x = 2, y = 1")
+    );
+    assert_eq!(
+        solve("x^2 + y^2 = 3, x^2 - y^2 = 1"),
+        ok("x = sqrt(2), y = -1 \\ x = sqrt(2), y = 1 \\ x = -sqrt(2), y = -1 \\ x = -sqrt(2), y = 1")
+    );
+    // Resultants, no equation being linear in an unknown
+    assert_eq!(
+        solve("x^2 + y^2 = 2, x^2 = y^3"),
+        ok("x = -1, y = 1 \\ x = 1, y = 1")
+    );
+    assert_eq!(solve("x^2 + y^2 = 1, x^2 + y^2 = 2"), ok("\"no solution\""));
+    // Parametric solutions
+    assert_eq!(solve("x*y = 1"), ok("x = frac(1, y)"));
+    assert_eq!(
+        solve("x^2 + y^2 = 1, 2*x^2 + 2*y^2 = 2"),
+        ok("x = sqrt(-y^2+1) \\ x = -sqrt(-y^2+1)")
+    );
+}
+
+#[test]
+fn polynomials_in_other_sets() {
+    assert_eq!(solve_in("C", "x^2 + 1 = 0"), ok("x = -i \\ x = i"));
+    assert_eq!(
+        solve_in("C", "x^2 + y^2 = 0, x - y = 2"),
+        ok("x = 1+i, y = -1+i \\ x = 1-i, y = -1-i")
+    );
+    // Roots are Gaussian rationals
+    assert_eq!(solve_in("C", "x^2 = 2"), ok("\"no solution\""));
+    assert_eq!(solve_in("Z/7", "x^2 = 2"), ok("x = 3 \\ x = 4"));
+    assert_eq!(solve_in("Z/7", "x^2 = 3"), ok("\"no solution\""));
+    assert_eq!(solve_in("Z/6", "x^2 = 1"), ok("x = 1 \\ x = 5"));
+    assert_eq!(solve_in("Z", "x^2 = 4"), ok("x = -2 \\ x = 2"));
+    assert_eq!(solve_in("Z", "x^2 = 2"), ok("\"no solution\""));
+    assert_eq!(
+        solve_in("Z", "x*y = 0, x + y = 2"),
+        ok("x = 0, y = 2 \\ x = 2, y = 0")
+    );
+}
+
+#[test]
+fn printing() {
+    // One solution per line
+    assert_eq!(eval_in("R", &["x^2 = 1"], false), ok("x = -1\nx = 1 "));
 }

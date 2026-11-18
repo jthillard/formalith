@@ -1,8 +1,9 @@
 //! Solving systems of equations, like `x + y = 3, x - y = 1`.
 //!
 //! Systems are solved for every symbol they contain ([`Solve::solve`]), or for chosen unknowns, other symbols being
-//! parameters ([`Solve::solve_for`]). Only linear systems are supported for now: new strategies (like polynomial
-//! equations) should be added in the implementation of [`Solve::solve_for`] for rings.
+//! parameters ([`Solve::solve_for`]). Linear systems are solved by Gaussian elimination, other polynomial systems
+//! by splitting factored equations into cases, substituting unknowns and eliminating them with resultants. A system
+//! can have several solutions, like `x = -1` and `x = 1` for `x^2 = 1` ([`Solution::Alternatives`]).
 //!
 //! ```
 //! use formalith::{field::real::R, parse, solve::{Equation, Solution, Solve}, symbol};
@@ -21,12 +22,13 @@
 //! ```
 
 mod linear;
+mod polynomial;
 
-use std::{collections::BTreeSet, error::Error, fmt};
+use std::{cmp::Ordering, collections::BTreeSet, error::Error, fmt};
 
 use crate::{
     context::{Context, Symbol},
-    field::{Ring, Set, matrix::M},
+    field::{Group, Ring, Set, matrix::M},
     parser::ParserError,
     printer::{PrettyPrint, PrettyPrinter, Print, PrintOptions},
     term::{Expand, Normalize, SymbolTerm, Term},
@@ -73,6 +75,9 @@ impl<T: Set> fmt::Display for Equation<T> {
     }
 }
 
+/// The unknowns of a solution, each given in terms of the unknowns which aren't listed.
+pub type Assignments<T> = Vec<(Symbol, Term<T>)>;
+
 /// The solutions of a system.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Solution<T: Set> {
@@ -80,7 +85,38 @@ pub enum Solution<T: Set> {
     NoSolution,
     /// Each listed unknown is given in terms of the unknowns which aren't listed, which can take any value.
     /// Every value is a solution if the list is empty.
-    Assignments(Vec<(Symbol, Term<T>)>),
+    Assignments(Assignments<T>),
+    /// At least two distinct solutions, each one being like [`Solution::Assignments`], like `x = -1` and `x = 1`
+    /// for `x^2 = 1`.
+    Alternatives(Vec<Assignments<T>>),
+}
+
+impl<T: Group> Solution<T> {
+    /// Build the solution made of `branches`, removing duplicates and sorting them.
+    #[must_use]
+    pub fn from_branches(mut branches: Vec<Assignments<T>>) -> Self {
+        // `Term::cmp` ignores coefficients, like in `x = sqrt(2)` and `x = -sqrt(2)`, which are then sorted as text
+        let cmp = |a: &Assignments<T>, b: &Assignments<T>| {
+            a.len().cmp(&b.len()).then_with(|| {
+                a.iter()
+                    .zip(b)
+                    .map(|((x, u), (y, v))| {
+                        x.cmp(y)
+                            .then_with(|| u.cmp(v))
+                            .then_with(|| plain(u).cmp(&plain(v)))
+                    })
+                    .find(|ordering| ordering.is_ne())
+                    .unwrap_or(Ordering::Equal)
+            })
+        };
+        branches.sort_by(cmp);
+        branches.dedup();
+        match branches.len() {
+            0 => Self::NoSolution,
+            1 => Self::Assignments(branches.pop().expect("There is one branch")),
+            _ => Self::Alternatives(branches),
+        }
+    }
 }
 
 impl<T: Set> Solution<T> {
@@ -94,12 +130,21 @@ impl<T: Set> Solution<T> {
         })
     }
 
+    /// The printed solutions, each one being a list of assignments.
+    fn branches(&self) -> &[Assignments<T>] {
+        match self {
+            Self::NoSolution => &[],
+            Self::Assignments(assignments) => std::slice::from_ref(assignments),
+            Self::Alternatives(branches) => branches,
+        }
+    }
+
     /// The text printed when there isn't any assignment.
     fn text(&self, options: &PrintOptions) -> Option<String> {
         let text = match self {
             Self::NoSolution => "no solution",
             Self::Assignments(assignments) if assignments.is_empty() => "true",
-            Self::Assignments(_) => return None,
+            Self::Assignments(_) | Self::Alternatives(_) => return None,
         };
         Some(if options.typst {
             format!("\"{text}\"")
@@ -107,16 +152,13 @@ impl<T: Set> Solution<T> {
             text.to_owned()
         })
     }
-}
 
-impl<T: Set> Print for Solution<T> {
-    fn print(&self, options: &PrintOptions, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if let Some(text) = self.text(options) {
-            return f.write_str(&text);
-        }
-        let Self::Assignments(assignments) = self else {
-            unreachable!()
-        };
+    /// Print one solution, its assignments being separated by commas.
+    fn print_assignments(
+        assignments: &[(Symbol, Term<T>)],
+        options: &PrintOptions,
+        f: &mut fmt::Formatter<'_>,
+    ) -> fmt::Result {
         for (i, equation) in Self::equations(assignments).enumerate() {
             if i != 0 {
                 Self::delimiter(",", options, f)?;
@@ -128,17 +170,34 @@ impl<T: Set> Print for Solution<T> {
     }
 }
 
+impl<T: Set> Print for Solution<T> {
+    fn print(&self, options: &PrintOptions, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Some(text) = self.text(options) {
+            return f.write_str(&text);
+        }
+        // One solution per line, `\` being a line break in Typst
+        for (i, assignments) in self.branches().iter().enumerate() {
+            if i != 0 {
+                f.write_str(if options.typst { " \\ " } else { "\n" })?;
+            }
+            Self::print_assignments(assignments, options, f)?;
+        }
+        Ok(())
+    }
+}
+
 impl<T: Set> PrettyPrint for Solution<T> {
     fn pretty_print(&self, options: &PrintOptions) -> PrettyPrinter {
         if let Some(text) = self.text(options) {
             return text.into();
         }
-        let Self::Assignments(assignments) = self else {
-            unreachable!()
-        };
-        let mut res = PrettyPrinter::from(String::new());
-        for equation in Self::equations(assignments) {
-            res.concat(", ", false, &equation.pretty_print(options));
+        let mut res = PrettyPrinter::empty();
+        for assignments in self.branches() {
+            let mut line = PrettyPrinter::empty();
+            for equation in Self::equations(assignments) {
+                line.concat(", ", false, &equation.pretty_print(options));
+            }
+            res.stack(&line);
         }
         res
     }
@@ -153,8 +212,13 @@ impl<T: Set> fmt::Display for Solution<T> {
 /// An error raised while solving a system.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SolveError {
-    /// A term of an equation is not linear in the unknowns.
+    /// A term of an equation is not linear in the unknowns. Raised by the linear solver, non-linear systems being
+    /// then solved as polynomial systems.
     NonLinear(String),
+    /// A term of an equation is not polynomial in the unknowns, like `abs(x)` or `2^x`.
+    NotPolynomial(String),
+    /// An equation can't be solved, like a polynomial of degree 3 without rational roots.
+    Unsolvable(String),
     /// A pivot of the elimination is not invertible in the set, like `2` in `Z`.
     NotInvertible,
     /// Equations can't be solved in this set.
@@ -170,6 +234,11 @@ impl fmt::Display for SolveError {
                     "`{term}` is not linear, only linear systems can be solved"
                 )
             }
+            Self::NotPolynomial(term) => write!(
+                f,
+                "`{term}` is not polynomial in the unknowns, only polynomial systems can be solved"
+            ),
+            Self::Unsolvable(term) => write!(f, "can't solve `{term} = 0`"),
             Self::NotInvertible => f.write_str("a pivot is not invertible in this set"),
             Self::Unsupported => f.write_str("equations can't be solved in this set"),
         }
@@ -200,7 +269,8 @@ pub trait Solve: Set {
     /// Solve `equations` for every symbol they contain, sorted by name.
     ///
     /// # Errors
-    /// Returns an error if the system is not supported, like a non-linear system.
+    /// Returns an error if the system is not supported, like a non-polynomial system or a polynomial without
+    /// expressible roots.
     fn solve(&self, equations: &[Equation<Self>]) -> Result<Solution<Self>, SolveError> {
         let mut unknowns: Vec<Symbol> = equations
             .iter()
@@ -221,7 +291,8 @@ pub trait Solve: Set {
     /// symbolic pivot, like `a` in `a*x = 1`, is assumed to be non-zero.
     ///
     /// # Errors
-    /// Returns an error if the system is not supported, like a non-linear system.
+    /// Returns an error if the system is not supported, like a non-polynomial system or a polynomial without
+    /// expressible roots.
     fn solve_for(
         &self,
         equations: &[Equation<Self>],
@@ -254,7 +325,10 @@ impl<T: Ring> Solve for T {
                     .expand()
             })
             .collect();
-        linear::solve(&expressions, unknowns, *self)
+        match linear::solve(&expressions, unknowns, *self) {
+            Err(SolveError::NonLinear(_)) => polynomial::solve(&expressions, unknowns),
+            res => res,
+        }
     }
 }
 

@@ -40,6 +40,7 @@ pub use pow::*;
 pub mod fun;
 pub use fun::*;
 pub mod derivative;
+pub mod substitute;
 pub mod flags;
 use flags::{Flags, NORMALIZED};
 

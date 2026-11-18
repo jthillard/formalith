@@ -70,7 +70,7 @@ pub(super) fn solve<T: Ring>(
                 .map(|(unknown, value)| (unknown, value.simplify()))
                 .collect(),
         ),
-        Solution::NoSolution => Solution::NoSolution,
+        solution => solution,
     })
 }
 

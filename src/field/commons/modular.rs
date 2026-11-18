@@ -137,7 +137,7 @@ impl Zn {
     }
 
     /// Factor a univariate polynomial expression into irreducible factors, when the modulus is prime.
-    fn factor(self, term: &Term<Self>) -> Option<Term<Self>> {
+    pub(crate) fn factor(self, term: &Term<Self>) -> Option<Term<Self>> {
         if !self.is_field() {
             return None;
         }

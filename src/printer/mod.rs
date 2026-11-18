@@ -417,6 +417,24 @@ impl PrettyPrinter {
             self.lines.push(line);
         }
     }
+    /// Put `other` below `self`, aligned on the left. The baseline stays the one of `self`.
+    ///
+    /// self
+    /// other
+    pub fn stack(&mut self, other: &Self) {
+        if self.is_empty() {
+            *self = other.clone();
+            return;
+        }
+        let width = self.width().max(other.width());
+        for line in &mut self.lines {
+            *line += &" ".repeat(width - self.width);
+        }
+        for line in &other.lines {
+            self.lines.push(line.clone() + &" ".repeat(width - other.width));
+        }
+        self.width = width;
+    }
     /// Put other as an exponant of self.
     ///
     /// ```no_test
