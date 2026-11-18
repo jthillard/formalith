@@ -204,14 +204,16 @@ impl Context {
     pub const FACTORIAL: Symbol = Symbol(46);
     /// Binomial coefficient `binomial(n, k)`
     pub const BINOMIAL: Symbol = Symbol(47);
+    /// Integral `integrate(f, x)` (an antiderivative) or `integrate(f, x, a, b)` (from `a` to `b`)
+    pub const INTEGRATE: Symbol = Symbol(48);
 
     #[rustfmt::skip]
-    const BUILTIN_NAMES: [&'static str; 48] = [
+    const BUILTIN_NAMES: [&'static str; 49] = [
         "abs", "det", "expand", "factor", "simplify", "re", "im", "conj", "sqrt", "root", "sign",
         "floor", "ceil", "min", "max", "gcd", "lcm", "quo", "rem", "diff", "solve", "approx",
         "exp", "ln", "sin", "cos", "tan", "pi", "e", "lim", "oo", "undefined",
         "series", "asin", "acos", "atan", "sinh", "cosh", "tanh", "asinh", "acosh", "atanh", "cot",
-        "sec", "csc", "log", "factorial", "binomial",
+        "sec", "csc", "log", "factorial", "binomial", "integrate",
     ];
 
     /// Return `true` if `symbol` is a builtin constant, like `{$pi$}`, which is not a function.
@@ -235,6 +237,7 @@ impl Context {
             Self::APPROX | Self::LOG => Some((1, 2)),
             Self::LIM => Some((3, 4)),
             Self::SERIES => Some((3, 5)),
+            Self::INTEGRATE => Some((2, 4)),
             Self::PI | Self::E | Self::OO | Self::UNDEFINED => Some((0, 0)),
             Symbol(id) if id < Self::BUILTIN_NAMES.len() => Some((1, 1)),
             _ => None,

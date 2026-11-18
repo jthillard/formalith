@@ -20,7 +20,7 @@ use malachite::{
 
 use crate::{
     context::{Context, Symbol},
-    term::{Add, Fun, Mul, Normalize, Term, Value, flags::Flags},
+    term::{Add, Fun, Mul, Normalize, SymbolTerm, Term, Value, flags::Flags},
 };
 
 use super::R;
@@ -41,6 +41,25 @@ const MAX_ROOT: u64 = 64;
 const GUARD_BITS: u64 = 32;
 /// Halvings of the argument of the Taylor series of `exp`, `sin` and `cos`, making them converge faster.
 const HALVINGS: u64 = 8;
+
+/// Minimum number of halvings of the step of the numerical integration.
+const MIN_QUADRATURE_LEVELS: u64 = 3;
+/// Maximum number of halvings of the step of the numerical integration.
+const MAX_QUADRATURE_LEVELS: u64 = 10;
+/// Bound of the parameter `s` of the nodes of the numerical integration.
+const MAX_QUADRATURE_S: u64 = 6;
+
+/// The substitution used by the numerical integration, depending on the bounds.
+enum Quadrature {
+    /// Finite bounds `a` and `b`.
+    Finite(Rational, Rational),
+    /// From `a` to `{$oo$}`.
+    Right(Rational),
+    /// From `{$-oo$}` to `b`.
+    Left(Rational),
+    /// From `{$-oo$}` to `{$oo$}`.
+    Whole,
+}
 
 /// Fixed-point arithmetic, an integer `m` standing for `{$m / 2^"bits"$}`.
 #[derive(Clone, Copy)]
@@ -272,6 +291,10 @@ impl Fixed {
         if *base == 0 {
             return (*exponant > 0).then_some(Rational::ZERO);
         }
+        // `{$b^(-e) = (1/b)^e$}`, as roots of small values lose their precision in fixed point
+        if *exponant < 0 {
+            return self.pow(&base.reciprocal(), &-exponant);
+        }
         let (num, den) = exponant.numerator_and_denominator_ref();
         if *num <= MAX_EXPONENT && *den <= MAX_ROOT {
             let num = i64::try_from(num).ok()?;
@@ -292,6 +315,134 @@ impl Fixed {
             return None;
         }
         self.exp_rational(&(exponant * self.to_rational(self.ln(base))))
+    }
+
+    /// `{$e^u$}` for a rational `u`, as a rational with a relative precision of about `{$2^(-"bits")$}`, even
+    /// for negative `u`.
+    fn exp_signed(self, u: &Rational) -> Option<Rational> {
+        if *u < 0 {
+            return Some(self.exp_rational(&-u)?.reciprocal());
+        }
+        self.exp_rational(u)
+    }
+
+    /// `{$integral_a^b f dif x$}` with a double exponential quadrature, the trapezoidal rule in `s` after the
+    /// substitution `{$x = (a + b) / 2 + (b - a) / 2 tanh(pi/2 sinh s)$}` (tanh-sinh), `{$x = a + exp(pi/2 sinh s)$}`
+    /// for `{$b = oo$}` (exp-sinh, and `{$x = b - exp(pi/2 sinh s)$}` for `{$a = -oo$}`), and
+    /// `{$x = sinh(pi/2 sinh s)$}` on `{$RR$}` (sinh-sinh). The step is halved until two results agree to half of
+    /// the precision, the error being roughly squared at each step, so integrands must be smooth inside the
+    /// interval. Slowly decaying oscillations, like `{$sin(x) / x$}` on `{$[0, oo)$}`, don't converge.
+    fn integrate(self, f: &Term<Real>, x: Symbol, a: &Term<Real>, b: &Term<Real>) -> Option<Rational> {
+        let oo = Term::Symbol(SymbolTerm::new(Context::OO, super::R));
+        let infinity = |t: &Term<Real>| {
+            if *t == oo {
+                Some(1)
+            } else if *t == -&oo {
+                Some(-1)
+            } else {
+                None
+            }
+        };
+        let (a_infinity, b_infinity) = (infinity(a), infinity(b));
+        if a_infinity == Some(1) || b_infinity == Some(-1) {
+            return if a == b {
+                Some(Rational::ZERO)
+            } else {
+                self.integrate(f, x, b, a).map(|res| -res)
+            };
+        }
+        let bound = |t: &Term<Real>| self.evaluate(t);
+        let kind = match (a_infinity, b_infinity) {
+            (None, None) => Quadrature::Finite(bound(a)?, bound(b)?),
+            (None, Some(_)) => Quadrature::Right(bound(a)?),
+            (Some(_), None) => Quadrature::Left(bound(b)?),
+            (Some(_), Some(_)) => Quadrature::Whole,
+        };
+        let eval = |node: Rational| {
+            self.evaluate(&bind(f, x, &Term::Value(Value::new(node, super::R))))
+        };
+        let pi = self.to_rational(self.pi());
+        let half_pi = &pi >> 1_u64;
+        // `{$f(x(s)) x'(s)$}`, plus the symmetric node for finite intervals
+        let point = |s: &Rational| -> Option<Rational> {
+            let es = self.exp_signed(s)?;
+            let inverse = (&es).reciprocal();
+            let (sinh, cosh) = ((&es - &inverse) >> 1_u64, (es + inverse) >> 1_u64);
+            let u = &half_pi * sinh;
+            Some(match &kind {
+                Quadrature::Finite(a, b) => {
+                    // `{$q = e^(2u)$}`, nodes `{$b - (b - a) / (q + 1)$}` and `{$a + (b - a) / (q + 1)$}`
+                    let q = self.exp_signed(&(u << 1_u64))?;
+                    let length = b - a;
+                    let d = &length / (&q + Rational::ONE);
+                    let weight = &length * &pi * cosh * &q / Pow::pow(q + Rational::ONE, 2_u64);
+                    if *s == 0 {
+                        eval(a + d)? * weight
+                    } else {
+                        (eval(b - &d)? + eval(a + d)?) * weight
+                    }
+                }
+                Quadrature::Right(a) => {
+                    let e = self.exp_signed(&u)?;
+                    eval(a + &e)? * e * &half_pi * cosh
+                }
+                Quadrature::Left(b) => {
+                    let e = self.exp_signed(&u)?;
+                    eval(b - &e)? * e * &half_pi * cosh
+                }
+                Quadrature::Whole => {
+                    let e = self.exp_signed(&u)?;
+                    let inverse = (&e).reciprocal();
+                    eval((&e - &inverse) >> 1_u64)? * ((e + inverse) >> 1_u64) * &half_pi * cosh
+                }
+            })
+        };
+        let symmetric = matches!(kind, Quadrature::Finite(..));
+        let mut sum = Integer::ZERO;
+        let mut previous: Option<Rational> = None;
+        let tolerance = Rational::ONE >> (self.bits / 2);
+        for level in 0..=MAX_QUADRATURE_LEVELS {
+            let h = Rational::ONE >> level;
+            let (first, step) = if level == 0 { (0, 1) } else { (1, 2) };
+            let directions: &[i64] = if symmetric { &[1] } else { &[1, -1] };
+            for &direction in directions {
+                let mut zeros = 0;
+                let mut k = if level == 0 && direction == -1 { 1 } else { first };
+                loop {
+                    let s = Rational::from(direction * k) * &h;
+                    if (&s).abs() > MAX_QUADRATURE_S {
+                        break;
+                    }
+                    // Far nodes may overflow, like `{$exp(-x^2)$}` for a huge `x`, once the terms vanished
+                    let Some(term) = point(&s) else {
+                        if zeros > 0 {
+                            break;
+                        }
+                        return None;
+                    };
+                    let term = self.from_rational(&term);
+                    if term == 0 {
+                        zeros += 1;
+                        if zeros >= 2 {
+                            break;
+                        }
+                    } else {
+                        zeros = 0;
+                    }
+                    sum += term;
+                    k += step;
+                }
+            }
+            let res = self.to_rational(sum.clone()) * &h;
+            if let Some(previous) = &previous
+                && level >= MIN_QUADRATURE_LEVELS
+                && (&res - previous).abs() < tolerance
+            {
+                return Some(res);
+            }
+            previous = Some(res);
+        }
+        None
     }
 
     /// Evaluate a term without symbols, other than builtin constants.
@@ -328,6 +479,9 @@ impl Fixed {
                             _ => (cos != 0).then(|| self.to_rational(self.div(&sin, &cos))),
                         }
                     }
+                    (Context::INTEGRATE, [f, Term::Symbol(x), a, b]) => {
+                        self.integrate(f, x.symbol, a, b)
+                    }
                     (
                         ident @ (Context::ASIN
                         | Context::ACOS
@@ -355,6 +509,38 @@ impl Fixed {
                 }
             }
         }
+    }
+}
+
+/// `term` with the symbol `x` replaced by `value`, also in exponents, without normalizing: normalizing powers like
+/// `{$x^x$}` of exact nodes with huge denominators would be too expensive, and [`Fixed::evaluate`] doesn't need it.
+fn bind(term: &Term<Real>, x: Symbol, value: &Term<Real>) -> Term<Real> {
+    if !term.symbols().contains(&x) {
+        return term.clone();
+    }
+    let set = term.get_set();
+    match term {
+        Term::Value(_) => term.clone(),
+        Term::Symbol(_) => value.clone(),
+        Term::Add(add) => Term::Add(Add::new(add.iter().map(|t| bind(t, x, value)).collect(), set)),
+        Term::Mul(mul) => Term::Mul(Mul::new(
+            mul.coefficient.clone(),
+            mul.iter().map(|t| bind(t, x, value)).collect(),
+            set,
+        )),
+        Term::Pow(pow) => Term::Pow(crate::term::Pow::new(
+            bind(&pow.base, x, value),
+            bind(&pow.exponant, x, value),
+            set,
+        )),
+        Term::Fun(fun) => match fun.get_args::<Real>() {
+            Some(args) => Term::Fun(Box::new(Fun::new(
+                fun.get_ident(),
+                args.iter().map(|t| bind(t, x, value)).collect(),
+                set,
+            ))),
+            None => term.clone(),
+        },
     }
 }
 

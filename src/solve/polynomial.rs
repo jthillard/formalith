@@ -88,7 +88,7 @@ pub(super) fn solve<T: Ring>(
 
 /// Roots of polynomials in a set, and factorization of the equations. Implemented for every ring, with a default
 /// which can't factor, nor find roots.
-pub(super) trait PolynomialRoots: Ring {
+pub(crate) trait PolynomialRoots: Ring {
     /// Factor `term`, returning `None` if the set doesn't support factorization.
     fn factor_term(term: &Term<Self>) -> Option<Term<Self>>;
 
@@ -377,11 +377,50 @@ fn complex_sqrt(t: &Term<C<R<Rational>>>) -> Term<C<R<Rational>>> {
             return complex_sqrt(&coefficient) * rest.pow(&half);
         }
     }
+    // `{$a + b i$}` with radicals `a` and `b`, like `{$(1 + i sqrt(3)) / 2$}`
+    if let Some((a, b)) = split_complex(t)
+        && let Some(b_sign @ (Ordering::Less | Ordering::Greater)) = real_sign(&b)
+    {
+        let modulus = (&a * &a + &b * &b).expand().pow(&half);
+        let re = ((&modulus + &a) / complex(2)).pow(&half);
+        let im = ((modulus - a) / complex(2)).pow(&half);
+        let i = Term::constant(if b_sign == Ordering::Greater { C.i() } else { C.conj(&C.i()) }, C);
+        return re + i * im;
+    }
     // Real values are handled by the normalization, `{$sqrt(-3) = i sqrt(3)$}`
     match real_sign(t) {
         Some(Ordering::Less) => Term::constant(C.i(), C) * (-t).pow(&half),
         _ => t.pow(&half),
     }
+}
+
+/// The real and imaginary parts `{$(a, b)$}` of `{$t = a + b i$}`, if every term of the expanded `t` is a complex
+/// coefficient times a real expression (its symbols and radicals being assumed real).
+pub(crate) fn split_complex(
+    t: &Term<C<R<Rational>>>,
+) -> Option<(Term<C<R<Rational>>>, Term<C<R<Rational>>>)> {
+    let t = t.expand();
+    let terms = match &t {
+        Term::Add(add) => add.iter().cloned().collect(),
+        _ => vec![t.clone()],
+    };
+    let (mut re, mut im) = (Term::zero(C), Term::zero(C));
+    for term in terms {
+        let (coefficient, rest) = match &term {
+            Term::Value(value) => (value.value.clone(), Term::one(C)),
+            Term::Mul(mul) => (
+                mul.coefficient.clone(),
+                &term / &Term::constant(mul.coefficient.clone(), C),
+            ),
+            _ => ([Rational::ONE, Rational::ZERO], term.clone()),
+        };
+        // The rest must be real
+        TryExprFrom::<C<R<Rational>>>::try_from_expr(&R, rest.clone()).ok()?;
+        let [a, b] = coefficient;
+        re += Term::constant([a, Rational::ZERO], C) * &rest;
+        im += Term::constant([b, Rational::ZERO], C) * rest;
+    }
+    Some((re, im))
 }
 
 /// A cube root of `t` in `{$CC$}`, real when `t` is real.

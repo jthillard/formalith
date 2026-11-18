@@ -27,6 +27,7 @@
 pub mod combinatorics;
 pub mod context;
 pub mod field;
+pub mod integrate;
 mod iter;
 pub mod limit;
 pub mod matrix;

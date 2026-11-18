@@ -22,7 +22,7 @@
 //! ```
 
 mod linear;
-mod polynomial;
+pub(crate) mod polynomial;
 
 use std::{cmp::Ordering, collections::BTreeSet, error::Error, fmt};
 

@@ -49,6 +49,13 @@ impl<T: Derivable<ExponantSet = T, ProductCoefficientSet = T>> Term<T> {
                 exponant * &pow.base.pow(&(exponant - &Self::one(set))) * pow.base.derivative(x)
             }
             Self::Fun(fun) => {
+                // `{$d/dx integral f dif x = f$}`
+                if fun.get_ident() == Context::INTEGRATE
+                    && let Some([f, Self::Symbol(variable)]) = fun.get_args::<T>().map(Vec::as_slice)
+                    && variable.symbol == x
+                {
+                    return f.clone();
+                }
                 if let Some([u]) = fun.get_args::<T>().map(Vec::as_slice) {
                     let apply = |ident| {
                         Self::Fun(Box::new(Fun::new(ident, vec![u.clone()], set))).normalize()
@@ -75,6 +82,10 @@ impl<T: Derivable<ExponantSet = T, ProductCoefficientSet = T>> Term<T> {
                         Context::ASINH => Some(inv_sqrt(u * u + one.clone())),
                         Context::ACOSH => Some(inv_sqrt(u * u - one.clone())),
                         Context::ATANH => Some((&one - &(u * u)).inv()),
+                        // `{$|u|' = sign(u) u'$}`, except at 0
+                        Context::ABS => Some(apply(Context::SIGN)),
+                        // `{$sign' = 0$}`, except at 0
+                        Context::SIGN => Some(Self::zero(set)),
                         _ => None,
                     };
                     if let Some(outer) = outer {

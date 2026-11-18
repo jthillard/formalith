@@ -21,6 +21,7 @@ use crate::{
     field::{
         Derivable, Field, Group, PartiallyOrderedSet, Ring, Set, SetParseExpression, matrix::M,
     },
+    integrate::IntegrateError,
     limit::{Direction, LimitError},
     parser::Parser,
     polynom::ToTerm,
@@ -357,6 +358,24 @@ impl Ring for R<Rational> {
                         }
                     }
                 }
+                Context::INTEGRATE => {
+                    let res = match fun.get_args::<Self>().map(Vec::as_slice) {
+                        Some([f, Term::Symbol(x)]) => f.integrate(x.symbol),
+                        Some([f, Term::Symbol(x), a, b]) => f.integrate_definite(x.symbol, a, b),
+                        _ => Err(IntegrateError::Unsupported),
+                    };
+                    match res {
+                        Ok(res) => return res,
+                        Err(IntegrateError::Divergent(sign)) => {
+                            let oo = Term::Symbol(SymbolTerm::new(Context::OO, *self));
+                            return if sign == Ordering::Less { -oo } else { oo };
+                        }
+                        Err(IntegrateError::Undefined) => {
+                            return Term::Symbol(SymbolTerm::new(Context::UNDEFINED, *self));
+                        }
+                        Err(IntegrateError::Unsupported) => {}
+                    }
+                }
                 Context::DET => {
                     if let Some(Term::Value(matrix)) = fun.get_arg::<M<TermSet<Self>>>()
                         && let Ok(res) = matrix.value.det()
@@ -424,7 +443,12 @@ impl Ring for R<Rational> {
                         }
                         return terms;
                     }
-                } else if let Term::Mul(mul) = &**base {
+                } else if let Term::Mul(mul) = &**base
+                    // `{$(-x)^(1/2)$}` isn't `{$(-1)^(1/2) x^(1/2)$}` in `{$RR$}`
+                    && (mul.coefficient > 0
+                        || matches!(&***exponant, Term::Value(value)
+                            if value.value.denominator_ref() == &1))
+                {
                     return Term::distribute_pow(mul, exponant);
                 }
                 a
@@ -562,6 +586,9 @@ impl R<Rational> {
         match (ident, args) {
             (Context::EXP | Context::COS, [x]) if x.is_zero() => Some(value(Rational::ONE)),
             (Context::SIN | Context::TAN, [x]) if x.is_zero() => Some(value(Rational::ZERO)),
+            (Context::SIN | Context::COS | Context::TAN, [x]) if self.pi_multiple(x).is_some() => {
+                self.eval_trig_at_pi_multiple(ident, &self.pi_multiple(x)?)
+            }
             (Context::LN, [x]) if x.is_one() => Some(value(Rational::ZERO)),
             (Context::LN, [Term::Symbol(x)]) if x.symbol == Context::E => {
                 Some(value(Rational::ONE))
@@ -685,6 +712,56 @@ impl R<Rational> {
             }
         }
         None
+    }
+
+    /// The rational `q` if `x` is `{$q pi$}`.
+    fn pi_multiple(self, x: &Term<Self>) -> Option<Rational> {
+        match x {
+            Term::Symbol(symbol) if symbol.symbol == Context::PI => Some(Rational::ONE),
+            Term::Mul(mul)
+                if matches!(mul.iter().collect::<Vec<_>>().as_slice(),
+                    [Term::Symbol(symbol)] if symbol.symbol == Context::PI) =>
+            {
+                Some(mul.coefficient.clone())
+            }
+            _ => None,
+        }
+    }
+
+    /// Evaluate `sin`, `cos` or `tan` at `{$q pi$}` for the classic values, `q` being a multiple of `{$1/4$}` or
+    /// `{$1/6$}`, like `{$cos(pi/3) = 1/2$}`. `tan` stays unevaluated at its poles.
+    fn eval_trig_at_pi_multiple(self, ident: Symbol, q: &Rational) -> Option<Term<Self>> {
+        // `{$q pi = k pi / 12$}` with `{$0 <= k < 24$}`
+        let twelfths = q * Rational::from(12);
+        if twelfths.denominator_ref() != &Natural::ONE {
+            return None;
+        }
+        let k = i64::try_from(&twelfths).ok()?.rem_euclid(24);
+        let value = |n, d| Term::Value(Value::new(Rational::from_signeds(n, d), self));
+        let sqrt = |n| value(n, 1).pow(&value(1, 2));
+        // `{$sin(k pi / 12)$}`
+        let sin = |k: i64| -> Option<Term<Self>> {
+            let (k, sign) = if k >= 12 { (k - 12, -1) } else { (k, 1) };
+            let k = if k > 6 { 12 - k } else { k };
+            let res = match k {
+                0 => value(0, 1),
+                2 => value(1, 2),
+                3 => sqrt(2) / value(2, 1),
+                4 => sqrt(3) / value(2, 1),
+                6 => value(1, 1),
+                _ => return None,
+            };
+            Some(value(sign, 1) * res)
+        };
+        let (sin_value, cos_value) = (sin(k), sin((k + 6) % 24));
+        match ident {
+            Context::SIN => sin_value,
+            Context::COS => cos_value,
+            _ => {
+                let cos_value = cos_value?;
+                (!cos_value.is_zero()).then(|| sin_value.map(|s| s / cos_value))?
+            }
+        }
     }
 
     /// Evaluate `asin`, `acos` or `atan` at the classic values, like `{$asin(1/2) = pi/6$}`.

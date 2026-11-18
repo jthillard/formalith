@@ -182,6 +182,24 @@ impl<From: Set, T: Set> Print for Fun<From, T> {
                 Self::group(*n, options, f)?;
                 return f.write_str("!");
             }
+            if self.ident == Context::INTEGRATE
+                && let [fun, x, bounds @ ..] = args.as_slice()
+                && matches!(bounds.len(), 0 | 2)
+            {
+                // `{$integral_a^b f dif x$}`
+                f.write_str("integral")?;
+                if let [a, b] = bounds {
+                    f.write_str("_(")?;
+                    a.print(options, f)?;
+                    f.write_str(")^(")?;
+                    b.print(options, f)?;
+                    f.write_str(")")?;
+                }
+                f.write_str(" (")?;
+                fun.print(options, f)?;
+                f.write_str(") dif ")?;
+                return x.print(options, f);
+            }
             match self.ident {
                 Context::CONJ => f.write_str("overline")?,
                 Context::RE => f.write_str("Re")?,

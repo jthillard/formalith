@@ -194,12 +194,12 @@ fn infinity_part(term: &Expr) -> Option<Expr> {
 }
 
 /// The constant `value`.
-fn value(value: Rational) -> Expr {
+pub(crate) fn value(value: Rational) -> Expr {
     Term::Value(Value::new(value, R))
 }
 
 /// The symbol `x` as an expression.
-const fn variable(x: Symbol) -> Expr {
+pub(crate) const fn variable(x: Symbol) -> Expr {
     Term::Symbol(SymbolTerm::new(x, R))
 }
 
@@ -209,7 +209,7 @@ const fn infinity() -> Expr {
 }
 
 /// The function `ident(arg)`, normalized.
-fn fun(ident: Symbol, arg: Expr) -> Expr {
+pub(crate) fn fun(ident: Symbol, arg: Expr) -> Expr {
     Term::Fun(Box::new(Fun::new(ident, vec![arg], R))).normalize()
 }
 
@@ -225,7 +225,7 @@ fn unary(term: &Expr) -> Option<(Symbol, &Expr)> {
 }
 
 /// Whether `term` contains the symbol `x`.
-fn depends(term: &Expr, x: Symbol) -> bool {
+pub(crate) fn depends(term: &Expr, x: Symbol) -> bool {
     term.symbols().contains(&x)
 }
 
