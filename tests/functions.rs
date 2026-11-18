@@ -22,6 +22,34 @@ fn simplify() {
 }
 
 #[test]
+fn abs() {
+    assert_eq!(parse!("abs(-3*x)", R), parse!("3*abs(x)", R));
+    assert_eq!(parse!("abs(abs(x))", R), parse!("abs(x)", R));
+    assert_eq!(parse!("abs(x)^2", R), parse!("x^2", R));
+    assert_eq!(parse!("abs(x^2)", R), parse!("x^2", R));
+    assert_eq!(parse!("abs(x^3)", R), parse!("abs(x)^3", R));
+    assert_eq!(parse!("abs(x*y)^2", R), parse!("x^2*y^2", R));
+    assert_eq!(parse!("sqrt(x^2)", R), parse!("abs(x)", R));
+    assert_eq!(parse!("sqrt(x^4)", R), parse!("x^2", R));
+    assert_eq!(parse!("(x^3)^(1/3)", R), parse!("x", R));
+}
+
+#[test]
+fn floor_ceil_idempotent() {
+    assert_eq!(parse!("floor(floor(x))", R), parse!("floor(x)", R));
+    assert_eq!(parse!("ceil(floor(x))", R), parse!("floor(x)", R));
+}
+
+#[test]
+fn radicals() {
+    assert_eq!(parse!("sqrt(8)", R), parse!("2*2^(1/2)", R));
+    assert_eq!(parse!("16^(1/3)", R), parse!("2*2^(1/3)", R));
+    assert_eq!(parse!("sqrt(2)*sqrt(3)", R), parse!("6^(1/2)", R));
+    assert_eq!(parse!("sqrt(18)/sqrt(2)", R), 3.into());
+    assert_eq!(parse!("sqrt(8)+sqrt(2)", R), parse!("3*2^(1/2)", R));
+}
+
+#[test]
 fn roots() {
     assert_eq!(parse!("sqrt(4)", R), 2.into());
     assert_eq!(parse!("sqrt(4/9)", R), parse!("2/3", R));

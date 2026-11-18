@@ -114,6 +114,13 @@ impl<T: Group> Term<T> {
     pub fn is_negative(&self) -> bool {
         self.is_zero() || self.is_strictly_negative()
     }
+    /// Return the expression as a machine integer if it is an integer constant
+    pub fn to_i64(&self) -> Option<i64> {
+        match self {
+            Self::Value(value) => value.set.to_i64(&value.value),
+            _ => None,
+        }
+    }
 }
 
 impl<T: Set> Flags for Term<T> {
@@ -262,58 +269,50 @@ impl<T: Group> Term<T> {
             (Self::Fun(f1), Self::Fun(f2)) => f1.cmp_dyn(&**f2),
         }
     }
-    /// Compare two terms, putting terms which can be merged side by side
+    /// Compare two terms, putting terms which can be merged side by side, i.e. terms which only differ by their
+    /// coefficient
     fn cmp_terms(&self, other: &Self) -> std::cmp::Ordering {
         match (self, other) {
             (Self::Value(_), Self::Value(_)) => Ordering::Equal,
             (Self::Value(_), _) => Ordering::Greater,
             (_, Self::Value(_)) => Ordering::Less,
+            _ => {
+                let (f1, f2) = (self.non_coefficient_factors(), other.non_coefficient_factors());
+                f1.len()
+                    .cmp(&f2.len())
+                    .then_with(|| iter::cmp_by(f1.iter(), f2.iter(), Self::cmp_term_factors))
+            }
+        }
+    }
+    /// Factors of the term without its coefficient, the term itself if it isn't a product
+    fn non_coefficient_factors(&self) -> &[Self] {
+        match self {
+            Self::Mul(mul) => &mul.factors,
+            _ => std::slice::from_ref(self),
+        }
+    }
+    /// Compare factors of the non-coefficient part of two terms, see [`Self::cmp_terms`]
+    ///
+    /// Factors are ordered by base, symbols first, then by exponant.
+    fn cmp_term_factors(&self, other: &Self) -> std::cmp::Ordering {
+        fn base<T: Set>(term: &Term<T>) -> &Term<T> {
+            match term {
+                Term::Pow(pow) => &pow.base,
+                _ => term,
+            }
+        }
+        match (base(self), base(other)) {
             (Self::Symbol(s1), Self::Symbol(s2)) => s1.symbol.cmp(&s2.symbol),
-            (Self::Pow(p1), Self::Pow(p2)) => p1.base.cmp(&p2.base),
-            (Self::Pow(p), _) => p.base.cmp(other).then(Ordering::Greater),
-            (_, Self::Pow(p)) => self.cmp(&p.base).then(Ordering::Less),
-            (Self::Mul(m1), Self::Mul(m2)) => {
-                let len_cmp = m1.len().cmp(&m2.len());
-                if len_cmp != Ordering::Equal {
-                    return len_cmp;
-                }
-                // Compare non-coefficient part
-                for (a, b) in m1.iter().zip(m2.iter()) {
-                    // Skip coefficient
-                    if let Self::Value(_) = a {
-                        break;
-                    }
-                    if let Self::Value(_) = b {
-                        break;
-                    }
-
-                    let non_coeff_cmp = a.cmp(b);
-                    if non_coeff_cmp != Ordering::Equal {
-                        return non_coeff_cmp;
-                    }
-                }
-                Ordering::Equal
-            }
-            (Self::Mul(m1), v2) => {
-                if m1.len() - usize::from(m1.has_coeff()) == 1 {
-                    // Compare the non-coefficient part
-                    m1.factors[0].cmp(v2)
-                } else {
-                    Ordering::Greater
-                }
-            }
-            (v1, Self::Mul(m2)) => {
-                if m2.len() - usize::from(m2.has_coeff()) == 1 {
-                    // Compare the non-coefficient part
-                    v1.cmp(&m2.factors[0])
-                } else {
-                    Ordering::Less
-                }
-            }
             (Self::Symbol(_), _) => Ordering::Less,
             (_, Self::Symbol(_)) => Ordering::Greater,
-            _ => self.cmp(other),
+            (b1, b2) => b1.cmp(b2),
         }
+        .then_with(|| match (self, other) {
+            (Self::Pow(p1), Self::Pow(p2)) => p1.exponant.cmp(&p2.exponant),
+            (Self::Pow(_), _) => Ordering::Greater,
+            (_, Self::Pow(_)) => Ordering::Less,
+            _ => Ordering::Equal,
+        })
     }
     /// Compare two terms, putting factors which can be merged side by side
     fn cmp_factors(&self, other: &Self) -> std::cmp::Ordering {
@@ -801,13 +800,60 @@ impl<T: Ring<ExponantSet: Ring, ProductCoefficientSet = T>> Term<T> {
         }
         let (num, den) = (num.to_polynomial(), den.to_polynomial());
         let gcd = num.gcd(&den);
-        if gcd.is_constant() {
+        let (num, den) = if gcd.is_constant() {
+            (num.to_term(), den.to_term())
+        } else {
+            match (num.exact_div(&gcd), den.exact_div(&gcd)) {
+                (Some(num), Some(den)) => (num.to_term(), den.to_term()),
+                _ => return self.clone(),
+            }
+        };
+        // Cancel the numeric content, `{$(2 x)/(4 x + 2) = x/(2 x + 1)$}`
+        let set = self.get_set();
+        let mut content = num
+            .coefficients()
+            .chain(den.coefficients())
+            .fold(set.zero(), |gcd, c| set.coefficient_gcd(&gcd, &c));
+        // Move the sign to the numerator, `{$1/(-x - 1) = -1/(x + 1)$}`
+        if den.coefficients().all(|c| set.is_strictly_negative(&c)) {
+            set.neg_assign(&mut content);
+        }
+        if gcd.is_constant() && set.is_one(&content) {
             return self.clone();
         }
-        match (num.exact_div(&gcd), den.exact_div(&gcd)) {
-            (Some(num), Some(den)) => num.to_term() / den.to_term(),
-            _ => self.clone(),
+        match set.try_inv(&content) {
+            Some(inv) if !set.is_one(&content) => {
+                let inv = Self::Value(Value::new(inv, set));
+                (num * &inv).expand() / (den * &inv).expand()
+            }
+            _ => num / den,
         }
+    }
+
+    /// Coefficients of the terms of a sum, or of the expression if it isn't a sum
+    fn coefficients(&self) -> impl Iterator<Item = T::Element> {
+        let coefficient = |term: &Self| match term {
+            Self::Value(value) => value.value.clone(),
+            Self::Mul(mul) => mul.coefficient.clone(),
+            _ => term.get_set().one(),
+        };
+        match self {
+            Self::Add(add) => add.iter().map(coefficient).collect::<Vec<_>>(),
+            _ => vec![coefficient(self)],
+        }
+        .into_iter()
+    }
+}
+
+impl<T: Ring<ProductCoefficientSet = T>> Term<T> {
+    /// Distribute `exponant` over the product `mul`: `{$(c x y)^e = c^e x^e y^e$}`.
+    ///
+    /// It holds for integer exponants in commutative rings, callers must check other cases.
+    pub(crate) fn distribute_pow(mul: &Mul<T>, exponant: &Term<T::ExponantSet>) -> Self {
+        mul.iter().fold(
+            Self::Value(Value::new(mul.coefficient.clone(), mul.set)).pow(exponant),
+            |res, factor| res * factor.pow(exponant),
+        )
     }
 }
 
@@ -1080,6 +1126,17 @@ impl<T: Ring> Term<T> {
                     *pow.base = pow.base.unify();
                     **pow.exponant = pow.exponant.unify();
                 }
+                if let Some(n) = pow.exponant.to_i64()
+                    && n < 0
+                {
+                    // `{$(n/d)^(-k) = d^k / n^k$}` for an integer `k`
+                    let (num, den) = pow.base.as_fraction(unify);
+                    let k = Term::Value(Value::new(
+                        pow.exponant.get_set().nth(-n),
+                        pow.exponant.get_set(),
+                    ));
+                    return (den.pow(&k), num.pow(&k));
+                }
                 if pow.exponant.is_strictly_negative() {
                     **pow.exponant = -&**pow.exponant;
                     (Self::one(self.get_set()), pow.into())
@@ -1112,7 +1169,12 @@ impl<T: Ring> Term<T> {
         debug_assert!(!self.needs_normalization());
         let mut res = self.get_set().simplify(self.clone());
         let (num, den) = res.as_fraction(true);
-        res = num.expand() / den.expand(); // add set expansion if expand_without_norm and add a value_expand arg ?
+        res = if let Self::Value(_) = den {
+            // Distribute a constant denominator, `{$(3 x + 3)/2 = 3/2 x + 3/2$}`
+            (num / den).expand()
+        } else {
+            num.expand() / den.expand() // add set expansion if expand_without_norm and add a value_expand arg ?
+        };
         res = res.normalize();
 
         res

@@ -83,6 +83,10 @@ impl Group for Z<Integer> {
     fn neg(&self, a: &Self::Element) -> Self::Element {
         -a
     }
+
+    fn to_i64(&self, a: &Self::Element) -> Option<i64> {
+        i64::try_from(a).ok()
+    }
 }
 
 impl Ring for Z<Integer> {

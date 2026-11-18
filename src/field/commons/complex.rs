@@ -283,6 +283,10 @@ impl Group for C<R<Rational>> {
     fn neg(&self, a: &Self::Element) -> Self::Element {
         self.plane.neg(a)
     }
+
+    fn to_i64(&self, a: &Self::Element) -> Option<i64> {
+        Self::as_integer(a).and_then(|n| i64::try_from(&n).ok())
+    }
 }
 
 impl Ring for C<R<Rational>> {
@@ -311,6 +315,14 @@ impl Ring for C<R<Rational>> {
         ([&a[0] * &den, &a[1] * &den], [den, Rational::ZERO])
     }
 
+    fn coefficient_gcd(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
+        // The rational gcd of the components divides both numbers
+        let gcd = [&a[1], &b[0], &b[1]]
+            .into_iter()
+            .fold(a[0].clone(), |gcd, x| R::gcd_rational(&gcd, x));
+        [gcd, Rational::ZERO]
+    }
+
     fn normalize(&self, a: Term<Self>) -> Term<Self> {
         match &a {
             Term::Pow(term::Pow { base, exponant, .. }) => match (&**base, &***exponant) {
@@ -318,6 +330,12 @@ impl Ring for C<R<Rational>> {
                     if let Some(res) = self.normalize_constant_pow(&base.value, &exponant.value) {
                         return res;
                     }
+                }
+                (Term::Mul(mul), Term::Value(exponant))
+                    if Self::as_integer(&exponant.value).is_some() =>
+                {
+                    // `{$(x y)^n = x^n y^n$}` only holds for integer `n`
+                    return Term::distribute_pow(mul, &Term::Value(exponant.clone()));
                 }
                 (Term::Pow(base), Term::Value(exponant))
                     if Self::as_integer(&exponant.value).is_some() =>
@@ -412,24 +430,6 @@ impl Ring for C<R<Rational>> {
                             terms
                         };
                     }
-                }
-                Term::Mul(mul) => {
-                    // `{$(x y)^n = x^n y^n$}` only holds for integer `n`
-                    let exponant = Term::Value(exponant.clone());
-                    return Term::Mul(Mul::new(
-                        self.one(),
-                        mul.iter()
-                            .map(|x| term::Pow::new(x.clone(), exponant.clone(), *self).into())
-                            .chain([term::Pow::new(
-                                Term::Value(Value::new(mul.coefficient.clone(), *self)),
-                                exponant.clone(),
-                                *self,
-                            )
-                            .into()])
-                            .collect(),
-                        *self,
-                    ))
-                    .normalize();
                 }
                 _ => {}
             }

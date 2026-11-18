@@ -142,6 +142,11 @@ pub trait Group: PartiallyOrderedSet {
     fn is_strictly_negative(&self, a: &Self::Element) -> bool {
         matches!(self.partial_cmp(a, &self.zero()), Some(Ordering::Less))
     }
+
+    /// Return `a` as a machine integer if it is an integer of this group, `None` otherwise or if it's unknown.
+    fn to_i64(&self, _a: &Self::Element) -> Option<i64> {
+        None
+    }
 }
 
 /// [Set] trait with additional bounds, limiting exponant set recursion depth.
@@ -206,6 +211,13 @@ pub trait Ring: Group {
     /// Return the expression unified
     fn unify(&self, a: &Self::Element) -> Self::Element {
         a.clone()
+    }
+    /// Greatest common divisor of the numeric content of `a` and `b`, a constant which can be cancelled in a
+    /// fraction. `{$gcd(0, b)$}` must be `b` up to a unit.
+    ///
+    /// Defaults to one, meaning there is nothing to cancel.
+    fn coefficient_gcd(&self, _a: &Self::Element, _b: &Self::Element) -> Self::Element {
+        self.one()
     }
 
     /// Normalize a mathematical expression using rules specific to this group. Check [`real::R::normalize`]

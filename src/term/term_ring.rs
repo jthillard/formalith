@@ -87,6 +87,10 @@ impl<T: Group> Group for TermSet<T> {
     fn neg(&self, a: &Self::Element) -> Self::Element {
         -a
     }
+
+    fn to_i64(&self, a: &Self::Element) -> Option<i64> {
+        a.to_i64()
+    }
 }
 
 impl<T: Ring> Ring for TermSet<T> {

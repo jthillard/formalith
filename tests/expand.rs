@@ -72,6 +72,34 @@ fn simplify_rational_expressions() {
 }
 
 #[test]
+fn simplify_nested_fractions() {
+    assert_eq!(parse!("(x+1)/((x+1)/x)", R).simplify(), parse!("x", R));
+    assert_eq!(
+        parse!("((x+1)/(x-1))/((x+1)/x)", R).simplify(),
+        parse!("x/(x-1)", R)
+    );
+    assert_eq!(parse!("1/(1/x+1/y)", R).simplify(), parse!("x*y/(x+y)", R));
+}
+
+#[test]
+fn simplify_numeric_content() {
+    assert_eq!(parse!("2*x/(4*x+2)", R).simplify(), parse!("x/(2*x+1)", R));
+    assert_eq!(parse!("-2/(-4*x-2)", R).simplify(), parse!("1/(2*x+1)", R));
+    assert_eq!(
+        parse!("(6*x^2-6)/(4*x-4)", R).simplify(),
+        parse!("3/2*x+3/2", R)
+    );
+}
+
+#[test]
+fn expand_cancels_terms() {
+    assert_eq!(parse!("(-y)^2", R), parse!("y^2", R));
+    assert_eq!(parse!("(2*y)^2", R), parse!("4*y^2", R));
+    assert_eq!(parse!("(x+y)^2 - (x-y)^2", R).expand(), parse!("4*x*y", R));
+    assert_eq!(parse!("x^2+x^3+2*x^2", R), parse!("3*x^2+x^3", R));
+}
+
+#[test]
 fn as_fraction() {
     let (num, den) = parse!("2/3", R).as_fraction(false);
     assert_eq!((num, den), (2.into(), 3.into()));

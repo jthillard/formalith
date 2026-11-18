@@ -77,6 +77,13 @@ fn expand_factor_simplify() {
     assert_eq!(parse!("(i*x)^2", C).expand(), parse!("-x^2", C));
     assert_eq!(parse!("expand((x+i)*(x-i))", C), parse!("x^2+1", C));
     assert_eq!(parse!("(x^2-1)/(x-1)", C).simplify(), parse!("x+1", C));
+    assert_eq!(parse!("(x+1)/((x+1)/x)", C).simplify(), parse!("x", C));
+    assert_eq!(parse!("2*x/(4*x+2)", C).simplify(), parse!("x/(2*x+1)", C));
+    assert_eq!(parse!("(2*i*y)^2", C), parse!("-4*y^2", C));
+    assert_eq!(
+        parse!("(x+i*y)^2 - (x-i*y)^2", C).expand(),
+        parse!("4*i*x*y", C)
+    );
     assert_eq!(parse!("factor(x^2-1)", C), parse!("(x+1)*(x-1)", C));
 }
 

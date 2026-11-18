@@ -5,7 +5,7 @@ use std::{cmp::Ordering, marker::PhantomData};
 use malachite::{
     Natural, Rational,
     base::num::{
-        arithmetic::traits::{Ceiling, CheckedRoot, Floor, Gcd, Lcm, Parity, Pow, Sign},
+        arithmetic::traits::{Abs, Ceiling, CheckedRoot, Floor, Gcd, Lcm, Parity, Pow, Sign},
         basic::traits::{NegativeOne, One, Zero},
         conversion::traits::FromSciString,
     },
@@ -19,7 +19,7 @@ use crate::{
     parser::Parser,
     polynom::ToTerm,
     printer::PrettyPrinter,
-    term::{self, Expand, Fun, Mul, Normalize, Term, TermSet, Value},
+    term::{self, Expand, Fun, Normalize, Term, TermSet, Value},
 };
 
 /// The real field `{$RR$}`.
@@ -106,6 +106,10 @@ impl Group for R<Rational> {
     fn neg(&self, a: &Self::Element) -> Self::Element {
         -a
     }
+
+    fn to_i64(&self, a: &Self::Element) -> Option<i64> {
+        i64::try_from(a).ok()
+    }
 }
 
 impl Ring for R<Rational> {
@@ -131,9 +135,34 @@ impl Ring for R<Rational> {
         (num, den)
     }
 
+    fn coefficient_gcd(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
+        Self::gcd_rational(a, b)
+    }
+
     fn normalize(&self, a: Term<Self>) -> Term<Self> {
         match &a {
             Term::Pow(term::Pow { base, exponant, .. }) => match (&**base, &***exponant) {
+                (Term::Mul(mul), Term::Value(value)) if value.value.denominator_ref() == &1 => {
+                    // `{$(x y)^n = x^n y^n$}` for integer `n`
+                    return Term::distribute_pow(mul, exponant);
+                }
+                (Term::Fun(fun), Term::Value(value))
+                    if fun.get_ident() == Context::ABS && Self::is_even_integer(&value.value) =>
+                {
+                    // `{$|x|^(2 n) = x^(2 n)$}`
+                    if let Some(arg) = fun.get_arg::<Self>() {
+                        return arg.pow(exponant);
+                    }
+                }
+                (Term::Pow(base), Term::Value(exponant))
+                    if base.exponant.to_i64().is_some_and(|n| n % 2 == 0)
+                        && exponant.value.denominator_ref().even() =>
+                {
+                    // `{$(x^(2 n))^(p/q) = |x|^(2 n p/q)$}` for even `q`, the root of a positive number being positive
+                    return self
+                        .fun(Context::ABS, (*base.base).clone())
+                        .pow(&(&**base.exponant * &Term::Value(exponant.clone())));
+                }
                 (Term::Pow(base), Term::Value(exponant)) => {
                     let (numerator, denominator) = exponant.value.to_numerator_and_denominator();
                     let mut res = base.clone();
@@ -198,6 +227,23 @@ impl Ring for R<Rational> {
                             return Term::Value(Value::new(res, *self));
                         }
                     }
+                    if num == 1
+                        && res > 0
+                        && let Ok(root_exponant) = u64::try_from(&den)
+                    {
+                        // `{$(s^q r)^(1/q) = s r^(1/q)$}`
+                        let (sn, rn) = Self::extract_power(res.numerator_ref(), root_exponant);
+                        let (sd, rd) = Self::extract_power(res.denominator_ref(), root_exponant);
+                        if sn != 1 || sd != 1 {
+                            let root = Term::Value(Value::new(Rational::from_naturals(rn, rd), *self))
+                                .pow(&Term::Value(Value::new(
+                                    Rational::from_naturals(Natural::ONE, den),
+                                    *self,
+                                )));
+                            return Term::Value(Value::new(Rational::from_naturals(sn, sd), *self))
+                                * root;
+                        }
+                    }
                     return Term::Pow(term::Pow::new(
                         Term::Value(Value::new(res, *self)),
                         Term::Value(Value::new(Rational::from_naturals(num, den), *self)),
@@ -206,15 +252,15 @@ impl Ring for R<Rational> {
                 }
                 _ => {}
             },
+            Term::Mul(mul) => {
+                if let Some(res) = self.merge_radicals(mul) {
+                    return res;
+                }
+            }
             Term::Fun(fun) => match fun.get_ident() {
                 Context::ABS => {
-                    if let Some(fun) = fun.as_any().downcast_ref::<Fun<Self>>() {
-                        let content = fun.args.first().unwrap();
-                        if content >= &0.into() {
-                            return content.clone();
-                        } else if content < &0.into() {
-                            return -content;
-                        }
+                    if let Some(res) = fun.get_arg::<Self>().and_then(|arg| self.eval_abs(arg)) {
+                        return res;
                     }
                 }
                 Context::EXPAND => {
@@ -276,21 +322,8 @@ impl Ring for R<Rational> {
                         }
                         return terms;
                     }
-                } else if let (Term::Mul(mul), _) = (&**base, &**exponant) {
-                    return Term::Mul(Mul::new(
-                        self.get_coefficient_set().nth(1),
-                        mul.into_iter()
-                            .map(|x| term::Pow::new(x.clone(), (**exponant).clone(), *self).into())
-                            .chain([term::Pow::new(
-                                Term::Value(Value::new(mul.coefficient.clone(), *self)),
-                                (**exponant).clone(),
-                                *self,
-                            )
-                            .into()])
-                            .collect(),
-                        *self,
-                    ))
-                    .normalize();
+                } else if let Term::Mul(mul) = &**base {
+                    return Term::distribute_pow(mul, exponant);
                 }
                 a
             }
@@ -300,6 +333,113 @@ impl Ring for R<Rational> {
 }
 
 impl R<Rational> {
+    /// Build the function `ident(arg)`, normalized.
+    fn fun(self, ident: Symbol, arg: Term<Self>) -> Term<Self> {
+        Term::Fun(Box::new(Fun::new(ident, vec![arg], self))).normalize()
+    }
+
+    /// Write `{$n = s^q r$}`, returning `(s, r)`. Only prime factors below a bound are extracted, to keep it cheap
+    /// on large numbers.
+    fn extract_power(n: &Natural, q: u64) -> (Natural, Natural) {
+        const BOUND: u64 = 1 << 16;
+        let mut s = Natural::ONE;
+        let mut r = n.clone();
+        let mut p = 2;
+        while p < BOUND {
+            let power = Pow::pow(Natural::from(p), q);
+            if power > r {
+                break;
+            }
+            while (&r % &power) == 0 {
+                r /= &power;
+                s *= Natural::from(p);
+            }
+            p += if p == 2 { 1 } else { 2 };
+        }
+        (s, r)
+    }
+
+    /// Merge positive constant radicals with the same exponant in a product, `{$2^(1/2) 3^(1/2) = 6^(1/2)$}`.
+    ///
+    /// Returns `None` if nothing can be merged.
+    fn merge_radicals(self, mul: &term::Mul<Self>) -> Option<Term<Self>> {
+        let mut radicals: Vec<(&Rational, Rational)> = vec![];
+        let mut rest = vec![];
+        let mut merged = false;
+        for factor in mul {
+            if let Term::Pow(pow) = factor
+                && let (Term::Value(base), Term::Value(exponant)) = (&*pow.base, &**pow.exponant)
+                && base.value > 0
+            {
+                if let Some((_, product)) = radicals.iter_mut().find(|(e, _)| **e == exponant.value) {
+                    *product *= &base.value;
+                    merged = true;
+                } else {
+                    radicals.push((&exponant.value, base.value.clone()));
+                }
+            } else {
+                rest.push(factor.clone());
+            }
+        }
+        if !merged {
+            return None;
+        }
+        let value = |value| Term::Value(Value::new(value, self));
+        Some(
+            radicals
+                .into_iter()
+                .map(|(exponant, base)| value(base).pow(&value(exponant.clone())))
+                .chain(rest)
+                .fold(value(mul.coefficient.clone()), |res, factor| res * factor),
+        )
+    }
+
+    /// Check if `a` is an even integer
+    fn is_even_integer(a: &Rational) -> bool {
+        a.denominator_ref() == &1 && a.numerator_ref().even()
+    }
+
+    /// Evaluate `|x|`, returning `None` if it can't be simplified.
+    fn eval_abs(self, x: &Term<Self>) -> Option<Term<Self>> {
+        if x.is_positive() {
+            return Some(x.clone());
+        }
+        if x.is_strictly_negative() {
+            return Some(-x);
+        }
+        match x {
+            // `{$||x|| = |x|$}`
+            Term::Fun(fun) if fun.get_ident() == Context::ABS => Some(x.clone()),
+            // `{$|c x y| = |c| |x| |y|$}`
+            Term::Mul(mul) => Some(mul.iter().fold(
+                Term::Value(Value::new((&mul.coefficient).abs(), self)),
+                |res, factor| res * self.fun(Context::ABS, factor.clone()),
+            )),
+            Term::Pow(pow) => match &**pow.exponant {
+                // `{$|x^(2 n)| = x^(2 n)$}`, and `{$x^(p/q)$}` is positive for even `q`
+                Term::Value(exponant)
+                    if Self::is_even_integer(&exponant.value)
+                        || exponant.value.denominator_ref().even() =>
+                {
+                    Some(x.clone())
+                }
+                // `{$|x^n| = |x|^n$}`
+                Term::Value(exponant) if exponant.value.denominator_ref() == &1 => {
+                    Some(self.fun(Context::ABS, (*pow.base).clone()).pow(&pow.exponant))
+                }
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    /// Over the rationals, `{$gcd(a/b, c/d) = gcd(a, c)/lcm(b, d)$}`
+    pub(crate) fn gcd_rational(a: &Rational, b: &Rational) -> Rational {
+        let (an, ad) = a.numerator_and_denominator_ref();
+        let (bn, bd) = b.numerator_and_denominator_ref();
+        Rational::from_naturals(an.gcd(bn), ad.lcm(bd))
+    }
+
     /// Evaluate the builtin function `ident` on `args`, returning `None` if it can't be evaluated.
     fn eval_builtin(self, ident: Symbol, args: &[Term<Self>]) -> Option<Term<Self>> {
         let value = |value| Term::Value(Value::new(value, self));
@@ -308,18 +448,23 @@ impl R<Rational> {
             (Context::ROOT, [x, n]) => Some(x.pow(&n.inv())),
             (Context::SIGN, [x]) => PartialOrd::partial_cmp(x, &Term::zero(self))
                 .map(|sign| value(Rational::from(sign as i8))),
+            // `{$floor(ceil(x)) = ceil(x)$}`, the inner result is already an integer
+            (Context::FLOOR | Context::CEIL, [x @ Term::Fun(inner)])
+                if matches!(inner.get_ident(), Context::FLOOR | Context::CEIL) =>
+            {
+                Some(x.clone())
+            }
             (Context::FLOOR, [Term::Value(x)]) => Some(value(Rational::from((&x.value).floor()))),
             (Context::CEIL, [Term::Value(x)]) => Some(value(Rational::from((&x.value).ceiling()))),
             (Context::MIN | Context::MAX, args) => self.eval_extremum(ident, args),
-            (Context::GCD | Context::LCM, [Term::Value(a), Term::Value(b)]) => {
-                // Over the rationals, `{$gcd(a/b, c/d) = gcd(a, c)/lcm(b, d)$}`
+            (Context::GCD, [Term::Value(a), Term::Value(b)]) => {
+                Some(value(Self::gcd_rational(&a.value, &b.value)))
+            }
+            (Context::LCM, [Term::Value(a), Term::Value(b)]) => {
+                // Over the rationals, `{$lcm(a/b, c/d) = lcm(a, c)/gcd(b, d)$}`
                 let (an, ad) = a.value.numerator_and_denominator_ref();
                 let (bn, bd) = b.value.numerator_and_denominator_ref();
-                Some(value(if ident == Context::GCD {
-                    Rational::from_naturals(an.gcd(bn), ad.lcm(bd))
-                } else {
-                    Rational::from_naturals(an.lcm(bn), ad.gcd(bd))
-                }))
+                Some(value(Rational::from_naturals(an.lcm(bn), ad.gcd(bd))))
             }
             (Context::GCD | Context::LCM, [a, b]) => {
                 let (a, b) = (a.to_polynomial(), b.to_polynomial());
