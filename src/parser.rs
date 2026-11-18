@@ -171,21 +171,34 @@ impl Parser<'_> {
     /// # Errors
     /// This method can return an error if the parsing failed.
     pub fn parse<E: Set>(&mut self, set: E) -> Result<Term<E>, ParserError> {
-        let term = ParseExpression::<E>::parse_expression(self, 0, set)?
+        let term = self
+            .parse_operand(set)?
             .ok_or_else(|| ParserError::new("Input was empty"))?;
+        self.expect_eof()?;
+        Ok(term.normalize())
+    }
+
+    /// Parse an expression, without normalizing it, checking that no operator is left.
+    fn parse_operand<E: Set>(&mut self, set: E) -> Result<Option<Term<E>>, ParserError> {
+        let term = ParseExpression::<E>::parse_expression(self, 0, set)?;
         if let Some(op) = self.get_op() {
             return Err(ParserError::new(format!(
                 "Operand expected for binary operation {op:?} at position {}",
                 self.end_span
             )));
         }
+        Ok(term)
+    }
+
+    /// Check that the whole input was parsed.
+    fn expect_eof(&self) -> Result<(), ParserError> {
         if self.token.kind != TokenKind::Eof {
             return Err(ParserError::new(format!(
                 "Unexpected {:?} at position {}",
                 self.token.kind, self.start_span
             )));
         }
-        Ok(term.normalize())
+        Ok(())
     }
 
     fn parse_symbol<E: Set>(&mut self, set: E) -> Option<Term<E>> {

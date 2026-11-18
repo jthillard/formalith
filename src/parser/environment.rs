@@ -10,7 +10,8 @@ use std::{collections::BTreeMap, fmt, rc::Rc};
 use crate::{
     context::{Context, Symbol},
     field::{Set, SetParseExpression},
-    term::Term,
+    solve::{Equation, Solution, Solve},
+    term::{Normalize, Term},
 };
 
 use super::{Parser, ParserError, lexer::TokenKind};
@@ -181,6 +182,13 @@ pub enum Statement<E: Set> {
         /// The body evaluated with its parameters as symbols.
         body: Term<E>,
     },
+    /// A system of equations, like `x + y = 3, x - y = 1`, solved for every symbol.
+    System {
+        /// The equations.
+        equations: Vec<Equation<E>>,
+        /// The solutions of the system.
+        solution: Solution<E>,
+    },
 }
 
 impl<E: Set> fmt::Display for Statement<E> {
@@ -190,23 +198,25 @@ impl<E: Set> fmt::Display for Statement<E> {
             Self::Definition {
                 name, params, body, ..
             } => write!(f, "{} := {body}", head(*name, params)),
+            Self::System { solution, .. } => write!(f, "{solution}"),
         }
     }
 }
 
 impl<'a> Parser<'a> {
-    /// Parse a statement, a definition like `f(x) := x^2` or an expression. The definition is checked by
-    /// parsing its body in `set`, but isn't stored, see [`Environment::eval`].
+    /// Parse a statement: a definition like `f(x) := x^2`, a system of equations like `x + y = 3, x - y = 1`
+    /// (solved), or an expression. The definition is checked by parsing its body in `set`, but isn't stored, see
+    /// [`Environment::eval`].
     ///
     /// # Errors
-    /// This method can return an error if the parsing failed, or if the defined name or a parameter is a
-    /// builtin, a constant of the set (like `i` in `C`), or a repeated parameter.
+    /// This method can return an error if the parsing failed, if the defined name or a parameter is a
+    /// builtin, a constant of the set (like `i` in `C`), or a repeated parameter, or if the system can't be solved.
     pub fn parse_statement<E: SetParseExpression>(
         &mut self,
         set: E,
     ) -> Result<Statement<E>, ParserError> {
         let Some((name, params, body_start)) = self.clone().definition_head() else {
-            return self.parse(set).map(Statement::Expression);
+            return self.parse_equations(set);
         };
         let source = self.input[body_start..].trim().to_owned();
         for (i, &symbol) in params.iter().chain([&name]).enumerate() {
@@ -239,6 +249,53 @@ impl<'a> Parser<'a> {
             source,
             body,
         })
+    }
+
+    /// Parse comma-separated equations `lhs = rhs` and solve them, or a single expression.
+    fn parse_equations<E: Set>(&mut self, set: E) -> Result<Statement<E>, ParserError> {
+        if self.token.kind == TokenKind::Eof {
+            return Err(ParserError::new("Input was empty"));
+        }
+        let mut items = vec![];
+        loop {
+            let lhs = self.parse_side(set)?;
+            let rhs = if self.token.kind == TokenKind::Equal {
+                self.next_token();
+                Some(self.parse_side(set)?)
+            } else {
+                None
+            };
+            items.push((lhs, rhs));
+            if self.token.kind != TokenKind::Comma {
+                break;
+            }
+            self.next_token();
+        }
+        self.expect_eof()?;
+        if let [(_, None)] = items.as_slice() {
+            let (term, _) = items.pop().expect("There is one item");
+            return Ok(Statement::Expression(term));
+        }
+        let equations = items
+            .into_iter()
+            .map(|(lhs, rhs)| {
+                rhs.map(|rhs| Equation::new(lhs, rhs))
+                    .ok_or_else(|| ParserError::new("expected `=` in each equation of a system"))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let solution = set.solve(&equations)?;
+        Ok(Statement::System {
+            equations,
+            solution,
+        })
+    }
+
+    /// Parse a side of an equation, normalized.
+    fn parse_side<E: Set>(&mut self, set: E) -> Result<Term<E>, ParserError> {
+        let position = self.start_span;
+        self.parse_operand(set)?
+            .map(|term| term.normalize())
+            .ok_or_else(|| ParserError::new(format!("Expression expected at position {position}")))
     }
 
     /// Check if the input is a definition, like `f(x) := x^2`, without checking its body.

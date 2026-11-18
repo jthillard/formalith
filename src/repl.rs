@@ -70,7 +70,8 @@ impl SetChoice {
 
     /// Parse and evaluate `input` in this set, printed as Typst math source if `typst` is set.
     ///
-    /// `input` can also be a definition, like `f(x) := x^2`, stored in `env`.
+    /// `input` can also be a definition, like `f(x) := x^2`, stored in `env`, or a system of equations, like
+    /// `x + y = 3, x - y = 1`, which is solved.
     ///
     /// # Errors
     /// Returns the parsing error message if `input` is not a valid expression or definition.
@@ -209,5 +210,10 @@ fn eval_in<E: SetParseExpression>(
         Statement::Definition {
             name, params, body, ..
         } => Ok(format!("{} := {}", head(name, &params), print(&body))),
+        Statement::System { solution, .. } => Ok(if typst {
+            solution.with_options(PrintOptions::typst()).to_string()
+        } else {
+            solution.to_string()
+        }),
     }
 }

@@ -5,7 +5,7 @@
 //! in the interactive mode. Typst math output is enabled with `--typst`, or toggled with `:typst`.
 //!
 //! Variables and functions are defined with `a := x^2` or `f(x, y) := x*y`, listed with `:defs` and removed with
-//! `:clear <name>`, or `:clear` for all of them.
+//! `:clear <name>`, or `:clear` for all of them. Linear systems are solved with `x + y = 3, x - y = 1`.
 
 use std::{
     panic::{self, AssertUnwindSafe},

@@ -207,6 +207,7 @@ function help() {
     [
       'Enter an expression to evaluate it, like `expand((x+1)^3)` or `factor(x^2-1)`.',
       'Define variables and functions with `a := x^2` or `f(x, y) := x*y`.',
+      'Solve linear systems with `x + y = 3, x - y = 1`.',
       'commands:',
       '  :defs         list definitions',
       '  :clear [name] remove a definition, or all of them',

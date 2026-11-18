@@ -61,6 +61,8 @@ pub enum TokenKind {
     Comma,
     /// :=
     Define,
+    /// =
+    Equal,
     /// End Of File
     Eof,
     /// Unknown character
@@ -139,6 +141,7 @@ impl Lexer<'_> {
                 self.chars.next();
                 TokenKind::Define
             }
+            '=' => TokenKind::Equal,
             '^' => TokenKind::Caret,
             '{' => TokenKind::OpenBrace,
             '}' => TokenKind::CloseBrace,
@@ -243,7 +246,7 @@ mod tests {
     #[test]
     fn operators_and_delimiters() {
         assert_eq!(
-            kinds("+-*/^,()[]{}"),
+            kinds("+-*/^,=()[]{}"),
             vec![
                 TokenKind::Plus,
                 TokenKind::Minus,
@@ -251,6 +254,7 @@ mod tests {
                 TokenKind::Slash,
                 TokenKind::Caret,
                 TokenKind::Comma,
+                TokenKind::Equal,
                 TokenKind::OpenParen,
                 TokenKind::CloseParen,
                 TokenKind::OpenBracket,
@@ -271,11 +275,7 @@ mod tests {
         // A lone colon is unknown
         assert_eq!(
             kinds(": ="),
-            vec![
-                TokenKind::Unknown,
-                TokenKind::Whitespace,
-                TokenKind::Unknown
-            ]
+            vec![TokenKind::Unknown, TokenKind::Whitespace, TokenKind::Equal]
         );
     }
 
@@ -340,7 +340,7 @@ mod tests {
 
     #[test]
     fn unknown_characters() {
-        assert_eq!(kinds("@$=!"), vec![TokenKind::Unknown; 4]);
+        assert_eq!(kinds("@$#!"), vec![TokenKind::Unknown; 4]);
         // Length is counted in bytes
         assert_eq!(lengths("é"), vec![2]);
     }

@@ -266,17 +266,30 @@ impl<T: Ring> Matrix<T> {
     /// # Errors
     /// The method will fail if a pivot is not invertible.
     pub fn row_reduce(&mut self) -> MatrixResult<()> {
-        self.partial_row_reduce()?;
-        self.back_substitution()
+        self.row_reduce_left(self.width()).map(|_| ())
+    }
+    /// Transform the matrix in place in row reduced echelon form, choosing pivots only in the first `columns`
+    /// columns, like the coefficients of an augmented matrix. Returns the rank of these columns.
+    ///
+    /// # Errors
+    /// The method will fail if a pivot is not invertible.
+    pub fn row_reduce_left(&mut self, columns: usize) -> MatrixResult<usize> {
+        let (rank, _) = self.partial_row_reduce_left(columns)?;
+        self.back_substitution_left(columns)?;
+        Ok(rank)
     }
     /// Transform a matrix in row $echelon form to a matrix in row reduced echelon form.
     ///
     /// # Errors
     /// The method will fail if a pivot is not invertible.
     pub fn back_substitution(&mut self) -> MatrixResult<()> {
+        self.back_substitution_left(self.width())
+    }
+    /// [`Matrix::back_substitution`] with pivots in the first `columns` columns.
+    fn back_substitution_left(&mut self, columns: usize) -> MatrixResult<()> {
         for line in (0..self.height()).rev() {
             // Find the pivot
-            if let Some(pivot) = (0..self.width()).find(|x| !self.set.is_zero(&self[(line, *x)])) {
+            if let Some(pivot) = (0..columns).find(|x| !self.set.is_zero(&self[(line, *x)])) {
                 if !self.set.is_one(&self[(line, pivot)]) {
                     self.scale_row(
                         line,
@@ -341,11 +354,16 @@ impl<T: Ring> Matrix<T> {
 
     /// Transform the matrix in place in row echelon form, returning its rank and whether an odd number of rows swaps happened.
     fn partial_row_reduce_counting_swaps(&mut self) -> MatrixResult<(usize, bool)> {
+        self.partial_row_reduce_left(self.width())
+    }
+
+    /// [`Matrix::partial_row_reduce_counting_swaps`] with pivots in the first `columns` columns.
+    fn partial_row_reduce_left(&mut self, columns: usize) -> MatrixResult<(usize, bool)> {
         let (rows, cols) = self.size;
         let mut pivot_row = 0;
         let mut odd_swaps = false;
 
-        for pivot_col in 0..cols {
+        for pivot_col in 0..columns.min(cols) {
             if pivot_row >= rows {
                 break;
             }
