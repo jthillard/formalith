@@ -4,7 +4,7 @@ use std::cmp::Ordering;
 
 use crate::{
     field::{Field, Group, PartiallyOrderedSet, Ring, Set, SetParseExpression, TryExprFrom},
-    parser::{Parser, ParserError, ParserTraitBounded},
+    parser::{ParseExpression, Parser, ParserError},
     printer::{PrettyPrint, Print},
     term::{Expand, Normalize, Unify, flags::Flags},
 };
@@ -122,16 +122,22 @@ impl<T: Ring> Ring for TermSet<T> {
 }
 
 impl<T: Field> Field for TermSet<T> {}
-impl<T: Set, N> SetParseExpression<N> for TermSet<T> {
+impl<T: SetParseExpression> SetParseExpression for TermSet<T> {
+    type MatrixArgumentSet = T::MatrixArgumentSet;
+
+    fn get_matrix_argument_set(&self) -> Self::MatrixArgumentSet {
+        self.get_set().get_matrix_argument_set()
+    }
+
     fn parse_expression(&self, parser: &mut Parser) -> Result<Option<Term<Self>>, ParserError> {
         Ok(
-            ParserTraitBounded::<T, N>::parse_expression_bounded(parser, 0, *self.get_set())?
+            ParseExpression::<T>::parse_expression(parser, 0, *self.get_set())?
                 .map(|parsed| Term::Value(Value::new(parsed, *self))),
         )
     }
 
     fn parse_literal(&self, parser: &mut Parser<'_>) -> Result<Option<Self::Element>, String> {
-        Ok(ParserTraitBounded::<T, N>::parse_expression_bounded(
+        Ok(ParseExpression::<T>::parse_expression(
             parser,
             0,
             *self.get_set(),

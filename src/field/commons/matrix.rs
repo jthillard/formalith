@@ -424,7 +424,13 @@ impl<T: Ring> Ring for M<T> {
     }
 }
 
-impl<T: SetParseExpression<N>, N> SetParseExpression<N> for M<T> {
+impl<T: SetParseExpression> SetParseExpression for M<T> {
+    type MatrixArgumentSet = Self;
+
+    fn get_matrix_argument_set(&self) -> Self::MatrixArgumentSet {
+        *self
+    }
+
     fn parse_literal(&self, parser: &mut Parser) -> Result<Option<Self::Element>, String> {
         Ok(self
             .scalar_sub_set

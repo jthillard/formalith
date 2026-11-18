@@ -8,7 +8,7 @@ Formalith is a computer algebra system (CAS) library in Rust, generic over the a
 
 ## Toolchain and commands
 
-Nightly Rust is required: `src/lib.rs` enables `#![feature(specialization, iter_order_by)]`. `rust-toolchain.toml` pins the `nightly` channel, so plain `cargo` commands work.
+Nightly Rust is required: `src/lib.rs` enables `#![feature(specialization)]`. `rust-toolchain.toml` pins the `nightly` channel, so plain `cargo` commands work.
 
 - Build: `cargo build`
 - Run scratch binary: `cargo run`
@@ -30,7 +30,7 @@ Nightly Rust is required: `src/lib.rs` enables `#![feature(specialization, iter_
 
 **Normalization / Expand / Simplify.** `Normalize`, `Expand` traits on `Term<T>` use specialization: a `default fn` (often `todo!()`) for plain `Set`, and real impls for `Ring` etc. Ring-specific rewrite rules hook in through `Ring::normalize`, `Ring::expand`, `Ring::simplify` (see `R::normalize` in `real.rs`, `M::expand` / `M::simplify` in `matrix.rs`). Terms carry a `NORMALIZED` bit flag (`term/flags.rs`) to skip re-normalizing.
 
-**Parser** (`src/parser.rs`, `parser/lexer.rs`). Pratt-style parser; entry points are the `parse!` / `try_parse!` macros. Parsing is dispatched per set through `SetParseExpression<N>` (`parse_literal`, optional custom `parse_expression`, e.g. matrix literals `[[a, b], [c, d]]`). `N` is a `typenum` recursion-depth counter so parsing a function argument in another set (like `det(...)`) is type-level bounded; nesting beyond 10 levels fails.
+**Parser** (`src/parser.rs`, `parser/lexer.rs`). Pratt-style parser; entry points are the `parse!` / `try_parse!` macros. Parsing is dispatched per set through `SetParseExpression` (`parse_literal`, optional custom `parse_expression`, e.g. matrix literals `[[a, b], [c, d]]`). Its `MatrixArgumentSet` is the set `det(...)` arguments are parsed in (`M<TermSet<Self>>` for scalar sets, `Self` for matrix sets); it must never build a bigger set from a matrix set, otherwise the parser is monomorphized over infinitely many types. Sets without `SetParseExpression` fail at runtime through the specialized `ParseExpression` fallback.
 
 **Symbols** (`src/context/`). `Symbol` is a `usize` id interned in a global `RwLock<Context>`; data stored in an `AppendOnlyVec`. Built-in function symbols are fixed ids: `ABS`, `DET`, `EXPAND`, `FACTOR`, `SIMPLIFY` (order of `BUILTIN_NAMES` matters). Builtins are evaluated in the set's `normalize` (see `R::normalize`), and their arity is checked in the parser. Create symbols with `symbol!("x")`.
 

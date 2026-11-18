@@ -7,9 +7,10 @@ use malachite::{
 };
 
 use crate::{
-    field::{PartiallyOrderedSet, Set, SetParseExpression, integer::Z},
+    field::{PartiallyOrderedSet, Set, SetParseExpression, integer::Z, matrix::M},
     parser::Parser,
     printer::PrettyPrinter,
+    term::TermSet,
 };
 
 /// The natural integers set `{$NN$}`.
@@ -62,7 +63,13 @@ impl PartiallyOrderedSet for N<Natural> {
     }
 }
 
-impl<Depth> SetParseExpression<Depth> for N<Natural> {
+impl SetParseExpression for N<Natural> {
+    type MatrixArgumentSet = M<TermSet<Self>>;
+
+    fn get_matrix_argument_set(&self) -> Self::MatrixArgumentSet {
+        self.get_term_set().get_matrix_set()
+    }
+
     fn parse_literal(&self, parser: &mut Parser) -> Result<Option<Self::Element>, String> {
         parser.is_literal_and(|value| {
             let rational = Rational::from_sci_string(value)

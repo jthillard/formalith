@@ -14,10 +14,10 @@ use malachite::{
 
 use crate::{
     context::Context,
-    field::{Group, PartiallyOrderedSet, Ring, Set, SetParseExpression},
+    field::{Group, PartiallyOrderedSet, Ring, Set, SetParseExpression, matrix::M},
     parser::Parser,
     printer::PrettyPrinter,
-    term::{self, Fun, Term, Value},
+    term::{self, Fun, Term, TermSet, Value},
 };
 
 /// The integer ring `{$ZZ$}`
@@ -152,7 +152,13 @@ impl Ring for Z<Integer> {
         a
     }
 }
-impl<N> SetParseExpression<N> for Z<Integer> {
+impl SetParseExpression for Z<Integer> {
+    type MatrixArgumentSet = M<TermSet<Self>>;
+
+    fn get_matrix_argument_set(&self) -> Self::MatrixArgumentSet {
+        self.get_term_set().get_matrix_set()
+    }
+
     fn parse_literal(&self, parser: &mut Parser) -> Result<Option<Self::Element>, String> {
         parser.is_literal_and(|value| {
             let rational = Rational::from_sci_string(value)

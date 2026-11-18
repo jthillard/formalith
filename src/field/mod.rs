@@ -208,8 +208,17 @@ pub trait Ring: Group {
     }
 }
 
-/// Parsing methods trait. The generic `N` represents the current recursion depth using the `typenum` crate.
-pub trait SetParseExpression<N>: Set {
+/// Parsing methods trait.
+pub trait SetParseExpression: Set {
+    /// The set in which matrix arguments of functions like `det` are parsed, `M<TermSet<Self>>` for scalar sets.
+    ///
+    /// It must not build a new set from a matrix set (like `M<TermSet<M<...>>>`), otherwise the parser would
+    /// be instantiated over infinitely many sets.
+    type MatrixArgumentSet: SetParseExpression;
+
+    /// Get the set in which matrix arguments of functions are parsed.
+    fn get_matrix_argument_set(&self) -> Self::MatrixArgumentSet;
+
     /// Parses a string to an element of this set
     ///
     /// # Errors

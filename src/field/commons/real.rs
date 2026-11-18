@@ -321,7 +321,13 @@ impl Ring for R<Rational> {
     }
 }
 
-impl<N> SetParseExpression<N> for R<Rational> {
+impl SetParseExpression for R<Rational> {
+    type MatrixArgumentSet = M<TermSet<Self>>;
+
+    fn get_matrix_argument_set(&self) -> Self::MatrixArgumentSet {
+        self.get_term_set().get_matrix_set()
+    }
+
     fn parse_literal(&self, parser: &mut Parser) -> Result<Option<Self::Element>, String> {
         parser.is_literal_and(|value| {
             Ok(Some(Rational::from_sci_string(value).ok_or_else(|| {

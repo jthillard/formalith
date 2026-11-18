@@ -10,6 +10,7 @@ use owo_colors::colors::Cyan;
 use crate::{
     context::{Context, Symbol},
     field::{Group, Set},
+    iter,
     printer::{PrettyPrint, PrettyPrinter, Print, PrintOptions},
     term::{Expand, Normalize},
 };
@@ -88,7 +89,7 @@ impl<T: Group> CmpArgs for Term<T> {
     fn cmp_args(a: &[Self], b: &[Self]) -> Ordering {
         a.len()
             .cmp(&b.len())
-            .then_with(|| a.iter().cmp_by(b, Self::cmp))
+            .then_with(|| iter::cmp_by(a, b, Self::cmp))
     }
 }
 

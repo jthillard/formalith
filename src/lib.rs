@@ -22,12 +22,12 @@
 #![allow(clippy::significant_drop_in_scrutinee)]
 // Specialization is incomplete
 #![allow(incomplete_features)]
-// Useful features. Since specialization is needed and therefore nightly edition too, we use other useful features.
-#![feature(specialization, iter_order_by)]
+#![feature(specialization)]
 
 pub mod combinatorics;
 pub mod context;
 pub mod field;
+mod iter;
 pub mod matrix;
 pub mod parser;
 pub mod polynom;

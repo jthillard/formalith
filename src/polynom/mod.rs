@@ -13,6 +13,7 @@ use tracing::trace;
 
 use crate::{
     field::{Group, Ring, Set, TryElementFrom},
+    iter,
     printer::{PrettyPrint, PrettyPrinter, Print, PrintOptions},
     term::{Term, TermSet},
 };
@@ -322,18 +323,20 @@ impl<V: Monomial, T: Ring, U: Ring> MultivariatePolynomial<V, T, U> {
         });
         // Sort monomials
         self.terms.sort_by(|a, b| {
-            b.0.iter()
-                .map(|(_, e)| e.clone())
-                .partial_cmp_by(a.0.iter().map(|(_, e)| e.clone()), |a, b| {
-                    self.exponant_set.partial_cmp(&a, &b)
-                })
-                .unwrap_or(Ordering::Equal)
-                .then_with(|| {
-                    // Break ties on variables, like `x^2` and `y^2`
-                    a.0.iter()
-                        .map(|(v, _)| v)
-                        .cmp_by(b.0.iter().map(|(v, _)| v), Monomial::monomial_cmp)
-                })
+            iter::partial_cmp_by(
+                b.0.iter().map(|(_, e)| e),
+                a.0.iter().map(|(_, e)| e),
+                |a, b| self.exponant_set.partial_cmp(a, b),
+            )
+            .unwrap_or(Ordering::Equal)
+            .then_with(|| {
+                // Break ties on variables, like `x^2` and `y^2`
+                iter::cmp_by(
+                    a.0.iter().map(|(v, _)| v),
+                    b.0.iter().map(|(v, _)| v),
+                    Monomial::monomial_cmp,
+                )
+            })
         });
     }
 

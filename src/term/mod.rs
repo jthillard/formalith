@@ -17,6 +17,7 @@ use crate::{
     matrix::MatrixResult,
     polynom::{MultivariatePolynomial, ToTerm},
     printer::{PrettyPrint, PrettyPrinter, Print, PrintOptions},
+    iter,
 };
 
 pub mod term_op;
@@ -244,13 +245,13 @@ impl<T: Group> Term<T> {
             (Self::Mul(m1), Self::Mul(m2)) => m1
                 .len()
                 .cmp(&m2.len())
-                .then_with(|| m1.iter().cmp_by(m2, Self::cmp)),
+                .then_with(|| iter::cmp_by(m1.iter(), m2.iter(), Self::cmp)),
             (Self::Mul(_), _) => Ordering::Less,
             (_, Self::Mul(_)) => Ordering::Greater,
             (Self::Add(a1), Self::Add(a2)) => a1
                 .len()
                 .cmp(&a2.len())
-                .then_with(|| a1.iter().cmp_by(a2, Self::cmp)),
+                .then_with(|| iter::cmp_by(a1.iter(), a2.iter(), Self::cmp)),
             (Self::Add(_), _) => Ordering::Less,
             (_, Self::Add(_)) => Ordering::Greater,
             (Self::Symbol(_), _) => Ordering::Less,
@@ -324,7 +325,7 @@ impl<T: Group> Term<T> {
             (Self::Add(a1), Self::Add(a2)) => a1
                 .len()
                 .cmp(&a2.len())
-                .then_with(|| a1.iter().cmp_by(a2, Self::cmp)),
+                .then_with(|| iter::cmp_by(a1.iter(), a2.iter(), Self::cmp)),
             (Self::Symbol(_), _) => Ordering::Less,
             (_, Self::Symbol(_)) => Ordering::Greater,
             _ => self.cmp(other),
