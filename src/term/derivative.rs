@@ -5,12 +5,13 @@ use crate::{
     field::Derivable,
 };
 
-use super::{Flags, Fun, SymbolTerm, Term, Value};
+use super::{Flags, Fun, Normalize, SymbolTerm, Term, Value};
 
 impl<T: Derivable<ExponantSet = T, ProductCoefficientSet = T>> Term<T> {
     /// Derivative of the expression with respect to `x`.
     ///
-    /// Parts which can't be differentiated, like functions or `{$x^x$}` (there is no logarithm), are kept as an unevaluated `diff(f, x)`.
+    /// Parts which can't be differentiated, like functions other than `exp`, `ln`, `sin`, `cos` and `tan`, or `{$x^x$}`,
+    /// are kept as an unevaluated `diff(f, x)`.
     #[must_use]
     pub fn derivative(&self, x: Symbol) -> Self {
         let set = self.get_set();
@@ -47,7 +48,27 @@ impl<T: Derivable<ExponantSet = T, ProductCoefficientSet = T>> Term<T> {
                 let exponant = &**pow.exponant;
                 exponant * &pow.base.pow(&(exponant - &Self::one(set))) * pow.base.derivative(x)
             }
-            Self::Fun(_) => self.unevaluated_derivative(x),
+            Self::Fun(fun) => {
+                if let Some([u]) = fun.get_args::<T>().map(Vec::as_slice) {
+                    let apply = |ident| {
+                        Self::Fun(Box::new(Fun::new(ident, vec![u.clone()], set))).normalize()
+                    };
+                    // `{$f(u)' = f'(u) u'$}`
+                    let outer = match fun.get_ident() {
+                        Context::EXP => Some(self.clone()),
+                        Context::LN => Some(u.inv()),
+                        Context::SIN => Some(apply(Context::COS)),
+                        Context::COS => Some(-apply(Context::SIN)),
+                        // `{$tan' = 1 + tan^2$}`
+                        Context::TAN => Some(Self::one(set) + self * self),
+                        _ => None,
+                    };
+                    if let Some(outer) = outer {
+                        return outer * u.derivative(x);
+                    }
+                }
+                self.unevaluated_derivative(x)
+            }
         }
     }
 

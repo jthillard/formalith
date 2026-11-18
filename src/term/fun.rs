@@ -167,7 +167,12 @@ impl<From: Set, T: Set> Print for Fun<From, T> {
                 | Context::MIN
                 | Context::MAX
                 | Context::GCD
-                | Context::LCM => f.write_str(name)?,
+                | Context::LCM
+                | Context::EXP
+                | Context::LN
+                | Context::SIN
+                | Context::COS
+                | Context::TAN => f.write_str(name)?,
                 _ if name.chars().count() == 1 => f.write_str(name)?,
                 _ => write!(f, "op(\"{name}\")")?,
             }

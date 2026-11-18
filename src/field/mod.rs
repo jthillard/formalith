@@ -46,6 +46,29 @@ pub trait Set: Clone + Copy + fmt::Debug + PartialEq + Eq + Hash + 'static {
     /// Pretty print an element of this set.
     fn pretty_print(&self, elem: &Self::Element, options: &PrintOptions) -> PrettyPrinter;
 
+    /// Print an element of this set which is a numerical approximation, like a decimal number. Defaults to
+    /// [`Set::print`].
+    ///
+    /// # Errors
+    /// Returns an error if the formatter fails.
+    fn print_approximate(
+        &self,
+        elem: &Self::Element,
+        options: &PrintOptions,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        self.print(elem, options, f)
+    }
+
+    /// Pretty print an element of this set which is a numerical approximation. Defaults to [`Set::pretty_print`].
+    fn pretty_print_approximate(
+        &self,
+        elem: &Self::Element,
+        options: &PrintOptions,
+    ) -> PrettyPrinter {
+        self.pretty_print(elem, options)
+    }
+
     /// Get associated matrix set
     fn get_matrix_set(&self) -> M<Self> {
         M::new(*self)

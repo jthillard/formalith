@@ -221,6 +221,11 @@ impl<'a> Parser<'a> {
         let source = self.input[body_start..].trim().to_owned();
         for (i, &symbol) in params.iter().chain([&name]).enumerate() {
             let symbol_name = &Context::get_symbol_data(&symbol).name;
+            if Context::is_builtin_constant(symbol) {
+                return Err(ParserError::new(format!(
+                    "`{symbol_name}` is a builtin constant"
+                )));
+            }
             if Context::builtin_arity(symbol).is_some() {
                 return Err(ParserError::new(format!(
                     "`{symbol_name}` is a builtin function"
@@ -311,6 +316,12 @@ impl<'a> Parser<'a> {
                     plain(&lhs)
                 )));
             };
+            if Context::is_builtin_constant(symbol.symbol) {
+                return Err(ParserError::new(format!(
+                    "`{}` is a builtin constant, not an unknown",
+                    Context::get_symbol_data(&symbol.symbol).name
+                )));
+            }
             if unknowns.contains(&symbol.symbol) {
                 return Err(ParserError::new(format!(
                     "Unknown `{}` is repeated",

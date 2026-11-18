@@ -147,8 +147,13 @@ impl FromStr for SetChoice {
             }
             let variable = Symbol::new(variable);
             if Context::builtin_arity(variable).is_some() {
+                let kind = if Context::is_builtin_constant(variable) {
+                    "constant"
+                } else {
+                    "function"
+                };
                 return Err(format!(
-                    "`{}` is a builtin function",
+                    "`{}` is a builtin {kind}",
                     Context::get_symbol_data(&variable).name
                 ));
             }

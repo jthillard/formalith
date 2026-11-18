@@ -266,7 +266,7 @@ pub(crate) fn plain<T: PrettyPrint>(term: &T) -> String {
 /// Sets in which systems of equations can be solved. Implemented for every set, but solving fails at runtime
 /// for sets that aren't commutative rings.
 pub trait Solve: Set {
-    /// Solve `equations` for every symbol they contain, sorted by name.
+    /// Solve `equations` for every symbol they contain except builtin constants like `{$pi$}`, sorted by name.
     ///
     /// # Errors
     /// Returns an error if the system is not supported, like a non-polynomial system or a polynomial without
@@ -276,6 +276,7 @@ pub trait Solve: Set {
             .iter()
             .flat_map(|equation| [&equation.lhs, &equation.rhs])
             .flat_map(Term::symbols)
+            .filter(|symbol| !Context::is_builtin_constant(*symbol))
             .collect::<BTreeSet<_>>()
             .into_iter()
             .collect();

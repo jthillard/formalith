@@ -421,6 +421,33 @@ trait MergeFactors {
     /// Try merging `other` factor inside `self`. Return true if there was a merge.
     fn merge_factors(&mut self, other: &Self) -> bool;
 }
+
+impl<T: Set> Term<T> {
+    /// Mark a merged constant as approximate if one of the merged terms was (see [`flags::APPROXIMATE`]).
+    fn propagate_approximation(&mut self, approximate: bool) {
+        if approximate && matches!(self, Self::Value(_) | Self::Mul(_)) {
+            self.set_approximate(true);
+        }
+    }
+    /// [`MergeTerms::merge_terms`], the result being approximate if `self` or `other` is.
+    pub(crate) fn try_merge_terms(&mut self, other: &Self) -> bool {
+        let approximate = self.is_approximate() || other.is_approximate();
+        let merged = self.merge_terms(other);
+        if merged {
+            self.propagate_approximation(approximate);
+        }
+        merged
+    }
+    /// [`MergeFactors::merge_factors`], the result being approximate if `self` or `other` is.
+    pub(crate) fn try_merge_factors(&mut self, other: &Self) -> bool {
+        let approximate = self.is_approximate() || other.is_approximate();
+        let merged = self.merge_factors(other);
+        if merged {
+            self.propagate_approximation(approximate);
+        }
+        merged
+    }
+}
 /// Normalization trait.
 pub trait Normalize {
     /// Normalize an expression, i.e. sort sums and products, merge expressions that can be merged, remove useless expressions like zero in sums.
@@ -984,7 +1011,7 @@ impl<T: Ring> Term<T> {
                 let mut terms = vec![];
                 let mut current_merge = res.pop().unwrap();
                 while let Some(next) = res.pop() {
-                    if !current_merge.merge_terms(&next) {
+                    if !current_merge.try_merge_terms(&next) {
                         if !current_merge.is_zero() {
                             terms.push(current_merge);
                         }
@@ -1006,6 +1033,7 @@ impl<T: Ring> Term<T> {
             Self::Mul(mul) => {
                 let mut res = vec![];
                 let mut coeff = mul.coefficient.clone();
+                let mut approximate = mul.is_approximate();
                 for factor in mul {
                     let normalized = factor.normalize();
                     if normalized.is_zero() {
@@ -1016,6 +1044,7 @@ impl<T: Ring> Term<T> {
                     }
                     if let Self::Mul(inner_mul) = normalized {
                         // factors are already normalized
+                        approximate |= inner_mul.is_approximate();
                         res.extend(inner_mul.factors);
                         mul.set
                             .get_coefficient_set()
@@ -1038,7 +1067,7 @@ impl<T: Ring> Term<T> {
                 let mut current_merge = res.pop().unwrap();
 
                 while let Some(next) = res.pop() {
-                    if !current_merge.merge_factors(&next) {
+                    if !current_merge.try_merge_factors(&next) {
                         if current_merge.is_zero() {
                             return Self::zero(self.get_set());
                         }
@@ -1053,7 +1082,9 @@ impl<T: Ring> Term<T> {
                 } else if factors.len() == 1 && mul.set.get_coefficient_set().is_one(&coeff) {
                     factors.pop().unwrap()
                 } else {
-                    Self::Mul(Mul::new(coeff.clone(), factors, self.get_set()))
+                    let mut mul = Self::Mul(Mul::new(coeff.clone(), factors, self.get_set()));
+                    mul.set_approximate(approximate);
+                    mul
                 }
             }
             Self::Pow(pow) => {
@@ -1099,11 +1130,13 @@ impl<T: Ring<ExponantSet: Ring, ProductCoefficientSet = T>> Normalize for Term<T
         if let Self::Mul(mut mul) = self.clone() {
             let coefficient_set = mul.set.get_coefficient_set();
             let mut new_coeff = mul.coefficient.clone();
+            let mut approximate = mul.is_approximate();
             // Keep values which can't be multiplied with the coefficient, like matrices of incompatible sizes
             mul.factors.retain(|factor| {
                 if let Self::Value(Value { value, .. }) = factor
                     && let Some(product) = coefficient_set.try_mul(&new_coeff, value)
                 {
+                    approximate |= factor.is_approximate();
                     new_coeff = product;
                     false
                 } else {
@@ -1111,8 +1144,11 @@ impl<T: Ring<ExponantSet: Ring, ProductCoefficientSet = T>> Normalize for Term<T
                 }
             });
             mul.coefficient = new_coeff;
+            mul.set_approximate(approximate);
             if mul.is_empty() {
-                Self::Value(Value::new(mul.coefficient, self.get_set()))
+                let mut value = Self::Value(Value::new(mul.coefficient, self.get_set()));
+                value.set_approximate(approximate);
+                value
             } else {
                 Self::Mul(mul).normalize_in_ring_with_ring_exponant()
             }

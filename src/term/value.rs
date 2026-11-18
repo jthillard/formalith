@@ -57,7 +57,11 @@ impl<T: Set> Print for Value<T> {
         options: &crate::printer::PrintOptions,
         f: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result {
-        self.set.print(&self.value, options, f)
+        if self.is_approximate() {
+            self.set.print_approximate(&self.value, options, f)
+        } else {
+            self.set.print(&self.value, options, f)
+        }
     }
 }
 impl<T: Set> PrettyPrint for Value<T> {
@@ -65,6 +69,10 @@ impl<T: Set> PrettyPrint for Value<T> {
         &self,
         options: &crate::printer::PrintOptions,
     ) -> crate::printer::PrettyPrinter {
-        self.set.pretty_print(&self.value, options)
+        if self.is_approximate() {
+            self.set.pretty_print_approximate(&self.value, options)
+        } else {
+            self.set.pretty_print(&self.value, options)
+        }
     }
 }

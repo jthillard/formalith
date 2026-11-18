@@ -1,5 +1,7 @@
 //! The real field `{$RR$}`.
 
+mod approx;
+
 use std::{cmp::Ordering, marker::PhantomData};
 
 use malachite::{
@@ -19,7 +21,7 @@ use crate::{
     parser::Parser,
     polynom::ToTerm,
     printer::PrettyPrinter,
-    term::{self, Expand, Fun, Normalize, Term, TermSet, Value},
+    term::{self, Expand, Fun, Normalize, Term, TermSet, Value, flags::Flags},
 };
 
 /// The real field `{$RR$}`.
@@ -78,6 +80,21 @@ impl Set for R<Rational> {
             num.vertical_concat("─", &den);
         }
         num
+    }
+    fn print_approximate(
+        &self,
+        elem: &Self::Element,
+        options: &crate::printer::PrintOptions,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        f.write_str(&approx::format_decimal(elem, options.typst))
+    }
+    fn pretty_print_approximate(
+        &self,
+        elem: &Self::Element,
+        _options: &crate::printer::PrintOptions,
+    ) -> crate::printer::PrettyPrinter {
+        PrettyPrinter::from(approx::format_decimal(elem, false))
     }
     fn element_eq(&self, a: &Self::Element, b: &Self::Element) -> bool {
         a == b
@@ -206,6 +223,14 @@ impl Ring for R<Rational> {
                     }
                     return res;
                 }
+                (Term::Value(base), Term::Value(exponant))
+                    if base.is_approximate() || exponant.is_approximate() =>
+                {
+                    // Powers of approximations are approximated
+                    if let Some(res) = approx::approximate(&a, approx::precision(&base.value)) {
+                        return approx::approximate_value(res);
+                    }
+                }
                 (Term::Value(base), Term::Value(exponant)) => {
                     let exponant = &exponant.value;
                     let mut res = base.value.clone();
@@ -297,12 +322,35 @@ impl Ring for R<Rational> {
                         return res;
                     }
                 }
-                ident => {
+                Context::APPROX => {
                     if let Some(res) = fun
                         .get_args::<Self>()
-                        .and_then(|args| self.eval_builtin(ident, args))
+                        .and_then(|args| Self::eval_approx(args))
                     {
                         return res;
+                    }
+                }
+                ident => {
+                    if let Some(args) = fun.get_args::<Self>() {
+                        // Functions of approximations are approximated, like `{$sin(1.0)$}`
+                        let precision = args
+                            .iter()
+                            .filter_map(|arg| match arg {
+                                Term::Value(value) if value.is_approximate() => {
+                                    Some(approx::precision(&value.value))
+                                }
+                                _ => None,
+                            })
+                            .max();
+                        if let Some(precision) = precision
+                            && args.iter().all(|arg| matches!(arg, Term::Value(_)))
+                            && let Some(res) = approx::approximate(&a, precision)
+                        {
+                            return approx::approximate_value(res);
+                        }
+                        if let Some(res) = self.eval_builtin(ident, args) {
+                            return res;
+                        }
                     }
                 }
             },
@@ -455,9 +503,27 @@ impl R<Rational> {
     }
 
     /// Evaluate the builtin function `ident` on `args`, returning `None` if it can't be evaluated.
+    /// Evaluate `approx(x)` or `approx(x, digits)`, returning `None` if `digits` isn't a valid number of digits.
+    fn eval_approx(args: &[Term<Self>]) -> Option<Term<Self>> {
+        let (x, digits) = match args {
+            [x] => (x, approx::DEFAULT_DIGITS),
+            [x, Term::Value(digits)] => (x, u64::try_from(&digits.value).ok()?),
+            _ => return None,
+        };
+        (1..=approx::MAX_DIGITS)
+            .contains(&digits)
+            .then(|| approx::approximate_term(x, digits))
+    }
+
     fn eval_builtin(self, ident: Symbol, args: &[Term<Self>]) -> Option<Term<Self>> {
         let value = |value| Term::Value(Value::new(value, self));
         match (ident, args) {
+            (Context::EXP | Context::COS, [x]) if x.is_zero() => Some(value(Rational::ONE)),
+            (Context::SIN | Context::TAN, [x]) if x.is_zero() => Some(value(Rational::ZERO)),
+            (Context::LN, [x]) if x.is_one() => Some(value(Rational::ZERO)),
+            (Context::LN, [Term::Symbol(x)]) if x.symbol == Context::E => {
+                Some(value(Rational::ONE))
+            }
             (Context::SQRT, [x]) => Some(x.pow(&value(Rational::from_signeds(1, 2)))),
             (Context::ROOT, [x, n]) => Some(x.pow(&n.inv())),
             (Context::SIGN, [x]) => PartialOrd::partial_cmp(x, &Term::zero(self))

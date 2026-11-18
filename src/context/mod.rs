@@ -149,11 +149,34 @@ impl Context {
     pub const DIFF: Symbol = Symbol(19);
     /// Solve a system of equations, only allowed as a whole statement
     pub const SOLVE: Symbol = Symbol(20);
+    /// Numerical approximation, `approx(x, n)` evaluating `x` to `n` significant digits (15 by default)
+    pub const APPROX: Symbol = Symbol(21);
+    /// Exponential function
+    pub const EXP: Symbol = Symbol(22);
+    /// Natural logarithm
+    pub const LN: Symbol = Symbol(23);
+    /// Sine function
+    pub const SIN: Symbol = Symbol(24);
+    /// Cosine function
+    pub const COS: Symbol = Symbol(25);
+    /// Tangent function
+    pub const TAN: Symbol = Symbol(26);
+    /// The constant `{$pi$}`
+    pub const PI: Symbol = Symbol(27);
+    /// Euler's number `{$e$}`
+    pub const E: Symbol = Symbol(28);
 
-    const BUILTIN_NAMES: [&'static str; 21] = [
+    const BUILTIN_NAMES: [&'static str; 29] = [
         "abs", "det", "expand", "factor", "simplify", "re", "im", "conj", "sqrt", "root", "sign",
-        "floor", "ceil", "min", "max", "gcd", "lcm", "quo", "rem", "diff", "solve",
+        "floor", "ceil", "min", "max", "gcd", "lcm", "quo", "rem", "diff", "solve", "approx",
+        "exp", "ln", "sin", "cos", "tan", "pi", "e",
     ];
+
+    /// Return `true` if `symbol` is a builtin constant, like `{$pi$}`, which is not a function.
+    #[must_use]
+    pub const fn is_builtin_constant(symbol: Symbol) -> bool {
+        matches!(symbol, Self::PI | Self::E)
+    }
 
     /// Return the minimum and maximum number of arguments of a builtin function, or `None` if `symbol` isn't a builtin.
     #[must_use]
@@ -161,6 +184,8 @@ impl Context {
         match symbol {
             Self::ROOT | Self::GCD | Self::LCM | Self::QUO | Self::REM | Self::DIFF => Some((2, 2)),
             Self::MIN | Self::MAX | Self::SOLVE => Some((1, usize::MAX)),
+            Self::APPROX => Some((1, 2)),
+            Self::PI | Self::E => Some((0, 0)),
             Symbol(id) if id < Self::BUILTIN_NAMES.len() => Some((1, 1)),
             _ => None,
         }

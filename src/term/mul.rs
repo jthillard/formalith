@@ -87,6 +87,28 @@ impl<T: Set> Mul<T> {
 }
 
 impl<T: Set> Mul<T> {
+    /// Print the coefficient, as a decimal number if it is a numerical approximation.
+    fn print_coefficient_element(
+        &self,
+        options: &PrintOptions,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        let coefficient_set = self.set.get_coefficient_set();
+        if self.is_approximate() {
+            coefficient_set.print_approximate(&self.coefficient, options, f)
+        } else {
+            coefficient_set.print(&self.coefficient, options, f)
+        }
+    }
+    /// Pretty print the coefficient, as a decimal number if it is a numerical approximation.
+    fn pretty_print_coefficient_element(&self, options: &PrintOptions) -> PrettyPrinter {
+        let coefficient_set = self.set.get_coefficient_set();
+        if self.is_approximate() {
+            coefficient_set.pretty_print_approximate(&self.coefficient, options)
+        } else {
+            coefficient_set.pretty_print(&self.coefficient, options)
+        }
+    }
     /// Return the constant coefficient factor of the product.
     pub fn get_coeff(&self) -> <T::ProductCoefficientSet as Set>::Element {
         self.coefficient.clone()
@@ -155,7 +177,7 @@ impl<T: Set> Mul<T> {
             if is_sum {
                 Self::group_delim("(", options, f)?;
             }
-            coefficient_set.print(&self.coefficient, options, f)?;
+            self.print_coefficient_element(options, f)?;
             if is_sum {
                 Self::group_delim(")", options, f)?;
             }
@@ -212,7 +234,7 @@ impl<T: Set> Print for Mul<T> {
                 if is_sum {
                     Self::group_delim("(", options, f)?;
                 }
-                coefficient_set.print(&self.coefficient, options, f)?;
+                self.print_coefficient_element(options, f)?;
                 if is_sum {
                     Self::group_delim(")", options, f)?;
                 }
@@ -238,7 +260,7 @@ impl<T: Set> Mul<T> {
         // Print the coefficient at the beginning of the product
         let mut num = if self.has_coeff() {
             let coefficient_set = self.set.get_coefficient_set();
-            let mut coefficient = coefficient_set.pretty_print(&self.coefficient, options);
+            let mut coefficient = self.pretty_print_coefficient_element(options);
             if coefficient_set.is_sum(&self.coefficient) {
                 coefficient.paren();
             }

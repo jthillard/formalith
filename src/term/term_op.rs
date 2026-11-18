@@ -5,7 +5,7 @@ use std::cmp::Ordering;
 use super::{Add, Mul, Pow, Term, Value};
 use crate::{
     field::{Group, Ring},
-    term::{MergeTerms, Normalize, flags::Flags},
+    term::{Normalize, flags::Flags},
 };
 
 impl<T: Group> std::ops::Add for &Term<T> {
@@ -32,7 +32,7 @@ impl<T: Group> std::ops::Add for &Term<T> {
                             }
                             Ordering::Equal => {
                                 let mut merged = a1.clone();
-                                let has_merged = merged.merge_terms(a2);
+                                let has_merged = merged.try_merge_terms(a2);
                                 if !merged.is_zero() {
                                     res.push(merged);
                                 }
@@ -74,7 +74,7 @@ impl<T: Group> std::ops::Add for &Term<T> {
                         .binary_search_by(|value| value.cmp_terms(rhs))
                     {
                         Ok(i) => {
-                            if !a1_clone.terms[i].merge_terms(rhs) {
+                            if !a1_clone.terms[i].try_merge_terms(rhs) {
                                 a1_clone.terms.insert(i, rhs.clone());
                             } else if a1_clone.terms[i].is_zero() {
                                 a1_clone.terms.remove(i);
@@ -93,7 +93,7 @@ impl<T: Group> std::ops::Add for &Term<T> {
             rhs.add(self)
         } else {
             let mut self_clone = self.clone();
-            if self_clone.merge_terms(rhs) {
+            if self_clone.try_merge_terms(rhs) {
                 self_clone
             } else {
                 Term::Add(Add::new(
