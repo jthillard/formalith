@@ -1,3 +1,4 @@
 /target
 Cargo.lock
 *.mm_profdata
+/web/www/pkg

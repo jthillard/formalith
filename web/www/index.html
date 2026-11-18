@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Formalith</title>
+  <meta name="description" content="Formalith computer algebra system, running in the browser">
+  <link rel="stylesheet" href="style.css">
+  <!-- Typst compiler and renderer, used to render results as math -->
+  <script type="module"
+    src="https://cdn.jsdelivr.net/npm/@myriaddreamin/typst.ts@v0.7.0-rc1/dist/esm/contrib/all-in-one-lite.bundle.js"></script>
+  <script type="module" src="main.js"></script>
+</head>
+<body>
+  <main id="terminal">
+    <div id="log" aria-live="polite"></div>
+    <form id="prompt" autocomplete="off">
+      <label for="input" id="prompt-label">R&gt;</label>
+      <input id="input" type="text" spellcheck="false" autocapitalize="off" autofocus>
+      <span id="busy" hidden>…</span>
+    </form>
+  </main>
+</body>
+</html>

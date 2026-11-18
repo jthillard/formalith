@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Formalith is a computer algebra system (CAS) library in Rust, generic over the algebraic structure (set/group/ring/field) that expressions live in. `src/main.rs` is a scratch binary for manual experiments (`cargo run`). `src/bin/cli.rs` is a minimal REPL (`cargo run --bin cli`, or pass expressions as arguments); it evaluates over `R` by default, another set is chosen with `--set <N|Z|R|C|M>` or `:set <name>` in the REPL; `--typst` / `:typst` switch the output to Typst math source (`PrintOptions::typst()`); it only parses and prints, so operations are exposed as builtin functions.
+Formalith is a computer algebra system (CAS) library in Rust, generic over the algebraic structure (set/group/ring/field) that expressions live in. `src/main.rs` is a scratch binary for manual experiments (`cargo run`). `src/bin/cli.rs` is a minimal REPL (`cargo run --bin cli`, or pass expressions as arguments); it evaluates over `R` by default, another set is chosen with `--set <N|Z|R|C|M>` or `:set <name>` in the REPL; `--typst` / `:typst` switch the output to Typst math source (`PrintOptions::typst()`); it only parses and prints, so operations are exposed as builtin functions. The evaluation logic it uses (`SetChoice`, `sets_help`) lives in `src/repl.rs` so the web build shares it.
+
+`web/` is a workspace member (`formalith-web`, cdylib) building the same interface for the browser with `wasm-bindgen`: `web/src/lib.rs` exports `evaluate`, and `web/www/` is a static terminal-like page (`main.js`) running evaluations in a module Web Worker (`worker.js`). Results are printed as Typst and rendered to SVG with typst.ts loaded from jsdelivr. Panics abort the wasm instance, so the page replaces the worker after one (this also implements Ctrl+C).
 
 ## Toolchain and commands
 
@@ -17,6 +19,7 @@ Nightly Rust is required: `src/lib.rs` enables `#![feature(specialization)]`. `r
 - Doctests only: `cargo test --doc`
 - Lint: `cargo clippy` — the crate warns on `clippy::pedantic`, `clippy::nursery`, `clippy::cargo`, `missing_docs` and `rustdoc::all`, so every public item needs a doc comment.
 - Coverage (needs `cargo-llvm-cov`): `make coverage`, `make coverage-html`
+- Web build (needs `wasm-pack` and the `wasm32-unknown-unknown` target): `make web` builds into `web/www/pkg/` (gitignored), `make web-serve` serves `web/www` on port 8000. `wasm-bindgen` is pinned in `web/Cargo.toml` to the installed CLI version.
 - Docs: `cargo doc` — `.cargo/config.toml` injects `docs/typstts.html`, which renders Typst math written in doc comments as `{$ ... $}`.
 - Feature `concise-debug`: replaces derived `Debug` on terms with a compact form.
 

@@ -4,89 +4,10 @@
 //! with line editing and history. The set is chosen with `--set <name>` on the command line, or `:set <name>`
 //! in the interactive mode. Typst math output is enabled with `--typst`, or toggled with `:typst`.
 
-use std::{panic, process::ExitCode, str::FromStr};
+use std::{panic, process::ExitCode};
 
-use formalith::{
-    field::{Set, complex::C, integer::Z, matrix::M, natural::N, real::R},
-    printer::{Print, PrintOptions},
-    try_parse,
-};
+use formalith::repl::{SetChoice, sets_help};
 use rustyline::{DefaultEditor, error::ReadlineError};
-
-/// The sets expressions can be evaluated in.
-#[derive(Clone, Copy)]
-enum SetChoice {
-    N,
-    Z,
-    R,
-    C,
-    M,
-}
-
-impl SetChoice {
-    const ALL: [Self; 5] = [Self::N, Self::Z, Self::R, Self::C, Self::M];
-
-    const fn name(self) -> &'static str {
-        match self {
-            Self::N => "N",
-            Self::Z => "Z",
-            Self::R => "R",
-            Self::C => "C",
-            Self::M => "M",
-        }
-    }
-
-    const fn description(self) -> &'static str {
-        match self {
-            Self::N => "natural integers",
-            Self::Z => "integers",
-            Self::R => "rationals",
-            Self::C => "complex numbers, `i` is the imaginary unit",
-            Self::M => "matrices with rational coefficients, like [[1, 2], [3, 4]]",
-        }
-    }
-
-    fn eval(self, input: &str, typst: bool) -> Result<String, String> {
-        match self {
-            Self::N => eval_in(input, N, typst),
-            Self::Z => eval_in(input, Z, typst),
-            Self::R => eval_in(input, R, typst),
-            Self::C => eval_in(input, C, typst),
-            Self::M => eval_in(input, M, typst),
-        }
-    }
-}
-
-impl FromStr for SetChoice {
-    type Err = String;
-
-    fn from_str(name: &str) -> Result<Self, Self::Err> {
-        Self::ALL
-            .into_iter()
-            .find(|set| set.name().eq_ignore_ascii_case(name))
-            .ok_or_else(|| format!("unknown set `{name}`\n{}", sets_help()))
-    }
-}
-
-fn sets_help() -> String {
-    let mut help = String::from("available sets:");
-    for set in SetChoice::ALL {
-        help.push_str(&format!("\n  {}  {}", set.name(), set.description()));
-    }
-    help
-}
-
-fn eval_in<E: Set>(input: &str, set: E, typst: bool) -> Result<String, String> {
-    try_parse!(input, set)
-        .map(|term| {
-            if typst {
-                term.with_options(PrintOptions::typst()).to_string()
-            } else {
-                term.to_string()
-            }
-        })
-        .map_err(|err| err.to_string())
-}
 
 /// Evaluate and print an expression. Operations unsupported by the set panic, so panics are caught to keep the
 /// interface running.

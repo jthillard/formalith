@@ -32,5 +32,6 @@ pub mod matrix;
 pub mod parser;
 pub mod polynom;
 pub mod printer;
+pub mod repl;
 pub mod term;
 pub mod traits;

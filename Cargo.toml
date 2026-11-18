@@ -33,3 +33,6 @@ cli = ["dep:rustyline"]
 [[bin]]
 name = "cli"
 required-features = ["cli"]
+
+[workspace]
+members = [".", "web"]
