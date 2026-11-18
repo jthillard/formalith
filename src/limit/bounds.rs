@@ -4,6 +4,7 @@
 //! `{$sin theta$}` and `{$cos theta$}` for an angle `{$theta$}`, a symbol `@t<n>` treated as a constant by the
 //! Gruntz algorithm, whose sine and cosine lie in `{$[-1, 1]$}`.
 
+use crate::field::real::expr::{Expr, fun, unary, value};
 use std::cmp::Ordering;
 
 use malachite::{
@@ -19,7 +20,7 @@ use crate::{
     term::Term,
 };
 
-use super::{Expr, fun, only_symbols, rational_bound, unary, value};
+use super::{only_symbols, rational_bound};
 
 /// Whether `symbol` is an angle introduced for an oscillating `sin` or `cos`.
 pub(super) fn is_angle(symbol: Symbol) -> bool {

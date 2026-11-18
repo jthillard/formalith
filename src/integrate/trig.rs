@@ -1,20 +1,14 @@
 //! Integrals of trigonometric and hyperbolic expressions.
 
+use crate::field::real::expr::{Expr, depends, fun, one, ratio, unary, value, variable};
 use malachite::Rational;
 
 use crate::{
     context::{Context, Symbol},
-    field::real::R,
-    limit::{depends, fun, value, variable},
     term::{Expand, Term},
 };
 
-use super::{Expr, Integrator, factors, linear, map_tree, poly, replace_symbol, unary};
-
-/// `{$p / q$}` as an expression.
-fn ratio(p: i64, q: i64) -> Expr {
-    value(Rational::from_signeds(p, q))
-}
+use super::{Integrator, factors, linear, map_tree, poly, replace_symbol};
 
 /// `{$sin^m u$}` times `{$cos^n u$}`, as `(u, m, n)`, with `u` being linear in `x` (`{$tan u = sin u / cos u$}`).
 fn sin_cos_powers(f: &Expr, x: Symbol) -> Option<(Expr, i64, i64)> {
@@ -48,7 +42,7 @@ fn sin_cos_powers(f: &Expr, x: Symbol) -> Option<(Expr, i64, i64)> {
 pub(super) fn integrate_powers(integrator: &mut Integrator, f: &Expr, x: Symbol) -> Option<Expr> {
     let (u, m, n) = sin_cos_powers(f, x)?;
     let a = linear(&u, x)?;
-    let one = Term::one(R);
+    let one = one();
     let int = |k: i64| value(Rational::from(k));
     let t_symbol = integrator.fresh_symbol();
     let t = variable(t_symbol);
@@ -102,16 +96,7 @@ pub(super) fn hyperbolic_as_exp(f: &Expr, x: Symbol) -> Option<Expr> {
         if !depends(u, x) {
             return None;
         }
-        let exp = |v: Expr| fun(Context::EXP, v);
-        match ident {
-            Context::SINH => Some((exp(u.clone()) - exp(-u)) / value(Rational::from(2))),
-            Context::COSH => Some((exp(u.clone()) + exp(-u)) / value(Rational::from(2))),
-            Context::TANH => {
-                let e = exp(value(Rational::from(2)) * u);
-                Some((&e - &Term::one(R)) / (e + Term::one(R)))
-            }
-            _ => None,
-        }
+        crate::field::real::expr::hyperbolic_as_exp(ident, u)
     });
     (rewritten != *f).then_some(rewritten)
 }
@@ -189,7 +174,7 @@ fn weierstrass(integrator: &mut Integrator, f: &Expr, x: Symbol) -> Option<Expr>
     let a = linear(&u, x)?;
     let t_symbol = integrator.fresh_symbol();
     let t = variable(t_symbol);
-    let one = Term::one(R);
+    let one = one();
     let two = value(Rational::from(2));
     let t2 = &t * &t;
     let g = map_tree(f, &|term| match unary(term) {

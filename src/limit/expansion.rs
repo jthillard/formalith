@@ -4,18 +4,17 @@
 //! `{$w -> 0^+$}` is computed, then `w` is replaced back by `{$x - a$}`. Exponents may be negative or fractional,
 //! and coefficients may contain `{$ln(x - a)$}`.
 
+use crate::field::real::expr::{
+    Expr, Real, depends, fun, has_special_constant, infinity_sign, value, variable, zero,
+};
 use malachite::Rational;
 
 use crate::{
     context::{Context, Symbol},
-    field::real::R,
     term::Term,
 };
 
-use super::{
-    Direction, Expr, LimitError, LimitResult, Real, depends, exp_log_form, fun, gruntz::Gruntz,
-    infinity_sign, series, value, variable,
-};
+use super::{Direction, LimitError, LimitResult, exp_log_form, gruntz::Gruntz, series};
 
 impl Term<Real> {
     /// Series of the expression when `x` tends to `point`, from the side given by `direction`, up to
@@ -46,7 +45,7 @@ impl Term<Real> {
         if depends(point, x) {
             return Err(LimitError::Unsupported);
         }
-        if depends(self, Context::OO) || depends(self, Context::UNDEFINED) {
+        if has_special_constant(self) {
             return Err(LimitError::Unsupported);
         }
         let f = exp_log_form(self, x)?;
@@ -58,7 +57,7 @@ impl Term<Real> {
             let sign = value(Rational::from(sign as i64));
             return side_series(&f, x, order, |w| &sign / w, &sign / &variable(x));
         }
-        if depends(point, Context::OO) || depends(point, Context::UNDEFINED) {
+        if has_special_constant(point) {
             return Err(LimitError::Unsupported);
         }
         // `{$x = a + s w$}`, so `{$w = s (x - a)$}`
@@ -101,7 +100,7 @@ fn side_series(
     let ln_back = fun(Context::LN, back.clone());
     terms
         .into_iter()
-        .try_fold(Term::zero(R), |res, (exponant, coefficient)| {
+        .try_fold(zero(), |res, (exponant, coefficient)| {
             let coefficient = coefficient
                 .substitute(logw, &ln_back)
                 .ok_or(LimitError::Unsupported)?;

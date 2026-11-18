@@ -6,6 +6,9 @@
 //! non-zero limit. They are `x` or exponentials. They are rewritten as `{$A w^c$}` with `{$w -> 0^+$}` and `A` in
 //! a lower class ([`Gruntz::rewrite`]), and the leading term of the series of `f` in `w` decides the limit.
 
+use crate::field::real::expr::{
+    DIGITS, Expr, depends, fun, infinity, is_infinite, one, unary, value, variable, zero,
+};
 use std::cmp::Ordering;
 
 use malachite::{
@@ -19,10 +22,9 @@ use crate::{
 };
 
 use super::{
-    DIGITS, Expr, LimitError, LimitResult,
+    LimitError, LimitResult,
     bounds::{angles, bounds, has_angle},
-    const_sign, depends, fun, infinity, is_infinite, one, only_symbols, series, unary, value,
-    variable,
+    const_sign, only_symbols, series,
 };
 use crate::field::real::approx::{approximate, approximate_fixed};
 
@@ -80,7 +82,7 @@ impl Gruntz {
             }
             let (c0, e0) = self.leadterm(&f)?;
             match const_sign(&e0)? {
-                Ordering::Greater => break Term::zero(crate::field::real::R),
+                Ordering::Greater => break zero(),
                 Ordering::Less => return Ok((self.top_sign(&c0)? * infinity()).normalize()),
                 Ordering::Equal => f = c0,
             }
@@ -95,11 +97,9 @@ impl Gruntz {
         }
         Ok(match f {
             Term::Value(_) | Term::Symbol(_) => f.clone(),
-            Term::Add(add) => add
-                .iter()
-                .try_fold(Term::zero(crate::field::real::R), |res, term| {
-                    Ok::<_, LimitError>(res + self.remove_oscillations(term)?)
-                })?,
+            Term::Add(add) => add.iter().try_fold(zero(), |res, term| {
+                Ok::<_, LimitError>(res + self.remove_oscillations(term)?)
+            })?,
             Term::Mul(mul) => mul
                 .iter()
                 .try_fold(value(mul.coefficient.clone()), |res, factor| {
@@ -249,13 +249,11 @@ impl Gruntz {
         let small = |value: &Rational| *value < tolerance && -value < tolerance;
         let constant = samples.iter().all(|sample| small(&(sample - &samples[0])));
         if constant && small(&samples[0]) {
-            Ok(Term::zero(crate::field::real::R))
+            Ok(zero())
         } else if constant {
             angles
                 .iter()
-                .try_fold(res.clone(), |res, t| {
-                    res.substitute(*t, &Term::zero(crate::field::real::R))
-                })
+                .try_fold(res.clone(), |res, t| res.substitute(*t, &zero()))
                 .map(|res| res.simplify())
                 .ok_or(LimitError::Unknown)
         } else if angles.len() == 1 && only_symbols(res, &angles) {
@@ -277,7 +275,7 @@ impl Gruntz {
         }
         let (c0, e0) = self.leadterm(f)?;
         match const_sign(&e0)? {
-            Ordering::Greater => Ok(Term::zero(crate::field::real::R)),
+            Ordering::Greater => Ok(zero()),
             Ordering::Less => match self.sign(&c0)? {
                 Ordering::Greater => Ok(infinity()),
                 Ordering::Less => Ok(-infinity()),
@@ -322,7 +320,7 @@ impl Gruntz {
     /// most rapidly varying subexpressions of `f`, and `{$c_0$}` is in a lower comparability class.
     fn leadterm(&mut self, f: &Expr) -> LimitResult<(Expr, Expr)> {
         if !self.depends(f) {
-            return Ok((f.clone(), Term::zero(crate::field::real::R)));
+            return Ok((f.clone(), zero()));
         }
         if self.depth >= MAX_DEPTH {
             return Err(LimitError::Unknown);
@@ -337,7 +335,7 @@ impl Gruntz {
         let mut f = self.erf_at_infinity(f)?;
         if !self.depends(&f) {
             // The rebuilt expression may normalize to a constant
-            return Ok((f, Term::zero(crate::field::real::R)));
+            return Ok((f, zero()));
         }
         let mut omega = self.mrv(&f)?;
         let x = variable(self.x);
@@ -363,11 +361,9 @@ impl Gruntz {
         }
         Ok(match f {
             Term::Value(_) | Term::Symbol(_) => f.clone(),
-            Term::Add(add) => add
-                .iter()
-                .try_fold(Term::zero(crate::field::real::R), |res, term| {
-                    Ok::<_, LimitError>(res + self.erf_at_infinity(term)?)
-                })?,
+            Term::Add(add) => add.iter().try_fold(zero(), |res, term| {
+                Ok::<_, LimitError>(res + self.erf_at_infinity(term)?)
+            })?,
             Term::Mul(mul) => mul
                 .iter()
                 .try_fold(value(mul.coefficient.clone()), |res, factor| {
@@ -540,11 +536,9 @@ impl Gruntz {
         }
         Ok(match f {
             Term::Value(_) | Term::Symbol(_) => f.clone(),
-            Term::Add(add) => add
-                .iter()
-                .try_fold(Term::zero(crate::field::real::R), |res, term| {
-                    Ok::<_, LimitError>(res + replace(term)?)
-                })?,
+            Term::Add(add) => add.iter().try_fold(zero(), |res, term| {
+                Ok::<_, LimitError>(res + replace(term)?)
+            })?,
             Term::Mul(mul) => mul
                 .iter()
                 .try_fold(value(mul.coefficient.clone()), |res, factor| {

@@ -5,6 +5,9 @@
 //! Orders are requested as absolute orders `n`, each operation computing its operands to the precision it needs.
 //! `{$ln w$}` is replaced by its expression in `x`.
 
+use crate::field::real::expr::{
+    Expr, depends, fun, half, one, ratio, unary, value, variable, zero,
+};
 use std::cmp::Ordering;
 
 use malachite::{
@@ -14,14 +17,13 @@ use malachite::{
 
 use crate::{
     context::{Context, Symbol},
-    field::real::R,
     term::Term,
 };
 
 use super::{
-    Expr, LimitError, LimitResult, const_cmp, depends, fun,
+    LimitError, LimitResult, const_cmp,
     gruntz::{Gruntz, erfcx, erfix},
-    one, rational_bound, unary, value, variable,
+    rational_bound,
 };
 
 /// Maximum number of times the order of a series is raised to find a non-zero leading term.
@@ -67,7 +69,7 @@ impl Series {
 
     /// The exact constant series `c`.
     fn constant(coefficient: Expr) -> Self {
-        Self::monomial(Term::zero(R), coefficient)
+        Self::monomial(zero(), coefficient)
     }
 
     /// Whether the series is exactly zero.
@@ -216,7 +218,7 @@ pub(super) fn leadterm(gruntz: &mut Gruntz, f: &Expr, logw: &Expr) -> LimitResul
         }
         if series.order.is_none() {
             // `f` is zero
-            return Ok((Term::zero(R), Term::zero(R)));
+            return Ok((zero(), zero()));
         }
         order = refine(&order);
     }
@@ -366,7 +368,7 @@ impl Expander<'_> {
         target: &Rational,
     ) -> LimitResult<Series> {
         let target = min_order(Some(target), u.order.as_ref()).unwrap_or_default();
-        let mut res = Series::constant(coefficients(0).unwrap_or(Term::zero(R)));
+        let mut res = Series::constant(coefficients(0).unwrap_or(zero()));
         let Some((valuation, _)) = u.terms.first() else {
             if u.order.is_some() {
                 res.order = Some(target);
@@ -393,7 +395,7 @@ impl Expander<'_> {
             }
             power = power.mul(u)?;
             power.truncate(&target)?;
-            res = res.add(&power.scale(&Term::zero(R), &coefficient)?)?;
+            res = res.add(&power.scale(&zero(), &coefficient)?)?;
         }
         if !ended {
             res.order = min_order(res.order.as_ref(), Some(&target));
@@ -433,13 +435,13 @@ impl Expander<'_> {
 
     /// The constant term and the rest of the series of `a`, which must not have negative exponents.
     fn split_constant(&self, series: Series) -> LimitResult<(Expr, Series)> {
-        let mut constant = Term::zero(R);
+        let mut constant = zero();
         let mut rest = Series {
             terms: vec![],
             order: series.order,
         };
         for (exponant, coefficient) in series.terms {
-            match const_cmp(&exponant, &Term::zero(R))? {
+            match const_cmp(&exponant, &zero())? {
                 Ordering::Less if !self.gruntz.is_zero(&coefficient) => {
                     return Err(LimitError::Unsupported);
                 }
@@ -457,7 +459,7 @@ impl Expander<'_> {
         let series = self.series(a, &n)?;
         let (a0, u) = self.split_constant(series)?;
         let res = Self::compose(&u, |j| Some(value(inverse_factorial(j))), &n)?;
-        res.scale(&Term::zero(R), &fun(Context::EXP, a0))
+        res.scale(&zero(), &fun(Context::EXP, a0))
     }
 
     /// `{$ln a$}`, with `{$ln(c_0 w^(e_0) (1 + u)) = ln c_0 + e_0 ln w + sum_(j >= 1) (-1)^(j + 1) u^j / j$}`.
@@ -473,7 +475,7 @@ impl Expander<'_> {
             &u,
             |j| {
                 Some(if j == 0 {
-                    Term::zero(R)
+                    zero()
                 } else {
                     let sign = if j % 2 == 0 { -1 } else { 1 };
                     value(Rational::from_signeds(sign, i64::try_from(j).ok()?))
@@ -502,14 +504,14 @@ impl Expander<'_> {
                     let sign = if (j / 2) % 2 == 0 { 1 } else { -1 };
                     value(inverse_factorial(j) * Rational::from(sign))
                 } else {
-                    Term::zero(R)
+                    zero()
                 })
             }
         };
         let sin_u = Self::compose(&u, taylor(1), &n)?;
         let cos_u = Self::compose(&u, taylor(0), &n)?;
         let (sin_a0, cos_a0) = (fun(Context::SIN, a0.clone()), fun(Context::COS, a0));
-        let zero = Term::zero(R);
+        let zero = zero();
         if ident == Context::SIN {
             // `{$sin(a_0 + u) = sin a_0 cos u + cos a_0 sin u$}`
             cos_u
@@ -529,9 +531,9 @@ impl Expander<'_> {
     fn atan(&mut self, a: &Expr, n: &Rational) -> LimitResult<Series> {
         let n = n.max(&Rational::ONE).clone();
         let (series, e0, c0) = self.with_lead(a, &n)?;
-        let zero = Term::zero(R);
+        let zero = zero();
         if const_cmp(&e0, &zero)? == Ordering::Less {
-            let half_pi = variable(Context::PI) * value(Rational::from_signeds(1, 2));
+            let half_pi = variable(Context::PI) * half();
             let half_pi = match self.gruntz.sign(&c0)? {
                 Ordering::Greater => half_pi,
                 Ordering::Less => -half_pi,
@@ -554,7 +556,7 @@ impl Expander<'_> {
                     let sign = if (j / 2) % 2 == 0 { 1 } else { -1 };
                     value(Rational::from_signeds(sign, i64::try_from(j).ok()?))
                 } else {
-                    Term::zero(R)
+                    zero.clone()
                 })
             },
             &n,
@@ -573,7 +575,7 @@ impl Expander<'_> {
         let imaginary = ident == Context::ERFI;
         let square = &a0 * &a0;
         let scale = value(Rational::from(2))
-            * variable(Context::PI).pow(&value(Rational::from_signeds(-1, 2)))
+            * variable(Context::PI).pow(&ratio(-1, 2))
             * fun(Context::EXP, if imaginary { square } else { -square });
         Self::compose(
             &u,
@@ -583,7 +585,7 @@ impl Expander<'_> {
                 }
                 // `{$H_n(t) / (n + 1)! = 1/(n + 1) sum_m (-1)^m (2 t)^(n - 2 m) / (m! (n - 2 m)!)$}`
                 let degree = j - 1;
-                let hermite = (0..=degree / 2).fold(Term::zero(R), |res, m| {
+                let hermite = (0..=degree / 2).fold(zero(), |res, m| {
                     let power = degree - 2 * m;
                     let sign = if imaginary || (degree + m) % 2 == 0 {
                         1
@@ -608,18 +610,17 @@ impl Expander<'_> {
     fn erfcx(&mut self, a: &Expr, n: &Rational, alternating: bool) -> LimitResult<Series> {
         let n = n.max(&Rational::ONE).clone();
         let (_, e0, c0) = self.with_lead(a, &n)?;
-        if const_cmp(&e0, &Term::zero(R))? != Ordering::Less
-            || self.gruntz.sign(&c0)? != Ordering::Greater
+        if const_cmp(&e0, &zero())? != Ordering::Less || self.gruntz.sign(&c0)? != Ordering::Greater
         {
             return Err(LimitError::Unsupported);
         }
         let v = self.series(&a.inv(), &n)?;
-        let inv_sqrt_pi = variable(Context::PI).pow(&value(Rational::from_signeds(-1, 2)));
+        let inv_sqrt_pi = variable(Context::PI).pow(&ratio(-1, 2));
         Self::compose(
             &v,
             |j| {
                 if j % 2 == 0 {
-                    return Some(Term::zero(R));
+                    return Some(zero());
                 }
                 let k = (j - 1) / 2;
                 // `{$(2 k - 1)!! / 2^k = prod_(i < k) (i + 1/2)$}`
@@ -638,7 +639,7 @@ impl Expander<'_> {
         let (series, _, c0) = self.with_lead(a, n)?;
         match self.gruntz.sign(&c0)? {
             Ordering::Greater => Ok(series),
-            Ordering::Less => series.scale(&Term::zero(R), &value(-Rational::ONE)),
+            Ordering::Less => series.scale(&zero(), &value(-Rational::ONE)),
             Ordering::Equal => Err(LimitError::Unknown),
         }
     }

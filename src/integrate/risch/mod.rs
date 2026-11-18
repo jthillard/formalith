@@ -23,9 +23,8 @@ use malachite::{Rational, base::num::basic::traits::Zero};
 
 use crate::{
     context::Symbol,
-    field::real::R,
-    limit::value,
-    term::{Normalize, Term},
+    field::real::expr::{value, zero},
+    term::Normalize,
 };
 
 use super::{
@@ -95,7 +94,7 @@ impl Risch<'_> {
         match f.level() {
             0 => Ok(Integral {
                 part: f.times(&Elem::generator(1)),
-                logs: Term::zero(R),
+                logs: zero(),
             }),
             1 => self.integrate_rational(f),
             level => self.integrate_transcendental(f, level),
@@ -110,7 +109,7 @@ impl Risch<'_> {
         let r = to_rational_poly(&r.fraction(1).0).antiderivative();
         let part = g.plus(&Elem::from_poly(1, from_rational_poly(&r)));
         let logs = if h.is_zero() {
-            Term::zero(R)
+            zero()
         } else {
             let (num, den) = h.fraction(1);
             rational::integrate(
@@ -128,7 +127,7 @@ impl Risch<'_> {
         let (a, d) = f.fraction(level);
         let (g, h, r) = self.hermite(&a, &d, level);
         let mut part = g;
-        let mut logs = Term::zero(R);
+        let mut logs = zero();
         // `{$p = h - sum alpha D S / S + r$}`
         let mut p = h.plus(&r);
         for (alpha, s) in self.residue_reduce(&h, level)? {

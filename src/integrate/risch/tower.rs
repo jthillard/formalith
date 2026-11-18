@@ -7,6 +7,7 @@
 //! and `{$e^(a_j)$}` being the monomials of the tower, and `{$ln u$}` iff `{$u' / u$}` is such a combination.
 //! Dependent ones are written with the existing monomials, when the exponents are integers.
 
+use crate::field::real::expr::{fun, value, variable, zero};
 use malachite::{
     Rational,
     base::num::{
@@ -19,7 +20,6 @@ use crate::{
     context::{Context, Symbol},
     field::real::R,
     integrate::Expr,
-    limit::{fun, value, variable},
     polynom::dense::Coefficient,
     term::Term,
 };
@@ -183,7 +183,7 @@ impl Tower {
             .iter()
             .enumerate()
             .filter(|(_, c)| !c.is_zero())
-            .fold(Term::zero(R), |res, (i, c)| {
+            .fold(zero(), |res, (i, c)| {
                 let c = self.to_term(c);
                 res + match i {
                     0 => c,

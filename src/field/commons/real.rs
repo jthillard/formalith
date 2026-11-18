@@ -1,6 +1,7 @@
 //! The real field `{$RR$}`.
 
 pub(crate) mod approx;
+pub(crate) mod expr;
 
 use std::{cmp::Ordering, marker::PhantomData};
 

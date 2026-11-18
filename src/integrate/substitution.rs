@@ -1,12 +1,12 @@
 //! Integration by substitution `{$u = g(x)$}`, when `{$f / g'$}` is an expression of `u` (derivative-divides).
 
+use crate::field::real::expr::{Expr, depends, one, unary, variable};
 use crate::{
     context::{Context, Symbol},
-    limit::{depends, variable},
     term::Term,
 };
 
-use super::{Expr, Integrator, is_positive, linear, map_tree, replace_symbol, unary};
+use super::{Integrator, is_positive, linear, map_tree, replace_symbol};
 
 /// Maximum number of substitutions tried for an integrand.
 const MAX_CANDIDATES: usize = 8;
@@ -114,7 +114,7 @@ fn replace(term: &Expr, u: &Expr, t: &Expr, x: Symbol) -> Expr {
         if let Term::Pow(pu) = u {
             let valid = |ratio: &Expr| ratio.to_i64().is_some() || is_positive(&pu.base, x);
             if s == &*pu.base {
-                let ratio = Term::one(crate::field::real::R) / &**pu.exponant;
+                let ratio = one() / &**pu.exponant;
                 return valid(&ratio).then(|| t.pow(&ratio));
             }
             if let Term::Pow(ps) = s

@@ -34,24 +34,22 @@ mod series;
 
 use std::{cmp::Ordering, error::Error, fmt};
 
-use malachite::{
-    Rational,
-    base::num::{arithmetic::traits::Sign, basic::traits::One},
-};
+use malachite::Rational;
 
 use crate::{
     context::{Context, Symbol},
-    field::real::{R, approx::approximate},
-    term::{Fun, Normalize, SymbolTerm, Term, Value},
+    field::real::{
+        R,
+        approx::approximate,
+        expr::{
+            DIGITS, Expr, Real, constant_sign, depends, fun, half, has_special_constant,
+            hyperbolic_as_exp, infinity, infinity_sign, one, sqrt, unary, value, variable, zero,
+        },
+    },
+    term::{Fun, Normalize, Term},
 };
 
 use gruntz::Gruntz;
-
-type Real = R<Rational>;
-type Expr = Term<Real>;
-
-/// Significant digits of the numerical approximations deciding signs and zeros.
-const DIGITS: u64 = 30;
 
 /// The side from which the limit point is approached.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -130,7 +128,7 @@ impl Term<Real> {
         if !depends(self, x) {
             return Ok(self.clone());
         }
-        if depends(self, Context::OO) || depends(self, Context::UNDEFINED) {
+        if has_special_constant(self) {
             return Err(LimitError::Unsupported);
         }
         let f = exp_log_form(self, x)?;
@@ -148,7 +146,7 @@ impl Term<Real> {
                 at_infinity(&f)
             };
         }
-        if depends(point, Context::OO) || depends(point, Context::UNDEFINED) {
+        if has_special_constant(point) {
             return Err(LimitError::Unsupported);
         }
         if let Some(res) = eval_at(&f, x, point) {
@@ -193,68 +191,13 @@ fn infinity_part(term: &Expr) -> Option<Expr> {
     }
 }
 
-/// The constant `value`.
-pub(crate) fn value(value: Rational) -> Expr {
-    Term::Value(Value::new(value, R))
-}
-
-/// The symbol `x` as an expression.
-pub(crate) const fn variable(x: Symbol) -> Expr {
-    Term::Symbol(SymbolTerm::new(x, R))
-}
-
-/// `{$oo$}`.
-const fn infinity() -> Expr {
-    variable(Context::OO)
-}
-
-/// The function `ident(arg)`, normalized.
-pub(crate) fn fun(ident: Symbol, arg: Expr) -> Expr {
-    Term::Fun(Box::new(Fun::new(ident, vec![arg], R))).normalize()
-}
-
-/// The identifier and argument of a builtin function with one real argument.
-fn unary(term: &Expr) -> Option<(Symbol, &Expr)> {
-    match term {
-        Term::Fun(fun) => match fun.get_args::<Real>().map(Vec::as_slice) {
-            Some([arg]) => Some((fun.get_ident(), arg)),
-            _ => None,
-        },
-        _ => None,
-    }
-}
-
-/// Whether `term` contains the symbol `x`.
-pub(crate) fn depends(term: &Expr, x: Symbol) -> bool {
-    term.symbols().contains(&x)
-}
-
-/// `Some(Greater)` for `{$oo$}`, `Some(Less)` for `{$-oo$}`, `None` otherwise.
-fn infinity_sign(term: &Expr) -> Option<Ordering> {
-    if *term == infinity() {
-        Some(Ordering::Greater)
-    } else if *term == -infinity() {
-        Some(Ordering::Less)
-    } else {
-        None
-    }
-}
-
-/// Whether `term` is `{$oo$}` or `{$-oo$}`.
-fn is_infinite(term: &Expr) -> bool {
-    infinity_sign(term).is_some()
-}
-
 /// The sign of a constant term, from its numerical approximation. Fails if it contains symbols, other than
 /// builtin constants.
 fn const_sign(term: &Expr) -> LimitResult<Ordering> {
-    match term {
-        Term::Value(value) => Ok(value.value.sign()),
-        _ if bounds::has_angle(term) => bounds::bounds_sign(term).ok_or(LimitError::Unknown),
-        _ => approximate(term, DIGITS)
-            .map(|value| value.sign())
-            .ok_or(LimitError::Unknown),
+    if !matches!(term, Term::Value(_)) && bounds::has_angle(term) {
+        return bounds::bounds_sign(term).ok_or(LimitError::Unknown);
     }
+    constant_sign(term).ok_or(LimitError::Unknown)
 }
 
 /// Compare two constant terms, see [`const_sign`].
@@ -295,7 +238,7 @@ fn exp_log_form(term: &Expr, x: Symbol) -> LimitResult<Expr> {
     }
     Ok(match term {
         Term::Value(_) | Term::Symbol(_) => term.clone(),
-        Term::Add(add) => add.iter().try_fold(Term::zero(R), |res, term| {
+        Term::Add(add) => add.iter().try_fold(zero(), |res, term| {
             Ok::<_, LimitError>(res + exp_log_form(term, x)?)
         })?,
         Term::Mul(mul) => mul
@@ -321,28 +264,15 @@ fn exp_log_form(term: &Expr, x: Symbol) -> LimitResult<Expr> {
                 .collect::<LimitResult<Vec<_>>>()?;
             match (f.get_ident(), args.as_slice()) {
                 (Context::TAN, [u]) => fun(Context::SIN, u.clone()) / fun(Context::COS, u.clone()),
-                (ident @ (Context::SINH | Context::COSH), [u]) => {
-                    // `{$sinh u = (e^u - e^(-u))/2$}`, `{$cosh u = (e^u + e^(-u))/2$}`
-                    let (exp, exp_opposite) = (fun(Context::EXP, u.clone()), fun(Context::EXP, -u));
-                    let half = value(Rational::from_signeds(1, 2));
-                    if ident == Context::SINH {
-                        (exp - exp_opposite) * half
-                    } else {
-                        (exp + exp_opposite) * half
-                    }
-                }
-                // `{$tanh u = (e^(2 u) - 1)/(e^(2 u) + 1)$}`
-                (Context::TANH, [u]) => {
-                    let exp = fun(Context::EXP, value(Rational::from(2)) * u.clone());
-                    (&exp - &one()) / (exp + one())
+                (ident @ (Context::SINH | Context::COSH | Context::TANH), [u]) => {
+                    hyperbolic_as_exp(ident, u).expect("A hyperbolic function")
                 }
                 // `{$"asinh" u = ln(u + sqrt(u^2 + 1))$}`, `{$"acosh" u = ln(u + sqrt(u^2 - 1))$}`
                 (Context::ASINH, [u]) => fun(Context::LN, u + &sqrt(u * u + one())),
                 (Context::ACOSH, [u]) => fun(Context::LN, u + &sqrt(u * u - one())),
                 // `{$"atanh" u = ln((1 + u)/(1 - u))/2$}`
                 (Context::ATANH, [u]) => {
-                    fun(Context::LN, (one() + u.clone()) / (one() - u.clone()))
-                        * value(Rational::from_signeds(1, 2))
+                    fun(Context::LN, (one() + u.clone()) / (one() - u.clone())) * half()
                 }
                 (ident @ (Context::ASIN | Context::ACOS), [u]) => {
                     // `{$asin u = 2 atan(u/(1 + sqrt(1 - u^2)))$}`, `{$acos u = pi/2 - asin u$}`
@@ -351,7 +281,7 @@ fn exp_log_form(term: &Expr, x: Symbol) -> LimitResult<Expr> {
                     if ident == Context::ASIN {
                         asin
                     } else {
-                        variable(Context::PI) * value(Rational::from_signeds(1, 2)) - asin
+                        variable(Context::PI) * half() - asin
                     }
                 }
                 (Context::SIGN, [u]) => u / &fun(Context::ABS, u.clone()),
@@ -362,10 +292,9 @@ fn exp_log_form(term: &Expr, x: Symbol) -> LimitResult<Expr> {
                     } else {
                         -1
                     }));
-                    let half = value(Rational::from_signeds(1, 2));
                     rest.iter().fold(first.clone(), |res, arg| {
                         let distance = fun(Context::ABS, &res - arg);
-                        (res + arg.clone() + sign.clone() * distance) * half.clone()
+                        (res + arg.clone() + sign.clone() * distance) * half()
                     })
                 }
                 (ident, _) => Term::Fun(Box::new(Fun::new(ident, args, R))).normalize(),
@@ -390,7 +319,7 @@ fn eval_at(term: &Expr, x: Symbol, a: &Expr) -> Option<Expr> {
         Term::Symbol(_) => Some(a.clone()),
         Term::Add(add) => add
             .iter()
-            .try_fold(Term::zero(R), |res, term| Some(res + eval_at(term, x, a)?)),
+            .try_fold(zero(), |res, term| Some(res + eval_at(term, x, a)?)),
         Term::Mul(mul) => mul
             .iter()
             .try_fold(value(mul.coefficient.clone()), |res, factor| {
@@ -425,14 +354,4 @@ fn eval_at(term: &Expr, x: Symbol, a: &Expr) -> Option<Expr> {
             }
         }
     }
-}
-
-/// The constant 1.
-fn one() -> Expr {
-    value(Rational::ONE)
-}
-
-/// `{$sqrt(u)$}`.
-fn sqrt(u: Expr) -> Expr {
-    u.pow(&value(Rational::from_signeds(1, 2)))
 }

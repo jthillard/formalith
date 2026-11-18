@@ -1,12 +1,13 @@
 //! Integration by parts, `{$integral u v' = u v - integral u' v$}`.
 
+use crate::field::real::expr::{Expr, unary};
 use crate::{
     context::{Context, Symbol},
     field::real::R,
     term::{Expand, Mul, Normalize, Term},
 };
 
-use super::{Expr, Integrator, factors, poly::Poly, unary};
+use super::{Integrator, factors, poly::Poly};
 
 pub(super) fn integrate(integrator: &mut Integrator, f: &Expr, x: Symbol) -> Option<Expr> {
     let factors = factors(f);

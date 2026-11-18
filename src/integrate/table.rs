@@ -2,22 +2,20 @@
 //! products `{$e^u sin v$}` and `{$e^u cos v$}`, and of `{$p e^q$}` for polynomials `p` and quadratic
 //! polynomials `q` with the error functions `{$"erf"$}` and `{$"erfi"$}`.
 
+use crate::field::real::expr::{
+    Expr, constant_sign, depends, fun, one, ratio, unary, value, variable, zero,
+};
+use crate::field::real::expr::{half, sqrt};
 use std::cmp::Ordering;
 
 use malachite::Rational;
 
 use crate::{
     context::{Context, Symbol},
-    limit::{depends, fun, value, variable},
     term::Term,
 };
 
-use super::{Expr, Integrator, constant_sign, factors, linear, ln_abs, poly::Poly, unary};
-
-/// `{$p / q$}` as an expression.
-fn ratio(p: i64, q: i64) -> Expr {
-    value(Rational::from_signeds(p, q))
-}
+use super::{Integrator, factors, linear, ln_abs, poly::Poly};
 
 pub(super) fn integrate(_: &mut Integrator, f: &Expr, x: Symbol) -> Option<Expr> {
     match f {
@@ -30,7 +28,7 @@ pub(super) fn integrate(_: &mut Integrator, f: &Expr, x: Symbol) -> Option<Expr>
                     if *exponant == value(Rational::from(-1)) {
                         return Some(ln_abs(base, x) / a);
                     }
-                    let n = exponant + &Term::one(crate::field::real::R);
+                    let n = exponant + &one();
                     return Some(base.pow(&n) / (n * a));
                 }
                 return quadratic_power(base, exponant, x);
@@ -62,9 +60,7 @@ pub(super) fn integrate(_: &mut Integrator, f: &Expr, x: Symbol) -> Option<Expr>
 
 /// `{$integral f(u) dif u$}` for an elementary function `f`.
 fn elementary(ident: Symbol, u: &Expr) -> Option<Expr> {
-    let one = Term::one(crate::field::real::R);
-    let half = ratio(1, 2);
-    let sqrt = |v: Expr| v.pow(&half);
+    let one = one();
     let f = fun(ident, u.clone());
     let u2 = u * u;
     Some(match ident {
@@ -80,11 +76,11 @@ fn elementary(ident: Symbol, u: &Expr) -> Option<Expr> {
         Context::LN => u * &f - u.clone(),
         Context::ASIN => u * &f + sqrt(&one - &u2),
         Context::ACOS => u * &f - sqrt(&one - &u2),
-        Context::ATAN => u * &f - half * fun(Context::LN, &one + &u2),
+        Context::ATAN => u * &f - half() * fun(Context::LN, &one + &u2),
         Context::ASINH => u * &f - sqrt(&u2 + &one),
         Context::ACOSH => u * &f - sqrt(&u2 - &one),
-        Context::ATANH => u * &f + half * fun(Context::LN, &one - &u2),
-        Context::ABS => half * u * f,
+        Context::ATANH => u * &f + half() * fun(Context::LN, &one - &u2),
+        Context::ABS => half() * u * f,
         Context::SIGN => fun(Context::ABS, u.clone()),
         _ => return None,
     })
@@ -133,14 +129,9 @@ fn gaussian(q: &Expr, x: Symbol) -> Option<Expr> {
     } else {
         (Context::ERFI, c)
     };
-    let half = ratio(1, 2);
-    let sqrt_c = value(c).pow(&half);
-    let pi = Term::Symbol(crate::term::SymbolTerm::new(
-        Context::PI,
-        crate::field::real::R,
-    ));
+    let sqrt_c = sqrt(value(c));
     let erf = fun(ident, &sqrt_c * &(variable(x) + value(h)));
-    Some(fun(Context::EXP, value(k)) * pi.pow(&half) / (ratio(2, 1) * sqrt_c) * erf)
+    Some(fun(Context::EXP, value(k)) * sqrt(variable(Context::PI)) / (ratio(2, 1) * sqrt_c) * erf)
 }
 
 /// `{$integral p e^q$}` for a polynomial `p` and a quadratic polynomial `q`: dividing `p` by `{$q'$}`,
@@ -148,14 +139,14 @@ fn gaussian(q: &Expr, x: Symbol) -> Option<Expr> {
 /// remaining polynomial decreases until only `{$r integral e^q$}` is left.
 fn polynomial_gaussian(f: &Expr, x: Symbol) -> Option<Expr> {
     // Products of exponentials `{$e^u e^v = e^(u + v)$}` and their powers are merged
-    let mut q = Term::zero(crate::field::real::R);
-    let mut rest = Term::one(crate::field::real::R);
+    let mut q = zero();
+    let mut rest = one();
     for factor in factors(f) {
         let (base, n) = match &factor {
             Term::Pow(pow) if pow.exponant.to_i64().is_some() => {
                 (&*pow.base, (**pow.exponant).clone())
             }
-            _ => (&factor, Term::one(crate::field::real::R)),
+            _ => (&factor, one()),
         };
         match unary(base) {
             Some((Context::EXP, u)) => q = q + n * u,
@@ -183,12 +174,12 @@ fn polynomial_gaussian(f: &Expr, x: Symbol) -> Option<Expr> {
 fn quadratic_power(q: &Expr, e: &Expr, x: Symbol) -> Option<Expr> {
     let (c2, h, k) = quadratic(q, x)?;
     let t = variable(x) + value(h);
-    let sqrt_q = q.pow(&ratio(1, 2));
+    let sqrt_q = sqrt(q.clone());
     let (c2_sign, k_sign) = (
         constant_sign(&value(c2.clone()))?,
         constant_sign(&value(k.clone()))?,
     );
-    let sqrt = |v: Rational| value(v).pow(&ratio(1, 2));
+    let sqrt = |v: Rational| sqrt(value(v));
     if *e == ratio(-1, 2) {
         return match (c2_sign, k_sign) {
             // `{$integral 1 / sqrt(c_2 t^2 + k) = "asinh"(t sqrt(c_2 / k)) / sqrt(c_2)$}`
@@ -240,7 +231,7 @@ fn linear_quadratic(f: &Expr, x: Symbol) -> Option<Expr> {
     let [beta, alpha] = p.coefficients() else {
         return None;
     };
-    let n = e + &Term::one(crate::field::real::R);
+    let n = e + &one();
     let derivative_part = value(alpha / (Rational::from(2) * c2)) * q.pow(&n) / n;
     let rest = value(beta - alpha * h);
     if rest.is_zero() {

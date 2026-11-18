@@ -8,6 +8,7 @@
 //! `{$p(r) ln|x - r|$}`, and a pair of conjugate roots `{$u plus.minus i v$}` with `{$p(u + i v) = alpha + i beta$}`
 //! gives `{$alpha ln((x - u)^2 + v^2) - 2 beta arctan((x - u) / v)$}`.
 
+use crate::field::real::expr::{Expr, constant_sign, fun, value, variable, zero};
 use std::cmp::Ordering;
 
 use malachite::{
@@ -18,12 +19,11 @@ use malachite::{
 use crate::{
     context::{Context, Symbol},
     field::{TryExprFrom, complex::C, real::R},
-    limit::{fun, value, variable},
     solve::polynomial::{PolynomialRoots, split_complex},
     term::{Expand, Normalize, Term},
 };
 
-use super::{Expr, constant_sign, ln_abs, poly::Poly};
+use super::{ln_abs, poly::Poly};
 
 type Complex = C<R<Rational>>;
 
@@ -56,7 +56,7 @@ pub(super) fn integrate(num: &Poly, den: &Poly, x: Symbol) -> Option<Expr> {
 /// The Hermite reduction of `{$A / D$}` (quadratic version), returning `{$(g, A', D')$}` with
 /// `{$integral A / D = g + integral A' / D'$}` and `D'` square-free.
 fn hermite_reduce(mut a: Poly, d: &Poly, x: Symbol) -> (Expr, Poly, Poly) {
-    let mut g = Term::zero(R);
+    let mut g = zero();
     let mut d = d.clone();
     let factors = d.square_free();
     for (i, v) in factors.iter().enumerate().skip(1) {
@@ -106,7 +106,7 @@ fn log_part(q: &Poly, p: &Poly, x: Symbol) -> Option<Expr> {
     if roots.len() != q.degree() {
         return None;
     }
-    let mut res = Term::zero(R);
+    let mut res = zero();
     for root in &roots {
         let (u, v) = split(root)?;
         let residue = p

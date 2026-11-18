@@ -1,15 +1,13 @@
 //! Conversions between expressions and dense polynomials with rational coefficients.
 
+use crate::field::real::expr::{Expr, value, variable, zero};
 use malachite::{Rational, base::num::basic::traits::One};
 
 pub(crate) use crate::polynom::dense::{Coefficient, Poly};
 use crate::{
     context::Symbol,
-    limit::{value, variable},
     term::{Expand, Term},
 };
-
-use super::Expr;
 
 impl Poly<Rational> {
     /// The polynomial as an expression in `x`.
@@ -19,7 +17,7 @@ impl Poly<Rational> {
             .iter()
             .enumerate()
             .rev()
-            .fold(Term::zero(crate::field::real::R), |res, (i, c)| {
+            .fold(zero(), |res, (i, c)| {
                 res + value(c.clone()) * x.pow(&value(Rational::from(i)))
             })
     }

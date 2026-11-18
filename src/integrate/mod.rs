@@ -48,24 +48,24 @@ mod trig;
 
 use std::{cmp::Ordering, collections::HashMap, error::Error, fmt};
 
-use malachite::{Rational, base::num::arithmetic::traits::Sign};
+use malachite::Rational;
 
 use crate::{
     context::{Context, Symbol},
-    field::real::{R, approx::approximate},
-    limit::{depends, fun, value, variable},
+    field::real::{
+        R,
+        expr::{
+            Expr, Real, constant_sign, depends, fun, has_special_constant, one, unary, value,
+            variable, zero,
+        },
+    },
     term::{Expand, Fun, Mul, Normalize, Term},
 };
 
 use poly::Poly;
 
-type Real = R<Rational>;
-type Expr = Term<Real>;
-
 /// Maximum depth of the recursive search of an antiderivative.
 const MAX_DEPTH: usize = 7;
-/// Significant digits of the numerical approximations deciding signs.
-const DIGITS: u64 = 30;
 
 /// The reason why an integral can't be evaluated.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -112,7 +112,7 @@ impl Term<Real> {
     /// assert_eq!(parse!("exp(x)/x", R).integrate(x), Err(IntegrateError::NonElementary));
     /// ```
     pub fn integrate(&self, x: Symbol) -> IntegrateResult<Self> {
-        if depends(self, Context::OO) || depends(self, Context::UNDEFINED) {
+        if has_special_constant(self) {
             return Err(IntegrateError::Unsupported);
         }
         let mut integrator = Integrator::default();
@@ -181,9 +181,9 @@ impl Integrator {
             return rational::integrate(&num, &den, x);
         }
         if let Term::Add(add) = f
-            && let Some(res) = add.iter().try_fold(Term::zero(R), |res, term| {
-                Some(res + self.integrate(term, x)?)
-            })
+            && let Some(res) = add
+                .iter()
+                .try_fold(zero(), |res, term| Some(res + self.integrate(term, x)?))
         {
             return Some(res);
         }
@@ -252,7 +252,7 @@ fn split_constant(f: &Expr, x: Symbol) -> (Expr, Expr) {
             .normalize();
             (constant, rest)
         }
-        _ => (Term::one(R), f.clone()),
+        _ => (one(), f.clone()),
     }
 }
 
@@ -260,17 +260,6 @@ fn split_constant(f: &Expr, x: Symbol) -> (Expr, Expr) {
 fn linear(u: &Expr, x: Symbol) -> Option<Expr> {
     let a = u.derivative(x);
     (!a.is_zero() && !depends(&a, x)).then_some(a)
-}
-
-/// The identifier and argument of a builtin function with one real argument.
-fn unary(term: &Expr) -> Option<(Symbol, &Expr)> {
-    match term {
-        Term::Fun(fun) => match fun.get_args::<Real>().map(Vec::as_slice) {
-            Some([arg]) => Some((fun.get_ident(), arg)),
-            _ => None,
-        },
-        _ => None,
-    }
 }
 
 /// The factors of a product, or the term itself.
@@ -295,9 +284,7 @@ fn map_tree(term: &Expr, rewrite: &impl Fn(&Expr) -> Option<Expr>) -> Expr {
     }
     match term {
         Term::Value(_) | Term::Symbol(_) => term.clone(),
-        Term::Add(add) => add
-            .iter()
-            .fold(Term::zero(R), |res, t| res + map_tree(t, rewrite)),
+        Term::Add(add) => add.iter().fold(zero(), |res, t| res + map_tree(t, rewrite)),
         Term::Mul(mul) => mul.iter().fold(value(mul.coefficient.clone()), |res, t| {
             res * map_tree(t, rewrite)
         }),
@@ -321,14 +308,6 @@ fn replace_symbol(term: &Expr, x: Symbol, with: &Expr) -> Expr {
         _ if !depends(t, x) => Some(t.clone()),
         _ => None,
     })
-}
-
-/// The sign of a constant term, from its numerical approximation.
-fn constant_sign(term: &Expr) -> Option<Ordering> {
-    match term {
-        Term::Value(value) => Some(value.value.sign()),
-        _ => approximate(term, DIGITS).map(|value| value.sign()),
-    }
 }
 
 /// `{$ln|u|$}`, or `{$ln u$}` when `u` is positive for every `x`.

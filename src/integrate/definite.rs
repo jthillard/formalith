@@ -9,6 +9,11 @@
 //! are replaced by their value, and on symmetric intervals `{$[-b, b]$}`, `{$f(x) + f(-x)$}` is integrated on
 //! `{$[0, b]$}` when it simplifies to a rational function.
 
+use crate::field::real::expr::sqrt;
+use crate::field::real::expr::{
+    DIGITS, Expr, Real, constant_sign, depends, half, has_special_constant, infinity_sign,
+    is_infinite, one, unary, value, variable, zero,
+};
 use std::cmp::Ordering;
 
 use malachite::{
@@ -25,19 +30,16 @@ use malachite::{
 
 use crate::{
     context::{Context, Symbol},
-    field::real::{
-        R,
-        approx::{approximate, approximate_fixed},
-    },
-    limit::{Direction, LimitError, depends, value, variable},
+    field::real::approx::{approximate, approximate_fixed},
+    limit::{Direction, LimitError},
     solve::polynomial::PolynomialRoots,
     term::{Expand, Term},
 };
 
 use super::{
-    DIGITS, Expr, IntegrateError, IntegrateResult, Real, constant_sign, factors, linear, map_tree,
+    IntegrateError, IntegrateResult, factors, linear, map_tree,
     poly::{Poly, rational_function},
-    risch, unary,
+    risch,
 };
 
 /// Bits of the numerical check of values computed by substitution.
@@ -52,7 +54,7 @@ pub(super) fn integrate(f: &Expr, x: Symbol, a: &Expr, b: &Expr) -> IntegrateRes
         return Err(IntegrateError::Unsupported);
     }
     if a == b {
-        return Ok(Term::zero(R));
+        return Ok(zero());
     }
     let numeric = |t: &Expr| is_infinite(t) || is_constant(t);
     if !(numeric(a) && numeric(b)) {
@@ -65,7 +67,7 @@ pub(super) fn integrate(f: &Expr, x: Symbol, a: &Expr, b: &Expr) -> IntegrateRes
     }
     let (a_value, b_value) = (approximate_bound(a)?, approximate_bound(b)?);
     match a_value.partial_cmp(&b_value) {
-        Some(Ordering::Equal) => return Ok(Term::zero(R)),
+        Some(Ordering::Equal) => return Ok(zero()),
         Some(Ordering::Greater) => return integrate(f, x, b, a).map(|res| -res),
         _ => {}
     }
@@ -108,7 +110,7 @@ fn evaluate(antiderivative: &Expr, x: Symbol, points: &[(Expr, bool)]) -> Integr
             Err(_) => Err(IntegrateError::Unsupported),
         }
     };
-    let mut finite = Term::zero(R);
+    let mut finite = zero();
     let mut infinite: Option<Ordering> = None;
     let mut add = |term: Expr, sign: Ordering| -> IntegrateResult<()> {
         let oo = variable(Context::OO);
@@ -116,7 +118,7 @@ fn evaluate(antiderivative: &Expr, x: Symbol, points: &[(Expr, bool)]) -> Integr
             Some(sign)
         } else if term == -&oo {
             Some(sign.reverse())
-        } else if depends(&term, Context::OO) || depends(&term, Context::UNDEFINED) {
+        } else if has_special_constant(&term) {
             return Err(IntegrateError::Unsupported);
         } else {
             None
@@ -144,7 +146,7 @@ fn evaluate(antiderivative: &Expr, x: Symbol, points: &[(Expr, bool)]) -> Integr
 /// `{$F(p)$}` by substitution when it is the limit `res` (which may be written differently, like `sin / cos` for
 /// `tan`), and `res` otherwise.
 fn nicer_value(antiderivative: &Expr, x: Symbol, point: &Expr, res: Expr) -> Expr {
-    if is_infinite(point) || depends(&res, Context::OO) || depends(&res, Context::UNDEFINED) {
+    if is_infinite(point) || has_special_constant(&res) {
         return res;
     }
     let Some(substituted) = antiderivative.substitute(x, point) else {
@@ -158,11 +160,6 @@ fn nicer_value(antiderivative: &Expr, x: Symbol, point: &Expr, res: Expr) -> Exp
     }
 }
 
-fn is_infinite(term: &Expr) -> bool {
-    let oo = variable(Context::OO);
-    *term == oo || *term == -oo
-}
-
 /// Whether `term` is a number, possibly with constants like `{$pi$}`.
 fn is_constant(term: &Expr) -> bool {
     term.symbols()
@@ -172,13 +169,11 @@ fn is_constant(term: &Expr) -> bool {
 
 /// A bound as a float, `{$plus.minus oo$}` for infinite bounds.
 fn approximate_bound(term: &Expr) -> IntegrateResult<f64> {
-    if *term == variable(Context::OO) {
-        return Ok(f64::INFINITY);
+    match infinity_sign(term) {
+        Some(Ordering::Greater) => Ok(f64::INFINITY),
+        Some(_) => Ok(f64::NEG_INFINITY),
+        None => to_f64(term).ok_or(IntegrateError::Unsupported),
     }
-    if *term == -variable(Context::OO) {
-        return Ok(f64::NEG_INFINITY);
-    }
-    to_f64(term).ok_or(IntegrateError::Unsupported)
 }
 
 fn to_f64(term: &Expr) -> Option<f64> {
@@ -241,7 +236,7 @@ fn singular_points(
         Term::Fun(fun) => {
             if let Some((Context::TAN, u)) = unary(term) {
                 // Poles of `{$tan u$}` are the zeros of `{$cos u$}`
-                periodic_zeros(u, x, interval, &value(Rational::from_signeds(1, 2)), points)?;
+                periodic_zeros(u, x, interval, &half(), points)?;
             }
             for arg in fun.get_args::<Real>().into_iter().flatten() {
                 singular_points(arg, x, interval, points)?;
@@ -269,11 +264,11 @@ fn zeros(
         match unary(&factor) {
             Some((Context::EXP, _)) => continue,
             Some((Context::SIN, u)) => {
-                periodic_zeros(u, x, interval, &Term::zero(R), points)?;
+                periodic_zeros(u, x, interval, &zero(), points)?;
                 continue;
             }
             Some((Context::COS, u)) => {
-                periodic_zeros(u, x, interval, &value(Rational::from_signeds(1, 2)), points)?;
+                periodic_zeros(u, x, interval, &half(), points)?;
                 continue;
             }
             _ => {}
@@ -332,7 +327,7 @@ fn periodic_zeros(
         return Err(IntegrateError::Unsupported);
     }
     let b = u
-        .substitute(x, &Term::zero(R))
+        .substitute(x, &zero())
         .ok_or(IntegrateError::Unsupported)?;
     let (a_value, b_value) = (
         to_f64(&a).ok_or(IntegrateError::Unsupported)?,
@@ -443,12 +438,12 @@ fn constant_parts(f: &Expr, x: Symbol, interval: (f64, f64)) -> Expr {
         return f.clone();
     };
     // Points where inverse trigonometric functions have exact values, tried first for a value without them
-    let sqrt = |n: i64| value(Rational::from(n)).pow(&value(Rational::from_signeds(1, 2)));
+    let sqrt = |n: i64| sqrt(value(Rational::from(n)));
     let mut candidates = vec![value(point)];
     for p in [
-        Term::zero(R),
-        Term::one(R),
-        value(Rational::from_signeds(1, 2)),
+        zero(),
+        one(),
+        half(),
         sqrt(3),
         sqrt(3) / value(Rational::from(3)),
         sqrt(2) / value(Rational::from(2)),
@@ -595,7 +590,7 @@ fn symmetric(
     if !points.is_empty() {
         return None;
     }
-    let one = Term::one(R);
+    let one = one();
     let (constant, g) = factors(f)
         .into_iter()
         .partition::<Vec<_>, _>(|t| !depends(t, x));
@@ -608,5 +603,5 @@ fn symmetric(
     if level > 1 {
         return None;
     }
-    Some(integrate(&s, x, &Term::zero(R), b).map(|res| constant * res))
+    Some(integrate(&s, x, &zero(), b).map(|res| constant * res))
 }
