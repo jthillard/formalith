@@ -195,3 +195,128 @@ fn limits_of_classic_functions() {
     assert_eq!(lim("lim(sec(x), x, 0)"), "1");
     assert_eq!(lim("lim(atan(sin(x)), x, oo)"), "undefined");
 }
+
+#[test]
+fn classic_limits() {
+    assert_eq!(lim("lim((1+1/x)^x, x, oo)"), "exp(1)");
+    assert_eq!(lim("lim((1+a/x)^x, x, oo)"), "exp(a)");
+    assert_eq!(lim("lim((1+x)^(1/x), x, 0)"), "exp(1)");
+    assert_eq!(lim("lim(x^(1/x), x, oo)"), "1");
+    assert_eq!(lim("lim((sin(x)-x)/x^3, x, 0)"), "-1/6");
+    assert_eq!(lim("lim((tan(x)-sin(x))/x^3, x, 0)"), "1/2");
+    assert_eq!(lim("lim((1-cos(x))/x^2, x, 0)"), "1/2");
+    assert_eq!(lim("lim((exp(x)-1-x)/x^2, x, 0)"), "1/2");
+    assert_eq!(lim("lim(ln(1+x)/x, x, 0)"), "1");
+    assert_eq!(lim("lim(asin(x)/x, x, 0)"), "1");
+    assert_eq!(lim("lim((2^x-1)/x, x, 0)"), "ln(2)");
+    assert_eq!(lim("lim(sin(x)^2/x, x, 0)"), "0");
+    assert_eq!(lim("lim(cos(x)^(1/x^2), x, 0)"), "exp(-1/2)");
+    assert_eq!(lim("lim(x^2*(1-cos(1/x)), x, oo)"), "1/2");
+    assert_eq!(lim("lim(x*(atan(x)-pi/2), x, oo)"), "-1");
+}
+
+#[test]
+fn limits_of_growth_rates() {
+    assert_eq!(lim("lim(exp(x)/x^1000, x, oo)"), "oo");
+    assert_eq!(lim("lim(x^2*exp(-x)*ln(x)^10, x, oo)"), "0");
+    assert_eq!(lim("lim(ln(ln(x))/ln(x), x, oo)"), "0");
+    assert_eq!(lim("lim(exp(-1/x^2)/x^100, x, 0)"), "0");
+    assert_eq!(lim("lim((3^x+5^x)^(1/x), x, oo)"), "5");
+    assert_eq!(lim("lim((x^(1/x)-1)*x/ln(x), x, oo)"), "1");
+    assert_eq!(lim("lim(ln(x)^ln(x)/x^ln(ln(x)), x, oo)"), "1");
+    assert_eq!(lim("lim(sqrt(x)*(sqrt(x+1)-sqrt(x)), x, oo)"), "1/2");
+    assert_eq!(lim("lim(sqrt(x+sqrt(x))-sqrt(x), x, oo)"), "1/2");
+    assert_eq!(lim("lim((x+1)^(1/3)-x^(1/3), x, oo)"), "0");
+    assert_eq!(lim("lim(x^(x^x), x, 0, 1)"), "0");
+}
+
+#[test]
+fn limits_from_the_gruntz_thesis() {
+    assert_eq!(lim("lim(exp(x)*(exp(1/x-exp(-x))-exp(1/x)), x, oo)"), "-1");
+    assert_eq!(
+        lim("lim(exp(x)*(exp(1/x+exp(-x)+exp(-x^2))-exp(1/x-exp(-exp(x)))), x, oo)"),
+        "1"
+    );
+    assert_eq!(lim("lim(exp(exp(x))/exp(exp(x-1/x)), x, oo)"), "oo");
+    assert_eq!(
+        lim("lim(exp(exp(exp(x+exp(-x))))/exp(exp(exp(x))), x, oo)"),
+        "oo"
+    );
+    assert_eq!(
+        lim("lim(exp(exp(exp(x)))/exp(exp(exp(x-exp(-exp(x))))), x, oo)"),
+        "oo"
+    );
+    assert_eq!(
+        lim("lim(ln(x)^2*exp(sqrt(ln(x))*ln(ln(x))^2*exp(sqrt(ln(ln(x)))*ln(ln(ln(x)))^3))/sqrt(x), x, oo)"),
+        "0"
+    );
+    assert_eq!(lim("lim((sin(tan(x))-tan(sin(x)))/x^7, x, 0)"), "-1/30");
+}
+
+#[test]
+fn limits_of_special_functions() {
+    assert_eq!(lim("lim(atan(x), x, -oo)"), "-1/2*pi");
+    assert_eq!(lim("lim(tanh(x), x, oo)"), "1");
+    assert_eq!(lim("lim(erf(x), x, -oo)"), "-1");
+    assert_eq!(lim("lim(exp(x)*erf(x)-exp(x), x, oo)"), "0");
+}
+
+#[test]
+#[ignore = "future: -ln(1/2) should be printed as ln(2)"]
+fn limits_with_logarithms_of_rationals() {
+    assert_eq!(lim("lim(x - ln(cosh(x)), x, oo)"), "ln(2)");
+}
+
+#[test]
+fn oscillating_limits() {
+    assert_eq!(lim("lim(x*sin(1/x), x, 0)"), "0");
+    assert_eq!(lim("lim(sin(1/x), x, 0)"), "undefined");
+    assert_eq!(lim("lim(sin(x)/x, x, oo)"), "0");
+    assert_eq!(lim("lim(sin(x), x, oo)"), "undefined");
+    assert_eq!(lim("lim(x*sin(x), x, oo)"), "undefined");
+    assert_eq!(lim("lim(sin(x)+cos(x), x, oo)"), "undefined");
+    assert_eq!(lim("lim(sin(x)/sin(x), x, oo)"), "1");
+    assert_eq!(lim("lim(exp(-x)*sin(x), x, oo)"), "0");
+    assert_eq!(lim("lim(exp(1/x)*sin(x)/x, x, oo)"), "0");
+}
+
+#[test]
+fn two_sided_limits_that_differ() {
+    assert_eq!(lim("lim(1/x, x, 0)"), "undefined");
+    assert_eq!(lim("lim(abs(x)/x, x, 0)"), "undefined");
+    assert_eq!(lim("lim(x/(x-1), x, 1)"), "undefined");
+    assert_eq!(lim("lim(1/(x-1)^2, x, 1)"), "oo");
+    assert_eq!(lim("lim(x*ln(x), x, 0, 1)"), "0");
+    assert_eq!(lim("lim(ln(x)/x, x, 0, 1)"), "-oo");
+    assert_eq!(lim("lim((x^x-1)/(x*ln(x)), x, 0, 1)"), "1");
+}
+
+#[test]
+fn limits_of_constants() {
+    assert_eq!(lim("lim(oo, x, 0)"), "oo");
+    assert_eq!(lim("lim(undefined, x, 0)"), "undefined");
+    assert_eq!(lim("lim(5, x, oo)"), "5");
+    assert_eq!(lim("lim(pi, x, 0, -1)"), "pi");
+}
+
+#[test]
+#[ignore = "future: limits of factorial and binomial (Stirling's formula)"]
+fn limits_with_factorials() {
+    assert_eq!(lim("lim(factorial(x)^(1/x)/x, x, oo)"), "exp(-1)");
+    assert_eq!(lim("lim(ln(factorial(x))/(x*ln(x)), x, oo)"), "1");
+    assert_eq!(lim("lim(binomial(2*x, x)^(1/x), x, oo)"), "4");
+}
+
+#[test]
+#[ignore = "future: limits of floor and ceil at integers"]
+fn limits_of_step_functions() {
+    assert_eq!(lim("lim(floor(x), x, 1)"), "undefined");
+    assert_eq!(lim("lim(floor(x), x, 1, 1)"), "1");
+    assert_eq!(lim("lim(floor(x), x, 1, -1)"), "0");
+}
+
+#[test]
+#[ignore = "future: limits depending on the sign of a parameter"]
+fn limits_with_parameter_exponents() {
+    assert_eq!(lim("lim(x^2*exp(-a^2*x), x, oo)"), "0");
+}

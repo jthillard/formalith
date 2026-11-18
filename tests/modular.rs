@@ -70,3 +70,48 @@ fn printing() {
 fn errors() {
     assert!(try_parse!("1.5", Zn::new(7)).is_err());
 }
+
+#[test]
+fn characteristic_two() {
+    assert_eq!(eval("1+1", 2), "0");
+    assert_eq!(eval("x+x", 2), "0");
+    assert_eq!(eval("expand((x+y)^2)", 2), eval("x^2+y^2", 2));
+    assert_eq!(eval("expand((x+1)^4)", 2), eval("x^4+1", 2));
+}
+
+#[test]
+fn fermat_little_theorem() {
+    assert_eq!(eval("factor(x^7-x)", 7), eval("x*(x+1)*(x+2)*(x+3)*(x+4)*(x+5)*(x+6)", 7));
+    assert_eq!(eval("123456^(13-1)", 13), "1");
+    assert_eq!(eval("3^1000000006", 1_000_000_007), "1");
+}
+
+#[test]
+fn large_modulus() {
+    let p = 1_000_000_007;
+    assert_eq!(eval("2^-1*2", p), "1");
+    assert_eq!(eval("1000000006*1000000006", p), "1");
+    assert_eq!(eval("-1", p), "1000000006");
+}
+
+#[test]
+fn zero_divisors() {
+    assert_eq!(eval("2*3", 6), "0");
+    assert_eq!(eval("1/5", 6), "5");
+    assert_eq!(eval("0^0", 7), "1");
+    assert_eq!(eval("1/0", 7), "0^-1");
+}
+
+#[test]
+fn irreducible_polynomials_modulo_p() {
+    assert_eq!(eval("factor(x^2+1)", 7), eval("x^2+1", 7));
+    // x^4+1 is reducible modulo every prime
+    assert_ne!(eval("factor(x^4+1)", 3), eval("x^4+1", 3));
+    assert_ne!(eval("factor(x^4+1)", 13), eval("x^4+1", 13));
+}
+
+#[test]
+#[should_panic(expected = "The modulus must be between 2 and 2^63")]
+fn modulus_one_is_rejected() {
+    let _ = Zn::new(1);
+}

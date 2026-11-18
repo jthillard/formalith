@@ -103,3 +103,46 @@ fn factor_over_gaussian_rationals() {
     assert_eq!(parse!("factor(2*x^2+2)", C), parse!("2*(x-i)*(x+i)", C));
     assert_eq!(parse!("factor(x^2+x+1)", C), parse!("x^2+x+1", C));
 }
+
+#[test]
+fn powers_of_i() {
+    assert_eq!(eval("i^3"), "-i");
+    assert_eq!(eval("i^4"), "1");
+    assert_eq!(eval("i^100"), "1");
+    assert_eq!(eval("i^101"), "i");
+    assert_eq!(eval("1/i"), "-i");
+    assert_eq!(eval("i*i*x"), "-x");
+    assert_eq!(eval("0*i"), "0");
+    assert_eq!(parse!("(1+i)^8", C), 16.into());
+    assert_eq!(eval("(1+i)/(1-i)"), "i");
+    assert_eq!(parse!("(2+3*i)*(2-3*i)", C), 13.into());
+}
+
+#[test]
+fn square_roots_of_negative_values() {
+    assert_eq!(eval("sqrt(-1)"), "i");
+    assert_eq!(eval("sqrt(-4)"), "2*i");
+    assert_eq!(eval("sqrt(i)"), "i^1/2");
+}
+
+#[test]
+fn complex_polynomials() {
+    assert_eq!(
+        parse!("expand((x+i)*(x-i))", C),
+        parse!("x^2+1", C)
+    );
+    assert_eq!(parse!("factor(x^2+1)", C), parse!("(x-i)*(x+i)", C));
+}
+
+#[test]
+#[ignore = "bug: a factor x - i is printed as `x+-i`"]
+fn complex_factors_are_printed_with_their_sign() {
+    assert_eq!(eval("factor(x^2+1)"), "(x-i)*(x+i)");
+}
+
+#[test]
+#[ignore = "future: Euler's identity and conj(conj(x)) = x"]
+fn euler_identity_and_involutions() {
+    assert_eq!(parse!("exp(i*pi)", C), (-1).into());
+    assert_eq!(parse!("conj(conj(x))", C), parse!("x", C));
+}

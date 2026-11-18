@@ -51,3 +51,24 @@ fn float_is_not_an_integer() {
 fn abs() {
     assert_eq!(line(&parse!("abs(-3)", Z)), "3");
 }
+
+#[test]
+fn exact_division_and_euclidean_operations() {
+    assert_eq!(line(&parse!("6/3", Z)), "2");
+    assert_eq!(line(&parse!("7/2", Z)), "7*(2^-1)");
+    assert_eq!(line(&parse!("quo(7, 2)", Z)), "3");
+    assert_eq!(line(&parse!("rem(-7, 2)", Z)), "1");
+    assert_eq!(line(&parse!("(-3)^3", Z)), "-27");
+    assert_eq!(
+        line(&parse!("2^100", Z)),
+        "1267650600228229401496703205376"
+    );
+}
+
+#[test]
+#[ignore = "future: gcd, lcm and factorial of integers in Z"]
+fn integer_builtins() {
+    assert_eq!(line(&parse!("gcd(12, 18)", Z)), "6");
+    assert_eq!(line(&parse!("lcm(4, 6)", Z)), "12");
+    assert_eq!(line(&parse!("factorial(5)", Z)), "120");
+}

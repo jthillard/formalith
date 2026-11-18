@@ -282,3 +282,120 @@ fn printing() {
     // One solution per line
     assert_eq!(eval_in("R", &["x^2 = 1"], false), ok("x = -1\nx = 1 "));
 }
+
+#[test]
+fn degenerate_systems() {
+    assert_eq!(solve("x = x + 1"), ok("\"no solution\""));
+    assert_eq!(solve("x^2 + 1 = 0, x = 1"), ok("\"no solution\""));
+    // x = y and z = 5 - 2x give x + y + z = 5
+    assert_eq!(solve("x + y + z = 6, x - y = 0, 2*x + z = 5"), ok("\"no solution\""));
+    assert_eq!(solve("x + y = 1, 2*x + 2*y = 3"), ok("\"no solution\""));
+    assert_eq!(solve("2*x = 3"), ok("x = frac(3, 2)"));
+    assert_eq!(solve("solve(a*x = b, x)"), ok("x = frac(b, a)"));
+}
+
+#[test]
+fn polynomials_with_repeated_and_many_roots() {
+    assert_eq!(solve("x^2 - 2*x + 1 = 0"), ok("x = 1"));
+    assert_eq!(solve("(x-1)^3 = 0"), ok("x = 1"));
+    assert_eq!(solve("x^2 = x"), ok("x = 0 \\ x = 1"));
+    assert_eq!(solve("x^4 = 1"), ok("x = -1 \\ x = 1"));
+    assert_eq!(solve("x^8 - 1 = 0"), ok("x = -1 \\ x = 1"));
+    assert_eq!(solve("x^6 = 64"), ok("x = -2 \\ x = 2"));
+    assert_eq!(solve("x^4 + 1 = 0"), ok("\"no solution\""));
+    assert_eq!(solve("x^2 = -1"), ok("\"no solution\""));
+    assert_eq!(
+        solve("x^4 - 5*x^2 + 4 = 0"),
+        ok("x = -2 \\ x = -1 \\ x = 1 \\ x = 2")
+    );
+}
+
+#[test]
+fn quadratic_with_symbolic_coefficients() {
+    assert_eq!(
+        solve("solve(x^2 + p*x + q = 0, x)"),
+        ok("x = -frac(1, 2) p+frac(1, 2) sqrt(p^2-4 q) \\ x = -frac(1, 2) p-frac(1, 2) sqrt(p^2-4 q)")
+    );
+}
+
+#[test]
+fn nonlinear_systems() {
+    assert_eq!(
+        solve("x^2 + y^2 = 1, x = y"),
+        ok("x = sqrt(frac(1, 2)), y = sqrt(frac(1, 2)) \\ x = -sqrt(frac(1, 2)), y = -sqrt(frac(1, 2))")
+    );
+    assert_eq!(solve("x*y = 6, x + y = 5"), ok("x = 2, y = 3 \\ x = 3, y = 2"));
+    assert_eq!(
+        solve("x^2 + y^2 = 25, x*y = 12"),
+        ok("x = -4, y = -3 \\ x = -3, y = -4 \\ x = 3, y = 4 \\ x = 4, y = 3")
+    );
+}
+
+#[test]
+fn complex_roots() {
+    assert_eq!(solve_in("C", "x^2 = -1"), ok("x = -i \\ x = i"));
+    assert_eq!(solve_in("C", "x^2 + 2*x + 5 = 0"), ok("x = -1+2 i \\ x = -1-2 i"));
+    assert_eq!(solve_in("C", "(1+i)*x = 2"), ok("x = 1-i"));
+    assert_eq!(
+        solve_in("C", "x^3 = 1"),
+        ok("x = -frac(1, 2) i sqrt(3)-frac(1, 2) \\ x = frac(1, 2) i sqrt(3)-frac(1, 2) \\ x = 1")
+    );
+    assert_eq!(
+        solve_in("C", "x^2 = i"),
+        ok("x = (-1-i) sqrt(frac(1, 2)) \\ x = (1+i) sqrt(frac(1, 2))")
+    );
+    // The 6th roots of unity
+    assert_eq!(
+        solve_in("C", "x^6 = 1").map(|s| s.matches(" \\ ").count() + 1),
+        Ok(6)
+    );
+    assert_eq!(
+        solve_in("C", "x^4 = -1").map(|s| s.matches(" \\ ").count() + 1),
+        Ok(4)
+    );
+}
+
+#[test]
+fn integer_and_modular_roots() {
+    assert_eq!(solve_in("Z", "x^2 = 4"), ok("x = -2 \\ x = 2"));
+    assert_eq!(solve_in("Z", "x^2 = 2"), ok("\"no solution\""));
+    assert_eq!(solve_in("Z", "x^3 - x = 0"), ok("x = -1 \\ x = 0 \\ x = 1"));
+    assert_eq!(solve_in("Z/7", "x^2 = 2"), ok("x = 3 \\ x = 4"));
+    assert_eq!(solve_in("Z/7", "x^2 = 3"), ok("\"no solution\""));
+    assert_eq!(solve_in("Z/7", "x^3 = 1"), ok("x = 1 \\ x = 2 \\ x = 4"));
+    assert_eq!(solve_in("Z/7", "x + y = 1, x - y = 3"), ok("x = 2, y = 6"));
+    // Z/6 has zero divisors, x^2 = x has 4 roots
+    assert_eq!(solve_in("Z/6", "x^2 = x"), ok("x = 0 \\ x = 1 \\ x = 3 \\ x = 4"));
+    assert!(solve_in("Z/6", "2*x = 1").is_err());
+}
+
+#[test]
+#[ignore = "future: linear systems over Z and Z/n with non-invertible pivots (Hermite / Smith normal form)"]
+fn linear_systems_with_non_invertible_pivots() {
+    assert_eq!(solve_in("Z", "2*x = 4"), ok("x = 2"));
+    assert_eq!(solve_in("Z", "x + y = 3, x - y = 1"), ok("x = 2, y = 1"));
+    assert_eq!(solve_in("Z/6", "2*x = 4"), ok("x = 2 \\ x = 5"));
+}
+
+#[test]
+#[ignore = "future: cubics by Cardano's formula (and casus irreducibilis)"]
+fn cubics_and_quintics() {
+    assert!(solve("x^3 + x + 1 = 0").is_ok());
+    assert!(solve("x^3 - 3*x + 1 = 0").is_ok());
+}
+
+#[test]
+fn non_polynomial_equations_are_rejected() {
+    for system in ["sin(x) = 0", "exp(x) = 2", "sqrt(x) = 2", "1/x = 2", "x/(x-1) = 2"] {
+        assert!(solve(system).unwrap_err().contains("not polynomial"), "{system}");
+    }
+    // Quintic without radical roots
+    assert!(solve("x^5 - x - 1 = 0").unwrap_err().contains("can't solve"));
+}
+
+#[test]
+#[ignore = "future: rational equations, solved by clearing denominators"]
+fn rational_equations() {
+    assert_eq!(solve("1/x = 2"), ok("x = frac(1, 2)"));
+    assert_eq!(solve("x/(x-1) = 2"), ok("x = 2"));
+}

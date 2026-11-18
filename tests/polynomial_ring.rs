@@ -83,3 +83,31 @@ fn other_coefficients() {
     assert_eq!(parse!("gcd(x^2+1, x^2+x)", z2_x), parse!("x+1", z2_x));
     assert_eq!(parse!("rem(x^3+x+1, x^2+1)", z2_x), parse!("1", z2_x));
 }
+
+#[test]
+fn euclidean_division_corner_cases() {
+    assert_eq!(eval("quo(x^3+1, x+1)"), eval("x^2-x+1"));
+    assert_eq!(eval("rem(x^3+1, x)"), "1");
+    assert_eq!(eval("quo(x, 2)"), eval("1/2*x"));
+    // Division by zero stays unevaluated
+    assert_eq!(eval("quo(x, 0)"), "quo(x, 0)");
+    assert_eq!(eval("rem(x, 0)"), "rem(x, 0)");
+}
+
+#[test]
+fn gcd_corner_cases() {
+    assert_eq!(eval("gcd(x^4-1, x^6-1)"), eval("x^2-1"));
+    assert_eq!(eval("gcd(0, x)"), "x");
+    assert_eq!(eval("gcd(x^2+1, x+1)"), "1");
+    assert_eq!(eval("lcm(x, x^2)"), eval("x^2"));
+    // gcd(F_n, F_m) = F_gcd(n, m) for Fibonacci polynomials, here with x^n - 1
+    assert_eq!(eval("gcd(x^12-1, x^18-1)"), eval("x^6-1"));
+}
+
+#[test]
+fn large_powers_are_expanded() {
+    let printed = eval("(x+1)^20");
+    assert!(printed.starts_with("x^20+20*(x^19)+190*(x^18)"), "{printed}");
+    assert!(printed.contains("184756*(x^10)"), "{printed}");
+    assert_eq!(eval("(x+1)^20-(x+1)^20"), "0");
+}

@@ -84,3 +84,48 @@ fn series_of_classic_functions() {
     eq("series(atan(x), x, 1, 3)", "pi/4 + (x-1)/2 - (x-1)^2/4");
     eq("series(atan(x), x, oo, 4)", "pi/2 - 1/x + 1/(3*x^3)");
 }
+
+#[test]
+fn series_order_edge_cases() {
+    assert_eq!(series("series(ln(1+x), x, 0, 1)"), "0");
+    assert_eq!(series("series(ln(1+x), x, 0, 0)"), "0");
+    assert_eq!(series("series(x^10, x, 0, 3)"), "0");
+    assert_eq!(series("series(1, x, 0, 3)"), "1");
+    assert_eq!(series("series(y, x, 0, 3)"), "y");
+    assert_eq!(series("series(cos(x)^2+sin(x)^2, x, 0, 6)"), "1");
+}
+
+#[test]
+fn series_of_compositions() {
+    let eq = |a: &str, b: &str| assert_eq!(parse!(a, R), parse!(b, R), "{a}");
+    eq("series(exp(x)/(1-x), x, 0, 4)", "1 + 2*x + 5/2*x^2 + 8/3*x^3");
+    eq("series(ln(cos(x)), x, 0, 7)", "-x^2/2 - x^4/12 - x^6/45");
+    eq("series(x/(exp(x)-1), x, 0, 6)", "1 - x/2 + x^2/12 - x^4/720");
+    eq("series(1/(exp(x)-1), x, 0, 3)", "1/x - 1/2 + x/12");
+    eq("series(ln(sin(x)/x), x, 0, 6)", "-x^2/6 - x^4/180");
+    eq("series(tan(sin(x))-sin(tan(x)), x, 0, 9)", "x^7/30");
+    eq("series(sqrt(1+x)-1, x, 0, 4)", "x/2 - x^2/8 + x^3/16");
+    eq("series(1/(x^2*(1+x)), x, 0, 1)", "x^-2 - x^-1 + 1");
+    eq("series(sqrt(x+x^2), x, 0, 3, 1)", "x^(1/2) + x^(3/2)/2 - x^(5/2)/8");
+    eq("series(atan(1/x), x, 0, 4, 1)", "pi/2 - x + x^3/3");
+    eq("series(sin(x), x, pi, 4)", "-(x-pi) + (x-pi)^3/6");
+    eq("series(1/x, x, 1, 3)", "1 - (x-1) + (x-1)^2");
+    eq("series(sqrt(x^2+1), x, oo, 4)", "x + 1/(2*x) - 1/(8*x^3)");
+    eq("series(exp(x)^(1/x), x, oo, 2)", "exp(1)");
+    eq(
+        "series(erf(x), x, 0, 6)",
+        "2/sqrt(pi)*x - 2/(3*sqrt(pi))*x^3 + 1/(5*sqrt(pi))*x^5",
+    );
+}
+
+#[test]
+fn series_of_logarithms_stay_logarithms() {
+    assert_eq!(series("series(ln(x), x, 0, 3, 1)"), "ln(x)");
+}
+
+#[test]
+#[ignore = "future: series of factorial (gamma function)"]
+fn series_of_factorial() {
+    // 1 - gamma*x, gamma being the Euler-Mascheroni constant
+    assert!(!series("series(factorial(x), x, 0, 2)").contains("series"));
+}

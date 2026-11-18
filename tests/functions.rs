@@ -218,3 +218,159 @@ fn constant_radicals() {
     assert_eq!(parse!("sqrt(2*pi)/(sqrt(2)*sqrt(pi))", R), parse!("1", R));
     assert_eq!(parse!("sqrt(2)*sqrt(2)*y", R), parse!("2*y", R));
 }
+
+#[test]
+fn trigonometric_values_at_classic_angles() {
+    assert_eq!(parse!("sin(pi)", R), parse!("0", R));
+    assert_eq!(parse!("sin(100*pi)", R), parse!("0", R));
+    assert_eq!(parse!("cos(3*pi/2)", R), parse!("0", R));
+    assert_eq!(parse!("cos(5*pi/6)", R), parse!("-sqrt(3)/2", R));
+    assert_eq!(parse!("sin(7*pi/4)", R), parse!("-sqrt(2)/2", R));
+    assert_eq!(parse!("tan(pi/3)", R), parse!("sqrt(3)", R));
+    assert_eq!(parse!("tan(pi/4)", R), parse!("1", R));
+    assert_eq!(parse!("cos(-pi)", R), parse!("-1", R));
+}
+
+#[test]
+fn tangent_at_its_poles_stays_unevaluated() {
+    assert!(matches!(parse!("tan(pi/2)", R), Term::Fun(_)));
+}
+
+#[test]
+#[ignore = "future: exact values at pi/12, pi/5 and other angles with radicals"]
+fn trigonometric_values_with_radicals() {
+    assert_eq!(parse!("sin(pi/12)", R), parse!("(sqrt(6)-sqrt(2))/4", R));
+    assert_eq!(parse!("cos(pi/5)", R), parse!("(1+sqrt(5))/4", R));
+    assert_eq!(parse!("cos(pi/8)", R), parse!("sqrt(2+sqrt(2))/2", R));
+}
+
+#[test]
+#[ignore = "future: parity and periodicity of trigonometric functions"]
+fn trigonometric_symmetries() {
+    assert_eq!(parse!("sin(-x)", R), parse!("-sin(x)", R));
+    assert_eq!(parse!("cos(-x)", R), parse!("cos(x)", R));
+    assert_eq!(parse!("cos(x+2*pi)", R), parse!("cos(x)", R));
+    assert_eq!(parse!("sin(x+pi)", R), parse!("-sin(x)", R));
+    assert_eq!(parse!("tan(x+pi)", R), parse!("tan(x)", R));
+}
+
+#[test]
+fn exponentials_and_logarithms() {
+    assert_eq!(parse!("ln(1)", R), parse!("0", R));
+    assert_eq!(parse!("ln(e)", R), parse!("1", R));
+    assert_eq!(parse!("ln(e^3)", R), parse!("3", R));
+    assert_eq!(parse!("ln(exp(x))", R), parse!("x", R));
+    assert_eq!(parse!("exp(0)", R), parse!("1", R));
+    assert_eq!(parse!("e^(ln(2))", R), parse!("2", R));
+    assert_eq!(parse!("log(1000)", R), parse!("3", R));
+    assert_eq!(parse!("log(8, 2)", R), parse!("3", R));
+    // ln(x) is only defined for x > 0, so exp(ln(x)) = x, but ln(0) stays unevaluated
+    assert!(matches!(parse!("ln(0)", R), Term::Fun(_)));
+}
+
+#[test]
+fn inverse_functions_out_of_their_domain() {
+    assert!(matches!(parse!("asin(2)", R), Term::Fun(_)));
+    assert!(matches!(parse!("acos(-3/2)", R), Term::Fun(_)));
+    assert_eq!(parse!("atan(-sqrt(3))", R), parse!("-pi/3", R));
+    assert_eq!(parse!("erf(0)", R), parse!("0", R));
+}
+
+#[test]
+#[ignore = "future: values of functions at infinity"]
+fn functions_at_infinity() {
+    assert_eq!(parse!("atan(oo)", R), parse!("pi/2", R));
+    assert_eq!(parse!("exp(-oo)", R), parse!("0", R));
+    assert_eq!(parse!("tanh(oo)", R), parse!("1", R));
+}
+
+#[test]
+fn big_factorials_and_binomials() {
+    assert_eq!(parse!("factorial(20)", R), parse!("2432902008176640000", R));
+    assert_eq!(parse!("binomial(50, 25)", R), parse!("126410606437752", R));
+    assert_eq!(parse!("binomial(5, 0)", R), parse!("1", R));
+    assert_eq!(parse!("binomial(5, 5)", R), parse!("1", R));
+    assert_eq!(parse!("binomial(5, 6)", R), parse!("0", R));
+    assert_eq!(parse!("factorial(30)/factorial(28)", R), parse!("870", R));
+    assert_eq!(
+        parse!("factorial(100)", R),
+        parse!(
+            "93326215443944152681699238856266700490715968264381621468592963895217599993229915608941463976156518286253697920827223758251185210916864000000000000000000000000",
+            R
+        )
+    );
+}
+
+#[test]
+#[ignore = "future: symbolic and generalized binomials and factorials"]
+fn generalized_factorials_and_binomials() {
+    assert_eq!(parse!("binomial(n, 0)", R), parse!("1", R));
+    assert_eq!(parse!("binomial(n, 1)", R), parse!("n", R));
+    assert_eq!(parse!("binomial(-1, 3)", R), parse!("-1", R));
+    assert_eq!(parse!("binomial(1/2, 2)", R), parse!("-1/8", R));
+    assert_eq!(parse!("factorial(1/2)", R), parse!("sqrt(pi)/2", R));
+}
+
+#[test]
+fn derivatives_of_compositions() {
+    assert_eq!(parse!("diff(abs(x), x)", R), parse!("sign(x)", R));
+    assert_eq!(parse!("diff(sign(x), x)", R), parse!("0", R));
+    assert_eq!(parse!("diff(x^n, x)", R), parse!("n*x^(n-1)", R));
+    assert_eq!(parse!("diff(exp(exp(x)), x)", R), parse!("exp(x+exp(x))", R));
+    assert_eq!(
+        parse!("diff(sin(x)*cos(x), x)", R),
+        parse!("cos(x)^2-sin(x)^2", R)
+    );
+    assert_eq!(
+        parse!("diff(x/(x+1), x)", R),
+        parse!("1/(x+1)-x/(x+1)^2", R)
+    );
+    assert_eq!(parse!("diff(sqrt(1+x^2), x)", R), parse!("x/sqrt(x^2+1)", R));
+    assert_eq!(parse!("diff(ln(sin(x)), x)", R), parse!("cos(x)/sin(x)", R));
+    assert_eq!(parse!("diff(log(x, 2), x)", R), parse!("1/(x*ln(2))", R));
+    assert_eq!(parse!("diff(x^(1/3), x)", R), parse!("1/3*x^(-2/3)", R));
+    assert_eq!(
+        parse!("diff(erf(x), x)", R),
+        parse!("2/sqrt(pi)*exp(-x^2)", R)
+    );
+    assert_eq!(
+        parse!("diff(erfi(x), x)", R),
+        parse!("2/sqrt(pi)*exp(x^2)", R)
+    );
+    assert_eq!(parse!("diff(e^x, x)", R), parse!("exp(x)", R));
+    assert_eq!(parse!("diff(x, x)", R), parse!("1", R));
+    assert_eq!(parse!("diff(pi, x)", R), parse!("0", R));
+    assert_eq!(parse!("diff(x^2*y^3, y)", R), parse!("3*x^2*y^2", R));
+    assert_eq!(
+        parse!("diff(diff(diff(diff(sin(x), x), x), x), x)", R),
+        parse!("sin(x)", R)
+    );
+    assert_eq!(
+        parse!("diff(series(sin(x), x, 0, 4), x)", R),
+        parse!("1-x^2/2", R)
+    );
+}
+
+#[test]
+#[ignore = "future: derivatives of powers with a variable exponent"]
+fn derivatives_of_variable_powers() {
+    assert_eq!(parse!("diff(x^x, x)", R), parse!("x^x*(ln(x)+1)", R));
+    assert_eq!(parse!("diff(a^x, x)", R), parse!("a^x*ln(a)", R));
+    assert_eq!(parse!("diff(2^x, x)", R), parse!("2^x*ln(2)", R));
+}
+
+#[test]
+#[ignore = "future: fundamental theorem of calculus, d/dx integrate(f(t), t, a, x) = f(x)"]
+fn derivative_of_an_integral_with_a_variable_bound() {
+    assert_eq!(
+        parse!("diff(integrate(exp(-t^2)*ln(t), t, 1, x), x)", R),
+        parse!("exp(-x^2)*ln(x)", R)
+    );
+}
+
+#[test]
+fn derivatives_of_unknown_functions_stay_unevaluated() {
+    assert!(matches!(parse!("diff(f(x), x)", R), Term::Fun(_)));
+    assert!(matches!(parse!("diff(floor(x), x)", R), Term::Fun(_)));
+    assert!(matches!(parse!("diff(factorial(x), x)", R), Term::Fun(_)));
+}

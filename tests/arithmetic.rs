@@ -284,3 +284,167 @@ fn products_and_sums_of_functions() {
     assert_eq!(parse!("abs(x)*abs(x)", R), parse!("abs(x)^2", R));
     assert_eq!(parse!("(x+1)*abs(x)", R), parse!("abs(x)*(x+1)", R));
 }
+
+fn eval_r(input: &str) -> String {
+    line(&parse!(input, R))
+}
+
+#[test]
+fn powers_of_zero_and_one() {
+    assert_eq!(eval_r("0^0"), "1");
+    assert_eq!(eval_r("x^0"), "1");
+    assert_eq!(eval_r("x^1"), "x");
+    assert_eq!(eval_r("0*x"), "0");
+    assert_eq!(eval_r("0/x"), "0");
+    assert_eq!(eval_r("x/x"), "1");
+    assert_eq!(eval_r("x^2*x^(-2)"), "1");
+    assert_eq!(eval_r("x^(-1/2)*x^(1/2)"), "1");
+}
+
+#[test]
+#[ignore = "future: 1^x should normalize to 1"]
+fn one_to_any_power() {
+    assert_eq!(eval_r("1^x"), "1");
+}
+
+#[test]
+#[ignore = "bug: 0/0 normalizes to 0 instead of staying undefined"]
+fn zero_over_zero() {
+    assert_ne!(eval_r("0/0"), "0");
+}
+
+#[test]
+#[ignore = "bug: a sum minus itself is not normalized to 0, (x+y)-(x+y) stays as is without expand"]
+fn sum_minus_itself() {
+    assert_eq!(eval_r("(x+y)-(x+y)"), "0");
+    assert_eq!(eval_r("(x+x^2)-(x+x^2)"), "0");
+}
+
+#[test]
+#[ignore = "bug: 1/sqrt(3) is not merged with sqrt(3), 2/3*pi/sqrt(3) and 2/9*pi*sqrt(3) differ"]
+fn reciprocal_radicals_are_merged() {
+    assert_eq!(parse!("2/3*pi/sqrt(3)", R), parse!("2/9*pi*sqrt(3)", R));
+    assert_eq!(parse!("1/sqrt(2)", R), parse!("sqrt(2)/2", R));
+}
+
+#[test]
+fn division_by_zero_stays_unevaluated() {
+    assert_eq!(eval_r("1/0"), "0^-1");
+    assert_eq!(eval_r("x/0"), "x*(0^-1)");
+}
+
+#[test]
+fn power_rules() {
+    assert_eq!(eval_r("(x^2)^3"), "x^6");
+    assert_eq!(eval_r("(x^(1/2))^2"), "x");
+    assert_eq!(eval_r("(x^(1/3))^3"), "x");
+    assert_eq!(eval_r("(x^3)^(1/3)"), "x");
+    assert_eq!(eval_r("(x^2)^(1/2)"), "abs(x)");
+    assert_eq!(eval_r("(x^2)^(1/4)"), "abs(x)^1/2");
+    assert_eq!(eval_r("sqrt(x^4)"), "x^2");
+    // Not valid for every real `x` and `a`, so kept as is
+    assert_eq!(eval_r("(x^a)^b"), "(x^a)^b");
+    assert_eq!(parse!("2^x*2^y", R), parse!("2^(x+y)", R));
+    assert_eq!(parse!("x^a*x^b", R), parse!("x^(a+b)", R));
+    assert_eq!(parse!("(x*y)^2", R), parse!("x^2*y^2", R));
+    assert_eq!(parse!("(x/y)^2", R), parse!("x^2/y^2", R));
+}
+
+#[test]
+#[ignore = "bug: `^` is left associative, x^y^z parses as (x^y)^z instead of x^(y^z)"]
+fn power_is_right_associative() {
+    assert_eq!(eval_r("2^3^2"), "512");
+    assert_eq!(parse!("x^y^z", R), parse!("x^(y^z)", R));
+}
+
+#[test]
+fn constant_radicals_are_simplified() {
+    assert_eq!(parse!("sqrt(8)", R), parse!("2*sqrt(2)", R));
+    assert_eq!(parse!("sqrt(12)", R), parse!("2*sqrt(3)", R));
+    assert_eq!(eval_r("sqrt(1/4)"), "1/2");
+    assert_eq!(parse!("sqrt(2/9)", R), parse!("sqrt(2)/3", R));
+    assert_eq!(eval_r("8^(2/3)"), "4");
+    assert_eq!(eval_r("4^(-1/2)"), "1/2");
+    assert_eq!(parse!("sqrt(2)*sqrt(3)", R), parse!("sqrt(6)", R));
+    assert_eq!(eval_r("sqrt(2)*sqrt(2)"), "2");
+    assert_eq!(parse!("sqrt(2)^3", R), parse!("2*sqrt(2)", R));
+    assert_eq!(eval_r("(-8)^(1/3)"), "-2");
+    assert_eq!(eval_r("(-8)^(2/3)"), "4");
+    assert_eq!(eval_r("(-1)^(1/3)"), "-1");
+}
+
+#[test]
+#[ignore = "bug: even roots of negative constants panic in malachite instead of staying unevaluated"]
+fn even_roots_of_negative_constants() {
+    let printed = std::panic::catch_unwind(|| eval_r("sqrt(-4)"));
+    assert!(printed.is_ok(), "sqrt(-4) panicked");
+    assert!(std::panic::catch_unwind(|| eval_r("(-1)^(1/2)")).is_ok());
+}
+
+#[test]
+#[ignore = "future: denesting of radicals"]
+fn radicals_are_denested() {
+    assert_eq!(parse!("sqrt(3+2*sqrt(2))", R), parse!("1+sqrt(2)", R));
+    assert_eq!(parse!("sqrt(5+2*sqrt(6))", R), parse!("sqrt(2)+sqrt(3)", R));
+}
+
+#[test]
+#[ignore = "future: sqrt(4*x^2) should be 2*abs(x)"]
+fn radicals_of_products() {
+    assert_eq!(parse!("sqrt(4*x^2)", R), parse!("2*abs(x)", R));
+}
+
+#[test]
+fn signs_and_negations() {
+    assert_eq!(eval_r("--x"), "x");
+    assert_eq!(eval_r("---x"), "-x");
+    assert_eq!(eval_r("-(-(-(x)))"), "-x");
+    assert_eq!(eval_r("x*-1"), "-x");
+    assert_eq!(eval_r("-4/-6"), "2/3");
+    assert_eq!(eval_r("(x-y)+(y-x)"), "0");
+    assert_eq!(eval_r("2*x+3*x-5*x"), "0");
+    assert_eq!(eval_r("x/2/3"), "1/6*x");
+}
+
+#[test]
+fn huge_exact_numbers() {
+    assert_eq!(
+        eval_r("2^200"),
+        "1606938044258990275541962092341162602522202993782792835301376"
+    );
+    assert_eq!(eval_r("2^200/2^199"), "2");
+    assert_eq!(eval_r("(10^30+1)-10^30"), "1");
+    assert_eq!(eval_r("1/3^50*3^50"), "1");
+}
+
+#[test]
+fn abs_sign_min_max() {
+    assert_eq!(eval_r("abs(-3)"), "3");
+    assert_eq!(eval_r("abs(x)^2"), "x^2");
+    assert_eq!(eval_r("abs(-x)"), "abs(x)");
+    assert_eq!(eval_r("abs(abs(x))"), "abs(x)");
+    assert_eq!(eval_r("abs(x*y)"), "abs(x)*abs(y)");
+    assert_eq!(eval_r("abs(-2*x)"), "2*abs(x)");
+    assert_eq!(eval_r("sign(-2)"), "-1");
+    assert_eq!(eval_r("sign(0)"), "0");
+    assert_eq!(eval_r("min(3, 2)"), "2");
+    assert_eq!(eval_r("max(1, 2, 3)"), "3");
+    assert_eq!(eval_r("max(x, x)"), "x");
+    assert_eq!(eval_r("min(x)"), "x");
+}
+
+#[test]
+#[ignore = "future: sign is odd and sign(x)^2 is not simplified"]
+fn sign_symmetries() {
+    assert_eq!(parse!("sign(-x)", R), parse!("-sign(x)", R));
+}
+
+#[test]
+#[ignore = "future: arithmetic with oo is not simplified (oo - oo and oo/oo should be undefined)"]
+fn arithmetic_with_infinity() {
+    assert_eq!(eval_r("oo - oo"), "undefined");
+    assert_eq!(eval_r("oo/oo"), "undefined");
+    assert_eq!(eval_r("0*oo"), "undefined");
+    assert_eq!(eval_r("oo + 1"), "oo");
+    assert_eq!(eval_r("2*oo"), "oo");
+}

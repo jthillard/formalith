@@ -136,3 +136,78 @@ fn test_parse_function_arity() {
     assert!(try_parse!("abs(1,2)", R).is_err());
     assert!(try_parse!("det(5,6)", R).is_err());
 }
+
+#[test]
+fn test_parse_more_errors() {
+    for input in [
+        "f(", "f()", "sin()", "log()", "3 4", "x == y", "x = y", "x :=", "sin x", "((x)",
+        "x))", "(,)", "sin(,)", "1 +* 2", "lim(x, x)", "integrate(x)", "x^^2", "x**2",
+    ] {
+        assert!(try_parse!(input, R).is_err(), "{input:?}");
+    }
+}
+
+#[test]
+fn test_parse_builtin_arity_messages() {
+    assert_eq!(
+        try_parse!("sin(1, 2)", R).unwrap_err().to_string(),
+        "Function sin expects 1 argument, found 2"
+    );
+    assert_eq!(
+        try_parse!("log(1, 2, 3)", R).unwrap_err().to_string(),
+        "Function log expects 1 to 2 arguments, found 3"
+    );
+    assert_eq!(
+        try_parse!("lim(x, x)", R).unwrap_err().to_string(),
+        "Function lim expects 3 to 4 arguments, found 2"
+    );
+}
+
+#[test]
+#[ignore = "bug: a non-ASCII character is reported as `Input was empty`"]
+fn test_parse_unknown_characters_message() {
+    let message = try_parse!("α + 1", R).unwrap_err().to_string();
+    assert_ne!(message, "Input was empty");
+}
+
+#[test]
+fn test_parse_nested_parentheses_and_signs() {
+    assert_eq!(parse!("((((x))))", R), parse!("x", R));
+    assert_eq!(parse!("-(-(-(x)))", R), parse!("-x", R));
+    assert_eq!(parse!("- - x", R), parse!("x", R));
+    assert_eq!(parse!("2*-3", R), (-6).into());
+    assert_eq!(parse!("x^-2", R), parse!("1/x^2", R));
+    assert_eq!(parse!("2^-1*4", R), 2.into());
+    assert_eq!(parse!("-x^2", R), parse!("-(x^2)", R));
+}
+
+#[test]
+fn test_parse_identifiers_with_digits_and_underscores() {
+    assert_eq!(parse!("x1*x1", R), parse!("x1^2", R));
+    assert_ne!(parse!("x_1 + x_2", R), parse!("2*x_1", R));
+    assert_eq!(parse!("x_1 - x_1", R), 0.into());
+}
+
+#[test]
+fn test_parse_decimal_literals() {
+    assert_eq!(parse!("1.5x", R), parse!("3/2*x", R));
+    assert_eq!(parse!("5.", R), 5.into());
+    assert_eq!(parse!("0.125", R), parse!("1/8", R));
+    assert_eq!(parse!("1.000", R), 1.into());
+}
+
+#[test]
+#[ignore = "future: implicit product of parenthesized factors, (x+1)(x-1)"]
+fn test_parse_implicit_product_of_parentheses() {
+    assert_eq!(parse!("(x+1)(x-1)", R), parse!("(x+1)*(x-1)", R));
+}
+
+#[test]
+fn test_parse_long_input() {
+    let sum = (1..=200).map(|k| format!("{k}*x^{k}")).collect::<Vec<_>>().join("+");
+    let term = parse!(&sum, R);
+    assert_eq!(parse!(&format!("expand(({sum}) - ({sum}))"), R), 0.into());
+    assert_ne!(term, 0.into());
+    let nested = format!("{}x{}", "(".repeat(100), ")".repeat(100));
+    assert_eq!(parse!(&nested, R), parse!("x", R));
+}

@@ -127,3 +127,41 @@ fn library() {
     assert!(!env.remove("f"));
     assert_eq!(parse!("f(2, 3)", R, &env).to_string(), "f(2, 3)");
 }
+
+#[test]
+fn redefinitions() {
+    assert_eq!(eval(&["a := 2", "a := a + 1", "a"]), Ok("3".to_owned()));
+    assert_eq!(eval(&["a := 1", "a := a", "a"]), Ok("1".to_owned()));
+    assert_eq!(eval(&["f(x) := x^2", "f(f(2))"]), Ok("16".to_owned()));
+    assert_eq!(eval(&["f(x) := x^2", "g(x) := f(x) + 1", "f(x) := 0", "g(3)"]), Ok("10".to_owned()));
+}
+
+#[test]
+fn recursive_definitions_are_not_expanded() {
+    // `f` isn't defined yet in its own body, so it stays an unknown function
+    assert_eq!(eval(&["f(x) := f(x) + 1", "f(2)"]), ok("f(2) + 1"));
+}
+
+#[test]
+fn free_symbols_in_bodies() {
+    assert_eq!(eval(&["g(x) := y*x", "y := 3", "g(2)"]), ok("2*y"));
+    assert_eq!(eval(&["h(x) := diff(x^3, x)", "h(t)"]), ok("3*t^2"));
+}
+
+#[test]
+fn definitions_inside_calculus() {
+    assert_eq!(
+        eval(&["h(x) := x^2", "integrate(h(t), t, 0, 1)"]),
+        ok("1/3")
+    );
+    assert_eq!(eval(&["f(x) := sin(x)/x", "lim(f(t), t, 0)"]), ok("1"));
+    assert_eq!(eval(&["f(x) := x + 1", "solve(f(x) = 3, x)"]), Ok("x = 2".to_owned()));
+    assert_eq!(eval(&["x := 2", "x^2 = 4"]), Ok("true".to_owned()));
+}
+
+#[test]
+fn builtin_constants_cannot_be_defined() {
+    for statement in ["e := 3", "oo := 1", "pi := 3", "undefined := 0", "sin(x) := x"] {
+        assert!(ok(statement).is_err(), "{statement}");
+    }
+}

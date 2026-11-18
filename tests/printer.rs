@@ -199,3 +199,71 @@ fn print_typst_has_no_colors() {
     assert!(!printed.contains('\u{1b}'));
     assert!(!printed.contains('\n'));
 }
+
+#[test]
+fn printed_expressions_are_parsed_back() {
+    for input in [
+        "x+y",
+        "x-y",
+        "-x",
+        "2*x*y",
+        "x^2+2*x+1",
+        "(x+1)^2",
+        "(x+1)*(x-1)",
+        "sin(x)^2+cos(x)^2",
+        "1/(x+1)",
+        "x/(y*z)",
+        "exp(-x^2)",
+        "-(x^2)",
+        "-1/2*x",
+        "abs(x-1)",
+        "ln(abs(x))",
+        "atan(x)/x",
+        "f(x, y)",
+        "x^(y+1)",
+        "x^-2",
+        "2^x*3^y",
+    ] {
+        let term = parse!(input, R);
+        let printed = line(&term);
+        assert_eq!(parse!(&printed, R), term, "{input} printed as {printed}");
+    }
+}
+
+#[test]
+#[ignore = "bug: rational exponents are printed as `x^1/2`, which parses back as (x^1)/2"]
+fn rational_exponents_are_parsed_back() {
+    for input in ["sqrt(x)", "x^(2/3)", "2^(1/2)", "(x+1)^(-1/2)"] {
+        let term = parse!(input, R);
+        let printed = line(&term);
+        assert_eq!(parse!(&printed, R), term, "{input} printed as {printed}");
+    }
+}
+
+#[test]
+fn pretty_print_nested_fractions() {
+    let printed = pretty(&parse!("1/(1+1/(1+1/x))", R));
+    assert!(printed.lines().count() >= 3, "{printed}");
+    let printed = pretty(&parse!("x^(y^z)", R));
+    assert!(printed.lines().count() >= 2, "{printed}");
+}
+
+#[test]
+fn print_large_numbers() {
+    assert_eq!(line(&parse!("10^50", R)), format!("1{}", "0".repeat(50)));
+    assert_eq!(line(&parse!("-10^-5", R)), "-1/100000");
+}
+
+#[test]
+fn typst_output_of_calculus() {
+    for input in [
+        "integrate(f(x), x, 0, 1)",
+        "lim(f(x), x, oo)",
+        "series(f(x), x, 0, 3)",
+        "sqrt(x)/2",
+    ] {
+        let printed = typst(&parse!(input, R));
+        assert!(!printed.is_empty(), "{input}");
+        assert!(!printed.contains('\u{1b}'), "{input}");
+    }
+}

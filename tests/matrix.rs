@@ -346,3 +346,73 @@ fn invalid_matrix_product_does_not_panic() {
     let _ = try_parse!("[[1,2]]*[[1,2]]", M);
     let _ = try_parse!("[[1,2],[3,4]]*[[1,2,3]]", M);
 }
+
+#[test]
+fn small_and_degenerate_matrices() {
+    assert_eq!(line(&parse!("[[2]]", M)), "[[2]]");
+    assert_eq!(parse!("det([[a]])", R), parse!("a", R));
+    assert_eq!(parse!("det([[a, b], [c, d]])", R), parse!("a*d-b*c", R));
+    assert!(try_parse!("[[]]", M).is_err());
+    assert!(try_parse!("[[1],[2,3]]", M).is_err());
+}
+
+#[test]
+fn matrix_powers() {
+    assert_eq!(line(&parse!("[[1,2],[3,4]]^2", M)), "[[7,10],[15,22]]");
+    assert_eq!(line(&parse!("[[1,1],[0,1]]^10", M)), "[[1,10],[0,1]]");
+    assert_eq!(line(&parse!("[[0,1],[1,0]]^-1", M)), "[[0,1],[1,0]]");
+    // Fibonacci numbers
+    assert_eq!(
+        line(&parse!("[[1,1],[1,0]]^30", M)),
+        "[[1346269,832040],[832040,514229]]"
+    );
+}
+
+#[test]
+#[ignore = "future: M^0 is the scalar 1, not an identity matrix of the right size"]
+fn matrix_to_the_zero() {
+    assert_eq!(line(&parse!("[[1,2],[3,4]]^0", M)), "[[1,0],[0,1]]");
+}
+
+#[test]
+fn singular_matrices_are_not_inverted() {
+    assert_eq!(line(&parse!("[[1,2],[2,4]]^-1", M)), "[[1,2],[2,4]]^-1");
+}
+
+#[test]
+fn determinant_is_multiplicative() {
+    assert_eq!(parse!("det([[1,2],[3,4]]*[[5,6],[7,8]])", R), 4.into());
+}
+
+#[test]
+fn invalid_operations_stay_unevaluated() {
+    assert_eq!(
+        line(&parse!("[[1,2,3]]+[[1,2]]", M)),
+        "[[1,2,3]]+[[1,2]]"
+    );
+    assert_eq!(
+        line(&parse!("det([[1,2,3],[4,5,6]])", M)),
+        "det([[1,2,3],[4,5,6]])"
+    );
+    assert_eq!(
+        line(&parse!("[[1,2,3],[4,5,6]]*[[1],[2],[3]]", M)),
+        "[[14],[32]]"
+    );
+}
+
+#[test]
+#[ignore = "future: symbolic determinants and inverses are not simplified (Vandermonde, A*A^-1 = I)"]
+fn symbolic_matrices_are_simplified() {
+    assert_eq!(
+        parse!("factor(det([[1,1,1],[a,b,c],[a^2,b^2,c^2]]))", R),
+        parse!("(b-a)*(c-a)*(c-b)", R)
+    );
+    assert_eq!(
+        parse!("simplify(det([[1,1,1,1],[a,b,c,d],[a^2,b^2,c^2,d^2],[a^3,b^3,c^3,d^3]]))", R),
+        parse!("expand((b-a)*(c-a)*(d-a)*(c-b)*(d-b)*(d-c))", R)
+    );
+    assert_eq!(
+        line(&parse!("[[a, b], [c, d]]*[[a, b], [c, d]]^-1", M)),
+        "[[1,0],[0,1]]"
+    );
+}

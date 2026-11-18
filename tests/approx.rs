@@ -158,3 +158,77 @@ fn approx_classic_functions() {
     assert_eq!(approx("approx(asin(2))"), "asin(2.0)");
     assert_eq!(approx("approx(atanh(1))"), "atanh(1.0)");
 }
+
+#[test]
+fn approx_precision_edge_cases() {
+    assert_eq!(approx("approx(pi, 1)"), "3.0");
+    assert_eq!(approx("approx(1/3, 3)"), "0.333");
+    assert_eq!(approx("approx(0)"), "0.0");
+    assert_eq!(approx("approx(-e)"), "-2.71828182845905");
+    assert_eq!(
+        approx("approx(pi, 50)"),
+        "3.1415926535897932384626433832795028841971693993751"
+    );
+    assert_eq!(
+        approx("approx(sqrt(2), 40)"),
+        "1.41421356237309504880168872420969807857"
+    );
+    // Invalid numbers of digits stay unevaluated
+    assert_eq!(approx("approx(pi, 0)"), "approx(pi, 0)");
+    assert_eq!(approx("approx(pi, -1)"), "approx(pi, -1)");
+    assert_eq!(approx("approx(pi, x)"), "approx(pi, x)");
+}
+
+#[test]
+fn approx_large_and_small_magnitudes() {
+    assert_eq!(approx("approx(10^20)"), "1.0e20");
+    assert_eq!(approx("approx(10^-20)"), "1.0e-20");
+    assert_eq!(approx("approx(e^100)"), "2.68811714181614e43");
+    assert_eq!(approx("approx(ln(10^-30))"), "-69.0775527898214");
+    // Needs about 10 more digits of pi to reduce the argument
+    assert_eq!(approx("approx(sin(10^10))"), "-0.487506025087511");
+}
+
+#[test]
+fn approx_near_integers_and_cancellations() {
+    // Ramanujan's constant, 262537412640768743.99999999999925...
+    assert_eq!(
+        approx("approx(exp(pi*sqrt(163)), 40)"),
+        "2.625374126407687439999999999992500725972e17"
+    );
+    assert_eq!(approx("approx(sqrt(2)+sqrt(3)-sqrt(5+2*sqrt(6)))"), "0.0");
+    assert_eq!(approx("approx(exp(1)-e)"), "0.0");
+}
+
+#[test]
+fn approx_numerical_integrals() {
+    assert_eq!(
+        approx("approx(integrate(exp(-x^2), x, 0, 1))"),
+        "0.746824132812427"
+    );
+    assert_eq!(
+        approx("approx(integrate(sin(x)/x, x, 0, 1))"),
+        "0.946083070367183"
+    );
+    assert_eq!(approx("approx(integrate(1/sqrt(x), x, 0, 1))"), "2.0");
+    // pi^4/15
+    assert_eq!(
+        approx("approx(integrate(x^3/(exp(x)-1), x, 0, oo))"),
+        "6.49393940226683"
+    );
+}
+
+#[test]
+#[ignore = "future: numerical integration of oscillating integrands on infinite intervals"]
+fn approx_oscillating_integrals() {
+    assert_eq!(
+        approx("approx(integrate(sin(x)/x, x, 0, oo))"),
+        "1.5707963267949"
+    );
+}
+
+#[test]
+fn approx_keeps_singular_values() {
+    assert_eq!(approx("approx(ln(0))"), "ln(0.0)");
+    assert_eq!(approx("approx(binomial(1/2, 2))"), "binomial(0.5, 2.0)");
+}
