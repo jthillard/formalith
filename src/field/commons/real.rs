@@ -178,6 +178,18 @@ impl Ring for R<Rational> {
                     // `{$(x y)^n = x^n y^n$}` for integer `n`
                     return Term::distribute_pow(mul, exponant);
                 }
+                (Term::Mul(mul), Term::Value(_))
+                    if mul.coefficient > 0 && mul.iter().all(Self::is_positive_constant) =>
+                {
+                    // `{$(2 pi)^(1/2) = 2^(1/2) pi^(1/2)$}`, a single form for roots of positive constants
+                    return Term::distribute_pow(mul, exponant);
+                }
+                (Term::Fun(fun), _) if fun.get_ident() == Context::EXP => {
+                    // `{$(exp u)^c = exp(c u)$}`, `{$exp u$}` being positive
+                    if let Some(arg) = fun.get_arg::<Self>() {
+                        return self.fun(Context::EXP, arg * &***exponant);
+                    }
+                }
                 (Term::Fun(fun), Term::Value(value))
                     if fun.get_ident() == Context::ABS && Self::is_even_integer(&value.value) =>
                 {
@@ -294,6 +306,36 @@ impl Ring for R<Rational> {
                 _ => {}
             },
             Term::Mul(mul) => {
+                if mul.iter().any(|factor| matches!(factor, Term::Value(_))) {
+                    // Merged factors may be values (`{$x x^(-1) = 1$}`, `{$sqrt(2) sqrt(2) = 2$}`), moved to the
+                    // coefficient
+                    let mut res = Term::Value(Value::new(mul.coefficient.clone(), *self));
+                    res.set_approximate(mul.is_approximate());
+                    for factor in mul {
+                        res = res * factor;
+                    }
+                    return res;
+                }
+                let is_exp = |factor: &&Term<Self>| {
+                    matches!(factor, Term::Fun(fun) if fun.get_ident() == Context::EXP)
+                };
+                if mul.iter().filter(is_exp).count() > 1 {
+                    // `{$exp(a) exp(b) = exp(a + b)$}`, so that exponentials cancel like powers of a single base
+                    let mut res = Term::Value(Value::new(mul.coefficient.clone(), *self));
+                    res.set_approximate(mul.is_approximate());
+                    let mut argument = Term::zero(*self);
+                    for factor in mul {
+                        match factor {
+                            Term::Fun(fun) if fun.get_ident() == Context::EXP => {
+                                if let Some(arg) = fun.get_arg::<Self>() {
+                                    argument = argument + arg;
+                                }
+                            }
+                            _ => res = res * factor,
+                        }
+                    }
+                    return res * self.fun(Context::EXP, argument);
+                }
                 if let Some(res) = self.merge_radicals(mul) {
                     return res;
                 }
@@ -466,6 +508,18 @@ impl R<Rational> {
     /// Build the function `ident(arg)`, normalized.
     fn fun(self, ident: Symbol, arg: Term<Self>) -> Term<Self> {
         Term::Fun(Box::new(Fun::new(ident, vec![arg], self))).normalize()
+    }
+
+    /// Whether `term` is a positive constant: a positive value, `{$pi$}`, `{$e$}`, or a power of one of them.
+    fn is_positive_constant(term: &Term<Self>) -> bool {
+        match term {
+            Term::Value(value) => value.value > 0,
+            Term::Symbol(symbol) => matches!(symbol.symbol, Context::PI | Context::E),
+            Term::Pow(pow) => {
+                matches!(&**pow.exponant, Term::Value(_)) && Self::is_positive_constant(&pow.base)
+            }
+            _ => false,
+        }
     }
 
     /// Write `{$n = s^q r$}`, returning `(s, r)`. Only prime factors below a bound are extracted, to keep it cheap

@@ -159,6 +159,9 @@ fn gaussian_integrals() {
     assert_eq!(integrate("integrate(exp(-x^2), x, 0, oo)"), integrate("sqrt(pi)/2"));
     assert_eq!(integrate("integrate(x^2*exp(-x^2), x, -oo, oo)"), integrate("sqrt(pi)/2"));
     assert_eq!(integrate("integrate(exp(-(x+1)^2), x, -oo, oo)"), integrate("sqrt(pi)"));
+    assert_eq!(integrate("integrate(exp(-x^2/2), x, -oo, oo)/sqrt(2*pi)"), "1");
+    assert_eq!(integrate("integrate(exp(x^2), x, 0, oo)"), "oo");
+    assert_eq!(integrate("integrate(exp(x^2), x, -oo, oo)"), "oo");
 }
 
 #[test]
@@ -172,6 +175,9 @@ fn error_function() {
     assert_eq!(integrate("lim(erf(x), x, oo)"), "1");
     assert_eq!(integrate("lim(erf(x), x, -oo)"), "-1");
     assert_eq!(integrate("lim(x*(1-erf(x))*exp(x^2), x, oo)"), integrate("1/sqrt(pi)"));
+    assert_eq!(integrate("lim(erfi(x), x, oo)"), "oo");
+    assert_eq!(integrate("lim(erfi(x), x, -oo)"), "-oo");
+    assert_eq!(integrate("lim(x*exp(-x^2)*erfi(x), x, oo)"), integrate("1/sqrt(pi)"));
     assert_eq!(integrate("lim(erf(1/x), x, 0, 1)"), "1");
     assert_eq!(
         integrate("series(erf(x), x, 0, 4)"),

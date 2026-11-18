@@ -206,3 +206,15 @@ fn derivatives_of_classic_functions() {
     assert_eq!(parse!("diff(atan(2*x), x)", R), parse!("2/(1+4*x^2)", R));
     assert_eq!(parse!("diff(log(x), x)", R), parse!("1/(x*ln(10))", R));
 }
+
+#[test]
+fn exponential_powers() {
+    assert_eq!(parse!("exp(x)*exp(x)", R), parse!("exp(2*x)", R));
+    assert_eq!(parse!("1/exp(x)", R), parse!("exp(-x)", R));
+}
+
+#[test]
+fn constant_radicals() {
+    assert_eq!(parse!("sqrt(2*pi)/(sqrt(2)*sqrt(pi))", R), parse!("1", R));
+    assert_eq!(parse!("sqrt(2)*sqrt(2)*y", R), parse!("2*y", R));
+}

@@ -63,7 +63,7 @@ fn limits_at_infinity() {
     assert_eq!(lim("lim((3^x + 5^x)^(1/x), x, oo)"), "5");
     assert_eq!(lim("lim(ln(x^2+1) - 2*ln(x), x, oo)"), "0");
     assert_eq!(lim("lim(ln(ln(x))/ln(x), x, oo)"), "0");
-    assert_eq!(lim("lim(exp(x)/exp(x+1), x, oo)"), "exp(1)^-1");
+    assert_eq!(lim("lim(exp(x)/exp(x+1), x, oo)"), "exp(-1)");
 }
 
 #[test]

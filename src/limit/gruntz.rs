@@ -354,8 +354,9 @@ impl Gruntz {
     }
 
     /// Rewrite each `{$"erf" g$}` with `{$g -> plus.minus oo$}` in `f` as
-    /// `{$plus.minus (1 - e^(-g^2) "erfcx"(plus.minus g))$}`, so that `{$e^(-g^2)$}` is seen by [`Self::mrv`] and
-    /// `{$"erfcx"$}` (see [`erfcx`]) has an asymptotic series.
+    /// `{$plus.minus (1 - e^(-g^2) "erfcx"(plus.minus g))$}`, and each `{$"erfi" g$}` as
+    /// `{$plus.minus e^(g^2) "erfix"(plus.minus g)$}`, so that the exponentials are seen by [`Self::mrv`] and
+    /// `{$"erfcx"$}` (see [`erfcx`]) and `{$"erfix"$}` (see [`erfix`]) have asymptotic series.
     fn erf_at_infinity(&mut self, f: &Expr) -> LimitResult<Expr> {
         if !self.depends(f) {
             return Ok(f.clone());
@@ -376,12 +377,17 @@ impl Gruntz {
             Term::Fun(_) => {
                 let (ident, arg) = unary(f).ok_or(LimitError::Unsupported)?;
                 let arg = self.erf_at_infinity(arg)?;
-                if ident == Context::ERF {
+                if matches!(ident, Context::ERF | Context::ERFI) {
                     let limit = self.limit_infinity(&arg)?;
                     if is_infinite(&limit) {
                         let sign = if limit == infinity() { one() } else { -one() };
-                        let decay = fun(Context::EXP, -(&arg * &arg));
-                        return Ok(&sign * &(one() - decay * fun(erfcx(), &sign * &arg)));
+                        let square = &arg * &arg;
+                        return Ok(if ident == Context::ERF {
+                            let decay = fun(Context::EXP, -square);
+                            &sign * &(one() - decay * fun(erfcx(), &sign * &arg))
+                        } else {
+                            &sign * &(fun(Context::EXP, square) * fun(erfix(), &sign * &arg))
+                        });
                     }
                 }
                 fun(ident, arg)
@@ -417,7 +423,7 @@ impl Gruntz {
                 Some((Context::LN | Context::ABS | Context::ATAN | Context::ERF | Context::ERFI, g)) => {
                     self.mrv(g)
                 }
-                Some((ident, g)) if ident == erfcx() => self.mrv(g),
+                Some((ident, g)) if ident == erfcx() || ident == erfix() => self.mrv(g),
                 Some((Context::SIN | Context::COS, g)) => {
                     // Oscillates without a limit, or the limit can't be computed by series
                     if is_infinite(&self.limit_infinity(g)?) {
@@ -522,6 +528,15 @@ impl Gruntz {
             let argument = replace(k)? - c * h;
             return Ok(fun(Context::EXP, argument) * w.pow(&(c * &value(Rational::from(w_sign)))));
         }
+        if let Some((Context::EXP, k)) = unary(f) {
+            // `{$e^(r k) = (e^k)^r$}` for a rational `r`, as powers of exponentials normalize to exponentials
+            // (`{$x^2$}` becomes `{$e^(2 x)$}` when moved up)
+            for (element, element_k, _) in replacements {
+                if let Term::Value(ratio) = k / *element_k {
+                    return Ok(replace(element)?.pow(&Term::Value(ratio)));
+                }
+            }
+        }
         Ok(match f {
             Term::Value(_) | Term::Symbol(_) => f.clone(),
             Term::Add(add) => add
@@ -583,6 +598,12 @@ impl Gruntz {
 /// `{$g -> +oo$}`.
 pub(super) fn erfcx() -> Symbol {
     Symbol::new("@erfcx")
+}
+
+/// The scaled imaginary error function `{$"erfix"(g) = e^(-g^2) "erfi" g$}`, only used internally for
+/// `{$g -> +oo$}`.
+pub(super) fn erfix() -> Symbol {
+    Symbol::new("@erfix")
 }
 
 fn log(a: &Expr) -> Expr {

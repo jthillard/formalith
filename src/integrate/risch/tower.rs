@@ -487,7 +487,7 @@ mod tests {
     #[test]
     fn unsupported() {
         let mut tower = Tower::new(symbol!("x"));
-        for f in ["sqrt(x)", "sin(x)", "exp(x)*exp(x+1)", "ln(2)*x", "a*x", "exp(ln(x)/2)"] {
+        for f in ["sqrt(x)", "sin(x)", "exp(x)+exp(x+1)", "ln(2)*x", "a*x", "exp(ln(x)/2)"] {
             assert!(tower.clone().elem(&parse!(f, R)).is_err(), "{f}");
         }
         tower.elem(&parse!("x", R)).unwrap();

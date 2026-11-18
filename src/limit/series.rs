@@ -20,7 +20,7 @@ use crate::{
 
 use super::{
     Expr, LimitError, LimitResult, const_cmp, depends, fun,
-    gruntz::{Gruntz, erfcx},
+    gruntz::{Gruntz, erfcx, erfix},
     one, rational_bound,
     unary, value, variable,
 };
@@ -292,7 +292,8 @@ impl Expander<'_> {
                 Some((Context::ABS, a)) => self.abs(a, n)?,
                 Some((Context::ATAN, a)) => self.atan(a, n)?,
                 Some((ident @ (Context::ERF | Context::ERFI), a)) => self.erf(ident, a, n)?,
-                Some((ident, a)) if ident == erfcx() => self.erfcx(a, n)?,
+                Some((ident, a)) if ident == erfcx() => self.erfcx(a, n, true)?,
+                Some((ident, a)) if ident == erfix() => self.erfcx(a, n, false)?,
                 _ => return Err(LimitError::Unsupported),
             },
         };
@@ -599,8 +600,9 @@ impl Expander<'_> {
     }
 
     /// `{$"erfcx" a$}` for `{$a -> +oo$}`, with the asymptotic series
-    /// `{$"erfcx" a = 1/sqrt(pi) sum_k (-1)^k (2 k - 1)!! / 2^k a^(-2 k - 1)$}`.
-    fn erfcx(&mut self, a: &Expr, n: &Rational) -> LimitResult<Series> {
+    /// `{$"erfcx" a = 1/sqrt(pi) sum_k (-1)^k (2 k - 1)!! / 2^k a^(-2 k - 1)$}`, or `{$"erfix" a$}` with the same
+    /// series without the signs when `alternating` is false.
+    fn erfcx(&mut self, a: &Expr, n: &Rational, alternating: bool) -> LimitResult<Series> {
         let n = n.max(&Rational::ONE).clone();
         let (_, e0, c0) = self.with_lead(a, &n)?;
         if const_cmp(&e0, &Term::zero(R))? != Ordering::Less
@@ -621,7 +623,7 @@ impl Expander<'_> {
                 let c = (0..k).fold(Rational::ONE, |res, i| {
                     res * (Rational::from(i) + Rational::from_signeds(1, 2))
                 });
-                let c = if k % 2 == 0 { c } else { -c };
+                let c = if !alternating || k % 2 == 0 { c } else { -c };
                 Some(value(c) * &inv_sqrt_pi)
             },
             &n,
