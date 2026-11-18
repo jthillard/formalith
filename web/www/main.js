@@ -13,7 +13,6 @@ const HISTORY_SIZE = 500;
 const TYPST_FILL = '#010203';
 
 let set = 'R';
-let sets = ['N', 'Z', 'R', 'C', 'M'];
 let setsHelp = '';
 let typst = true;
 
@@ -120,16 +119,22 @@ function startWorker() {
   worker = new Worker('worker.js', { type: 'module' });
   worker.onmessage = ({ data }) => {
     if (data.ready) {
-      sets = data.sets;
       setsHelp = data.help;
       return;
     }
     if (!pending || data.id !== pending.id) {
       return;
     }
-    const { set: evalSet, typst: rendered } = pending;
+    const { set: evalSet, typst: rendered, setName } = pending;
     finish();
-    if (data.ok !== undefined) {
+    if (setName !== undefined) {
+      if (data.ok !== undefined) {
+        set = data.ok;
+        label.textContent = `${set}>`;
+      } else {
+        print(`error: ${data.err ?? 'invalid set'}`, 'error');
+      }
+    } else if (data.ok !== undefined) {
       printResult(data.ok, rendered);
     } else if (data.err !== undefined) {
       print(`error: ${data.err}`, 'error');
@@ -167,6 +172,13 @@ function evaluate(expression) {
   worker.postMessage({ id: pending.id, input: expression, set, typst });
 }
 
+// Sets are parameterized (like `Z/7` or `R[x]`), names are checked by the worker
+function changeSet(name) {
+  pending = { id: nextId++, setName: name };
+  busy.hidden = false;
+  worker.postMessage({ id: pending.id, setName: name });
+}
+
 // Commands
 
 function help() {
@@ -194,14 +206,10 @@ function run(line) {
     help();
   } else if (line.startsWith(':set')) {
     const name = line.slice(4).trim();
-    const choice = sets.find(set => set.toLowerCase() === name.toLowerCase());
     if (!name) {
       print(`current set: ${set}\n${setsHelp}`);
-    } else if (choice) {
-      set = choice;
-      label.textContent = `${set}>`;
     } else {
-      print(`error: unknown set \`${name}\`\n${setsHelp}`, 'error');
+      changeSet(name);
     }
   } else {
     evaluate(line);

@@ -25,7 +25,9 @@ pub mod cartesian;
 pub mod complex;
 pub mod integer;
 pub mod matrix;
+pub mod modular;
 pub mod natural;
+pub mod polynomial;
 pub mod real;
 
 /// Failed to convert a term into another term.

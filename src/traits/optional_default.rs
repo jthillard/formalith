@@ -3,7 +3,10 @@
 use malachite::{Integer, Rational};
 
 use crate::{
-    field::{cartesian::CartesianPower, complex::C, integer::Z, matrix::M, real::R},
+    field::{
+        cartesian::CartesianPower, complex::C, integer::Z, matrix::M, modular::Zn,
+        polynomial::Poly, real::R,
+    },
     term::TermSet,
 };
 
@@ -31,6 +34,16 @@ impl OptionalDefault for C<R<Rational>> {
 impl<T: OptionalDefault, const K: usize> OptionalDefault for CartesianPower<T, K> {
     fn optional_default() -> Option<Self> {
         T::optional_default().map(Self::new)
+    }
+}
+impl OptionalDefault for Zn {
+    fn optional_default() -> Option<Self> {
+        None
+    }
+}
+impl<K> OptionalDefault for Poly<K> {
+    fn optional_default() -> Option<Self> {
+        None
     }
 }
 impl<T> OptionalDefault for M<T> {

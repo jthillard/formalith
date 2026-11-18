@@ -141,17 +141,21 @@ impl Context {
     pub const GCD: Symbol = Symbol(15);
     /// Least common multiple of two numbers or polynomials
     pub const LCM: Symbol = Symbol(16);
+    /// Quotient of the euclidean division of two numbers or polynomials
+    pub const QUO: Symbol = Symbol(17);
+    /// Remainder of the euclidean division of two numbers or polynomials
+    pub const REM: Symbol = Symbol(18);
 
-    const BUILTIN_NAMES: [&'static str; 17] = [
+    const BUILTIN_NAMES: [&'static str; 19] = [
         "abs", "det", "expand", "factor", "simplify", "re", "im", "conj", "sqrt", "root", "sign",
-        "floor", "ceil", "min", "max", "gcd", "lcm",
+        "floor", "ceil", "min", "max", "gcd", "lcm", "quo", "rem",
     ];
 
     /// Return the minimum and maximum number of arguments of a builtin function, or `None` if `symbol` isn't a builtin.
     #[must_use]
     pub const fn builtin_arity(symbol: Symbol) -> Option<(usize, usize)> {
         match symbol {
-            Self::ROOT | Self::GCD | Self::LCM => Some((2, 2)),
+            Self::ROOT | Self::GCD | Self::LCM | Self::QUO | Self::REM => Some((2, 2)),
             Self::MIN | Self::MAX => Some((1, usize::MAX)),
             Symbol(id) if id < Self::BUILTIN_NAMES.len() => Some((1, 1)),
             _ => None,

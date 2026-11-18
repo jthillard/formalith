@@ -5,7 +5,7 @@ use std::{cmp::Ordering, marker::PhantomData};
 use malachite::{
     Integer,
     base::num::{
-        arithmetic::traits::{Abs, DivisibleBy, Pow, Sign},
+        arithmetic::traits::{Abs, DivisibleBy, Mod, Pow, Sign},
         basic::traits::{One, Zero},
         conversion::traits::FromSciString,
     },
@@ -149,6 +149,22 @@ impl Ring for Z<Integer> {
                     && let Some(Term::Value(value)) = fun.args.first()
                 {
                     return Term::Value(Value::new((&value.value).abs(), *self));
+                }
+                if let ident @ (Context::QUO | Context::REM) = fun.get_ident()
+                    && let Some([Term::Value(a), Term::Value(b)]) =
+                        fun.get_args::<Self>().map(Vec::as_slice)
+                    && b.value != 0
+                {
+                    // Euclidean division, with a remainder in `{$[0, |b|)$}`
+                    let remainder = (&a.value).mod_op((&b.value).abs());
+                    return Term::Value(Value::new(
+                        if ident == Context::REM {
+                            remainder
+                        } else {
+                            (&a.value - remainder) / &b.value
+                        },
+                        *self,
+                    ));
                 }
             }
             _ => {}

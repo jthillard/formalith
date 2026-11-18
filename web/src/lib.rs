@@ -27,9 +27,11 @@ pub fn sets_help() -> String {
     repl::sets_help()
 }
 
-/// Names of the available sets.
+/// Canonical name of the set named `name`, like `Z/7` for `z/7z`.
+///
+/// # Errors
+/// Returns an error message if the set is unknown.
 #[wasm_bindgen]
-#[must_use]
-pub fn set_names() -> Vec<String> {
-    SetChoice::ALL.iter().map(|set| set.name().to_owned()).collect()
+pub fn set_name(name: &str) -> Result<String, String> {
+    name.parse::<SetChoice>().map(SetChoice::name)
 }

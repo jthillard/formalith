@@ -59,6 +59,11 @@ impl<V, T: Set, U: Set> MultivariatePolynomial<V, T, U> {
             exponant_set,
         }
     }
+    /// Get the terms of the polynomial, as `(monomial, coefficient)` pairs.
+    pub(crate) fn terms(&self) -> &[PolynomElement<V, U, T>] {
+        &self.terms
+    }
+
     /// Check if the polynom is a constant.
     pub fn is_constant(&self) -> bool {
         self.terms.len() == 1 && self.terms[0].0.is_empty()

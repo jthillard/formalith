@@ -4,7 +4,7 @@ use std::{cmp::Ordering, fmt, hash::Hash};
 
 use crate::{
     context::Symbol,
-    field::{cartesian::CartesianPower, matrix::M},
+    field::{cartesian::CartesianPower, matrix::M, polynomial::Poly},
     parser::{Parser, ParserError},
     printer::{PrettyPrinter, PrintOptions},
     term::{Add, Mul, Pow, SymbolTerm, Term, TermSet, Value},
@@ -54,6 +54,11 @@ pub trait Set: Clone + Copy + fmt::Debug + PartialEq + Eq + Hash + 'static {
     /// Get associated term set
     fn get_term_set(&self) -> TermSet<Self> {
         TermSet::new(*self)
+    }
+
+    /// Get the ring `{$T[x]$}` of polynomials in `variable` with coefficients in this set
+    fn get_polynomial_ring(&self, variable: Symbol) -> Poly<Self> {
+        Poly::new(*self, variable)
     }
 
     /// Get the cartesian power `{$T^K$}` of this set

@@ -250,12 +250,117 @@ pub fn equal_degree(f: &ModPoly, d: usize, p: u64, rng: &mut Rng) -> Vec<ModPoly
     }
 }
 
+/// Equal-degree splitting over `{$ZZ\/2 ZZ$}` of a monic square-free polynomial whose irreducible factors all have degree `d`,
+/// using the trace map `{$a + a^2 + ... + a^(2^(d-1))$}`.
+fn equal_degree_binary(f: &ModPoly, d: usize, rng: &mut Rng) -> Vec<ModPoly> {
+    let n = degree(f).unwrap_or(0);
+    if n <= d {
+        return vec![f.clone()];
+    }
+    loop {
+        let a = trim((0..n).map(|_| rng.next() % 2).collect());
+        if degree(&a).is_none_or(|deg| deg == 0) {
+            continue;
+        }
+        let (mut trace, mut power) = (a.clone(), a);
+        for _ in 1..d {
+            power = rem(&mul(&power, &power, 2), f, 2);
+            trace = add(&trace, &power, 2);
+        }
+        let g = gcd(&trace, f, 2);
+        if degree(&g).is_some_and(|deg| deg > 0 && deg < n) {
+            let mut res = equal_degree_binary(&g, d, rng);
+            res.extend(equal_degree_binary(&div_rem(f, &g, 2).0, d, rng));
+            return res;
+        }
+    }
+}
+
 /// Factor a monic square-free polynomial into monic irreducible factors. `p` must be odd.
 pub fn factor(f: &ModPoly, p: u64, rng: &mut Rng) -> Vec<ModPoly> {
     distinct_degree(f, p)
         .into_iter()
         .flat_map(|(g, d)| equal_degree(&g, d, p, rng))
         .collect()
+}
+
+/// `{$f^(1\/p)$}` for a polynomial `{$f = g(x^p)$}`, using `{$a^p = a$}` in `{$ZZ\/p ZZ$}`.
+fn pth_root(f: &ModPoly, p: u64) -> ModPoly {
+    let p = usize::try_from(p).expect("Modulus fits in usize");
+    f.iter().step_by(p).copied().collect()
+}
+
+/// Square-free factorization of a non zero polynomial: returns pairwise coprime monic square-free non constant
+/// polynomials `{$f_i$}` with their multiplicities `{$m_i$}`, such that `{$f = c product f_i^(m_i)$}` for a constant `{$c$}`.
+///
+/// It handles the characteristic `p`, where the derivative of `{$g(x^p)$}` vanishes.
+pub fn square_free(f: &ModPoly, p: u64) -> Vec<(ModPoly, u64)> {
+    let mut res = vec![];
+    let mut c = gcd(f, &derivative(f, p), p);
+    let mut w = div_rem(f, &c, p).0;
+    let mut i = 1;
+    while degree(&w).is_some_and(|deg| deg > 0) {
+        let y = gcd(&w, &c, p);
+        let z = div_rem(&w, &y, p).0;
+        if degree(&z).is_some_and(|deg| deg > 0) {
+            res.push((monic(&z, p), i));
+        }
+        c = div_rem(&c, &y, p).0;
+        w = y;
+        i += 1;
+    }
+    if degree(&c).is_some_and(|deg| deg > 0) {
+        // The remaining part is a polynomial in `x^p`
+        for (g, m) in square_free(&pth_root(&c, p), p) {
+            res.push((g, m * p));
+        }
+    }
+    res
+}
+
+/// Factor a non zero polynomial into monic irreducible factors with their multiplicities, sorted. `p` must be prime.
+///
+/// The leading coefficient of `f` is not part of the result.
+pub fn factor_with_multiplicities(f: &ModPoly, p: u64) -> Vec<(ModPoly, u64)> {
+    let mut rng = Rng::new();
+    let mut res = vec![];
+    for (g, m) in square_free(f, p) {
+        let factors = if p == 2 {
+            distinct_degree(&g, p)
+                .into_iter()
+                .flat_map(|(h, d)| equal_degree_binary(&h, d, &mut rng))
+                .collect()
+        } else {
+            factor(&g, p, &mut rng)
+        };
+        res.extend(factors.into_iter().map(|h| (h, m)));
+    }
+    res.sort();
+    res
+}
+
+/// Deterministic Miller–Rabin primality test.
+#[must_use]
+pub fn is_prime(n: u64) -> bool {
+    const BASES: [u64; 12] = [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37];
+    if n < 2 {
+        return false;
+    }
+    if let Some(base) = BASES.iter().find(|base| n % **base == 0) {
+        return n == *base;
+    }
+    let s = (n - 1).trailing_zeros();
+    let d = (n - 1) >> s;
+    BASES.iter().all(|a| {
+        let mut x = pow_scalar(*a, d, n);
+        if x == 1 || x == n - 1 {
+            return true;
+        }
+        (1..s).any(|_| {
+            x = mul_mod(x, x, n);
+            x == n - 1
+        })
+    })
 }
 
 #[cfg(test)]
@@ -294,6 +399,45 @@ mod tests {
         assert!(factors.iter().all(|g| degree(g) == Some(1)));
         factors.sort();
         assert_eq!(product(&factors, p), f);
+    }
+
+    #[test]
+    fn square_free_in_characteristic_p() {
+        // x^3+1 = (x+1)^3 modulo 3, its derivative vanishes
+        let p = 3;
+        assert_eq!(square_free(&vec![1, 0, 0, 1], p), vec![(vec![1, 1], 3)]);
+        // (x+1)^2 (x^3+2) = (x+1)^2 (x+2)^3 modulo 3
+        let f = mul(&mul(&vec![1, 1], &vec![1, 1], p), &vec![2, 0, 0, 1], p);
+        let parts = square_free(&f, p);
+        assert_eq!(parts, vec![(vec![1, 1], 2), (vec![2, 1], 3)]);
+    }
+
+    #[test]
+    fn factor_binary() {
+        // x^4+x+1 is irreducible modulo 2, x^2+1 = (x+1)^2
+        assert_eq!(
+            factor_with_multiplicities(&vec![1, 1, 0, 0, 1], 2),
+            vec![(vec![1, 1, 0, 0, 1], 1)]
+        );
+        assert_eq!(
+            factor_with_multiplicities(&vec![1, 0, 1], 2),
+            vec![(vec![1, 1], 2)]
+        );
+        // x^4-x splits into x(x+1)(x^2+x+1) modulo 2
+        let factors = factor_with_multiplicities(&vec![0, 1, 0, 0, 1], 2);
+        assert_eq!(
+            factors,
+            vec![(vec![0, 1], 1), (vec![1, 1], 1), (vec![1, 1, 1], 1)]
+        );
+    }
+
+    #[test]
+    fn primality() {
+        let primes: Vec<u64> = (0..30).filter(|n| is_prime(*n)).collect();
+        assert_eq!(primes, vec![2, 3, 5, 7, 11, 13, 17, 19, 23, 29]);
+        assert!(is_prime(1_000_000_007));
+        assert!(!is_prime(561));
+        assert!(!is_prime(1_000_000_007 * 3));
     }
 
     #[test]

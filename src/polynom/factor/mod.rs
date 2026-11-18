@@ -4,7 +4,7 @@
 //! Over `{$QQ(i)$}`, Trager's algorithm reduces the factorization to the one of a norm over `{$QQ$}`.
 
 mod gaussian;
-mod modular;
+pub(crate) mod modular;
 mod multivariate;
 mod univariate;
 
