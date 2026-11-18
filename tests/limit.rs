@@ -178,3 +178,20 @@ fn infinity_is_a_constant() {
     assert!(eval("undefined := 1").is_err());
     assert_eq!(eval("x + 1 = oo"), Ok("x = oo - 1".to_string()));
 }
+
+#[test]
+fn limits_of_classic_functions() {
+    assert_eq!(parse!("lim(atan(x), x, oo)", R), parse!("pi/2", R));
+    assert_eq!(parse!("lim(atan(x), x, -oo)", R), parse!("-pi/2", R));
+    assert_eq!(lim("lim(atan(x)/x, x, 0)"), "1");
+    assert_eq!(lim("lim(asin(x)/x, x, 0)"), "1");
+    assert_eq!(lim("lim(acos(x), x, 1, -1)"), "0");
+    assert_eq!(lim("lim(x*(pi/2 - atan(x)), x, oo)"), "1");
+    assert_eq!(lim("lim(tanh(x), x, oo)"), "1");
+    assert_eq!(lim("lim(tanh(x), x, -oo)"), "-1");
+    assert_eq!(lim("lim(sinh(x)/exp(x), x, oo)"), "1/2");
+    assert_eq!(lim("lim(asinh(x)/ln(x), x, oo)"), "1");
+    assert_eq!(lim("lim(atanh(x)/x, x, 0)"), "1");
+    assert_eq!(lim("lim(sec(x), x, 0)"), "1");
+    assert_eq!(lim("lim(atan(sin(x)), x, oo)"), "undefined");
+}

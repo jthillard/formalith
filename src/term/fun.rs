@@ -177,6 +177,11 @@ impl<From: Set, T: Set> Print for Fun<From, T> {
                     return f.write_str(")");
                 }
             }
+            if let (Context::FACTORIAL, [n]) = (self.ident, args.as_slice()) {
+                // `{$n!$}`
+                Self::group(*n, options, f)?;
+                return f.write_str("!");
+            }
             match self.ident {
                 Context::CONJ => f.write_str("overline")?,
                 Context::RE => f.write_str("Re")?,
@@ -186,6 +191,10 @@ impl<From: Set, T: Set> Print for Fun<From, T> {
                     args.reverse();
                     f.write_str("root")?;
                 }
+                Context::BINOMIAL => f.write_str("binom")?,
+                Context::ASIN => f.write_str("arcsin")?,
+                Context::ACOS => f.write_str("arccos")?,
+                Context::ATAN => f.write_str("arctan")?,
                 Context::ABS
                 | Context::DET
                 | Context::SQRT
@@ -199,7 +208,10 @@ impl<From: Set, T: Set> Print for Fun<From, T> {
                 | Context::LN
                 | Context::SIN
                 | Context::COS
-                | Context::TAN => f.write_str(name)?,
+                | Context::TAN
+                | Context::SINH
+                | Context::COSH
+                | Context::TANH => f.write_str(name)?,
                 _ if name.chars().count() == 1 => f.write_str(name)?,
                 _ => write!(f, "op(\"{name}\")")?,
             }

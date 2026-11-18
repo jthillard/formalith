@@ -374,7 +374,7 @@ impl Gruntz {
                         self.mrv(g)
                     }
                 }
-                Some((Context::LN | Context::ABS, g)) => self.mrv(g),
+                Some((Context::LN | Context::ABS | Context::ATAN, g)) => self.mrv(g),
                 Some((Context::SIN | Context::COS, g)) => {
                     // Oscillates without a limit, or the limit can't be computed by series
                     if is_infinite(&self.limit_infinity(g)?) {

@@ -136,3 +136,25 @@ fn constants_are_reserved() {
         Err("`pi` is a builtin constant, not an unknown".to_owned())
     );
 }
+
+#[test]
+fn approx_classic_functions() {
+    assert_eq!(approx("approx(4*atan(1))"), "3.14159265358979");
+    assert_eq!(approx("approx(atan(10))"), "1.47112767430373");
+    assert_eq!(approx("approx(atan(-3))"), "-1.24904577239825");
+    assert_eq!(approx("approx(asin(1/3))"), "0.339836909454122");
+    assert_eq!(approx("approx(asin(-1/3))"), "-0.339836909454122");
+    assert_eq!(approx("approx(acos(-1/3))"), "1.91063323624902");
+    assert_eq!(approx("approx(sinh(1))"), "1.1752011936438");
+    assert_eq!(approx("approx(cosh(1))"), "1.54308063481524");
+    assert_eq!(approx("approx(tanh(-2))"), "-0.964027580075817");
+    assert_eq!(approx("approx(asinh(-1))"), "-0.881373587019543");
+    assert_eq!(approx("approx(acosh(2))"), "1.31695789692482");
+    assert_eq!(approx("approx(atanh(1/2))"), "0.549306144334055");
+    assert_eq!(approx("approx(sec(1))"), "1.85081571768093");
+    assert_eq!(approx("approx(log(2))"), "0.301029995663981");
+    assert_eq!(approx("approx(factorial(10))"), "3628800.0");
+    // Outside of their domain
+    assert_eq!(approx("approx(asin(2))"), "asin(2.0)");
+    assert_eq!(approx("approx(atanh(1))"), "atanh(1.0)");
+}

@@ -107,6 +107,12 @@ fn print_products() {
 
 #[test]
 fn print_typst() {
+    assert_eq!(typst(&parse!("asin(x)", R)), "arcsin(x)");
+    assert_eq!(typst(&parse!("atan(x)", R)), "arctan(x)");
+    assert_eq!(typst(&parse!("sinh(x)", R)), "sinh(x)");
+    assert_eq!(typst(&parse!("factorial(n)", R)), "n!");
+    assert_eq!(typst(&parse!("factorial(n+1)", R)), "(n+1)!");
+    assert_eq!(typst(&parse!("binomial(n, k)", R)), "binom(n, k)");
     assert_eq!(typst(&parse!("1/2", R)), "frac(1, 2)");
     assert_eq!(typst(&parse!("-1/2", R)), "-frac(1, 2)");
     assert_eq!(

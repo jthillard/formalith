@@ -69,3 +69,18 @@ fn unsupported_series_stay_unevaluated() {
 fn roots_of_negative_values_are_unsupported() {
     assert_eq!(series("lim(sqrt(x), x, 0, -1)"), "lim(x^1/2, x, 0, -1)");
 }
+
+#[test]
+fn series_of_classic_functions() {
+    let eq = |a: &str, b: &str| assert_eq!(parse!(a, R), parse!(b, R), "{a}");
+    eq("series(atan(x), x, 0, 6)", "x - x^3/3 + x^5/5");
+    eq("series(asin(x), x, 0, 4)", "x + x^3/6");
+    eq("series(acos(x), x, 0, 4)", "pi/2 - x - x^3/6");
+    eq("series(sinh(x), x, 0, 4)", "x + x^3/6");
+    eq("series(cosh(x), x, 0, 4)", "1 + x^2/2");
+    eq("series(tanh(x), x, 0, 4)", "x - x^3/3");
+    eq("series(atanh(x), x, 0, 4)", "x + x^3/3");
+    eq("series(asinh(x), x, 0, 4)", "x - x^3/6");
+    eq("series(atan(x), x, 1, 3)", "pi/4 + (x-1)/2 - (x-1)^2/4");
+    eq("series(atan(x), x, oo, 4)", "pi/2 - 1/x + 1/(3*x^3)");
+}

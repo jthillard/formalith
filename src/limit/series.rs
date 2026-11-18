@@ -13,7 +13,7 @@ use crate::{context::Context, field::real::R, term::Term};
 
 use super::{
     Expr, LimitError, LimitResult, const_cmp, depends, fun, gruntz::Gruntz, one, rational_bound,
-    unary, value,
+    unary, value, variable,
 };
 
 /// Maximum number of times the order of a series is raised to find a non-zero leading term.
@@ -281,6 +281,7 @@ impl Expander<'_> {
                 Some((Context::LN, a)) => self.ln(a, n)?,
                 Some((ident @ (Context::SIN | Context::COS), a)) => self.sin_cos(ident, a, n)?,
                 Some((Context::ABS, a)) => self.abs(a, n)?,
+                Some((Context::ATAN, a)) => self.atan(a, n)?,
                 _ => return Err(LimitError::Unsupported),
             },
         };
@@ -509,6 +510,45 @@ impl Expander<'_> {
                 .scale(&zero, &cos_a0)?
                 .add(&sin_u.scale(&zero, &-sin_a0)?)
         }
+    }
+
+    /// `{$atan a$}`, with `{$atan a = plus.minus pi/2 - atan(1/a)$}` if `{$a -> plus.minus oo$}`, otherwise
+    /// `{$atan a = atan a_0 + atan v$}` with `{$v = (a - a_0)/(1 + a_0 a)$}` and
+    /// `{$atan v = sum_j (-1)^j v^(2 j + 1) / (2 j + 1)$}`.
+    fn atan(&mut self, a: &Expr, n: &Rational) -> LimitResult<Series> {
+        let n = n.max(&Rational::ONE).clone();
+        let (series, e0, c0) = self.with_lead(a, &n)?;
+        let zero = Term::zero(R);
+        if const_cmp(&e0, &zero)? == Ordering::Less {
+            let half_pi = variable(Context::PI) * value(Rational::from_signeds(1, 2));
+            let half_pi = match self.gruntz.sign(&c0)? {
+                Ordering::Greater => half_pi,
+                Ordering::Less => -half_pi,
+                Ordering::Equal => return Err(LimitError::Unknown),
+            };
+            let rest = self.atan(&a.inv(), &n)?;
+            return Series::constant(half_pi).add(&rest.scale(&zero, &value(-Rational::ONE))?);
+        }
+        let (a0, _) = self.split_constant(series)?;
+        let v = if a0.is_zero() {
+            a.clone()
+        } else {
+            (a - &a0) / (one() + &a0 * a)
+        };
+        let v = self.series(&v, &n)?;
+        let res = Self::compose(
+            &v,
+            |j| {
+                Some(if j % 2 == 1 {
+                    let sign = if (j / 2) % 2 == 0 { 1 } else { -1 };
+                    value(Rational::from_signeds(sign, i64::try_from(j).ok()?))
+                } else {
+                    Term::zero(R)
+                })
+            },
+            &n,
+        )?;
+        res.add(&Series::constant(fun(Context::ATAN, a0)))
     }
 
     /// `{$|a|$}`, the sign of the leading coefficient of `a`.

@@ -137,3 +137,72 @@ fn diff_unevaluated() {
     );
     assert!(is_diff(parse!("diff(x, 2)", R)));
 }
+
+#[test]
+fn reciprocal_trigonometric_functions() {
+    assert_eq!(parse!("sec(x)", R), parse!("1/cos(x)", R));
+    assert_eq!(parse!("csc(x)", R), parse!("1/sin(x)", R));
+    assert_eq!(parse!("cot(x)", R), parse!("cos(x)/sin(x)", R));
+}
+
+#[test]
+fn logarithm_in_base() {
+    assert_eq!(parse!("log(8, 2)", R), parse!("3", R));
+    assert_eq!(parse!("log(1/9, 3)", R), parse!("-2", R));
+    assert_eq!(parse!("log(4, 1/2)", R), parse!("-2", R));
+    assert_eq!(parse!("log(1000)", R), parse!("3", R));
+    assert_eq!(parse!("log(1/100)", R), parse!("-2", R));
+    assert_eq!(parse!("log(x)", R), parse!("ln(x)/ln(10)", R));
+    assert_eq!(parse!("log(6, 2)", R), parse!("ln(6)/ln(2)", R));
+}
+
+#[test]
+fn inverse_trigonometric_values() {
+    assert_eq!(parse!("asin(1/2)", R), parse!("pi/6", R));
+    assert_eq!(parse!("asin(-sqrt(2)/2)", R), parse!("-pi/4", R));
+    assert_eq!(parse!("asin(1)", R), parse!("pi/2", R));
+    assert_eq!(parse!("acos(-1)", R), parse!("pi", R));
+    assert_eq!(parse!("acos(sqrt(3)/2)", R), parse!("pi/6", R));
+    assert_eq!(parse!("acos(0)", R), parse!("pi/2", R));
+    assert_eq!(parse!("atan(sqrt(3))", R), parse!("pi/3", R));
+    assert_eq!(parse!("atan(-1)", R), parse!("-pi/4", R));
+    assert_eq!(parse!("atan(sqrt(3)/3)", R), parse!("pi/6", R));
+    assert!(matches!(parse!("asin(1/3)", R), Term::Fun(_)));
+}
+
+#[test]
+fn hyperbolic_values() {
+    assert_eq!(parse!("sinh(0)", R), parse!("0", R));
+    assert_eq!(parse!("cosh(0)", R), parse!("1", R));
+    assert_eq!(parse!("tanh(0)", R), parse!("0", R));
+    assert_eq!(parse!("asinh(0)", R), parse!("0", R));
+    assert_eq!(parse!("acosh(1)", R), parse!("0", R));
+    assert_eq!(parse!("atanh(0)", R), parse!("0", R));
+}
+
+#[test]
+fn factorial_and_binomial() {
+    assert_eq!(parse!("factorial(0)", R), parse!("1", R));
+    assert_eq!(parse!("factorial(5)", R), parse!("120", R));
+    assert_eq!(parse!("binomial(5, 2)", R), parse!("10", R));
+    assert_eq!(parse!("binomial(2, 5)", R), parse!("0", R));
+    assert_eq!(parse!("binomial(5, -1)", R), parse!("0", R));
+    assert!(matches!(parse!("factorial(x)", R), Term::Fun(_)));
+    assert!(matches!(parse!("factorial(-1)", R), Term::Fun(_)));
+    assert!(matches!(parse!("factorial(1/2)", R), Term::Fun(_)));
+}
+
+#[test]
+fn derivatives_of_classic_functions() {
+    assert_eq!(parse!("diff(atan(x), x)", R), parse!("1/(1+x^2)", R));
+    assert_eq!(parse!("diff(asin(x), x)", R), parse!("(1-x^2)^(-1/2)", R));
+    assert_eq!(parse!("diff(acos(x), x)", R), parse!("-(1-x^2)^(-1/2)", R));
+    assert_eq!(parse!("diff(sinh(x), x)", R), parse!("cosh(x)", R));
+    assert_eq!(parse!("diff(cosh(x), x)", R), parse!("sinh(x)", R));
+    assert_eq!(parse!("diff(tanh(x), x)", R), parse!("1-tanh(x)^2", R));
+    assert_eq!(parse!("diff(asinh(x), x)", R), parse!("(x^2+1)^(-1/2)", R));
+    assert_eq!(parse!("diff(acosh(x), x)", R), parse!("(x^2-1)^(-1/2)", R));
+    assert_eq!(parse!("diff(atanh(x), x)", R), parse!("1/(1-x^2)", R));
+    assert_eq!(parse!("diff(atan(2*x), x)", R), parse!("2/(1+4*x^2)", R));
+    assert_eq!(parse!("diff(log(x), x)", R), parse!("1/(x*ln(10))", R));
+}

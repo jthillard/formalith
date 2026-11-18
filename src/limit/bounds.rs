@@ -103,7 +103,8 @@ pub(super) fn bounds(term: &Expr) -> Option<(Rational, Rational)> {
             let (ident, arg) = unary(term)?;
             match ident {
                 Context::SIN | Context::COS => Some((Rational::NEGATIVE_ONE, Rational::ONE)),
-                Context::EXP | Context::LN => {
+                // Increasing functions
+                Context::EXP | Context::LN | Context::ATAN => {
                     let (lo, hi) = bounds(arg)?;
                     if ident == Context::LN && lo <= Rational::ZERO {
                         return None;

@@ -287,7 +287,8 @@ fn only_symbols(term: &Expr, allowed: &[Symbol]) -> bool {
 }
 
 /// Rewrite powers with an exponent depending on `x` as `{$b^g = exp(g ln b)$}`, `{$tan u$}` as
-/// `{$sin u / cos u$}`, `{$sign u$}` as `{$u / |u|$}`, and `min` and `max` with `abs`.
+/// `{$sin u / cos u$}`, `{$sign u$}` as `{$u / |u|$}`, `min` and `max` with `abs`, hyperbolic functions and their
+/// inverses with `exp` and `ln`, and `asin` and `acos` with `atan`.
 fn exp_log_form(term: &Expr, x: Symbol) -> LimitResult<Expr> {
     if !depends(term, x) {
         return Ok(term.clone());
@@ -320,6 +321,39 @@ fn exp_log_form(term: &Expr, x: Symbol) -> LimitResult<Expr> {
                 .collect::<LimitResult<Vec<_>>>()?;
             match (f.get_ident(), args.as_slice()) {
                 (Context::TAN, [u]) => fun(Context::SIN, u.clone()) / fun(Context::COS, u.clone()),
+                (ident @ (Context::SINH | Context::COSH), [u]) => {
+                    // `{$sinh u = (e^u - e^(-u))/2$}`, `{$cosh u = (e^u + e^(-u))/2$}`
+                    let (exp, exp_opposite) = (fun(Context::EXP, u.clone()), fun(Context::EXP, -u));
+                    let half = value(Rational::from_signeds(1, 2));
+                    if ident == Context::SINH {
+                        (exp - exp_opposite) * half
+                    } else {
+                        (exp + exp_opposite) * half
+                    }
+                }
+                // `{$tanh u = (e^(2 u) - 1)/(e^(2 u) + 1)$}`
+                (Context::TANH, [u]) => {
+                    let exp = fun(Context::EXP, value(Rational::from(2)) * u.clone());
+                    (&exp - &one()) / (exp + one())
+                }
+                // `{$"asinh" u = ln(u + sqrt(u^2 + 1))$}`, `{$"acosh" u = ln(u + sqrt(u^2 - 1))$}`
+                (Context::ASINH, [u]) => fun(Context::LN, u + &sqrt(u * u + one())),
+                (Context::ACOSH, [u]) => fun(Context::LN, u + &sqrt(u * u - one())),
+                // `{$"atanh" u = ln((1 + u)/(1 - u))/2$}`
+                (Context::ATANH, [u]) => {
+                    fun(Context::LN, (one() + u.clone()) / (one() - u.clone()))
+                        * value(Rational::from_signeds(1, 2))
+                }
+                (ident @ (Context::ASIN | Context::ACOS), [u]) => {
+                    // `{$asin u = 2 atan(u/(1 + sqrt(1 - u^2)))$}`, `{$acos u = pi/2 - asin u$}`
+                    let asin = value(Rational::from(2))
+                        * fun(Context::ATAN, u / &(one() + sqrt(one() - u * u)));
+                    if ident == Context::ASIN {
+                        asin
+                    } else {
+                        variable(Context::PI) * value(Rational::from_signeds(1, 2)) - asin
+                    }
+                }
                 (Context::SIGN, [u]) => u / &fun(Context::ABS, u.clone()),
                 (Context::MIN | Context::MAX, [first, rest @ ..]) => {
                     // `{$max(f, g) = (f + g + |f - g|)/2$}`, `{$min(f, g) = (f + g - |f - g|)/2$}`
@@ -379,7 +413,9 @@ fn eval_at(term: &Expr, x: Symbol, a: &Expr) -> Option<Expr> {
             let (ident, arg) = unary(term)?;
             let arg = eval_at(arg, x, a)?;
             match ident {
-                Context::EXP | Context::SIN | Context::COS | Context::ABS => Some(fun(ident, arg)),
+                Context::EXP | Context::SIN | Context::COS | Context::ABS | Context::ATAN => {
+                    Some(fun(ident, arg))
+                }
                 Context::LN if positive(&arg) => Some(fun(ident, arg)),
                 _ => None,
             }
@@ -390,4 +426,9 @@ fn eval_at(term: &Expr, x: Symbol, a: &Expr) -> Option<Expr> {
 /// The constant 1.
 fn one() -> Expr {
     value(Rational::ONE)
+}
+
+/// `{$sqrt(u)$}`.
+fn sqrt(u: Expr) -> Expr {
+    u.pow(&value(Rational::from_signeds(1, 2)))
 }
