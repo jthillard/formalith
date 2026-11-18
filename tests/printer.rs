@@ -66,9 +66,25 @@ fn pretty_print_roots() {
 fn pretty_print_fractions() {
     assert_eq!(
         pretty(&parse!("x/2+1/(x+1)", R)),
-        "1       1  \n─⋅x + ─────\n2     x + 1"
+        "x     1  \n─ + ─────\n2   x + 1"
     );
     assert_eq!(pretty(&parse!("1/x", R)), "1\n─\nx");
+    assert_eq!(pretty(&parse!("(x+1)/(x-1)", R)), "x + 1\n─────\nx - 1");
+    assert_eq!(pretty(&parse!("2*(x+1)/3", R)), "2⋅(x + 1)\n─────────\n    3    ");
+}
+
+#[test]
+fn pretty_print_signs() {
+    assert_eq!(pretty(&parse!("-x", R)), "-x");
+    assert_eq!(pretty(&parse!("-(x+1)", R)), "-(x + 1)");
+    assert_eq!(pretty(&parse!("x-2*y", R)), "x - 2⋅y");
+    assert_eq!(pretty(&parse!("exp(-x)", R)), "exp(-x)");
+    assert_eq!(pretty(&parse!("-x^(1/2)", R)), "  _\n-√x");
+    assert_eq!(pretty(&parse!("-1/2", R)), " 1\n-─\n 2");
+    assert_eq!(pretty(&parse!("-x/y", R)), " x\n-─\n y");
+    assert_eq!(pretty(&parse!("-2*x/(3*y)", R)), " 2⋅x\n-───\n 3⋅y");
+    assert_eq!(pretty(&parse!("(-1)^x", R)), "    x\n(-1) ");
+    assert_eq!(line(&parse!("(-1)^x", R)), "(-1)^x");
 }
 
 #[test]

@@ -71,16 +71,17 @@ impl Set for R<Rational> {
         _options: &crate::printer::PrintOptions,
     ) -> crate::printer::PrettyPrinter {
         let (num, den) = elem.numerator_and_denominator_ref();
-        let mut num = PrettyPrinter::from(if elem.sign() == Ordering::Less {
-            format!("-{num}")
-        } else {
-            format!("{num}")
-        });
+        let mut res = PrettyPrinter::from(format!("{num}"));
         if *den != 1 {
-            let den = PrettyPrinter::from(format!("{den}"));
-            num.vertical_concat("─", &den);
+            res.vertical_concat("─", &PrettyPrinter::from(format!("{den}")));
         }
-        num
+        // The minus sign is in front of the fraction bar
+        if elem.sign() == Ordering::Less {
+            let mut minus = PrettyPrinter::from("-".to_string());
+            minus.concat("", false, &res);
+            res = minus;
+        }
+        res
     }
     fn print_approximate(
         &self,

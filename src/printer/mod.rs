@@ -250,7 +250,7 @@ pub struct PrettyPrinter {
 impl From<String> for PrettyPrinter {
     fn from(value: String) -> Self {
         Self {
-            width: value.len(),
+            width: value.chars().count(),
             lines: vec![value],
             baseline: 0,
         }

@@ -101,7 +101,10 @@ impl<T: Set> Pow<T> {
         let exponant = (**self.exponant).pretty_print(options);
         if match &*self.base {
             Term::Mul(_) | Term::Add(_) => true,
-            Term::Value(value) => !value.set.is_atomic(&value.value),
+            // `-1^x` reads as `-(1^x)`
+            Term::Value(value) => {
+                !value.set.is_atomic(&value.value) || value.typst().to_string().starts_with('-')
+            }
             _ => false,
         } {
             base.paren();
@@ -133,7 +136,17 @@ impl<T: Set> Print for Pow<T> {
             self.radicand(num).print(options, f)?;
             return f.write_str(")");
         }
-        Self::group(&self.base, options, f)?;
+        // `-1^x` reads as `-(1^x)` (`group` already handles it in typst)
+        if !options.typst
+            && let Term::Value(value) = &*self.base
+            && value.typst().to_string().starts_with('-')
+        {
+            Self::group_delim("(", options, f)?;
+            value.print(options, f)?;
+            Self::group_delim(")", options, f)?;
+        } else {
+            Self::group(&self.base, options, f)?;
+        }
         Self::operator("^", options, f)?;
         Self::group(&**self.exponant, options, f)?;
         Ok(())

@@ -100,15 +100,6 @@ impl<T: Set> Mul<T> {
             coefficient_set.print(&self.coefficient, options, f)
         }
     }
-    /// Pretty print the coefficient, as a decimal number if it is a numerical approximation.
-    fn pretty_print_coefficient_element(&self, options: &PrintOptions) -> PrettyPrinter {
-        let coefficient_set = self.set.get_coefficient_set();
-        if self.is_approximate() {
-            coefficient_set.pretty_print_approximate(&self.coefficient, options)
-        } else {
-            coefficient_set.pretty_print(&self.coefficient, options)
-        }
-    }
     /// Return the constant coefficient factor of the product.
     pub fn get_coeff(&self) -> <T::ProductCoefficientSet as Set>::Element {
         self.coefficient.clone()
@@ -256,54 +247,88 @@ impl<T: Set> Mul<T> {
         f: F,
         options: &PrintOptions,
     ) -> crate::printer::PrettyPrinter {
-        let mut den: Option<PrettyPrinter> = None;
-        // Print the coefficient at the beginning of the product
-        let mut num = if self.has_coeff() {
-            let coefficient_set = self.set.get_coefficient_set();
-            let mut coefficient = self.pretty_print_coefficient_element(options);
-            if coefficient_set.is_sum(&self.coefficient) {
-                coefficient.paren();
-            }
-            Some(coefficient)
+        // Parts of the numerator and of the denominator, with whether they are sums (needing parentheses next to
+        // other parts)
+        let mut num: Vec<(PrettyPrinter, bool)> = vec![];
+        let mut den: Vec<(PrettyPrinter, bool)> = vec![];
+        // A negative coefficient is printed as a minus sign in front of the product
+        let coefficient_set = self.set.get_coefficient_set();
+        let negative = coefficient_set.is_strictly_negative(&self.coefficient);
+        let coefficient = if negative {
+            coefficient_set.neg(&self.coefficient)
         } else {
-            None
+            self.coefficient.clone()
         };
+        if !coefficient_set.is_one(&coefficient) {
+            let print_coefficient = |coefficient: &<T::ProductCoefficientSet as Set>::Element| {
+                let mut printed = coefficient_set.pretty_print(coefficient, options);
+                if coefficient_set.is_sum(coefficient) {
+                    printed.paren();
+                }
+                (printed, false)
+            };
+            if self.is_approximate() {
+                let mut printed = coefficient_set.pretty_print_approximate(&coefficient, options);
+                if coefficient_set.is_sum(&coefficient) {
+                    printed.paren();
+                }
+                num.push((printed, false));
+            } else {
+                // The denominator of the coefficient goes under the fraction bar
+                let (coefficient_num, coefficient_den) = coefficient_set.as_fraction(&coefficient);
+                if !coefficient_set.is_one(&coefficient_num) {
+                    num.push(print_coefficient(&coefficient_num));
+                }
+                if !coefficient_set.is_one(&coefficient_den) {
+                    den.push(print_coefficient(&coefficient_den));
+                }
+            }
+        }
         for factor in &self.factors {
-            let printed = match factor {
+            match factor {
                 Term::Pow(pow) if pow.exponant.is_strictly_negative() => {
                     let mut factor = pow.clone();
                     **factor.exponant = -&**factor.exponant;
-                    &Term::Pow(factor).normalize()
+                    let factor = Term::Pow(factor).normalize();
+                    den.push((
+                        PrettyPrint::pretty_print(&factor, options),
+                        matches!(factor, Term::Add(_)),
+                    ));
                 }
-                _ => factor,
-            };
-            let mut elem = PrettyPrint::pretty_print(printed, options);
-            if matches!(printed, Term::Add(_)) {
-                elem.paren();
-            }
-            match factor {
-                Term::Pow(pow) if pow.exponant.is_strictly_negative() => {
-                    if let Some(den) = &mut den {
-                        den.concat("⋅", false, &elem);
-                    } else {
-                        den = Some(elem);
-                    }
-                }
-                _ => {
-                    if let Some(num) = &mut num {
-                        num.concat("⋅", false, &elem);
-                    } else {
-                        num = Some(elem);
-                    }
-                }
+                _ => num.push((
+                    PrettyPrint::pretty_print(factor, options),
+                    matches!(factor, Term::Add(_)),
+                )),
             }
         }
 
-        let mut num = num.unwrap_or_else(f);
-        if let Some(den) = den {
-            num.vertical_concat("─", &den);
+        let is_fraction = !den.is_empty();
+        let join = |parts: Vec<(PrettyPrinter, bool)>, paren_single_sum: bool| {
+            let paren_sums = parts.len() > 1 || paren_single_sum;
+            let mut res: Option<PrettyPrinter> = None;
+            for (mut part, is_sum) in parts {
+                if is_sum && paren_sums {
+                    part.paren();
+                }
+                if let Some(res) = &mut res {
+                    res.concat("⋅", false, &part);
+                } else {
+                    res = Some(part);
+                }
+            }
+            res
+        };
+        // `-(x + 1)` needs parentheses, `x + 1` alone over a fraction bar doesn't
+        let mut res = join(num, negative && !is_fraction).unwrap_or_else(f);
+        if let Some(den) = join(den, false) {
+            res.vertical_concat("─", &den);
         }
-        num
+        if negative {
+            let mut minus = PrettyPrinter::from("-".to_string());
+            minus.concat("", false, &res);
+            res = minus;
+        }
+        res
     }
 }
 impl<T: Set> PrettyPrint for Mul<T> {
