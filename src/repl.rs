@@ -4,9 +4,12 @@ use std::{fmt, str::FromStr};
 
 use crate::{
     context::{Context, Symbol},
-    field::{Set, complex::C, integer::Z, matrix::M, modular::Zn, natural::N, real::R},
+    field::{
+        Set, SetParseExpression, complex::C, integer::Z, matrix::M, modular::Zn, natural::N,
+        real::R,
+    },
+    parser::environment::{Environment, Statement, head},
     printer::{Print, PrintOptions},
-    try_parse,
 };
 
 /// The sets expressions can be evaluated in.
@@ -67,23 +70,25 @@ impl SetChoice {
 
     /// Parse and evaluate `input` in this set, printed as Typst math source if `typst` is set.
     ///
+    /// `input` can also be a definition, like `f(x) := x^2`, stored in `env`.
+    ///
     /// # Errors
-    /// Returns the parsing error message if `input` is not a valid expression.
+    /// Returns the parsing error message if `input` is not a valid expression or definition.
     ///
     /// # Panics
     /// Panics if an operation is not supported by the set.
-    pub fn eval(self, input: &str, typst: bool) -> Result<String, String> {
+    pub fn eval(self, input: &str, typst: bool, env: &mut Environment) -> Result<String, String> {
         match self {
-            Self::N => eval_in(input, N, typst),
-            Self::Z => eval_in(input, Z, typst),
-            Self::R => eval_in(input, R, typst),
-            Self::C => eval_in(input, C, typst),
-            Self::M => eval_in(input, M, typst),
-            Self::Zn(n) => eval_in(input, Zn::new(n), typst),
-            Self::Poly(Coefficients::R, x) => eval_in(input, R.get_polynomial_ring(x), typst),
-            Self::Poly(Coefficients::C, x) => eval_in(input, C.get_polynomial_ring(x), typst),
+            Self::N => eval_in(input, N, typst, env),
+            Self::Z => eval_in(input, Z, typst, env),
+            Self::R => eval_in(input, R, typst, env),
+            Self::C => eval_in(input, C, typst, env),
+            Self::M => eval_in(input, M, typst, env),
+            Self::Zn(n) => eval_in(input, Zn::new(n), typst, env),
+            Self::Poly(Coefficients::R, x) => eval_in(input, R.get_polynomial_ring(x), typst, env),
+            Self::Poly(Coefficients::C, x) => eval_in(input, C.get_polynomial_ring(x), typst, env),
             Self::Poly(Coefficients::Zn(n), x) => {
-                eval_in(input, Zn::new(n).get_polynomial_ring(x), typst)
+                eval_in(input, Zn::new(n).get_polynomial_ring(x), typst, env)
             }
         }
     }
@@ -186,14 +191,23 @@ pub fn sets_help() -> String {
     help
 }
 
-fn eval_in<E: Set>(input: &str, set: E, typst: bool) -> Result<String, String> {
-    try_parse!(input, set)
-        .map(|term| {
-            if typst {
-                term.with_options(PrintOptions::typst()).to_string()
-            } else {
-                term.to_string()
-            }
-        })
-        .map_err(|err| err.to_string())
+fn eval_in<E: SetParseExpression>(
+    input: &str,
+    set: E,
+    typst: bool,
+    env: &mut Environment,
+) -> Result<String, String> {
+    let print = |term: &crate::term::Term<E>| {
+        if typst {
+            term.with_options(PrintOptions::typst()).to_string()
+        } else {
+            term.to_string()
+        }
+    };
+    match env.eval(input, set).map_err(|err| err.to_string())? {
+        Statement::Expression(term) => Ok(print(&term)),
+        Statement::Definition {
+            name, params, body, ..
+        } => Ok(format!("{} := {}", head(name, &params), print(&body))),
+    }
 }

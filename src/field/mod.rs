@@ -268,6 +268,12 @@ pub trait SetParseExpression: Set {
     ) -> Result<Option<Term<Self>>, ParserError> {
         Ok(None)
     }
+
+    /// Check if the identifier `name` is a constant of this set, like `i` in `C`, which can't be defined by
+    /// the user.
+    fn is_constant(&self, _name: &str) -> bool {
+        false
+    }
 }
 
 /// Trait to cast an expression from a set to another set.

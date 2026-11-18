@@ -437,6 +437,9 @@ impl<T: SetParseExpression> SetParseExpression for M<T> {
             .parse_literal(parser)?
             .map(|parsed| VectorSpaceElement::Scalar(parsed, self.scalar_sub_set)))
     }
+    fn is_constant(&self, name: &str) -> bool {
+        self.scalar_sub_set.is_constant(name)
+    }
     fn parse_expression(&self, parser: &mut Parser) -> Result<Option<Term<Self>>, ParserError> {
         match parser.token.kind {
             TokenKind::OpenBracket => {

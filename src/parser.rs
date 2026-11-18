@@ -1,5 +1,6 @@
 //! Parser implementation, used in [`crate::parse`] and [`crate::try_parse`] macros.
 
+pub mod environment;
 pub mod lexer;
 
 use std::error::Error;
@@ -11,6 +12,7 @@ use crate::context::{Context, Symbol};
 use crate::field::{Group, Ring, Set, SetParseExpression};
 use crate::term::{Fun, Mul, Normalize, SymbolTerm, Term, Value};
 
+use environment::Environment;
 use lexer::{Lexer, Token, TokenKind};
 
 #[derive(Debug, PartialEq, Eq)]
@@ -71,6 +73,7 @@ pub struct Parser<'a> {
     pub token: Token,
     start_span: usize,
     end_span: usize,
+    env: Option<&'a Environment>,
 }
 
 impl<'a> Parser<'a> {
@@ -84,9 +87,17 @@ impl<'a> Parser<'a> {
             token: Token::new(TokenKind::Unknown, 0),
             start_span: 0,
             end_span: 0,
+            env: None,
         };
         parser.next_token();
         parser
+    }
+
+    /// Expand the definitions of `env` while parsing.
+    #[must_use]
+    pub const fn with_environment(mut self, env: &'a Environment) -> Self {
+        self.env = Some(env);
+        self
     }
 }
 
@@ -205,6 +216,82 @@ impl Parser<'_> {
         }
     }
 
+    /// Expand the definition of the current identifier, if any.
+    fn parse_definition<E: Set>(&mut self, set: E) -> Result<Option<Term<E>>, ParserError> {
+        let (TokenKind::Ident(name), Some(env)) = (&self.token.kind, self.env) else {
+            return Ok(None);
+        };
+        let Some(definition) = env.get(Symbol::new(name.as_str())) else {
+            return Ok(None);
+        };
+        self.next_token();
+        let name = &Context::get_symbol_data(&definition.name()).name;
+        let params = definition.params();
+        let args = if self.token.kind == TokenKind::OpenParen {
+            if params.is_empty() {
+                return Err(ParserError::new(format!("`{name}` is not a function")));
+            }
+            self.next_token();
+            self.parse_args_source()?
+        } else {
+            vec![]
+        };
+        if args.len() != params.len() {
+            let plural = if params.len() == 1 { "" } else { "s" };
+            return Err(ParserError::new(format!(
+                "Function {name} expects {} argument{plural}, found {}",
+                params.len(),
+                args.len()
+            )));
+        }
+        let mut body_env = definition.env().clone();
+        body_env.bind(params, args, env);
+        let mut parser = Parser::new(definition.body()).with_environment(&body_env);
+        let term = ParseExpression::<E>::parse_expression(&mut parser, 0, set)?;
+        if parser.token.kind != TokenKind::Eof {
+            return Err(ParserError::new(format!(
+                "Unexpected {:?} in the definition of {name}",
+                parser.token.kind
+            )));
+        }
+        Ok(term)
+    }
+
+    /// Return the source of arguments of a function, up to the closing parenthesis.
+    fn parse_args_source(&mut self) -> Result<Vec<String>, ParserError> {
+        let mut args = vec![];
+        let mut start = self.start_span;
+        let mut depth = 0usize;
+        loop {
+            match self.token.kind {
+                TokenKind::OpenParen | TokenKind::OpenBracket | TokenKind::OpenBrace => depth += 1,
+                TokenKind::Comma | TokenKind::CloseParen if depth == 0 => {
+                    let arg = self.input[start..self.start_span].trim();
+                    if arg.is_empty() {
+                        return Err(ParserError::new(format!(
+                            "Argument expected at position {}",
+                            self.start_span
+                        )));
+                    }
+                    args.push(arg.to_owned());
+                    let close = self.token.kind == TokenKind::CloseParen;
+                    self.next_token();
+                    if close {
+                        return Ok(args);
+                    }
+                    start = self.start_span;
+                    continue;
+                }
+                TokenKind::CloseParen | TokenKind::CloseBracket | TokenKind::CloseBrace => {
+                    depth -= 1;
+                }
+                TokenKind::Eof => return Err(ParserError::new("expect CloseParen, found Eof")),
+                _ => {}
+            }
+            self.next_token();
+        }
+    }
+
     /// parse arguments of a function, separated by a comma.
     fn parse_args<E: Set>(&mut self, arg_set: E) -> Result<Vec<Term<E>>, ParserError> {
         let mut args = vec![];
@@ -238,7 +325,9 @@ where
         set: E,
     ) -> Result<Option<Term<E>>, ParserError> {
         let mut self_in_coefficient_set = self.clone();
-        let node = set.parse_expression(self)?;
+        // Definitions are expanded in the outermost set, before sets parse identifiers (like scalars of `M`)
+        let node = self.parse_definition(set)?;
+        let node = node.map_or_else(|| set.parse_expression(self), |n| Ok(Some(n)))?;
         let node = node.map_or_else(|| ParseUnary::<E>::parse_unary(self, set), |n| Ok(Some(n)))?;
         let node_in_coefficient_set =
             self_in_coefficient_set.parse_literal(set.get_coefficient_set());
@@ -476,6 +565,11 @@ impl<E: Group> ParseUnary<E> for Parser<'_> {
 macro_rules! try_parse {
     ( $x:expr, $f:expr ) => {
         $crate::parser::Parser::new($x.as_ref()).parse($f)
+    };
+    ( $x:expr, $f:expr, $env:expr ) => {
+        $crate::parser::Parser::new($x.as_ref())
+            .with_environment($env)
+            .parse($f)
     };
 }
 

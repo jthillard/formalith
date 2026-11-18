@@ -147,4 +147,8 @@ impl<T: SetParseExpression> SetParseExpression for TermSet<T> {
             *self.get_set(),
         )?)
     }
+
+    fn is_constant(&self, name: &str) -> bool {
+        self.get_set().is_constant(name)
+    }
 }

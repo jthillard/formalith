@@ -3,16 +3,25 @@
 //! Expressions given as arguments are evaluated and printed, otherwise expressions are read line by line,
 //! with line editing and history. The set is chosen with `--set <name>` on the command line, or `:set <name>`
 //! in the interactive mode. Typst math output is enabled with `--typst`, or toggled with `:typst`.
+//!
+//! Variables and functions are defined with `a := x^2` or `f(x, y) := x*y`, listed with `:defs` and removed with
+//! `:clear <name>`, or `:clear` for all of them.
 
-use std::{panic, process::ExitCode};
+use std::{
+    panic::{self, AssertUnwindSafe},
+    process::ExitCode,
+};
 
-use formalith::repl::{SetChoice, sets_help};
+use formalith::{
+    parser::environment::Environment,
+    repl::{SetChoice, sets_help},
+};
 use rustyline::{DefaultEditor, error::ReadlineError};
 
 /// Evaluate and print an expression. Operations unsupported by the set panic, so panics are caught to keep the
 /// interface running.
-fn eval(input: &str, set: SetChoice, typst: bool) {
-    match panic::catch_unwind(|| set.eval(input, typst)) {
+fn eval(input: &str, set: SetChoice, typst: bool, env: &mut Environment) {
+    match panic::catch_unwind(AssertUnwindSafe(|| set.eval(input, typst, env))) {
         Ok(Ok(term)) => println!("{term}"),
         Ok(Err(err)) => eprintln!("error: {err}"),
         Err(_) => eprintln!("error: this operation is not supported in {}", set.name()),
@@ -42,9 +51,10 @@ fn main() -> Result<ExitCode, ReadlineError> {
             }
         }
     }
+    let mut env = Environment::new();
     let args: Vec<String> = args.collect();
     if !args.is_empty() {
-        args.iter().for_each(|arg| eval(arg, set, typst));
+        args.iter().for_each(|arg| eval(arg, set, typst, &mut env));
         return Ok(ExitCode::SUCCESS);
     }
 
@@ -74,8 +84,17 @@ fn main() -> Result<ExitCode, ReadlineError> {
                             Err(err) => eprintln!("error: {err}"),
                         },
                     }
+                } else if input == ":defs" {
+                    env.definitions()
+                        .for_each(|definition| println!("{definition}"));
+                } else if let Some(name) = input.strip_prefix(":clear") {
+                    match name.trim() {
+                        "" => env.clear(),
+                        name if env.remove(name) => {}
+                        name => eprintln!("error: `{name}` is not defined"),
+                    }
                 } else {
-                    eval(input, set, typst);
+                    eval(input, set, typst, &mut env);
                 }
             }
         }

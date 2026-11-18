@@ -474,6 +474,10 @@ impl SetParseExpression for C<R<Rational>> {
             .parse_literal(parser)?
             .map(|re| [re, Rational::ZERO]))
     }
+
+    fn is_constant(&self, name: &str) -> bool {
+        name == "i"
+    }
 }
 
 impl TryElementFrom<R<Rational>> for C<R<Rational>> {

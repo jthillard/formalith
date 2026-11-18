@@ -1,5 +1,8 @@
 //! Set selection and evaluation of the command line interface.
-use formalith::repl::{Coefficients, SetChoice};
+use formalith::{
+    parser::environment::Environment,
+    repl::{Coefficients, SetChoice},
+};
 
 fn parse(name: &str) -> Result<SetChoice, String> {
     name.parse()
@@ -33,7 +36,11 @@ fn invalid_set_names() {
 
 #[test]
 fn eval() {
-    let eval = |input, set: &str| parse(set).unwrap().eval(input, false);
+    let eval = |input, set: &str| {
+        parse(set)
+            .unwrap()
+            .eval(input, false, &mut Environment::new())
+    };
     assert_eq!(eval("3*5", "Z/7"), Ok("1".to_owned()));
     assert_eq!(
         eval("factor(x^4-1)", "Z/5"),

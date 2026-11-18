@@ -1,5 +1,6 @@
 // Terminal-like interface to the Formalith wasm build. Mirrors `src/bin/cli.rs`: expressions are evaluated in the
-// current set, `:set <name>` changes it, `:typst` toggles between rendered math and plain text output.
+// current set, `:set <name>` changes it, `:typst` toggles between rendered math and plain text output. Definitions
+// like `f(x) := x^2` live in the worker: they are replayed in a new worker after a panic.
 
 const log = document.getElementById('log');
 const form = document.getElementById('prompt');
@@ -114,6 +115,8 @@ function printResult(text, rendered) {
 let worker;
 let pending = null;
 let nextId = 0;
+// Definitions and removals in order, with the set definitions were made in, replayed in a new worker
+let definitionLog = [];
 
 function startWorker() {
   worker = new Worker('worker.js', { type: 'module' });
@@ -125,9 +128,13 @@ function startWorker() {
     if (!pending || data.id !== pending.id) {
       return;
     }
-    const { set: evalSet, typst: rendered, setName } = pending;
+    const { set: evalSet, typst: rendered, setName, input: evalInput, defs, clear } = pending;
     finish();
-    if (setName !== undefined) {
+    if (defs && data.ok !== undefined) {
+      print(data.ok || 'no definitions');
+    } else if (clear !== undefined && data.ok !== undefined) {
+      definitionLog = clear ? [...definitionLog, { clear }] : [];
+    } else if (setName !== undefined) {
       if (data.ok !== undefined) {
         set = data.ok;
         label.textContent = `${set}>`;
@@ -135,6 +142,9 @@ function startWorker() {
         print(`error: ${data.err ?? 'invalid set'}`, 'error');
       }
     } else if (data.ok !== undefined) {
+      if (data.definition) {
+        definitionLog.push({ input: evalInput, set: evalSet });
+      }
       printResult(data.ok, rendered);
     } else if (data.err !== undefined) {
       print(`error: ${data.err}`, 'error');
@@ -159,6 +169,10 @@ function startWorker() {
 function restartWorker() {
   worker.terminate();
   startWorker();
+  // Answers to these messages don't match a pending request and are ignored
+  for (const { input, set: evalSet, clear } of definitionLog) {
+    worker.postMessage(clear === undefined ? { id: -1, input, set: evalSet, typst: false } : { id: -1, clear });
+  }
 }
 
 function finish() {
@@ -167,9 +181,16 @@ function finish() {
 }
 
 function evaluate(expression) {
-  pending = { id: nextId++, set, typst };
+  pending = { id: nextId++, set, typst, input: expression };
   busy.hidden = false;
   worker.postMessage({ id: pending.id, input: expression, set, typst });
+}
+
+// Lists definitions if `defs` is set, or removes the definition `clear` (all of them if empty)
+function definitionCommand(command) {
+  pending = { id: nextId++, ...command };
+  busy.hidden = false;
+  worker.postMessage({ id: pending.id, ...command });
 }
 
 // Sets are parameterized (like `Z/7` or `R[x]`), names are checked by the worker
@@ -185,7 +206,10 @@ function help() {
   print(
     [
       'Enter an expression to evaluate it, like `expand((x+1)^3)` or `factor(x^2-1)`.',
+      'Define variables and functions with `a := x^2` or `f(x, y) := x*y`.',
       'commands:',
+      '  :defs         list definitions',
+      '  :clear [name] remove a definition, or all of them',
       '  :set          show the current set',
       '  :set <name>   evaluate in another set',
       `  :typst        toggle rendered math output (currently ${typst ? 'on' : 'off'})`,
@@ -211,6 +235,10 @@ function run(line) {
     } else {
       changeSet(name);
     }
+  } else if (line === ':defs') {
+    definitionCommand({ defs: true });
+  } else if (line.startsWith(':clear')) {
+    definitionCommand({ clear: line.slice(6).trim() });
   } else {
     evaluate(line);
   }

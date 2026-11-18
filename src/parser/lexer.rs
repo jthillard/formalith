@@ -59,6 +59,8 @@ pub enum TokenKind {
 
     /// ,
     Comma,
+    /// :=
+    Define,
     /// End Of File
     Eof,
     /// Unknown character
@@ -133,6 +135,10 @@ impl Lexer<'_> {
 
             '*' => TokenKind::Star,
             ',' => TokenKind::Comma,
+            ':' if self.peek_char() == '=' => {
+                self.chars.next();
+                TokenKind::Define
+            }
             '^' => TokenKind::Caret,
             '{' => TokenKind::OpenBrace,
             '}' => TokenKind::CloseBrace,
@@ -251,6 +257,24 @@ mod tests {
                 TokenKind::CloseBracket,
                 TokenKind::OpenBrace,
                 TokenKind::CloseBrace,
+            ]
+        );
+    }
+
+    #[test]
+    fn define() {
+        assert_eq!(
+            kinds("a:=1"),
+            vec![TokenKind::Ident("a".to_string()), TokenKind::Define, INT]
+        );
+        assert_eq!(lengths("a := 1"), vec![1, 1, 2, 1, 1]);
+        // A lone colon is unknown
+        assert_eq!(
+            kinds(": ="),
+            vec![
+                TokenKind::Unknown,
+                TokenKind::Whitespace,
+                TokenKind::Unknown
             ]
         );
     }

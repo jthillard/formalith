@@ -352,4 +352,8 @@ impl<K: Ring + SetParseExpression> SetParseExpression for Poly<K> {
             .parse_literal(parser)?
             .map(|c| self.constant(c)))
     }
+
+    fn is_constant(&self, name: &str) -> bool {
+        name == Context::get_symbol_data(&self.variable).name || self.coefficients.is_constant(name)
+    }
 }
