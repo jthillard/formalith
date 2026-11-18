@@ -43,7 +43,8 @@ use crate::{
         approx::approximate,
         expr::{
             DIGITS, Expr, Real, constant_sign, depends, fun, half, has_special_constant,
-            hyperbolic_as_exp, infinity, infinity_sign, one, sqrt, unary, value, variable, zero,
+            hyperbolic_as_exp, infinity, infinity_sign, one, sqrt, try_map_operands, unary, value,
+            variable,
         },
     },
     term::{Fun, Normalize, Term},
@@ -237,15 +238,6 @@ fn exp_log_form(term: &Expr, x: Symbol) -> LimitResult<Expr> {
         return Ok(term.clone());
     }
     Ok(match term {
-        Term::Value(_) | Term::Symbol(_) => term.clone(),
-        Term::Add(add) => add.iter().try_fold(zero(), |res, term| {
-            Ok::<_, LimitError>(res + exp_log_form(term, x)?)
-        })?,
-        Term::Mul(mul) => mul
-            .iter()
-            .try_fold(value(mul.coefficient.clone()), |res, factor| {
-                Ok::<_, LimitError>(res * exp_log_form(factor, x)?)
-            })?,
         Term::Pow(pow) => {
             let base = exp_log_form(&pow.base, x)?;
             let exponant = exp_log_form(&pow.exponant, x)?;
@@ -300,6 +292,7 @@ fn exp_log_form(term: &Expr, x: Symbol) -> LimitResult<Expr> {
                 (ident, _) => Term::Fun(Box::new(Fun::new(ident, args, R))).normalize(),
             }
         }
+        _ => try_map_operands(term, |operand| exp_log_form(operand, x))?,
     })
 }
 
@@ -317,14 +310,9 @@ fn eval_at(term: &Expr, x: Symbol, a: &Expr) -> Option<Expr> {
     match term {
         Term::Value(_) => Some(term.clone()),
         Term::Symbol(_) => Some(a.clone()),
-        Term::Add(add) => add
-            .iter()
-            .try_fold(zero(), |res, term| Some(res + eval_at(term, x, a)?)),
-        Term::Mul(mul) => mul
-            .iter()
-            .try_fold(value(mul.coefficient.clone()), |res, factor| {
-                Some(res * eval_at(factor, x, a)?)
-            }),
+        Term::Add(_) | Term::Mul(_) => {
+            try_map_operands(term, |operand| eval_at(operand, x, a).ok_or(())).ok()
+        }
         Term::Pow(pow) => {
             let exponant = &**pow.exponant;
             if depends(exponant, x) {

@@ -431,12 +431,7 @@ impl Ring for C<R<Rational>> {
                         let terms =
                             Term::expand_sum_power(add, k, |c| [Rational::from(c), Rational::ZERO]);
                         return if n < 0 {
-                            term::Pow::new(
-                                terms,
-                                Term::Value(Value::new(self.nth(-1), *self)),
-                                *self,
-                            )
-                            .into()
+                            term::Pow::new(terms, Term::nth(-1, *self), *self).into()
                         } else {
                             terms
                         };

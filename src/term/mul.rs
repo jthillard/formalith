@@ -142,9 +142,7 @@ impl<T: Set> Mul<T> {
         for factor in &self.factors {
             match factor {
                 Term::Pow(pow) if pow.exponant.is_strictly_negative() => {
-                    let mut factor = pow.clone();
-                    **factor.exponant = -&**factor.exponant;
-                    den.push(Term::Pow(factor).normalize());
+                    den.push(Term::Pow(pow.with_negated_exponant()).normalize());
                 }
                 _ => num.push(factor.clone()),
             }
@@ -287,9 +285,7 @@ impl<T: Set> Mul<T> {
         for factor in &self.factors {
             match factor {
                 Term::Pow(pow) if pow.exponant.is_strictly_negative() => {
-                    let mut factor = pow.clone();
-                    **factor.exponant = -&**factor.exponant;
-                    let factor = Term::Pow(factor).normalize();
+                    let factor = Term::Pow(pow.with_negated_exponant()).normalize();
                     den.push((
                         PrettyPrint::pretty_print(&factor, options),
                         matches!(factor, Term::Add(_)),

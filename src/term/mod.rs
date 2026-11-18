@@ -255,6 +255,10 @@ impl<T: Group> Term<T> {
     pub fn zero(set: T) -> Self {
         Self::Value(Value::new(set.zero(), set))
     }
+    /// Create the constant `n * 1`
+    pub fn nth(n: i64, set: T) -> Self {
+        Self::Value(Value::new(set.nth(n), set))
+    }
     /// Check if the term is zero
     /// ```
     /// use formalith::{field::real::R, parse, symbol};
@@ -619,10 +623,7 @@ impl<T: Ring> Term<T> {
             // Merge x * x
             *self = Self::Pow(Pow::new(
                 self.clone(),
-                Term::Value(Value::new(
-                    self.get_set().get_exponant_set().nth(2),
-                    self.get_set().get_exponant_set(),
-                )),
+                Term::nth(2, self.get_set().get_exponant_set()),
                 self.get_set(),
             ))
             .normalize();
@@ -956,10 +957,10 @@ impl<T: Ring> Term<T> {
             let ik = k.iter().map(|x| Integer::from(*x)).collect::<Vec<_>>();
             let mut result = Self::Value(Value::new(from_integer(Integer::multinom(&ik)), set));
             for (term, k) in add.iter().zip(k) {
-                result *= term.pow(&Term::Value(Value::new(
-                    exponant_set.nth(i64::try_from(*k).expect("Exponant is too large")),
+                result *= term.pow(&Term::nth(
+                    i64::try_from(*k).expect("Exponant is too large"),
                     exponant_set,
-                )));
+                ));
             }
             terms += result;
         }
@@ -1224,15 +1225,14 @@ impl<T: Ring> Term<T> {
                 {
                     // `{$(n/d)^(-k) = d^k / n^k$}` for an integer `k`
                     let (num, den) = pow.base.as_fraction(unify);
-                    let k = Term::Value(Value::new(
-                        pow.exponant.get_set().nth(-n),
-                        pow.exponant.get_set(),
-                    ));
+                    let k = Term::nth(-n, pow.exponant.get_set());
                     return (den.pow(&k), num.pow(&k));
                 }
                 if pow.exponant.is_strictly_negative() {
-                    **pow.exponant = -&**pow.exponant;
-                    (Self::one(self.get_set()), pow.into())
+                    (
+                        Self::one(self.get_set()),
+                        pow.with_negated_exponant().into(),
+                    )
                 } else {
                     (pow.into(), Self::one(self.get_set()))
                 }

@@ -182,25 +182,43 @@ fn to_f64(term: &Expr) -> Option<f64> {
 
 /// Whether `term` has no denominator, `tan`, `ln` or fractional power depending on `x`, so that it is continuous.
 fn regular(term: &Expr, x: Symbol) -> bool {
+    const FUNCTIONS: [Symbol; 5] = [
+        Context::EXP,
+        Context::SIN,
+        Context::COS,
+        Context::ATAN,
+        Context::ABS,
+    ];
+    only_continuous_parts(term, x, false, &FUNCTIONS)
+}
+
+/// Whether the parts of `term` depending on `x` are sums, products, integer powers (non-negative unless
+/// `negative_powers`) with an exponant free of `x`, and `functions` of one argument.
+fn only_continuous_parts(
+    term: &Expr,
+    x: Symbol,
+    negative_powers: bool,
+    functions: &[Symbol],
+) -> bool {
     if !depends(term, x) {
         return true;
     }
+    let recurse = |t: &Expr| only_continuous_parts(t, x, negative_powers, functions);
     match term {
         Term::Value(_) | Term::Symbol(_) => true,
-        Term::Add(add) => add.iter().all(|t| regular(t, x)),
-        Term::Mul(mul) => mul.iter().all(|t| regular(t, x)),
+        Term::Add(add) => add.iter().all(recurse),
+        Term::Mul(mul) => mul.iter().all(recurse),
         Term::Pow(pow) => {
             !depends(&pow.exponant, x)
-                && pow.exponant.to_i64().is_some_and(|n| n >= 0)
-                && regular(&pow.base, x)
+                && pow
+                    .exponant
+                    .to_i64()
+                    .is_some_and(|n| negative_powers || n >= 0)
+                && recurse(&pow.base)
         }
-        Term::Fun(_) => match unary(term) {
-            Some((
-                Context::EXP | Context::SIN | Context::COS | Context::ATAN | Context::ABS,
-                u,
-            )) => regular(u, x),
-            _ => false,
-        },
+        Term::Fun(_) => {
+            unary(term).is_some_and(|(ident, u)| functions.contains(&ident) && recurse(u))
+        }
     }
 }
 
@@ -540,33 +558,17 @@ fn polynomial_sqrt(p: &Poly) -> Option<(Rational, Poly)> {
 /// no `ln`, no fractional power, and only functions continuous on their argument (or `tan`, whose poles are found
 /// by [`singular_points`]).
 fn continuous(term: &Expr, x: Symbol) -> bool {
-    if !depends(term, x) {
-        return true;
-    }
-    match term {
-        Term::Value(_) | Term::Symbol(_) => true,
-        Term::Add(add) => add.iter().all(|t| continuous(t, x)),
-        Term::Mul(mul) => mul.iter().all(|t| continuous(t, x)),
-        Term::Pow(pow) => {
-            !depends(&pow.exponant, x)
-                && pow.exponant.to_i64().is_some()
-                && continuous(&pow.base, x)
-        }
-        Term::Fun(_) => match unary(term) {
-            Some((
-                Context::EXP
-                | Context::SIN
-                | Context::COS
-                | Context::TAN
-                | Context::ATAN
-                | Context::ABS
-                | Context::ERF
-                | Context::ERFI,
-                u,
-            )) => continuous(u, x),
-            _ => false,
-        },
-    }
+    const FUNCTIONS: [Symbol; 8] = [
+        Context::EXP,
+        Context::SIN,
+        Context::COS,
+        Context::TAN,
+        Context::ATAN,
+        Context::ABS,
+        Context::ERF,
+        Context::ERFI,
+    ];
+    only_continuous_parts(term, x, true, &FUNCTIONS)
 }
 
 /// `{$integral_(-b)^b f = integral_0^b (f(x) + f(-x))$}` when `f` is continuous on the finite interval, is not a

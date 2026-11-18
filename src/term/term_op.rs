@@ -2,7 +2,7 @@
 
 use std::cmp::Ordering;
 
-use super::{Add, Mul, Pow, Term, Value};
+use super::{Add, Mul, Pow, Term};
 use crate::{
     field::{Group, Ring},
     term::{Normalize, flags::Flags},
@@ -189,10 +189,7 @@ impl<T: Ring> std::ops::Div for &Term<T> {
         debug_assert!(!self.needs_normalization());
         debug_assert!(!rhs.needs_normalization());
         self * &rhs
-            .pow(&Term::Value(Value::new(
-                self.get_set().get_exponant_set().nth(-1),
-                self.get_set().get_exponant_set(),
-            )))
+            .pow(&Term::nth(-1, self.get_set().get_exponant_set()))
             .normalize()
     }
 }

@@ -132,3 +132,29 @@ pub(crate) fn hyperbolic_as_exp(ident: Symbol, u: &Expr) -> Option<Expr> {
         _ => None,
     }
 }
+
+/// Rebuild `term` from its operands mapped by `f`: the terms of a sum, the factors of a product, the base then
+/// the exponant of a power, and the arguments of a function with real arguments (normalized). Values,
+/// symbols and functions with other arguments are returned unchanged.
+pub(crate) fn try_map_operands<E>(
+    term: &Expr,
+    mut f: impl FnMut(&Expr) -> Result<Expr, E>,
+) -> Result<Expr, E> {
+    Ok(match term {
+        Term::Value(_) | Term::Symbol(_) => term.clone(),
+        Term::Add(add) => add.iter().try_fold(zero(), |res, t| Ok(res + f(t)?))?,
+        Term::Mul(mul) => mul
+            .iter()
+            .try_fold(value(mul.coefficient.clone()), |res, t| Ok(res * f(t)?))?,
+        Term::Pow(pow) => f(&pow.base)?.pow(&f(&pow.exponant)?),
+        Term::Fun(function) => match function.get_args::<Real>() {
+            Some(args) => Term::Fun(Box::new(Fun::new(
+                function.get_ident(),
+                args.iter().map(f).collect::<Result<_, _>>()?,
+                R,
+            )))
+            .normalize(),
+            None => term.clone(),
+        },
+    })
+}

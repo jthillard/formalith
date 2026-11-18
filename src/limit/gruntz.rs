@@ -6,6 +6,7 @@
 //! non-zero limit. They are `x` or exponentials. They are rewritten as `{$A w^c$}` with `{$w -> 0^+$}` and `A` in
 //! a lower class ([`Gruntz::rewrite`]), and the leading term of the series of `f` in `w` decides the limit.
 
+use crate::field::real::expr::try_map_operands;
 use crate::field::real::expr::{
     DIGITS, Expr, depends, fun, infinity, is_infinite, one, unary, value, variable, zero,
 };
@@ -96,19 +97,6 @@ impl Gruntz {
             return Ok(f.clone());
         }
         Ok(match f {
-            Term::Value(_) | Term::Symbol(_) => f.clone(),
-            Term::Add(add) => add.iter().try_fold(zero(), |res, term| {
-                Ok::<_, LimitError>(res + self.remove_oscillations(term)?)
-            })?,
-            Term::Mul(mul) => mul
-                .iter()
-                .try_fold(value(mul.coefficient.clone()), |res, factor| {
-                    Ok::<_, LimitError>(res * self.remove_oscillations(factor)?)
-                })?,
-            Term::Pow(pow) => {
-                let base = self.remove_oscillations(&pow.base)?;
-                base.pow(&self.remove_oscillations(&pow.exponant)?)
-            }
             Term::Fun(_) => {
                 let (ident, arg) = unary(f).ok_or(LimitError::Unsupported)?;
                 let arg = self.remove_oscillations(arg)?;
@@ -121,6 +109,7 @@ impl Gruntz {
                     fun(ident, arg)
                 }
             }
+            _ => try_map_operands(f, |operand| self.remove_oscillations(operand))?,
         })
     }
 
@@ -360,15 +349,6 @@ impl Gruntz {
             return Ok(f.clone());
         }
         Ok(match f {
-            Term::Value(_) | Term::Symbol(_) => f.clone(),
-            Term::Add(add) => add.iter().try_fold(zero(), |res, term| {
-                Ok::<_, LimitError>(res + self.erf_at_infinity(term)?)
-            })?,
-            Term::Mul(mul) => mul
-                .iter()
-                .try_fold(value(mul.coefficient.clone()), |res, factor| {
-                    Ok::<_, LimitError>(res * self.erf_at_infinity(factor)?)
-                })?,
             Term::Pow(pow) => self.erf_at_infinity(&pow.base)?.pow(&pow.exponant),
             Term::Fun(_) => {
                 let (ident, arg) = unary(f).ok_or(LimitError::Unsupported)?;
@@ -388,6 +368,7 @@ impl Gruntz {
                 }
                 fun(ident, arg)
             }
+            _ => try_map_operands(f, |operand| self.erf_at_infinity(operand))?,
         })
     }
 
@@ -535,20 +516,12 @@ impl Gruntz {
             }
         }
         Ok(match f {
-            Term::Value(_) | Term::Symbol(_) => f.clone(),
-            Term::Add(add) => add.iter().try_fold(zero(), |res, term| {
-                Ok::<_, LimitError>(res + replace(term)?)
-            })?,
-            Term::Mul(mul) => mul
-                .iter()
-                .try_fold(value(mul.coefficient.clone()), |res, factor| {
-                    Ok::<_, LimitError>(res * replace(factor)?)
-                })?,
             Term::Pow(pow) => replace(&pow.base)?.pow(&pow.exponant),
             Term::Fun(_) => {
                 let (ident, arg) = unary(f).ok_or(LimitError::Unsupported)?;
                 fun(ident, replace(arg)?)
             }
+            _ => try_map_operands(f, replace)?,
         })
     }
 

@@ -46,7 +46,7 @@ mod substitution;
 mod table;
 mod trig;
 
-use std::{cmp::Ordering, collections::HashMap, error::Error, fmt};
+use std::{cmp::Ordering, collections::HashMap, convert::Infallible, error::Error, fmt};
 
 use malachite::Rational;
 
@@ -55,11 +55,11 @@ use crate::{
     field::real::{
         R,
         expr::{
-            Expr, Real, constant_sign, depends, fun, has_special_constant, one, unary, value,
-            variable, zero,
+            Expr, Real, constant_sign, depends, fun, has_special_constant, one, try_map_operands,
+            unary, value, variable, zero,
         },
     },
-    term::{Expand, Fun, Mul, Normalize, Term},
+    term::{Expand, Mul, Normalize, Term},
 };
 
 use poly::Poly;
@@ -282,23 +282,8 @@ fn map_tree(term: &Expr, rewrite: &impl Fn(&Expr) -> Option<Expr>) -> Expr {
     if let Some(res) = rewrite(term) {
         return res;
     }
-    match term {
-        Term::Value(_) | Term::Symbol(_) => term.clone(),
-        Term::Add(add) => add.iter().fold(zero(), |res, t| res + map_tree(t, rewrite)),
-        Term::Mul(mul) => mul.iter().fold(value(mul.coefficient.clone()), |res, t| {
-            res * map_tree(t, rewrite)
-        }),
-        Term::Pow(pow) => map_tree(&pow.base, rewrite).pow(&map_tree(&pow.exponant, rewrite)),
-        Term::Fun(f) => match f.get_args::<Real>() {
-            Some(args) => Term::Fun(Box::new(Fun::new(
-                f.get_ident(),
-                args.iter().map(|arg| map_tree(arg, rewrite)).collect(),
-                R,
-            )))
-            .normalize(),
-            None => term.clone(),
-        },
-    }
+    let Ok(res) = try_map_operands::<Infallible>(term, |operand| Ok(map_tree(operand, rewrite)));
+    res
 }
 
 /// Replace the symbol `x` by `with`, even in exponents.

@@ -43,6 +43,14 @@ impl<T: Set> Pow<T> {
             set,
         }
     }
+
+    /// The power with the opposite exponant, `base^(-exponant)`, not normalized.
+    #[must_use]
+    pub(crate) fn with_negated_exponant(&self) -> Self {
+        let mut pow = self.clone();
+        **pow.exponant = -&**pow.exponant;
+        pow
+    }
 }
 
 impl<T: Set, E: Set> Drop for Pow<T, E> {
@@ -117,10 +125,12 @@ impl<T: Set> Pow<T> {
 impl<T: Set> Print for Pow<T> {
     fn print(&self, options: &PrintOptions, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if options.typst && self.exponant.is_strictly_negative() {
-            let mut pow = self.clone();
-            **pow.exponant = -&**pow.exponant;
             f.write_str("frac(1, ")?;
-            Print::print(&Term::Pow(pow).normalize(), options, f)?;
+            Print::print(
+                &Term::Pow(self.with_negated_exponant()).normalize(),
+                options,
+                f,
+            )?;
             return f.write_str(")");
         }
         if options.typst
@@ -157,9 +167,7 @@ impl<T: Set> PrettyPrint for Pow<T> {
     default fn pretty_print(&self, options: &PrintOptions) -> crate::printer::PrettyPrinter {
         match **self.exponant {
             Term::Value(_) if self.exponant.is_strictly_negative() => {
-                let mut pow = self.clone();
-                **pow.exponant = -&**pow.exponant;
-                pow.pretty_print_positive(options)
+                self.with_negated_exponant().pretty_print_positive(options)
             }
             _ => self.pretty_print_positive(options),
         }
@@ -170,9 +178,7 @@ impl<T: Ring> PrettyPrint for Pow<T> {
     fn pretty_print(&self, options: &PrintOptions) -> crate::printer::PrettyPrinter {
         // If exponant is negative, print as a fraction
         if matches!(**self.exponant, Term::Value(_)) && self.exponant.is_strictly_negative() {
-            let mut pow = self.clone();
-            **pow.exponant = -&**pow.exponant;
-            let den = match Term::Pow(pow).normalize() {
+            let den = match Term::Pow(self.with_negated_exponant()).normalize() {
                 Term::Pow(pow) => pow.pretty_print_positive(options),
                 normalized => PrettyPrint::pretty_print(&normalized, options),
             };
