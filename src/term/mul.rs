@@ -117,8 +117,91 @@ impl<'a, T: Set> IntoIterator for &'a Mul<T> {
     }
 }
 
+impl<T: Set> Mul<T> {
+    /// Print the product as typst source, factors with a negative exponent going to a `frac` denominator.
+    fn print_typst(
+        &self,
+        options: &PrintOptions,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        let mut num = vec![];
+        let mut den = vec![];
+        for factor in &self.factors {
+            match factor {
+                Term::Pow(pow) if pow.exponant.is_strictly_negative() => {
+                    let mut factor = pow.clone();
+                    **factor.exponant = -&**factor.exponant;
+                    den.push(Term::Pow(factor).normalize());
+                }
+                _ => num.push(factor.clone()),
+            }
+        }
+        let print_factors = |factors: &[Term<T>], f: &mut std::fmt::Formatter<'_>| {
+            for (i, factor) in factors.iter().enumerate() {
+                if i != 0 {
+                    Self::mul_sign(options, f)?;
+                }
+                if matches!(factor, Term::Add(_)) {
+                    Self::group(factor, options, f)?;
+                } else {
+                    Print::print(factor, options, f)?;
+                }
+            }
+            Ok(())
+        };
+        let print_coefficient = |f: &mut std::fmt::Formatter<'_>| {
+            let coefficient_set = self.set.get_coefficient_set();
+            let is_sum = coefficient_set.is_sum(&self.coefficient);
+            if is_sum {
+                Self::group_delim("(", options, f)?;
+            }
+            coefficient_set.print(&self.coefficient, options, f)?;
+            if is_sum {
+                Self::group_delim(")", options, f)?;
+            }
+            Ok(())
+        };
+
+        let coefficient_set = self.set.get_coefficient_set();
+        let minus_one =
+            self.has_coeff() && coefficient_set.is_one(&coefficient_set.neg(&self.coefficient));
+        if minus_one {
+            Self::operator("-", options, f)?;
+        }
+        if den.is_empty() {
+            if self.has_coeff() && !minus_one {
+                print_coefficient(f)?;
+                if !num.is_empty() {
+                    Self::mul_sign(options, f)?;
+                }
+            }
+            return print_factors(&num, f);
+        }
+        if self.has_coeff() && !minus_one && !num.is_empty() {
+            print_coefficient(f)?;
+            Self::mul_sign(options, f)?;
+        }
+        f.write_str("frac(")?;
+        if num.is_empty() {
+            if self.has_coeff() && !minus_one {
+                print_coefficient(f)?;
+            } else {
+                f.write_str("1")?;
+            }
+        } else {
+            print_factors(&num, f)?;
+        }
+        f.write_str(", ")?;
+        print_factors(&den, f)?;
+        f.write_str(")")
+    }
+}
+
 impl<T: Set> Print for Mul<T> {
     fn print(&self, options: &PrintOptions, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if options.typst {
+            return self.print_typst(options, f);
+        }
         // Print the coefficient at the beginning of the product, `-1` being printed as a minus sign
         if self.has_coeff() {
             let coefficient_set = self.set.get_coefficient_set();

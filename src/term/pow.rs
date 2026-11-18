@@ -54,6 +54,13 @@ impl<T: Set, E: Set> Drop for Pow<T, E> {
 }
 impl<T: Set> Print for Pow<T> {
     fn print(&self, options: &PrintOptions, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if options.typst && self.exponant.is_strictly_negative() {
+            let mut pow = self.clone();
+            **pow.exponant = -&**pow.exponant;
+            f.write_str("frac(1, ")?;
+            Print::print(&Term::Pow(pow).normalize(), options, f)?;
+            return f.write_str(")");
+        }
         Self::group(&self.base, options, f)?;
         Self::operator("^", options, f)?;
         Self::group(&**self.exponant, options, f)?;

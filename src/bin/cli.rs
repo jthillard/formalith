@@ -2,12 +2,13 @@
 //!
 //! Expressions given as arguments are evaluated and printed, otherwise expressions are read line by line,
 //! with line editing and history. The set is chosen with `--set <name>` on the command line, or `:set <name>`
-//! in the interactive mode.
+//! in the interactive mode. Typst math output is enabled with `--typst`, or toggled with `:typst`.
 
 use std::{panic, process::ExitCode, str::FromStr};
 
 use formalith::{
     field::{Set, complex::C, integer::Z, matrix::M, natural::N, real::R},
+    printer::{Print, PrintOptions},
     try_parse,
 };
 use rustyline::{DefaultEditor, error::ReadlineError};
@@ -45,13 +46,13 @@ impl SetChoice {
         }
     }
 
-    fn eval(self, input: &str) -> Result<String, String> {
+    fn eval(self, input: &str, typst: bool) -> Result<String, String> {
         match self {
-            Self::N => eval_in(input, N),
-            Self::Z => eval_in(input, Z),
-            Self::R => eval_in(input, R),
-            Self::C => eval_in(input, C),
-            Self::M => eval_in(input, M),
+            Self::N => eval_in(input, N, typst),
+            Self::Z => eval_in(input, Z, typst),
+            Self::R => eval_in(input, R, typst),
+            Self::C => eval_in(input, C, typst),
+            Self::M => eval_in(input, M, typst),
         }
     }
 }
@@ -75,16 +76,22 @@ fn sets_help() -> String {
     help
 }
 
-fn eval_in<E: Set>(input: &str, set: E) -> Result<String, String> {
+fn eval_in<E: Set>(input: &str, set: E, typst: bool) -> Result<String, String> {
     try_parse!(input, set)
-        .map(|term| term.to_string())
+        .map(|term| {
+            if typst {
+                term.with_options(PrintOptions::typst()).to_string()
+            } else {
+                term.to_string()
+            }
+        })
         .map_err(|err| err.to_string())
 }
 
 /// Evaluate and print an expression. Operations unsupported by the set panic, so panics are caught to keep the
 /// interface running.
-fn eval(input: &str, set: SetChoice) {
-    match panic::catch_unwind(|| set.eval(input)) {
+fn eval(input: &str, set: SetChoice, typst: bool) {
+    match panic::catch_unwind(|| set.eval(input, typst)) {
         Ok(Ok(term)) => println!("{term}"),
         Ok(Err(err)) => eprintln!("error: {err}"),
         Err(_) => eprintln!("error: this operation is not supported in {}", set.name()),
@@ -94,7 +101,14 @@ fn eval(input: &str, set: SetChoice) {
 fn main() -> Result<ExitCode, ReadlineError> {
     let mut args = std::env::args().skip(1).peekable();
     let mut set = SetChoice::R;
-    if let Some(flag) = args.next_if(|arg| arg == "--set" || arg == "-s") {
+    let mut typst = false;
+    while let Some(flag) =
+        args.next_if(|arg| ["--set", "-s", "--typst", "-t"].contains(&arg.as_str()))
+    {
+        if flag == "--typst" || flag == "-t" {
+            typst = true;
+            continue;
+        }
         match args.next().as_deref().map(str::parse) {
             Some(Ok(choice)) => set = choice,
             Some(Err(err)) => {
@@ -109,7 +123,7 @@ fn main() -> Result<ExitCode, ReadlineError> {
     }
     let args: Vec<String> = args.collect();
     if !args.is_empty() {
-        args.iter().for_each(|arg| eval(arg, set));
+        args.iter().for_each(|arg| eval(arg, set, typst));
         return Ok(ExitCode::SUCCESS);
     }
 
@@ -125,7 +139,13 @@ fn main() -> Result<ExitCode, ReadlineError> {
             "exit" | "quit" => break,
             input => {
                 editor.add_history_entry(input)?;
-                if let Some(name) = input.strip_prefix(":set") {
+                if input == ":typst" {
+                    typst = !typst;
+                    println!(
+                        "typst output {}",
+                        if typst { "enabled" } else { "disabled" }
+                    );
+                } else if let Some(name) = input.strip_prefix(":set") {
                     match name.trim() {
                         "" => println!("current set: {}\n{}", set.name(), sets_help()),
                         name => match name.parse() {
@@ -134,7 +154,7 @@ fn main() -> Result<ExitCode, ReadlineError> {
                         },
                     }
                 } else {
-                    eval(input, set);
+                    eval(input, set, typst);
                 }
             }
         }

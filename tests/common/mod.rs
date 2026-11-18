@@ -26,3 +26,8 @@ pub fn pretty<T: PrettyPrint>(value: &T) -> String {
         })
     )
 }
+
+/// Print as typst math source.
+pub fn typst<T: PrettyPrint>(value: &T) -> String {
+    format!("{}", value.with_options(PrintOptions::typst()))
+}

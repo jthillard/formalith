@@ -168,6 +168,21 @@ impl<T: Set> Print for Matrix<T> {
         options: &crate::printer::PrintOptions,
         f: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result {
+        if options.typst {
+            f.write_str("mat(")?;
+            for i in 0..self.size.0 {
+                if i != 0 {
+                    f.write_str("; ")?;
+                }
+                for j in i * self.size.1..(i + 1) * self.size.1 {
+                    if j != i * self.size.1 {
+                        f.write_str(", ")?;
+                    }
+                    self.set.print(&self.data[j], options, f)?;
+                }
+            }
+            return f.write_str(")");
+        }
         Self::group_delim("[", options, f)?;
         for i in 0..self.size.0 {
             Self::group_delim("[", options, f)?;

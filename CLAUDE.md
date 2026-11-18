@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Formalith is a computer algebra system (CAS) library in Rust, generic over the algebraic structure (set/group/ring/field) that expressions live in. `src/main.rs` is a scratch binary for manual experiments (`cargo run`). `src/bin/cli.rs` is a minimal REPL (`cargo run --bin cli`, or pass expressions as arguments); it evaluates over `R` by default, another set is chosen with `--set <N|Z|R|C|M>` or `:set <name>` in the REPL; it only parses and prints, so operations are exposed as builtin functions.
+Formalith is a computer algebra system (CAS) library in Rust, generic over the algebraic structure (set/group/ring/field) that expressions live in. `src/main.rs` is a scratch binary for manual experiments (`cargo run`). `src/bin/cli.rs` is a minimal REPL (`cargo run --bin cli`, or pass expressions as arguments); it evaluates over `R` by default, another set is chosen with `--set <N|Z|R|C|M>` or `:set <name>` in the REPL; `--typst` / `:typst` switch the output to Typst math source (`PrintOptions::typst()`); it only parses and prints, so operations are exposed as builtin functions.
 
 ## Toolchain and commands
 

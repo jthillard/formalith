@@ -916,7 +916,7 @@ impl<V: Monomial, T: Ring, U: Set> Print for MultivariatePolynomial<V, T, U> {
             for (i, (var, exponant)) in vars.iter().enumerate() {
                 if i == 0 && !has_coeff {
                 } else {
-                    write!(f, "*")?;
+                    write!(f, "{}", if options.typst { " " } else { "*" })?;
                 }
                 var.print(options, f)?;
                 write!(f, "^")?;

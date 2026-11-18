@@ -140,10 +140,36 @@ impl<From: Set, T> Flags for Fun<From, T> {
 
 impl<From: Set, T: Set> Print for Fun<From, T> {
     fn print(&self, options: &PrintOptions, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        Self::fg::<Cyan>(self.get_ident_as_str(), options, f)?;
+        let mut args: Vec<_> = self.args.iter().collect();
+        if options.typst {
+            let name = self.get_ident_as_str();
+            match self.ident {
+                Context::CONJ => f.write_str("overline")?,
+                Context::RE => f.write_str("Re")?,
+                Context::IM => f.write_str("Im")?,
+                Context::ROOT => {
+                    // Typst takes the index first: `root(n, x)`
+                    args.reverse();
+                    f.write_str("root")?;
+                }
+                Context::ABS
+                | Context::DET
+                | Context::SQRT
+                | Context::FLOOR
+                | Context::CEIL
+                | Context::MIN
+                | Context::MAX
+                | Context::GCD
+                | Context::LCM => f.write_str(name)?,
+                _ if name.chars().count() == 1 => f.write_str(name)?,
+                _ => write!(f, "op(\"{name}\")")?,
+            }
+        } else {
+            Self::fg::<Cyan>(self.get_ident_as_str(), options, f)?;
+        }
         Self::group_delim("(", options, f)?;
-        for (i, term) in self.args.iter().enumerate() {
-            write!(f, "{term}")?;
+        for (i, term) in args.iter().enumerate() {
+            term.print(options, f)?;
             if i != self.args.len() - 1 {
                 Self::delimiter(", ", options, f)?;
             }

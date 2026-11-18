@@ -51,10 +51,16 @@ impl Set for R<Rational> {
     fn print(
         &self,
         elem: &Self::Element,
-        _: &crate::printer::PrintOptions,
+        options: &crate::printer::PrintOptions,
         f: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result {
-        write!(f, "{elem}")
+        let (num, den) = elem.numerator_and_denominator_ref();
+        if options.typst && *den != 1 {
+            let sign = if *elem < 0 { "-" } else { "" };
+            write!(f, "{sign}frac({num}, {den})")
+        } else {
+            write!(f, "{elem}")
+        }
     }
     fn pretty_print(
         &self,

@@ -39,6 +39,19 @@ impl PrintOptions {
             pretty_print: false,
         }
     }
+    /// Single-line typst math source, without colors.
+    #[must_use]
+    pub const fn typst() -> Self {
+        Self {
+            colors: false,
+            typst: true,
+            pretty_print: false,
+        }
+    }
+    /// Check if colors should be written.
+    const fn use_colors(&self) -> bool {
+        self.colors && !self.typst
+    }
 }
 
 /// Structs containing printing options used to format output.
@@ -77,6 +90,13 @@ pub trait Print {
     {
         self.with_options(PrintOptions::stdout())
     }
+    /// Create e new printer for self rendering typst math source.
+    fn typst(&self) -> Printer<'_, Self>
+    where
+        Self: Sized,
+    {
+        self.with_options(PrintOptions::typst())
+    }
     /// Format `self` using given options.
     ///
     /// # Errors
@@ -111,7 +131,11 @@ pub trait Print {
         Self: Sized,
     {
         let need_paren = match elem {
-            Term::Value(value) => !value.set.is_atomic(&value.value),
+            // Typst reads `-2^x` as `-(2^x)`
+            Term::Value(value) => {
+                !value.set.is_atomic(&value.value)
+                    || (options.typst && value.typst().to_string().starts_with('-'))
+            }
             Term::Symbol(_) | Term::Fun(_) => false,
             Term::Add(_) | Term::Pow(_) | Term::Mul(_) => true,
         };
@@ -137,7 +161,7 @@ pub trait Print {
     where
         Self: Sized,
     {
-        if options.colors {
+        if options.use_colors() {
             write!(f, "{}", text.white().dimmed())?;
         } else {
             write!(f, "{text}")?;
@@ -160,6 +184,21 @@ pub trait Print {
         Self::fg::<Yellow>(text, options, f)
     }
 
+    /// Write a multiplication sign: `*` normally, a space (implicit product) in typst.
+    ///
+    /// # Errors
+    /// Returns an error if the formatter fails.
+    fn mul_sign(options: &PrintOptions, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result
+    where
+        Self: Sized,
+    {
+        if options.typst {
+            f.write_str(" ")
+        } else {
+            Self::operator("*", options, f)
+        }
+    }
+
     /// Apply a compile-time color depending on options.
     ///
     /// # Errors
@@ -172,7 +211,7 @@ pub trait Print {
     where
         Self: Sized,
     {
-        if options.colors {
+        if options.use_colors() {
             write!(f, "{}", text.fg::<C>())?;
         } else {
             write!(f, "{text}")?;
@@ -187,7 +226,7 @@ pub trait PrettyPrint: Print {
     /// # Errors
     /// Returns an error if the formatter fails.
     fn fmt(&self, options: &PrintOptions, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if options.pretty_print {
+        if options.pretty_print && !options.typst {
             write!(f, "{}", self.pretty_print(options))
         } else {
             self.print(options, f)

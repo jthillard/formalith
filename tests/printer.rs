@@ -1,11 +1,12 @@
 //! Single-line and pretty printing.
 use formalith::{
-    field::{matrix::M, real::R},
+    field::{complex::C, matrix::M, real::R},
     parse,
+    printer::{Print, PrintOptions},
 };
 
 mod common;
-use common::{line, pretty};
+use common::{line, pretty, typst};
 
 #[test]
 fn print_values() {
@@ -73,4 +74,53 @@ fn print_products() {
     assert_eq!(line(&parse!("2*x", R)), "2*x");
     assert_eq!(line(&parse!("-x", R)), "-x");
     assert_eq!(line(&parse!("x-y", R)), "x-y");
+}
+
+#[test]
+fn print_typst() {
+    assert_eq!(typst(&parse!("1/2", R)), "frac(1, 2)");
+    assert_eq!(typst(&parse!("-1/2", R)), "-frac(1, 2)");
+    assert_eq!(
+        typst(&parse!("x/2+1/(x+1)", R)),
+        "frac(1, 2) x+frac(1, x+1)"
+    );
+    assert_eq!(typst(&parse!("x^-2", R)), "frac(1, x^2)");
+    assert_eq!(typst(&parse!("(x+1)^(1/2)", R)), "(x+1)^frac(1, 2)");
+    assert_eq!(typst(&parse!("x^(y+1)", R)), "x^(y+1)");
+    assert_eq!(typst(&parse!("(-2)^x", R)), "(-2)^x");
+    assert_eq!(typst(&parse!("2*x*y", R)), "2 x y");
+    assert_eq!(typst(&parse!("x-y", R)), "x-y");
+    assert_eq!(typst(&parse!("-x/y", R)), "-frac(x, y)");
+    assert_eq!(typst(&parse!("3/(x*y)", R)), "frac(3, x y)");
+}
+
+#[test]
+fn print_typst_functions() {
+    assert_eq!(typst(&parse!("abs(x)", R)), "abs(x)");
+    assert_eq!(typst(&parse!("foo(3)", R)), "op(\"foo\")(3)");
+    assert_eq!(typst(&parse!("f(x)", R)), "f(x)");
+    assert_eq!(typst(&parse!("conj(x)", R)), "overline(x)");
+    assert_eq!(typst(&parse!("sign(x)", R)), "op(\"sign\")(x)");
+}
+
+#[test]
+fn print_typst_sets() {
+    assert_eq!(typst(&parse!("[[1,x],[2,3]]", M)), "mat(1, x; 2, 3)");
+    assert_eq!(typst(&parse!("2+3*i", C)), "2+3 i");
+    assert_eq!(typst(&parse!("-i", C)), "-i");
+}
+
+#[test]
+fn print_typst_has_no_colors() {
+    let term = parse!("x/2+foo(x)", R);
+    let printed = format!(
+        "{}",
+        term.with_options(PrintOptions {
+            colors: true,
+            typst: true,
+            pretty_print: true,
+        })
+    );
+    assert!(!printed.contains('\u{1b}'));
+    assert!(!printed.contains('\n'));
 }

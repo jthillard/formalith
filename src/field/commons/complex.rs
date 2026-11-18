@@ -213,7 +213,7 @@ impl Set for C<R<Rational>> {
         let magnitude = im.abs();
         if magnitude != 1 {
             self.real().print(&magnitude, options, f)?;
-            write!(f, "*")?;
+            write!(f, "{}", if options.typst { " " } else { "*" })?;
         }
         write!(f, "i")
     }
