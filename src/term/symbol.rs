@@ -37,7 +37,11 @@ impl<T> SymbolTerm<T> {
     }
 }
 impl<T: Debug> Print for SymbolTerm<T> {
-    fn print(&self, _options: &PrintOptions, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn print(&self, options: &PrintOptions, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if options.typst && self.symbol == Context::UNDEFINED {
+            // A multi-letter identifier isn't a valid Typst variable
+            return f.write_str("\"undefined\"");
+        }
         write!(f, "{}", Context::get_symbol_data(&self.symbol).name)
     }
 }

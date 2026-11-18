@@ -8,16 +8,24 @@
 //! them as powers of a single `{$w -> 0^+$}`, and takes the leading term `{$c_0 w^(e_0)$}` of the series of `f`
 //! in `w`. The limit is 0 if `{$e_0 > 0$}`, `{$plus.minus oo$}` if `{$e_0 < 0$}`, and the limit of
 //! `{$c_0$}`, which varies less rapidly, otherwise. It is complete for expressions built with `exp` and `ln`.
-//! `sin` and `cos` are supported when their argument has a finite limit.
+//! `min`, `max` and `sign` are rewritten with `abs`.
+//!
+//! `{$sin g$}` and `{$cos g$}` with `{$g -> plus.minus oo$}` oscillate: `g` is replaced by an angle `{$theta$}`, a
+//! constant for the algorithm, after checking that the expression stays bounded away from its singularities for
+//! every `{$theta$}`. A result depending on `{$theta$}` means that the limit doesn't exist. A limit whose sign
+//! depends on parameters is `{$sign(a) oo$}`.
 //!
 //! ```
 //! use formalith::{field::real::R, parse};
 //!
 //! assert_eq!(parse!("lim(sin(x)/x, x, 0)", R), parse!("1", R));
+//! assert_eq!(parse!("lim(sin(x)/x, x, oo)", R), parse!("0", R));
 //! assert_eq!(parse!("lim((1 + 1/x)^x, x, oo)", R), parse!("exp(1)", R));
 //! assert_eq!(parse!("lim(1/x, x, 0, -1)", R), parse!("-oo", R));
+//! assert_eq!(parse!("lim(1/x, x, 0)", R), parse!("undefined", R));
 //! ```
 
+mod bounds;
 mod gruntz;
 mod series;
 
@@ -70,11 +78,13 @@ impl Direction {
 /// Why a limit couldn't be computed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LimitError {
-    /// The limit doesn't exist, like the two-sided limit of `{$1/x$}` at 0.
+    /// The limit doesn't exist, like the two-sided limit of `{$1/x$}` at 0 or `{$sin(x)$}` at `{$oo$}`. `lim`
+    /// evaluates to `undefined`.
     Undefined,
-    /// The expression contains something the algorithm can't handle, like `{$sin(x)$}` at `{$oo$}`.
+    /// The expression contains something the algorithm can't handle, like `{$floor(x)$}`.
     Unsupported,
-    /// The limit couldn't be determined, like a sign depending on a parameter, or a too deep recursion.
+    /// The limit couldn't be determined, like `{$1/(x sin x)$}` at `{$oo$}` (unbounded near the zeros of `sin`),
+    /// or a too deep recursion.
     Unknown,
 }
 
@@ -117,11 +127,14 @@ impl Term<Real> {
         if !depends(self, x) {
             return Ok(self.clone());
         }
+        if depends(self, Context::OO) || depends(self, Context::UNDEFINED) {
+            return Err(LimitError::Unsupported);
+        }
         let f = exp_log_form(self, x)?;
-        let at_infinity = |f: &Self| Gruntz::new(x).limit_infinity(f);
+        let at_infinity = |f: &Self| Gruntz::new(x).limit(f);
         if let Some(sign) = infinity_sign(point) {
             if direction != Direction::Both {
-                return Err(LimitError::Undefined);
+                return Err(LimitError::Unsupported);
             }
             return if sign == Ordering::Less {
                 at_infinity(
@@ -132,7 +145,7 @@ impl Term<Real> {
                 at_infinity(&f)
             };
         }
-        if depends(point, Context::OO) {
+        if depends(point, Context::OO) || depends(point, Context::UNDEFINED) {
             return Err(LimitError::Unsupported);
         }
         if let Some(res) = eval_at(&f, x, point) {
@@ -147,17 +160,33 @@ impl Term<Real> {
             Direction::Left => side(-1),
             Direction::Both => {
                 let (right, left) = (side(1)?, side(-1)?);
-                if right == left
-                    || (!is_infinite(&right)
-                        && !is_infinite(&left)
-                        && const_sign(&(&right - &left)) == Ok(Ordering::Equal))
-                {
-                    Ok(right)
-                } else {
-                    Err(LimitError::Undefined)
+                if right == left {
+                    return Ok(right);
+                }
+                match (infinity_part(&right), infinity_part(&left)) {
+                    // Parameters are assumed non-zero, so `{$sign(a) oo != -sign(a) oo$}`
+                    (Some(r), Some(l)) if (&r + &l).is_zero() => Err(LimitError::Undefined),
+                    (Some(_), Some(_)) => Err(LimitError::Unknown),
+                    (Some(_), None) | (None, Some(_)) => Err(LimitError::Undefined),
+                    (None, None) => match const_sign(&(&right - &left))? {
+                        Ordering::Equal => Ok(right),
+                        _ => Err(LimitError::Undefined),
+                    },
                 }
             }
         }
+    }
+}
+
+/// The sign `s` of an infinite limit `{$s oo$}`, which is `{$plus.minus 1$}` or contains `sign` of parameters, or
+/// `None` for a finite limit.
+fn infinity_part(term: &Expr) -> Option<Expr> {
+    match term {
+        Term::Symbol(_) if *term == infinity() => Some(one()),
+        Term::Mul(mul) if mul.iter().any(|factor| *factor == infinity()) => {
+            Some(term / &infinity())
+        }
+        _ => None,
     }
 }
 
@@ -218,6 +247,7 @@ fn is_infinite(term: &Expr) -> bool {
 fn const_sign(term: &Expr) -> LimitResult<Ordering> {
     match term {
         Term::Value(value) => Ok(value.value.sign()),
+        _ if bounds::has_angle(term) => bounds::bounds_sign(term).ok_or(LimitError::Unknown),
         _ => approximate(term, DIGITS)
             .map(|value| value.sign())
             .ok_or(LimitError::Unknown),
@@ -253,8 +283,8 @@ fn only_symbols(term: &Expr, allowed: &[Symbol]) -> bool {
         .all(|symbol| Context::is_builtin_constant(*symbol) || allowed.contains(symbol))
 }
 
-/// Rewrite powers with an exponent depending on `x` as `{$b^g = exp(g ln b)$}`, and `{$tan u$}` as
-/// `{$sin u / cos u$}`.
+/// Rewrite powers with an exponent depending on `x` as `{$b^g = exp(g ln b)$}`, `{$tan u$}` as
+/// `{$sin u / cos u$}`, `{$sign u$}` as `{$u / |u|$}`, and `min` and `max` with `abs`.
 fn exp_log_form(term: &Expr, x: Symbol) -> LimitResult<Expr> {
     if !depends(term, x) {
         return Ok(term.clone());
@@ -287,6 +317,20 @@ fn exp_log_form(term: &Expr, x: Symbol) -> LimitResult<Expr> {
                 .collect::<LimitResult<Vec<_>>>()?;
             match (f.get_ident(), args.as_slice()) {
                 (Context::TAN, [u]) => fun(Context::SIN, u.clone()) / fun(Context::COS, u.clone()),
+                (Context::SIGN, [u]) => u / &fun(Context::ABS, u.clone()),
+                (Context::MIN | Context::MAX, [first, rest @ ..]) => {
+                    // `{$max(f, g) = (f + g + |f - g|)/2$}`, `{$min(f, g) = (f + g - |f - g|)/2$}`
+                    let sign = value(Rational::from(if f.get_ident() == Context::MAX {
+                        1
+                    } else {
+                        -1
+                    }));
+                    let half = value(Rational::from_signeds(1, 2));
+                    rest.iter().fold(first.clone(), |res, arg| {
+                        let distance = fun(Context::ABS, &res - arg);
+                        (res + arg.clone() + sign.clone() * distance) * half.clone()
+                    })
+                }
                 (ident, _) => Term::Fun(Box::new(Fun::new(ident, args, R))).normalize(),
             }
         }

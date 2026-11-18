@@ -1,4 +1,4 @@
-//! Limits with `lim`, computed with the Gruntz algorithm, and the constant `oo`.
+//! Limits with `lim`, computed with the Gruntz algorithm, and the constants `oo` and `undefined`.
 use formalith::{
     field::real::R, parse, parser::environment::Environment, repl::SetChoice, try_parse,
 };
@@ -88,42 +88,93 @@ fn limits_of_nested_exponentials() {
 }
 
 #[test]
-fn limits_left_unevaluated() {
+fn limits_of_oscillating_functions() {
+    assert_eq!(lim("lim(sin(x)/x, x, oo)"), "0");
+    assert_eq!(lim("lim(x*sin(1/x), x, 0)"), "0");
+    assert_eq!(lim("lim((x+sin(x))/x, x, oo)"), "1");
+    assert_eq!(lim("lim(x/(x+sin(x)), x, oo)"), "1");
+    assert_eq!(lim("lim(x+sin(x), x, oo)"), "oo");
+    assert_eq!(lim("lim(x*(2+sin(x)), x, -oo)"), "-oo");
+    assert_eq!(lim("lim(exp(x)*(2+cos(x)), x, oo)"), "oo");
+    assert_eq!(lim("lim(ln(2+sin(x))/x, x, oo)"), "0");
+    assert_eq!(lim("lim(exp(-x)*sin(exp(x)), x, oo)"), "0");
+    // Angles linked by `{$g_2 ~ k g_1 + d$}`
+    assert_eq!(lim("lim(sin(x)^2+cos(x)^2, x, oo)"), "1");
+    assert_eq!(lim("lim(sin(2*x)-2*sin(x)*cos(x), x, oo)"), "0");
+    assert_eq!(lim("lim(cos(x+pi)+cos(x), x, oo)"), "0");
+}
+
+#[test]
+fn limits_of_min_max_sign() {
+    assert_eq!(lim("lim(max(x, x^2)/x^2, x, oo)"), "1");
+    assert_eq!(lim("lim(min(x, 1), x, 2)"), "1");
+    assert_eq!(lim("lim(max(1/x, 1), x, 0, 1)"), "oo");
+    assert_eq!(lim("lim(sign(x), x, 0, 1)"), "1");
+    assert_eq!(lim("lim(sign(x), x, 0, -1)"), "-1");
+}
+
+#[test]
+fn limits_with_parameter_signs() {
+    assert_eq!(lim("lim(a*x, x, oo)"), "oo*sign(a)");
+    assert_eq!(lim("lim(-a*x, x, oo)"), "-oo*sign(a)");
+    assert_eq!(lim("lim(a^2*x, x, oo)"), "oo");
+    assert_eq!(lim("lim(a/x^2, x, 0)"), "oo*sign(a)");
+}
+
+#[test]
+fn undefined_limits() {
     // Both sides differ
-    assert_eq!(lim("lim(1/x, x, 0)"), "lim(x^-1, x, 0)");
-    assert_eq!(lim("lim(abs(x)/x, x, 0)"), "lim((x^-1)*abs(x), x, 0)");
-    // Oscillation, or a sign depending on a parameter
-    assert_eq!(lim("lim(sin(x), x, oo)"), "lim(sin(x), x, oo)");
-    assert_eq!(lim("lim(a*x, x, oo)"), "lim(x*a, x, oo)");
+    assert_eq!(lim("lim(1/x, x, 0)"), "undefined");
+    assert_eq!(lim("lim(abs(x)/x, x, 0)"), "undefined");
+    assert_eq!(lim("lim(sign(x), x, 0)"), "undefined");
+    assert_eq!(lim("lim(a/x, x, 0)"), "undefined");
+    // Oscillations
+    assert_eq!(lim("lim(sin(x), x, oo)"), "undefined");
+    assert_eq!(lim("lim(sin(1/x), x, 0)"), "undefined");
+    assert_eq!(lim("lim(x*sin(x), x, oo)"), "undefined");
+    assert_eq!(lim("lim(1/(2+sin(x)), x, oo)"), "undefined");
+    assert_eq!(lim("lim(sin(x+1)-sin(x), x, oo)"), "undefined");
+}
+
+#[test]
+fn limits_left_unevaluated() {
+    // Unbounded near the zeros of `sin`, or several independent oscillations
+    assert_eq!(
+        lim("lim(1/(x*sin(x)), x, oo)"),
+        "lim((x^-1)*(sin(x)^-1), x, oo)"
+    );
+    assert_eq!(
+        lim("lim(sin(x)+sin(x^2), x, oo)"),
+        "lim(sin(x^2)+sin(x), x, oo)"
+    );
     // Invalid direction
     assert_eq!(lim("lim(1/x, x, 0, 2)"), "lim(x^-1, x, 0, 2)");
+    assert_eq!(lim("lim(x, x, oo, 1)"), "lim(x, x, oo, 1)");
     assert!(try_parse!("lim(x, x)", R).is_err());
 }
 
 #[test]
 fn print_limits() {
     assert_eq!(
-        typst(&parse!("lim(1/x, x, 0)", R)),
-        "lim_(x -> 0) (frac(1, x))"
+        typst(&parse!("lim(1/(x*sin(x)), x, oo)", R)),
+        "lim_(x -> oo) (frac(1, x sin(x)))"
     );
     assert_eq!(
-        typst(&parse!("lim(a/x, x, 0, -1)", R)),
-        "lim_(x -> 0^-) (frac(a, x))"
+        typst(&parse!("lim(1/(x*sin(1/x)), x, 0, -1)", R)),
+        "lim_(x -> 0^-) (frac(1, x sin(frac(1, x))))"
     );
     assert_eq!(
         typst(&parse!("lim(1/x, x, 0, 2)", R)),
         "op(\"lim\")(frac(1, x), x, 0, 2)"
     );
-    assert_eq!(
-        typst(&parse!("lim(sin(x), x, oo)", R)),
-        "lim_(x -> oo) (sin(x))"
-    );
     assert_eq!(typst(&parse!("-oo", R)), "-oo");
+    assert_eq!(typst(&parse!("lim(1/x, x, 0)", R)), "\"undefined\"");
 }
 
 #[test]
 fn infinity_is_a_constant() {
     let eval = |input| SetChoice::R.eval(input, false, &mut Environment::new());
     assert!(eval("oo := 1").is_err());
+    assert!(eval("undefined := 1").is_err());
     assert_eq!(eval("x + 1 = oo"), Ok("x = oo - 1".to_string()));
 }

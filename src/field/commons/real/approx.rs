@@ -296,6 +296,15 @@ pub(crate) fn approximate(term: &Term<Real>, digits: u64) -> Option<Rational> {
     }
 }
 
+/// Approximate a term like [`approximate`], but in a single evaluation with an absolute error of about
+/// `{$2^(-"bits")$}`, which is faster when the value may be zero.
+pub(crate) fn approximate_fixed(term: &Term<Real>, bits: u64) -> Option<Rational> {
+    Fixed {
+        bits: bits + GUARD_BITS,
+    }
+    .evaluate(term)
+}
+
 /// An approximated value, printed as a decimal number.
 pub(super) fn approximate_value(value: Rational) -> Term<Real> {
     let mut res = Term::Value(Value::new(value, super::R));

@@ -8,24 +8,41 @@
 
 use std::cmp::Ordering;
 
-use malachite::{Rational, base::num::basic::traits::Zero};
+use malachite::{
+    Rational,
+    base::num::{arithmetic::traits::Sign, basic::traits::Zero},
+};
 
 use crate::{
     context::{Context, Symbol},
-    term::Term,
+    term::{Normalize, Term},
 };
 
 use super::{
-    DIGITS, Expr, LimitError, LimitResult, const_sign, depends, fun, infinity, is_infinite,
-    only_symbols, series, unary, value, variable,
+    DIGITS, Expr, LimitError, LimitResult,
+    bounds::{angles, bounds, has_angle},
+    const_sign, depends, fun, infinity, is_infinite, one, only_symbols, series, unary, value,
+    variable,
 };
-use crate::field::real::approx::approximate;
+use crate::field::real::approx::{approximate, approximate_fixed};
 
 /// Maximum depth of nested leading term computations.
 const MAX_DEPTH: usize = 48;
 
 /// Rational points where coefficients are evaluated to check if they are zero.
 const ZERO_TEST_POINTS: [(i64, i64); 3] = [(23, 7), (47, 10), (61, 9)];
+
+/// Number of values of the angles where a result is evaluated, to check if it depends on them.
+const ANGLE_SAMPLES: i64 = 16;
+
+/// Absolute precision, in bits, of the evaluations at angle samples.
+const SAMPLE_BITS: u64 = 128;
+
+/// The value of the `i`-th angle at the `j`-th sample, spread over more than a period.
+fn angle_sample(i: usize, j: i64) -> Expr {
+    let i = i64::try_from(i).unwrap_or(0);
+    value(Rational::from_signeds(14 * j + 5 * i + 3, 35))
+}
 
 /// State of a limit computation at `{$x -> +oo$}`.
 pub(super) struct Gruntz {
@@ -35,6 +52,8 @@ pub(super) struct Gruntz {
     pub(super) w: Symbol,
     /// Depth of nested leading term computations, bounded to avoid hanging.
     depth: usize,
+    /// Angles replacing the arguments of oscillating `sin` and `cos`, with the argument they replace.
+    angles: Vec<(Symbol, Expr)>,
 }
 
 impl Gruntz {
@@ -45,6 +64,204 @@ impl Gruntz {
             // Not a valid identifier, so it can't conflict with a symbol of the expression
             w: Symbol::new("@w"),
             depth: 0,
+            angles: vec![],
+        }
+    }
+
+    /// `{$lim_(x -> +oo) f$}`, the entry point. Unlike [`Gruntz::limit_infinity`], used for the intermediate
+    /// limits, it supports oscillating `sin` and `cos`, and gives limits like `{$sign(a) oo$}` for a parameter `a`.
+    pub(super) fn limit(&mut self, f: &Expr) -> LimitResult<Expr> {
+        let f = self.remove_oscillations(f)?;
+        self.check_bounded(&f)?;
+        let mut f = f;
+        let res = loop {
+            if !self.depends(&f) {
+                break f;
+            }
+            let (c0, e0) = self.leadterm(&f)?;
+            match const_sign(&e0)? {
+                Ordering::Greater => break Term::zero(crate::field::real::R),
+                Ordering::Less => return Ok((self.top_sign(&c0)? * infinity()).normalize()),
+                Ordering::Equal => f = c0,
+            }
+        };
+        self.without_angles(&res).map(|res| res.normalize())
+    }
+
+    /// Replace the arguments `g` of `{$sin g$}` and `{$cos g$}` tending to `{$plus.minus oo$}` by angles.
+    fn remove_oscillations(&mut self, f: &Expr) -> LimitResult<Expr> {
+        if !self.depends(f) {
+            return Ok(f.clone());
+        }
+        Ok(match f {
+            Term::Value(_) | Term::Symbol(_) => f.clone(),
+            Term::Add(add) => add
+                .iter()
+                .try_fold(Term::zero(crate::field::real::R), |res, term| {
+                    Ok::<_, LimitError>(res + self.remove_oscillations(term)?)
+                })?,
+            Term::Mul(mul) => mul
+                .iter()
+                .try_fold(value(mul.coefficient.clone()), |res, factor| {
+                    Ok::<_, LimitError>(res * self.remove_oscillations(factor)?)
+                })?,
+            Term::Pow(pow) => {
+                let base = self.remove_oscillations(&pow.base)?;
+                base.pow(&self.remove_oscillations(&pow.exponant)?)
+            }
+            Term::Fun(_) => {
+                let (ident, arg) = unary(f).ok_or(LimitError::Unsupported)?;
+                let arg = self.remove_oscillations(arg)?;
+                if matches!(ident, Context::SIN | Context::COS)
+                    && is_infinite(&self.limit_infinity(&arg)?)
+                {
+                    let angle = self.angle(&arg);
+                    fun(ident, angle)
+                } else {
+                    fun(ident, arg)
+                }
+            }
+        })
+    }
+
+    /// The angle replacing `g`, `{$k t + d$}` if `{$g ~ k g_t + d$}` for the argument `{$g_t$}` of an angle `t`
+    /// and a rational `k`, a new angle otherwise.
+    fn angle(&mut self, g: &Expr) -> Expr {
+        for (t, h) in self.angles.clone() {
+            if let Ok(k @ Term::Value(_)) = self.limit_infinity(&(g / &h)).map(|k| k.normalize())
+                && !k.is_zero()
+                && let Ok(d) = self.limit_infinity(&(g - &(&k * &h)))
+                && !is_infinite(&d)
+                && !self.depends(&d)
+            {
+                return k * variable(t) + d;
+            }
+        }
+        let t = Symbol::new(format!("@t{}", self.angles.len()));
+        self.angles.push((t, g.clone()));
+        variable(t)
+    }
+
+    /// Check that the divisions, logarithms and roots of terms containing angles are bounded away from zero, so
+    /// that leading terms computed with angles as constants hold for every value of the angles.
+    fn check_bounded(&mut self, f: &Expr) -> LimitResult<()> {
+        if !has_angle(f) {
+            return Ok(());
+        }
+        let away_from_zero = |this: &mut Self, u: &Expr, positive: bool| {
+            if !has_angle(u) {
+                return Ok(());
+            }
+            let limit = this.limit_infinity(u)?;
+            let bounded = if this.depends(&limit) {
+                false
+            } else if is_infinite(&limit) {
+                true
+            } else {
+                bounds(&limit).is_some_and(|(lo, hi)| {
+                    lo > Rational::ZERO || (!positive && hi < Rational::ZERO)
+                })
+            };
+            if bounded {
+                Ok(())
+            } else {
+                Err(LimitError::Unknown)
+            }
+        };
+        match f {
+            Term::Value(_) | Term::Symbol(_) => Ok(()),
+            Term::Add(add) => add.iter().try_for_each(|term| self.check_bounded(term)),
+            Term::Mul(mul) => mul.iter().try_for_each(|factor| self.check_bounded(factor)),
+            Term::Pow(pow) => {
+                self.check_bounded(&pow.base)?;
+                self.check_bounded(&pow.exponant)?;
+                match pow.exponant.to_i64() {
+                    Some(n) if n >= 0 => Ok(()),
+                    n => away_from_zero(self, &pow.base, n.is_none()),
+                }
+            }
+            Term::Fun(_) => {
+                let (ident, arg) = unary(f).ok_or(LimitError::Unsupported)?;
+                self.check_bounded(arg)?;
+                if ident == Context::LN {
+                    away_from_zero(self, arg, true)
+                } else {
+                    Ok(())
+                }
+            }
+        }
+    }
+
+    /// The sign of an infinite limit `{$c w^e$}`, `{$e < 0$}`: `{$plus.minus 1$}`, or `{$sign$}` of parameters.
+    fn top_sign(&mut self, c: &Expr) -> LimitResult<Expr> {
+        if self.depends(c) {
+            if let Ok(sign) = self.sign(c) {
+                return sign_value(sign);
+            }
+            let (c0, _) = self.leadterm(c)?;
+            return self.top_sign(&c0);
+        }
+        if let Ok(sign) = const_sign(c) {
+            return sign_value(sign);
+        }
+        if has_angle(c) {
+            // Positive and negative for some angles: oscillates between `{$+oo$}` and `{$-oo$}`
+            if let [t] = angles(c).as_slice()
+                && only_symbols(c, &[*t])
+            {
+                let signs: Vec<_> = (0..ANGLE_SAMPLES)
+                    .filter_map(|j| {
+                        approximate_fixed(&c.substitute(*t, &angle_sample(0, j))?, SAMPLE_BITS)
+                    })
+                    .map(|value| value.sign())
+                    .collect();
+                if signs.contains(&Ordering::Greater) && signs.contains(&Ordering::Less) {
+                    return Err(LimitError::Undefined);
+                }
+            }
+            return Err(LimitError::Unknown);
+        }
+        if only_symbols(c, &[]) {
+            return Err(LimitError::Unknown);
+        }
+        Ok(param_sign(c))
+    }
+
+    /// `res` if it doesn't depend on the angles. A result taking several values for a single angle doesn't exist.
+    fn without_angles(&self, res: &Expr) -> LimitResult<Expr> {
+        let angles = angles(res);
+        if angles.is_empty() {
+            return Ok(res.clone());
+        }
+        let at = |j: i64| {
+            angles
+                .iter()
+                .enumerate()
+                .try_fold(res.clone(), |res, (i, t)| {
+                    res.substitute(*t, &angle_sample(i, j))
+                })
+        };
+        let samples = (0..ANGLE_SAMPLES)
+            .map(|j| at(j).and_then(|res| approximate_fixed(&res, SAMPLE_BITS)))
+            .collect::<Option<Vec<_>>>()
+            .ok_or(LimitError::Unknown)?;
+        let tolerance = Rational::from_signeds(1, 1_000_000_000_000_000_000_i64);
+        let small = |value: &Rational| *value < tolerance && -value < tolerance;
+        let constant = samples.iter().all(|sample| small(&(sample - &samples[0])));
+        if constant && small(&samples[0]) {
+            Ok(Term::zero(crate::field::real::R))
+        } else if constant {
+            angles
+                .iter()
+                .try_fold(res.clone(), |res, t| {
+                    res.substitute(*t, &Term::zero(crate::field::real::R))
+                })
+                .map(|res| res.simplify())
+                .ok_or(LimitError::Unknown)
+        } else if angles.len() == 1 && only_symbols(res, &angles) {
+            Err(LimitError::Undefined)
+        } else {
+            Err(LimitError::Unknown)
         }
     }
 
@@ -235,7 +452,7 @@ impl Gruntz {
         for (element, k) in arguments {
             // `{$e^k = e^(k - c h) g^c$}` with `{$c = lim k / h$}`
             let c = self.limit_infinity(&(k / h))?;
-            if is_infinite(&c) || self.depends(&c) {
+            if is_infinite(&c) || self.depends(&c) || has_angle(&c) {
                 return Err(LimitError::Unknown);
             }
             replacements.push((element, k, c));
@@ -288,19 +505,26 @@ impl Gruntz {
         if c.is_zero() || c.simplify().is_zero() {
             return true;
         }
-        if !only_symbols(c, &[self.x]) {
+        // Angles are generic constants too, evaluated at the test points
+        let mut symbols = angles(c);
+        if self.depends(c) {
+            symbols.push(self.x);
+        }
+        if !only_symbols(c, &symbols) {
             return false;
         }
-        if !self.depends(c) {
+        if symbols.is_empty() {
             return approximate(c, DIGITS).is_some_and(|value| value == Rational::ZERO);
         }
         let mut evaluated = false;
         for (num, den) in ZERO_TEST_POINTS {
-            let point = value(Rational::from_signeds(num, den));
-            if let Some(value) = c
-                .substitute(self.x, &point)
-                .and_then(|c| approximate(&c, DIGITS))
-            {
+            let at = symbols
+                .iter()
+                .zip(1..)
+                .try_fold(c.clone(), |c, (symbol, i)| {
+                    c.substitute(*symbol, &value(Rational::from_signeds(num + 3 * i, den)))
+                });
+            if let Some(value) = at.and_then(|c| approximate(&c, DIGITS)) {
                 if value != Rational::ZERO {
                     return false;
                 }
@@ -316,6 +540,36 @@ fn log(a: &Expr) -> Expr {
     match unary(a) {
         Some((Context::EXP, h)) => h.clone(),
         _ => fun(Context::LN, a.clone()),
+    }
+}
+
+/// The sign `{$plus.minus 1$}` as a term, failing on 0.
+fn sign_value(sign: Ordering) -> LimitResult<Expr> {
+    match sign {
+        Ordering::Equal => Err(LimitError::Unknown),
+        _ => Ok(value(Rational::from(sign as i8))),
+    }
+}
+
+/// The sign of a constant `c` depending on parameters, assumed non-zero, as a product of `{$sign(a)$}`.
+fn param_sign(c: &Expr) -> Expr {
+    if let Ok(sign) = const_sign(c)
+        && sign != Ordering::Equal
+    {
+        return value(Rational::from(sign as i8));
+    }
+    match c {
+        Term::Mul(mul) => mul.iter().fold(
+            param_sign(&value(mul.coefficient.clone())),
+            |res, factor| res * param_sign(factor),
+        ),
+        Term::Pow(pow) => match pow.exponant.to_i64() {
+            Some(n) if n % 2 == 0 => one(),
+            Some(_) => param_sign(&pow.base),
+            None => fun(Context::SIGN, c.clone()),
+        },
+        _ if matches!(unary(c), Some((Context::EXP, _))) => one(),
+        _ => fun(Context::SIGN, c.clone()),
     }
 }
 

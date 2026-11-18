@@ -18,11 +18,11 @@ use crate::{
     field::{
         Derivable, Field, Group, PartiallyOrderedSet, Ring, Set, SetParseExpression, matrix::M,
     },
-    limit::Direction,
+    limit::{Direction, LimitError},
     parser::Parser,
     polynom::ToTerm,
     printer::PrettyPrinter,
-    term::{self, Expand, Fun, Normalize, Term, TermSet, Value, flags::Flags},
+    term::{self, Expand, Fun, Normalize, SymbolTerm, Term, TermSet, Value, flags::Flags},
 };
 
 /// The real field `{$RR$}`.
@@ -320,9 +320,14 @@ impl Ring for R<Rational> {
                     if let Some([f, Term::Symbol(x), point, direction @ ..]) =
                         fun.get_args::<Self>().map(Vec::as_slice)
                         && let Some(direction) = Direction::from_args(direction)
-                        && let Ok(res) = f.limit(x.symbol, point, direction)
                     {
-                        return res;
+                        match f.limit(x.symbol, point, direction) {
+                            Ok(res) => return res,
+                            Err(LimitError::Undefined) => {
+                                return Term::Symbol(SymbolTerm::new(Context::UNDEFINED, *self));
+                            }
+                            Err(_) => {}
+                        }
                     }
                 }
                 Context::DET => {
