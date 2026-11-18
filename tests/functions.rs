@@ -1,8 +1,11 @@
 //! Builtin functions evaluated during normalization.
 
 use formalith::{
+    context::Context,
     field::{complex::C, real::R},
-    parse, try_parse,
+    parse,
+    term::Term,
+    try_parse,
 };
 
 #[test]
@@ -108,4 +111,29 @@ fn wrong_arity() {
     assert!(try_parse!("root(x)", R).is_err());
     assert!(try_parse!("gcd(x, y, z)", R).is_err());
     assert!(try_parse!("min(x, y, z)", R).is_ok());
+}
+
+#[test]
+fn diff() {
+    assert_eq!(parse!("diff(x^3, x)", R), parse!("3*x^2", R));
+    assert_eq!(parse!("diff(y, x)", R), parse!("0", R));
+    assert_eq!(parse!("diff(5, x)", R), parse!("0", R));
+    assert_eq!(parse!("diff(x*y + x^2, x)", R), parse!("y + 2*x", R));
+    assert_eq!(parse!("diff((x+1)^2, x)", R), parse!("2*(x+1)", R));
+    assert_eq!(parse!("diff(3*x*y*x, x)", R), parse!("6*x*y", R));
+    assert_eq!(parse!("diff(sqrt(x), x)", R), parse!("1/2*x^(-1/2)", R));
+    assert_eq!(parse!("diff(1/x, x)", R), parse!("-x^(-2)", R));
+    assert_eq!(parse!("diff(diff(x^3, x), x)", R), parse!("6*x", R));
+    assert_eq!(parse!("diff(i*x^2, x)", C), parse!("2*i*x", C));
+}
+
+#[test]
+fn diff_unevaluated() {
+    let is_diff = |term| matches!(term, Term::Fun(fun) if fun.get_ident() == Context::DIFF);
+    assert!(is_diff(parse!("diff(x^x, x)", R)));
+    assert_eq!(
+        parse!("diff(f(x) + x^2, x)", R),
+        parse!("diff(f(x), x) + 2*x", R)
+    );
+    assert!(is_diff(parse!("diff(x, 2)", R)));
 }

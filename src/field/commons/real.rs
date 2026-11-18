@@ -279,6 +279,17 @@ impl Ring for R<Rational> {
                         return arg.simplify();
                     }
                 }
+                Context::DIFF => {
+                    if let Some([f, Term::Symbol(x)]) = fun.get_args::<Self>().map(Vec::as_slice) {
+                        let res = f.derivative(x.symbol);
+                        // `f` can't be differentiated, keep the term to avoid normalizing forever
+                        if !matches!(&res, Term::Fun(inner)
+                            if inner.get_ident() == Context::DIFF && inner.get_arg::<Self>() == Some(f))
+                        {
+                            return res;
+                        }
+                    }
+                }
                 Context::DET => {
                     if let Some(Term::Value(matrix)) = fun.get_arg::<M<TermSet<Self>>>()
                         && let Ok(res) = matrix.value.det()

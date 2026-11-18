@@ -145,17 +145,19 @@ impl Context {
     pub const QUO: Symbol = Symbol(17);
     /// Remainder of the euclidean division of two numbers or polynomials
     pub const REM: Symbol = Symbol(18);
+    /// Derivative of the first argument with respect to the second, a symbol
+    pub const DIFF: Symbol = Symbol(19);
 
-    const BUILTIN_NAMES: [&'static str; 19] = [
+    const BUILTIN_NAMES: [&'static str; 20] = [
         "abs", "det", "expand", "factor", "simplify", "re", "im", "conj", "sqrt", "root", "sign",
-        "floor", "ceil", "min", "max", "gcd", "lcm", "quo", "rem",
+        "floor", "ceil", "min", "max", "gcd", "lcm", "quo", "rem", "diff",
     ];
 
     /// Return the minimum and maximum number of arguments of a builtin function, or `None` if `symbol` isn't a builtin.
     #[must_use]
     pub const fn builtin_arity(symbol: Symbol) -> Option<(usize, usize)> {
         match symbol {
-            Self::ROOT | Self::GCD | Self::LCM | Self::QUO | Self::REM => Some((2, 2)),
+            Self::ROOT | Self::GCD | Self::LCM | Self::QUO | Self::REM | Self::DIFF => Some((2, 2)),
             Self::MIN | Self::MAX => Some((1, usize::MAX)),
             Symbol(id) if id < Self::BUILTIN_NAMES.len() => Some((1, 1)),
             _ => None,
