@@ -4,9 +4,7 @@
 //! `{$w -> 0^+$}` is computed, then `w` is replaced back by `{$x - a$}`. Exponents may be negative or fractional,
 //! and coefficients may contain `{$ln(x - a)$}`.
 
-use crate::field::real::expr::{
-    Expr, Real, depends, fun, has_special_constant, infinity_sign, value, variable, zero,
-};
+use crate::field::real::expr::{Expr, Real, fun, value, variable, zero};
 use malachite::Rational;
 
 use crate::{
@@ -14,7 +12,7 @@ use crate::{
     term::Term,
 };
 
-use super::{Direction, LimitError, LimitResult, exp_log_form, gruntz::Gruntz, series};
+use super::{Direction, LimitError, LimitResult, gruntz::Gruntz, prepare, series};
 
 impl Term<Real> {
     /// Series of the expression when `x` tends to `point`, from the side given by `direction`, up to
@@ -42,23 +40,11 @@ impl Term<Real> {
         order: &Rational,
         direction: Direction,
     ) -> LimitResult<Self> {
-        if depends(point, x) {
-            return Err(LimitError::Unsupported);
-        }
-        if has_special_constant(self) {
-            return Err(LimitError::Unsupported);
-        }
-        let f = exp_log_form(self, x)?;
-        if let Some(sign) = infinity_sign(point) {
-            if direction != Direction::Both {
-                return Err(LimitError::Unsupported);
-            }
+        let (f, infinite) = prepare(self, x, point, direction)?;
+        if let Some(sign) = infinite {
             // `{$x = s/w$}`, so `{$w = s/x$}`
             let sign = value(Rational::from(sign as i64));
             return side_series(&f, x, order, |w| &sign / w, &sign / &variable(x));
-        }
-        if has_special_constant(point) {
-            return Err(LimitError::Unsupported);
         }
         // `{$x = a + s w$}`, so `{$w = s (x - a)$}`
         let side = |sign: i64| {

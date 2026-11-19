@@ -12,7 +12,7 @@ use super::{
     Kind, Risch, RischError, RischResult,
     field::{EPoly, Elem},
     rational_roots,
-    tower::sample_points,
+    tower::{integer, sample_points},
 };
 use crate::polynom::dense::{Coefficient, Poly};
 
@@ -32,11 +32,6 @@ fn degree(p: &EPoly) -> i64 {
 
 fn to_usize(n: i64) -> usize {
     usize::try_from(n).unwrap_or(0)
-}
-
-/// The integer `r`, if it is one.
-fn integer(r: &Rational) -> Option<i64> {
-    i64::try_from(r).ok()
 }
 
 impl Risch<'_> {
@@ -360,8 +355,7 @@ impl Risch<'_> {
                 Ok((degree(&q) <= n).then_some(q))
             }
             _ if b.is_zero() => self.derivative_of_polynomial(c, n, level, sure),
-            Kind::Ln(_) => self.cancel_primitive(b, c.clone(), n, level, sure),
-            Kind::Exp(_) => self.cancel_exp(b, c.clone(), n, level, sure),
+            Kind::Ln(_) | Kind::Exp(_) => self.cancel(b, c.clone(), n, level, sure),
         }
     }
 
@@ -416,9 +410,9 @@ impl Risch<'_> {
         Ok((den.is_one() && degree(&num) <= n).then_some(num))
     }
 
-    /// `{$D q + b q = c$}` for `{$t = ln u$}` and `b` of a lower level, solving for each coefficient of `q`
-    /// `{$D s + b s = c_m$}` in the field below.
-    fn cancel_primitive(
+    /// `{$D q + b q = c$}` for `b` of a lower level, solving for each coefficient of `q` an equation in the field
+    /// below: `{$D s + b s = c_m$}` for `{$t = ln u$}`, `{$D s + (b + m D a) s = c_m$}` for `{$t = e^a$}`.
+    fn cancel(
         &self,
         b: &EPoly,
         mut c: EPoly,
@@ -427,41 +421,18 @@ impl Risch<'_> {
         sure: &mut bool,
     ) -> RischResult<Option<EPoly>> {
         let b0 = b.coefficient(0);
-        let mut q = EPoly::zero();
-        while !c.is_zero() {
-            let m = degree(&c);
-            // Not a proof when `b` is a logarithmic derivative
-            if n < m {
-                *sure = false;
-                return Ok(None);
+        // `{$D a$}` for `{$t = e^a$}`. Failing is a proof when `{$b = r D a$}` with a non-integer `r`, as `b` can't be
+        // `{$D z / z + m D a$}`; it isn't for `{$t = ln u$}`, when `b` is a logarithmic derivative
+        let (eta, proved) = match self.tower.kind(level) {
+            Kind::Exp(_) => {
+                let eta = self.tower.eta(level);
+                let mut proof = true;
+                let proved =
+                    !matches!(log_derivative_multiple(&b0, &eta, &mut proof), Some(_)) && proof;
+                (Some(eta), proved)
             }
-            let Some(s) = self.rde(&b0, &c.leading(), level - 1)? else {
-                *sure = false;
-                return Ok(None);
-            };
-            let p = EPoly::monomial(s, to_usize(m));
-            c = c.sub(&b.mul(&p)).sub(&self.d_poly(&p, level));
-            q = q.add(&p);
-            n = m - 1;
-        }
-        Ok(Some(q))
-    }
-
-    /// `{$D q + b q = c$}` for `{$t = e^a$}` and `b` of a lower level, solving for each coefficient of `q`
-    /// `{$D s + (b + m D a) s = c_m$}` in the field below.
-    fn cancel_exp(
-        &self,
-        b: &EPoly,
-        mut c: EPoly,
-        mut n: i64,
-        level: usize,
-        sure: &mut bool,
-    ) -> RischResult<Option<EPoly>> {
-        let b0 = b.coefficient(0);
-        let eta = self.tower.eta(level);
-        // A proof when `{$b = r eta$}` with a non-integer `r`, as `b` can't be `{$D z / z + m eta$}`
-        let mut proof = true;
-        let proved = !matches!(log_derivative_multiple(&b0, &eta, &mut proof), Some(_)) && proof;
+            _ => (None, false),
+        };
         let mut q = EPoly::zero();
         while !c.is_zero() {
             let m = degree(&c);
@@ -469,7 +440,9 @@ impl Risch<'_> {
                 *sure &= proved;
                 return Ok(None);
             }
-            let f = b0.plus(&Elem::integer(m).times(&eta));
+            let f = eta
+                .as_ref()
+                .map_or_else(|| b0.clone(), |eta| b0.plus(&Elem::integer(m).times(eta)));
             let Some(s) = self.rde(&f, &c.leading(), level - 1)? else {
                 *sure &= proved;
                 return Ok(None);

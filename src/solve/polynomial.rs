@@ -277,7 +277,7 @@ impl PolynomialRoots for Z<Integer> {
 }
 
 /// The elements of `coefficients`, if they are all values.
-fn values<T: Ring>(coefficients: &[Term<T>]) -> Option<Vec<T::Element>> {
+pub(super) fn values<T: Ring>(coefficients: &[Term<T>]) -> Option<Vec<T::Element>> {
     coefficients
         .iter()
         .map(|coefficient| match coefficient {

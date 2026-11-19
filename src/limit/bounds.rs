@@ -23,7 +23,7 @@ use crate::{
 use super::{only_symbols, rational_bound};
 
 /// Whether `symbol` is an angle introduced for an oscillating `sin` or `cos`.
-pub(super) fn is_angle(symbol: Symbol) -> bool {
+fn is_angle(symbol: Symbol) -> bool {
     Context::get_symbol_data(&symbol).name.starts_with("@t")
 }
 

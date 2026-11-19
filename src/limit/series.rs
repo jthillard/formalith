@@ -104,23 +104,8 @@ impl Series {
         Ok(())
     }
 
-    /// Drop the terms which are not below the order of the series.
-    fn clip(&mut self) -> LimitResult<()> {
-        if let Some(order) = &self.order {
-            let order = value(order.clone());
-            let mut terms = Vec::with_capacity(self.terms.len());
-            for (exponant, coefficient) in self.terms.drain(..) {
-                if const_cmp(&exponant, &order)? == Ordering::Less {
-                    terms.push((exponant, coefficient));
-                }
-            }
-            self.terms = terms;
-        }
-        Ok(())
-    }
-
-    /// Truncate the series at order `n`. An exact series stays exact if it has no term above `n`.
-    fn truncate(&mut self, n: &Rational) -> LimitResult<()> {
+    /// Drop the terms which are not below `{$w^n$}`, returning whether some were dropped.
+    fn retain_below(&mut self, n: &Rational) -> LimitResult<bool> {
         let bound = value(n.clone());
         let mut terms = Vec::with_capacity(self.terms.len());
         let mut dropped = false;
@@ -132,7 +117,20 @@ impl Series {
             }
         }
         self.terms = terms;
-        if dropped || self.order.is_some() {
+        Ok(dropped)
+    }
+
+    /// Drop the terms which are not below the order of the series.
+    fn clip(&mut self) -> LimitResult<()> {
+        if let Some(order) = self.order.clone() {
+            self.retain_below(&order)?;
+        }
+        Ok(())
+    }
+
+    /// Truncate the series at order `n`. An exact series stays exact if it has no term above `n`.
+    fn truncate(&mut self, n: &Rational) -> LimitResult<()> {
+        if self.retain_below(n)? || self.order.is_some() {
             self.order = min_order(self.order.as_ref(), Some(n));
         }
         Ok(())

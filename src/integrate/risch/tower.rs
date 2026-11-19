@@ -112,7 +112,7 @@ impl Tower {
     }
 
     /// `{$D t$}` as a polynomial in `t`, for the monomial `t` of level `level`.
-    pub(super) fn monomial_derivative(&self, level: usize) -> &EPoly {
+    fn monomial_derivative(&self, level: usize) -> &EPoly {
         &self.monomials[level - 1].derivative
     }
 
@@ -402,7 +402,7 @@ impl Tower {
 }
 
 /// The integer `r`, if it is one.
-fn integer(r: &Rational) -> Option<i64> {
+pub(super) fn integer(r: &Rational) -> Option<i64> {
     i64::try_from(r).ok()
 }
 
@@ -422,7 +422,7 @@ pub(super) fn sample_points(n: usize) -> impl Iterator<Item = Vec<Rational>> {
 
 /// A solution `r` of the linear system whose rows are `{$(a_1, ..., a_n, b)$}` with `{$sum a_i r_i = b$}`, the
 /// free unknowns being 0, or `None` if it is inconsistent.
-pub(super) fn solve_linear(mut rows: Vec<Vec<Rational>>, n: usize) -> Option<Vec<Rational>> {
+fn solve_linear(mut rows: Vec<Vec<Rational>>, n: usize) -> Option<Vec<Rational>> {
     let mut pivots = vec![];
     let mut row = 0;
     for column in 0..n {

@@ -129,15 +129,9 @@ impl Term<Real> {
         if !depends(self, x) {
             return Ok(self.clone());
         }
-        if has_special_constant(self) {
-            return Err(LimitError::Unsupported);
-        }
-        let f = exp_log_form(self, x)?;
+        let (f, infinite) = prepare(self, x, point, direction)?;
         let at_infinity = |f: &Self| Gruntz::new(x).limit(f);
-        if let Some(sign) = infinity_sign(point) {
-            if direction != Direction::Both {
-                return Err(LimitError::Unsupported);
-            }
+        if let Some(sign) = infinite {
             return if sign == Ordering::Less {
                 at_infinity(
                     &f.substitute(x, &-variable(x))
@@ -146,9 +140,6 @@ impl Term<Real> {
             } else {
                 at_infinity(&f)
             };
-        }
-        if has_special_constant(point) {
-            return Err(LimitError::Unsupported);
         }
         if let Some(res) = eval_at(&f, x, point) {
             return Ok(res);
@@ -178,6 +169,28 @@ impl Term<Real> {
             }
         }
     }
+}
+
+/// Checks and rewrites shared by limits and series of `f` when `x` tends to `point`: `f` in the form of
+/// [`exp_log_form`], and the sign of `point` when it is `{$plus.minus oo$}`. Infinite points must be approached
+/// from both sides, and special constants are only allowed as an infinite point.
+pub(crate) fn prepare(
+    f: &Expr,
+    x: Symbol,
+    point: &Expr,
+    direction: Direction,
+) -> LimitResult<(Expr, Option<Ordering>)> {
+    if depends(point, x) || has_special_constant(f) {
+        return Err(LimitError::Unsupported);
+    }
+    let f = exp_log_form(f, x)?;
+    let infinite = infinity_sign(point);
+    if infinite.is_some() && direction != Direction::Both
+        || infinite.is_none() && has_special_constant(point)
+    {
+        return Err(LimitError::Unsupported);
+    }
+    Ok((f, infinite))
 }
 
 /// The sign `s` of an infinite limit `{$s oo$}`, which is `{$plus.minus 1$}` or contains `sign` of parameters, or

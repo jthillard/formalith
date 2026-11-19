@@ -258,7 +258,7 @@ impl Gruntz {
     }
 
     /// `{$lim_(x -> +oo) f$}`.
-    pub(super) fn limit_infinity(&mut self, f: &Expr) -> LimitResult<Expr> {
+    fn limit_infinity(&mut self, f: &Expr) -> LimitResult<Expr> {
         if !self.depends(f) {
             return Ok(f.clone());
         }

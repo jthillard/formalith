@@ -76,7 +76,7 @@ impl Elem {
     }
 
     /// The element `{$p / q$}` of level `level`, the polynomials being coprime.
-    pub(super) fn from_reduced(level: usize, num: EPoly, den: EPoly) -> Self {
+    fn from_reduced(level: usize, num: EPoly, den: EPoly) -> Self {
         assert!(!den.is_zero(), "Division by zero");
         let lead = den.leading().inverse();
         let (num, den) = (num.scale(&lead), den.scale(&lead));

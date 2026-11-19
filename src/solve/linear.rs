@@ -9,7 +9,7 @@ use crate::{
     term::{Mul, Normalize, SymbolTerm, Term},
 };
 
-use super::{Solution, SolveError, plain};
+use super::{Solution, SolveError, plain, polynomial::values};
 
 /// Solve the linear system `expression = 0` for each expanded expression, in `unknowns`.
 ///
@@ -38,14 +38,7 @@ pub(super) fn solve<T: Ring>(
         data.push(-constant);
     }
 
-    let values = data
-        .iter()
-        .map(|term| match term {
-            Term::Value(value) => Some(value.value.clone()),
-            _ => None,
-        })
-        .collect::<Option<Vec<_>>>();
-    if let Some(values) = values {
+    if let Some(values) = values(&data) {
         return solve_matrix(
             Matrix::new(size, values, set),
             set,
