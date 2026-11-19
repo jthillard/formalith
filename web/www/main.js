@@ -209,6 +209,7 @@ function help() {
       'Enter an expression to evaluate it, like `expand((x+1)^3)` or `factor(x^2-1)`.',
       'Define variables and functions with `a := x^2` or `f(x, y) := x*y`.',
       'Solve polynomial systems with `x + y = 3, x*y = 2` (one solution per line), or `solve(a*x^2 = 1, x)` for chosen unknowns.',
+      'Declare assumptions with `assume(a > 0, b != 0, n integer)`, like `sqrt(a^2) = a`.',
       'commands:',
       '  :defs         list definitions',
       '  :clear [name] remove a definition, or all of them',

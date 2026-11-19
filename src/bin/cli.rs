@@ -6,7 +6,8 @@
 //!
 //! Variables and functions are defined with `a := x^2` or `f(x, y) := x*y`, listed with `:defs` and removed with
 //! `:clear <name>`, or `:clear` for all of them. Polynomial systems are solved with `x + y = 3, x*y = 2`,
-//! or `solve(a*x = 1, x)` to solve for chosen unknowns.
+//! or `solve(a*x = 1, x)` to solve for chosen unknowns. Assumptions are declared with `assume(a > 0, n integer)`,
+//! listed with `:defs` and removed with `:clear`.
 
 use std::{
     panic::{self, AssertUnwindSafe},

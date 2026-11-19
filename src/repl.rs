@@ -70,8 +70,8 @@ impl SetChoice {
 
     /// Parse and evaluate `input` in this set, printed as Typst math source if `typst` is set.
     ///
-    /// `input` can also be a definition, like `f(x) := x^2`, stored in `env`, or a system of equations, like
-    /// `x + y = 3, x - y = 1`, which is solved.
+    /// `input` can also be a definition, like `f(x) := x^2`, or assumptions, like `assume(a > 0)`, stored in
+    /// `env`, or a system of equations, like `x + y = 3, x - y = 1`, which is solved.
     ///
     /// # Errors
     /// Returns the parsing error message if `input` is not a valid expression or definition.
@@ -217,27 +217,35 @@ fn eval_in<E: SetParseExpression>(
         } else {
             solution.to_string()
         }),
+        Statement::Assume(assumptions) if assumptions.is_empty() => Ok(if typst {
+            "\"no assumption\"".to_owned()
+        } else {
+            "no assumption".to_owned()
+        }),
+        Statement::Assume(assumptions) => Ok(assumptions.describe(typst)),
     }
 }
 
-/// The definitions of `env`, one per line.
+/// The definitions of `env`, one per line, then its assumptions as an `assume` statement.
 #[must_use]
 pub fn definitions(env: &Environment) -> String {
-    env.definitions()
-        .map(ToString::to_string)
-        .collect::<Vec<_>>()
-        .join("\n")
+    let mut lines: Vec<_> = env.definitions().map(ToString::to_string).collect();
+    if !env.assumptions().is_empty() {
+        lines.push(format!("assume({})", env.assumptions()));
+    }
+    lines.join("\n")
 }
 
-/// Remove the definition of `name` from `env`, or every definition if `name` is empty.
+/// Remove the definition and assumptions of `name` from `env`, or every definition and assumption if `name` is
+/// empty.
 ///
 /// # Errors
-/// Returns an error message if `name` is not defined.
+/// Returns an error message if `name` is neither defined nor has assumptions.
 pub fn clear_definitions(env: &mut Environment, name: &str) -> Result<(), String> {
     if name.is_empty() {
         env.clear();
         Ok(())
-    } else if env.remove(name) {
+    } else if env.remove(name) | env.remove_assumptions(name) {
         Ok(())
     } else {
         Err(format!("`{name}` is not defined"))

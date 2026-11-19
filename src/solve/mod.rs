@@ -34,6 +34,8 @@ use crate::{
     term::{Expand, Normalize, SymbolTerm, Term},
 };
 
+use polynomial::Assumed;
+
 /// An equation `lhs = rhs`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Equation<T: Set> {
@@ -326,9 +328,12 @@ impl<T: Ring> Solve for T {
             .into_iter()
             .filter(|den| den.symbols().iter().any(|s| unknowns.contains(s)))
             .collect();
-        if denominators.is_empty() {
-            return Ok(solution);
-        }
+        // Solutions contradicting the assumptions on the unknowns are dropped too
+        let contradicts = |assignments: &Assignments<Self>| {
+            assignments
+                .iter()
+                .any(|(symbol, value)| Self::contradicts(*symbol, value))
+        };
         let vanishes = |assignments: &Assignments<Self>| {
             denominators.iter().any(|den| {
                 assignments
@@ -345,7 +350,7 @@ impl<T: Ring> Solve for T {
         Ok(Solution::from_branches(
             branches
                 .into_iter()
-                .filter(|assignments| !vanishes(assignments))
+                .filter(|assignments| !vanishes(assignments) && !contradicts(assignments))
                 .collect(),
         ))
     }

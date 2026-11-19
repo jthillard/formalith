@@ -10,6 +10,8 @@ use append_only_vec::AppendOnlyVec;
 
 use crate::printer::{PrettyPrint, PrettyPrinter, Print};
 
+pub mod assumptions;
+
 /// Store all symbols' data created
 static SYMBOLS: AppendOnlyVec<SymbolData> = AppendOnlyVec::new();
 
@@ -216,14 +218,16 @@ impl Context {
     pub const ERF: Symbol = Symbol(49);
     /// Imaginary error function `{$"erfi"(x) = 2/sqrt(pi) integral_0^x e^(t^2) d t$}`
     pub const ERFI: Symbol = Symbol(50);
+    /// Declare assumptions on symbols, like `assume(a > 0, n integer)`, only allowed as a whole statement
+    pub const ASSUME: Symbol = Symbol(51);
 
     #[rustfmt::skip]
-    const BUILTIN_NAMES: [&'static str; 51] = [
+    const BUILTIN_NAMES: [&'static str; 52] = [
         "abs", "det", "expand", "factor", "simplify", "re", "im", "conj", "sqrt", "root", "sign",
         "floor", "ceil", "min", "max", "gcd", "lcm", "quo", "rem", "diff", "solve", "approx",
         "exp", "ln", "sin", "cos", "tan", "pi", "e", "lim", "oo", "undefined",
         "series", "asin", "acos", "atan", "sinh", "cosh", "tanh", "asinh", "acosh", "atanh", "cot",
-        "sec", "csc", "log", "factorial", "binomial", "integrate", "erf", "erfi",
+        "sec", "csc", "log", "factorial", "binomial", "integrate", "erf", "erfi", "assume",
     ];
 
     /// Return `true` if `symbol` is a builtin constant, like `{$pi$}`, which is not a function.
@@ -243,7 +247,7 @@ impl Context {
             | Self::REM
             | Self::DIFF
             | Self::BINOMIAL => Some((2, 2)),
-            Self::MIN | Self::MAX | Self::SOLVE => Some((1, usize::MAX)),
+            Self::MIN | Self::MAX | Self::SOLVE | Self::ASSUME => Some((1, usize::MAX)),
             Self::APPROX | Self::LOG => Some((1, 2)),
             Self::LIM => Some((3, 4)),
             Self::SERIES => Some((3, 5)),

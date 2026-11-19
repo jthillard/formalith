@@ -39,6 +39,8 @@ cargo run -- --set 'Z/7' 'factor(x^2 + 1)'
 
 In the REPL, `:set <name>` changes the set, `:typst` toggles Typst output, `f(x) := x^2` defines a function,
 `:defs` lists definitions and `:clear [name]` removes them. Systems are solved with `x + y = 3, x - y = 1`.
+Assumptions on symbols are declared with `assume(a > 0, b != 0, n integer)`, giving `sqrt(a^2) = a`,
+`integrate(1/a, a) = ln(a)`, `cos(2 n pi) = 1` or `lim(exp(a x), x, oo) = oo`.
 
 ## Web
 

@@ -7,7 +7,10 @@ use malachite::{
     base::num::{arithmetic::traits::Sign, basic::traits::One},
 };
 
-use super::{R, approx::approximate};
+use super::{
+    R,
+    sign::{SignMode, sign},
+};
 use crate::{
     context::{Context, Symbol},
     term::{Fun, Normalize, SymbolTerm, Term, Value},
@@ -103,12 +106,12 @@ pub(crate) fn is_infinite(term: &Expr) -> bool {
     infinity_sign(term).is_some()
 }
 
-/// The sign of a constant term, from its numerical approximation with [`DIGITS`] digits. `None` if it can't be
-/// approximated, for instance when it contains symbols other than builtin constants.
+/// The sign of a term free of the variable, from its structure and the assumptions on its symbols, or the
+/// numerical approximation with [`DIGITS`] digits of a constant. `None` if it is unknown.
 pub(crate) fn constant_sign(term: &Expr) -> Option<Ordering> {
     match term {
         Term::Value(value) => Some(value.value.sign()),
-        _ => approximate(term, DIGITS).map(|value| value.sign()),
+        _ => sign(term, SignMode::APPROXIMATE),
     }
 }
 

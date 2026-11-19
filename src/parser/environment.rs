@@ -8,7 +8,10 @@
 use std::{collections::BTreeMap, fmt, rc::Rc};
 
 use crate::{
-    context::{Context, Symbol},
+    context::{
+        Context, Symbol,
+        assumptions::{Assumption, Assumptions, SignSet},
+    },
     field::{Set, SetParseExpression},
     solve::{Equation, Solution, Solve, plain},
     term::{Normalize, Term},
@@ -76,6 +79,7 @@ pub(crate) fn head(name: Symbol, params: &[Symbol]) -> String {
 #[derive(Debug, Clone, Default)]
 pub struct Environment {
     definitions: BTreeMap<Symbol, Rc<Definition>>,
+    assumptions: Assumptions,
 }
 
 impl Environment {
@@ -103,9 +107,29 @@ impl Environment {
         self.definitions.remove(&Symbol::new(name)).is_some()
     }
 
-    /// Remove every definition.
+    /// Remove every definition and assumption.
     pub fn clear(&mut self) {
         self.definitions.clear();
+        self.assumptions.clear();
+    }
+
+    /// The assumptions on symbols, made with `assume(...)`, used while parsing with this environment.
+    #[must_use]
+    pub const fn assumptions(&self) -> &Assumptions {
+        &self.assumptions
+    }
+
+    /// Add an assumption on `symbol`.
+    ///
+    /// # Errors
+    /// Returns an error message if it contradicts the existing assumptions on `symbol`.
+    pub fn assume(&mut self, symbol: Symbol, assumption: Assumption) -> Result<(), String> {
+        self.assumptions.assume(symbol, assumption)
+    }
+
+    /// Remove the assumptions on `name`, returning whether there were some.
+    pub fn remove_assumptions(&mut self, name: &str) -> bool {
+        self.assumptions.remove(Symbol::new(name))
     }
 
     /// Define `name(params) := body`, capturing the current definitions. Prefer [`Environment::eval`], which
@@ -138,7 +162,8 @@ impl Environment {
         }
     }
 
-    /// Parse a statement in `set`, a definition like `f(x) := x^2` or an expression, and store definitions.
+    /// Parse a statement in `set`, a definition like `f(x) := x^2`, assumptions like `assume(a > 0)` or an
+    /// expression, and store definitions and assumptions.
     ///
     /// # Errors
     /// Returns an error if the parsing failed.
@@ -158,6 +183,11 @@ impl Environment {
         } = &statement
         {
             self.insert(*name, params.clone(), source.clone());
+        }
+        if let Statement::Assume(assumptions) = &statement {
+            for (symbol, assumption) in assumptions.iter() {
+                self.assume(symbol, assumption).map_err(ParserError::new)?;
+            }
         }
         Ok(statement)
     }
@@ -186,6 +216,8 @@ pub enum Statement<E: Set> {
         /// The solutions of the system.
         solution: Solution<E>,
     },
+    /// Assumptions `assume(a > 0, n integer)`, with every assumption on the listed symbols, the new and previous ones.
+    Assume(Assumptions),
 }
 
 impl<E: Set> fmt::Display for Statement<E> {
@@ -196,6 +228,8 @@ impl<E: Set> fmt::Display for Statement<E> {
                 name, params, body, ..
             } => write!(f, "{} := {body}", head(*name, params)),
             Self::System { solution, .. } => write!(f, "{solution}"),
+            Self::Assume(assumptions) if assumptions.is_empty() => f.write_str("no assumption"),
+            Self::Assume(assumptions) => write!(f, "{assumptions}"),
         }
     }
 }
@@ -212,6 +246,7 @@ impl<'a> Parser<'a> {
         &mut self,
         set: E,
     ) -> Result<Statement<E>, ParserError> {
+        let _assumptions = self.env.map(|env| env.assumptions().enter());
         let Some((name, params, body_start)) = self.clone().definition_head() else {
             return self.parse_equations(set);
         };
@@ -254,12 +289,15 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse comma-separated equations `lhs = rhs` and solve them, a call to `solve`, or a single expression.
-    fn parse_equations<E: Set>(&mut self, set: E) -> Result<Statement<E>, ParserError> {
+    fn parse_equations<E: SetParseExpression>(&mut self, set: E) -> Result<Statement<E>, ParserError> {
         if self.token.kind == TokenKind::Eof {
             return Err(ParserError::new("Input was empty"));
         }
-        if self.is_solve_call() {
+        if self.is_call(Context::SOLVE) {
             return self.parse_solve(set);
+        }
+        if self.is_call(Context::ASSUME) {
+            return self.parse_assume(set);
         }
         let mut items = self.parse_items(set)?;
         self.expect_eof()?;
@@ -281,14 +319,105 @@ impl<'a> Parser<'a> {
         })
     }
 
-    /// Check if the input starts with `solve(`.
-    fn is_solve_call(&self) -> bool {
+    /// Check if the input starts with `function(`.
+    fn is_call(&self, function: Symbol) -> bool {
         let TokenKind::Ident(name) = &self.token.kind else {
             return false;
         };
         let mut parser = self.clone();
         parser.next_token();
-        Symbol::new(name.as_str()) == Context::SOLVE && parser.token.kind == TokenKind::OpenParen
+        Symbol::new(name.as_str()) == function && parser.token.kind == TokenKind::OpenParen
+    }
+
+    /// Parse `assume(a > 0, b != 0, n integer)`, combining the assumptions with those of the environment. Each
+    /// argument compares a symbol with 0 (`>`, `<`, `>=`, `<=`, `!=`, on either side), or is `symbol integer`; a
+    /// symbol alone only shows its assumptions.
+    fn parse_assume<E: SetParseExpression>(&mut self, set: E) -> Result<Statement<E>, ParserError> {
+        // `assume(`
+        self.next_token();
+        self.next_token();
+        let mut assumptions = Assumptions::new();
+        loop {
+            let (symbol, assumption) = self.parse_assumption(set)?;
+            let previous = self
+                .env
+                .map_or(Assumption::NONE, |env| env.assumptions().get(symbol));
+            if assumptions.get(symbol) == Assumption::NONE {
+                assumptions
+                    .assume(symbol, previous)
+                    .map_err(ParserError::new)?;
+            }
+            assumptions
+                .assume(symbol, assumption)
+                .map_err(|err| ParserError::new(format!("`{}`: {err}", symbol.name())))?;
+            if previous == Assumption::NONE && assumptions.get(symbol) == Assumption::NONE {
+                // Listed, but without assumption
+                assumptions.remove(symbol);
+            }
+            match self.token.kind {
+                TokenKind::Comma => self.next_token(),
+                TokenKind::CloseParen => break,
+                _ => {
+                    return Err(ParserError::new(format!(
+                        "Unexpected token at position {}, expected `,` or `)`",
+                        self.start_span
+                    )));
+                }
+            }
+        }
+        self.next_token();
+        self.expect_eof()?;
+        Ok(Statement::Assume(assumptions))
+    }
+
+    /// Parse an argument of `assume`, returning the symbol and what is assumed.
+    fn parse_assumption<E: SetParseExpression>(&mut self, set: E) -> Result<(Symbol, Assumption), ParserError> {
+        let symbol = |term: &Term<E>| {
+            let Term::Symbol(symbol) = term else {
+                return Err(ParserError::new(format!(
+                    "`{}` is not a symbol, assumptions are about symbols",
+                    plain(term)
+                )));
+            };
+            let symbol = symbol.symbol;
+            if Context::is_builtin_constant(symbol) || set.is_constant(symbol.name()) {
+                return Err(ParserError::new(format!(
+                    "`{}` is a constant",
+                    symbol.name()
+                )));
+            }
+            Ok(symbol)
+        };
+        let lhs_start = self.start_span;
+        let lhs = self.parse_side(set)?;
+        let lhs_source = self.input[lhs_start..self.start_span].trim().to_owned();
+        let relation = match self.token.kind {
+            TokenKind::Less => SignSet::NEGATIVE,
+            TokenKind::LessEqual => SignSet::NONPOSITIVE,
+            TokenKind::Greater => SignSet::POSITIVE,
+            TokenKind::GreaterEqual => SignSet::NONNEGATIVE,
+            TokenKind::NotEqual => SignSet::NONZERO,
+            TokenKind::Ident(ref name) if name == "integer" => {
+                self.next_token();
+                return Ok((symbol(&lhs)?, Assumption::INTEGER));
+            }
+            _ => return Ok((symbol(&lhs)?, Assumption::NONE)),
+        };
+        self.next_token();
+        let rhs_start = self.start_span;
+        let rhs = self.parse_side(set)?;
+        let rhs_source = self.input[rhs_start..self.start_span].trim();
+        // `0 < a` is `a > 0`
+        let (term, relation) = if lhs_source == "0" {
+            (rhs, relation.neg())
+        } else if rhs_source == "0" {
+            (lhs, relation)
+        } else {
+            return Err(ParserError::new(
+                "assumptions compare a symbol with 0, like `a > 0`",
+            ));
+        };
+        Ok((symbol(&term)?, Assumption::sign(relation)))
     }
 
     /// Parse `solve(equations, unknowns)`, where the unknowns are symbols to solve for, other symbols being
@@ -375,6 +504,12 @@ impl<'a> Parser<'a> {
     #[must_use]
     pub fn is_definition(&self) -> bool {
         self.clone().definition_head().is_some()
+    }
+
+    /// Check if the input declares assumptions, like `assume(a > 0)`, without checking them.
+    #[must_use]
+    pub fn is_assumption(&self) -> bool {
+        self.is_call(Context::ASSUME)
     }
 
     /// Parse `name :=` or `name(params) :=`, returning the name, the parameters and the position of the body.

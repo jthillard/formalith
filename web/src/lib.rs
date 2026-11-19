@@ -33,11 +33,13 @@ pub fn eval(input: &str, set: &str, typst: bool) -> Result<String, String> {
     ENV.with_borrow_mut(|env| set.eval(input, typst, env))
 }
 
-/// Check if `input` is a definition, like `f(x) := x^2`.
+/// Check if `input` is a definition, like `f(x) := x^2`, or declares assumptions, like `assume(a > 0)`: both are
+/// replayed in a new worker after a panic.
 #[wasm_bindgen]
 #[must_use]
 pub fn is_definition(input: &str) -> bool {
-    Parser::new(input).is_definition()
+    let parser = Parser::new(input);
+    parser.is_definition() || parser.is_assumption()
 }
 
 /// List the definitions, one per line.

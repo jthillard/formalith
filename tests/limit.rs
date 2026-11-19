@@ -321,7 +321,6 @@ fn limits_of_step_functions() {
 }
 
 #[test]
-#[ignore = "future: limits depending on the sign of a parameter"]
 fn limits_with_parameter_exponents() {
     assert_eq!(lim("lim(x^2*exp(-a^2*x), x, oo)"), "0");
 }

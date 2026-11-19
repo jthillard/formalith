@@ -589,7 +589,8 @@ fn sign_value(sign: Ordering) -> LimitResult<Expr> {
     }
 }
 
-/// The sign of a constant `c` depending on parameters, assumed non-zero, as a product of `{$sign(a)$}`.
+/// The sign of a constant `c` depending on parameters, assumed non-zero, as a product of `{$sign(a)$}`, `sign`
+/// being evaluated for parameters with sign assumptions.
 fn param_sign(c: &Expr) -> Expr {
     if let Ok(sign) = const_sign(c)
         && sign != Ordering::Equal

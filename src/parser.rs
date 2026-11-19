@@ -201,6 +201,7 @@ impl Parser<'_> {
     /// # Errors
     /// This method can return an error if the parsing failed.
     pub fn parse<E: Set>(&mut self, set: E) -> Result<Term<E>, ParserError> {
+        let _assumptions = self.env.map(|env| env.assumptions().enter());
         let term = self.parse_operand(set)?.ok_or_else(|| {
             if self.token.kind == TokenKind::Eof {
                 ParserError::new("Input was empty")

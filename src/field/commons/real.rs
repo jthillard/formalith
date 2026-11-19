@@ -3,6 +3,7 @@
 pub(crate) mod approx;
 pub(crate) mod expr;
 mod rewrite;
+pub(crate) mod sign;
 
 use std::{cmp::Ordering, marker::PhantomData};
 
@@ -18,10 +19,14 @@ use malachite::{
 };
 
 use super::parse_rational_literal;
+use sign::SignMode;
 
 use crate::term::fun::eval_calculus_builtin;
 use crate::{
-    context::{Context, Symbol},
+    context::{
+        Context, Symbol,
+        assumptions::{SignSet, assumption},
+    },
     field::{
         Derivable, Field, Group, PartiallyOrderedSet, Ring, Set, SetParseExpression, matrix::M,
     },
@@ -177,6 +182,14 @@ impl Ring for R<Rational> {
         }
         match &a {
             Term::Pow(term::Pow { base, exponant, .. }) => match (&**base, &***exponant) {
+                (Term::Value(minus_one), exponant)
+                    if minus_one.value == -1
+                        && !matches!(exponant, Term::Value(_))
+                        && let Some(exponant) = Self::reduce_parity(exponant) =>
+                {
+                    // `{$(-1)^(2 k + 1) = -1$}`, `{$(-1)^(3 n) = (-1)^n$}` for integers `k`, `n`
+                    return self.value(Rational::NEGATIVE_ONE).pow(&exponant);
+                }
                 (Term::Symbol(e), _) if e.symbol == Context::E => {
                     // `{$e^u = exp u$}`, a single form for exponentials
                     return self.fun(Context::EXP, (***exponant).clone());
@@ -627,11 +640,15 @@ impl R<Rational> {
         }
     }
 
-    /// Whether `term` is a positive constant: a positive value, `{$pi$}`, `{$e$}`, or a power of one of them.
+    /// Whether `term` is a positive constant: a positive value, `{$pi$}`, `{$e$}`, a symbol assumed positive, or
+    /// a power of one of them.
     fn is_positive_constant(term: &Term<Self>) -> bool {
         match term {
             Term::Value(value) => value.value > 0,
-            Term::Symbol(symbol) => matches!(symbol.symbol, Context::PI | Context::E),
+            Term::Symbol(symbol) => {
+                matches!(symbol.symbol, Context::PI | Context::E)
+                    || assumption(symbol.symbol).sign == SignSet::POSITIVE
+            }
             Term::Pow(pow) => {
                 matches!(&**pow.exponant, Term::Value(_)) && Self::is_positive_constant(&pow.base)
             }
@@ -727,8 +744,12 @@ impl R<Rational> {
 
     /// Evaluate `|x|`, returning `None` if it can't be simplified.
     fn eval_abs(self, x: &Term<Self>) -> Option<Term<Self>> {
-        if x.is_positive() || Self::is_non_negative(x) {
+        let sign = sign::sign_set(x, SignMode::STRUCTURAL);
+        if x.is_positive() || Self::is_non_negative(x) || sign.is_subset(SignSet::NONNEGATIVE) {
             return Some(x.clone());
+        }
+        if sign.is_subset(SignSet::NONPOSITIVE) {
+            return Some(-x);
         }
         if x.is_strictly_negative() {
             return Some(-x);
@@ -786,6 +807,7 @@ impl R<Rational> {
             && let Some(res) = self
                 .eval_parity(ident, x)
                 .or_else(|| self.eval_periodicity(ident, x))
+                .or_else(|| self.eval_integer_turns(ident, x))
                 .or_else(|| self.eval_at_infinity(ident, x))
         {
             return Some(res);
@@ -820,7 +842,10 @@ impl R<Rational> {
             (Context::SQRT, [x]) => Some(x.pow(&value(Rational::from_signeds(1, 2)))),
             (Context::ROOT, [x, n]) => Some(x.pow(&n.inv())),
             (Context::SIGN, [x]) => PartialOrd::partial_cmp(x, &Term::zero(self))
+                .or_else(|| sign::sign(x, SignMode::STRUCTURAL))
                 .map(|sign| value(Rational::from(sign as i8))),
+            // `{$floor(n) = n$}` for an integer `n`
+            (Context::FLOOR | Context::CEIL, [x]) if sign::is_integer(x) => Some(x.clone()),
             // `{$floor(ceil(x)) = ceil(x)$}`, the inner result is already an integer
             (Context::FLOOR | Context::CEIL, [x @ Term::Fun(inner)])
                 if matches!(inner.get_ident(), Context::FLOOR | Context::CEIL) =>
@@ -1059,6 +1084,74 @@ impl R<Rational> {
         }
         let res = self.fun(ident, rest + value(q - Rational::from(n.clone())) * pi);
         Some(if ident != Context::TAN && n.odd() { -res } else { res })
+    }
+
+    /// The integer `m` (see [`sign::is_integer`]) with the integer coefficients of its terms reduced modulo 2, the
+    /// exponent of `{$(-1)^m$}`, or `None` if `m` isn't an integer or is already reduced.
+    fn reduce_parity(m: &Term<Self>) -> Option<Term<Self>> {
+        if !sign::is_integer(m) {
+            return None;
+        }
+        let terms: Vec<&Term<Self>> = match m {
+            Term::Add(add) => add.iter().collect(),
+            _ => vec![m],
+        };
+        let mut reduced = Term::zero(R);
+        let mut changed = false;
+        for term in terms {
+            let (c, rest) = match term {
+                Term::Value(value) => (value.value.clone(), R.value(Rational::ONE)),
+                Term::Mul(mul) => (
+                    mul.coefficient.clone(),
+                    term / &R.value(mul.coefficient.clone()),
+                ),
+                _ => (Rational::ONE, term.clone()),
+            };
+            let two = Rational::from(2);
+            let r = &c - &two * Rational::from((&c / &two).floor());
+            changed |= r != c;
+            reduced = reduced + R.value(r) * rest;
+        }
+        changed.then_some(reduced)
+    }
+
+    /// Remove the multiples `{$n pi$}` of `{$pi$}` by a symbolic integer `n` (see [`sign::is_integer`]) from the
+    /// argument of `sin`, `cos` or `tan`: `{$sin(u + n pi) = (-1)^n sin u$}`, `{$tan(u + n pi) = tan u$}`.
+    fn eval_integer_turns(self, ident: Symbol, x: &Term<Self>) -> Option<Term<Self>> {
+        if !matches!(ident, Context::SIN | Context::COS | Context::TAN) {
+            return None;
+        }
+        let pi = Term::Symbol(SymbolTerm::new(Context::PI, self));
+        // The integer `n` of a term `{$n pi$}`, which isn't a value
+        let turns = |term: &Term<Self>| {
+            let Term::Mul(mul) = term else { return None };
+            if !mul.iter().any(|factor| *factor == pi) {
+                return None;
+            }
+            let n = term / &pi;
+            (!matches!(n, Term::Value(_)) && sign::is_integer(&n)).then_some(n)
+        };
+        let terms: Vec<&Term<Self>> = match x {
+            Term::Add(add) => add.iter().collect(),
+            _ => vec![x],
+        };
+        let mut n = Term::zero(self);
+        let mut rest = Term::zero(self);
+        for term in terms {
+            match turns(term) {
+                Some(turns) => n = n + turns,
+                None => rest = rest + term,
+            }
+        }
+        if n.is_zero() {
+            return None;
+        }
+        let res = self.fun(ident, rest);
+        Some(if ident == Context::TAN {
+            res
+        } else {
+            self.value(Rational::NEGATIVE_ONE).pow(&n) * res
+        })
     }
 
     /// Values of functions at `{$oo$}` and `{$-oo$}`, those at `{$-oo$}` coming from [`Self::eval_parity`] for

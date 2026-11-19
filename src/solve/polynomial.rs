@@ -29,9 +29,19 @@ use malachite::{
 };
 
 use crate::{
-    context::{Context, Symbol},
+    context::{
+        Context, Symbol,
+        assumptions::{SignSet, assumption},
+    },
     field::{
-        Group, Ring, TryElementFrom, TryExprFrom, complex::C, integer::Z, modular::Zn, real::R,
+        Group, Ring, TryElementFrom, TryExprFrom,
+        complex::C,
+        integer::Z,
+        modular::Zn,
+        real::{
+            R,
+            sign::{SignMode, sign_set},
+        },
     },
     term::{Expand, Fun, Mul, Normalize, SymbolTerm, Term, TermSet},
 };
@@ -84,6 +94,39 @@ pub(super) fn solve<T: Ring>(
         })
         .collect();
     Ok(Solution::from_branches(solutions))
+}
+
+/// Assumptions on the symbols of a set (see [`crate::context::assumptions`]), used to drop impossible branches and
+/// solutions. Implemented for every ring, where nothing is known by default.
+pub(crate) trait Assumed: Ring {
+    /// Whether `value` contradicts the assumptions on `symbol`, like a negative value for a positive symbol.
+    fn contradicts(symbol: Symbol, value: &Term<Self>) -> bool;
+
+    /// Whether `term` is non-zero, from the assumptions on its symbols.
+    fn is_nonzero(term: &Term<Self>) -> bool;
+}
+
+impl<T: Ring> Assumed for T {
+    default fn contradicts(_: Symbol, _: &Term<Self>) -> bool {
+        false
+    }
+
+    default fn is_nonzero(_: &Term<Self>) -> bool {
+        false
+    }
+}
+
+impl Assumed for R<Rational> {
+    fn contradicts(symbol: Symbol, value: &Term<Self>) -> bool {
+        let assumption = assumption(symbol);
+        sign_set(value, SignMode::APPROXIMATE).is_disjoint(assumption.sign)
+            || assumption.integer
+                && matches!(value, Term::Value(value) if value.value.denominator_ref() != &1u32)
+    }
+
+    fn is_nonzero(term: &Term<Self>) -> bool {
+        sign_set(term, SignMode::APPROXIMATE).is_subset(SignSet::NONZERO)
+    }
 }
 
 /// Roots of polynomials in a set, and factorization of the equations. Implemented for every ring, with a default
@@ -506,7 +549,7 @@ fn real_sign(t: &Term<C<R<Rational>>>) -> Option<Ordering> {
     sign(&TryExprFrom::<C<R<Rational>>>::try_from_expr(&R, t.clone()).ok()?)
 }
 
-/// The sign of `term`, if it is zero or can be approximated. Symbols are generic, their sign is unknown.
+/// The sign of `term`, if it is zero, can be approximated, or follows from the assumptions on its symbols.
 fn sign(term: &Term<R<Rational>>) -> Option<Ordering> {
     if term.is_zero() {
         return Some(Ordering::Equal);
@@ -515,6 +558,7 @@ fn sign(term: &Term<R<Rational>>) -> Option<Ordering> {
     approximate(term)
         .filter(|value| value.abs() > 1e-9)
         .and_then(|value| value.partial_cmp(&0.))
+        .or_else(|| sign_set(term, SignMode::STRUCTURAL).strict())
 }
 
 /// Approximate `term` with a float, if it doesn't contain any symbol or function.
@@ -619,7 +663,7 @@ impl<T: Ring> Branch<T> {
     }
 
     /// Remove equations which are zero, or repeated. Returns `false` if an equation without unknowns isn't zero,
-    /// so that the branch has no solution.
+    /// or one with unknowns can't be zero under the assumptions, so that the branch has no solution.
     fn clean_up(&mut self) -> bool {
         let mut equations: Vec<Equation<T>> = vec![];
         for equation in std::mem::take(&mut self.equations) {
@@ -628,6 +672,9 @@ impl<T: Ring> Branch<T> {
                 if equation.term.is_zero() || equation.term.simplify().is_zero() {
                     continue;
                 }
+                return false;
+            }
+            if T::is_nonzero(&equation.term) {
                 return false;
             }
             if equations.iter().all(|e| e.term != equation.term) {

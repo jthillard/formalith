@@ -51,13 +51,14 @@ use std::{cmp::Ordering, collections::HashMap, error::Error, fmt};
 use malachite::Rational;
 
 use crate::{
-    context::{Context, Symbol},
+    context::{Context, Symbol, assumptions::SignSet},
     field::real::{
         R,
         expr::{
             Expr, Real, constant_sign, depends, fun, has_special_constant, map_tree, one,
             unary, value, variable, zero,
         },
+        sign::{SignMode, sign_set},
     },
     term::{Expand, Mul, Normalize, Term},
 };
@@ -298,8 +299,11 @@ fn ln_abs(u: &Expr, x: Symbol) -> Expr {
 /// two or with only even powers and non-negative coefficients.
 fn is_positive(u: &Expr, x: Symbol) -> bool {
     if !depends(u, x) {
-        return u.symbols().iter().all(|s| Context::is_builtin_constant(*s))
-            && constant_sign(u) == Some(Ordering::Greater);
+        return constant_sign(u) == Some(Ordering::Greater);
+    }
+    // From its structure, `x` having any sign
+    if sign_set(u, SignMode::STRUCTURAL) == SignSet::POSITIVE {
+        return true;
     }
     if matches!(unary(u), Some((Context::EXP | Context::COSH, _))) {
         return true;

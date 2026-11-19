@@ -3,7 +3,9 @@ use formalith::{
     context::Context,
     field::real::R,
     integrate::IntegrateError,
-    parse, symbol,
+    parse,
+    parser::environment::Environment,
+    symbol,
     term::{Fun, Normalize, Term},
 };
 
@@ -566,10 +568,13 @@ fn definite_integrals_without_antiderivatives() {
 }
 
 #[test]
-#[ignore = "future: improper integrals with a parameter, assuming a > 0"]
 fn improper_integral_with_parameter() {
+    let mut env = Environment::new();
+    env.eval("assume(a > 0)", R).unwrap();
     assert_eq!(
-        integrate("integrate(exp(-a*x), x, 0, oo)"),
+        line(&parse!("integrate(exp(-a*x), x, 0, oo)", R, &env)),
         integrate("1/a")
     );
+    // Without assumption, the sign of `a` is unknown
+    assert!(integrate("integrate(exp(-a*x), x, 0, oo)").contains("integrate"));
 }

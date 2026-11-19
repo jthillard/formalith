@@ -63,6 +63,16 @@ pub enum TokenKind {
     Define,
     /// =
     Equal,
+    /// <
+    Less,
+    /// <=
+    LessEqual,
+    /// >
+    Greater,
+    /// >=
+    GreaterEqual,
+    /// !=
+    NotEqual,
     /// End Of File
     Eof,
     /// Unknown character
@@ -142,6 +152,20 @@ impl Lexer<'_> {
                 TokenKind::Define
             }
             '=' => TokenKind::Equal,
+            '<' if self.peek_char() == '=' => {
+                self.chars.next();
+                TokenKind::LessEqual
+            }
+            '<' => TokenKind::Less,
+            '>' if self.peek_char() == '=' => {
+                self.chars.next();
+                TokenKind::GreaterEqual
+            }
+            '>' => TokenKind::Greater,
+            '!' if self.peek_char() == '=' => {
+                self.chars.next();
+                TokenKind::NotEqual
+            }
             '^' => TokenKind::Caret,
             '{' => TokenKind::OpenBrace,
             '}' => TokenKind::CloseBrace,

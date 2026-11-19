@@ -46,10 +46,11 @@ use crate::{
         R,
         approx::approximate,
         expr::{
-            DIGITS, Expr, Real, constant_sign, depends, fun, half, has_special_constant,
+            DIGITS, Expr, Real, depends, fun, half, has_special_constant,
             hyperbolic_as_exp, infinity, infinity_sign, one, sqrt, try_map_operands, unary, value,
             variable,
         },
+        sign::{SignMode, sign},
     },
     term::{Fun, Normalize, Term},
 };
@@ -308,7 +309,8 @@ fn const_sign(term: &Expr) -> LimitResult<Ordering> {
     if !matches!(term, Term::Value(_)) && bounds::has_angle(term) {
         return bounds::bounds_sign(term).ok_or(LimitError::Unknown);
     }
-    constant_sign(term).ok_or(LimitError::Unknown)
+    // Parameters without assumption are generic, so non-zero
+    sign(term, SignMode::GENERIC).ok_or(LimitError::Unknown)
 }
 
 /// Compare two constant terms, see [`const_sign`].
