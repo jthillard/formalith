@@ -17,7 +17,6 @@ dyn-hash = "1"
 malachite = { version = "0.9", default-features = false, features = ["naturals_and_integers", "rationals"] }
 owo-colors = "4"
 supports-color = "3"
-tracing = "0.1"
 
 [features]
 concise-debug = []

@@ -11,8 +11,6 @@ use std::{
     hash::Hash,
 };
 
-use tracing::trace;
-
 use crate::{
     field::{Group, Ring, Set, TryElementFrom},
     iter,
@@ -407,11 +405,6 @@ impl<V: Monomial, T: Ring, U: Ring> MultivariatePolynomial<V, T, U> {
 
     /// Euclidian division, also returning `false` if some leading terms didn't cancel, which happens with symbolic coefficients.
     fn quot_rem_checked(&self, divisor: &Self) -> (Self, Self, bool) {
-        trace!(
-            "Computing euclidian division between {} and {}",
-            self.stdout(),
-            divisor.stdout()
-        );
         let mut quotient = Self::zero(self.set, self.exponant_set);
         let mut remainder = Self::zero(self.set, self.exponant_set);
         let mut current_dividend = self.clone();
@@ -452,13 +445,6 @@ impl<V: Monomial, T: Ring, U: Ring> MultivariatePolynomial<V, T, U> {
             }
         }
 
-        trace!(
-            "Euclidian division: {} = ({})*({}) + ({})",
-            self.stdout(),
-            divisor.stdout(),
-            quotient.stdout(),
-            remainder.stdout()
-        );
         (quotient, remainder, exact)
     }
     /// Divide the polynomial by its leading coefficient.
