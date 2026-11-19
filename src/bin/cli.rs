@@ -15,7 +15,7 @@ use std::{
 
 use formalith::{
     parser::environment::Environment,
-    repl::{SetChoice, sets_help},
+    repl::{self, SetChoice, sets_help},
 };
 use rustyline::{DefaultEditor, error::ReadlineError};
 
@@ -86,13 +86,13 @@ fn main() -> Result<ExitCode, ReadlineError> {
                         },
                     }
                 } else if input == ":defs" {
-                    env.definitions()
-                        .for_each(|definition| println!("{definition}"));
+                    let definitions = repl::definitions(&env);
+                    if !definitions.is_empty() {
+                        println!("{definitions}");
+                    }
                 } else if let Some(name) = input.strip_prefix(":clear") {
-                    match name.trim() {
-                        "" => env.clear(),
-                        name if env.remove(name) => {}
-                        name => eprintln!("error: `{name}` is not defined"),
+                    if let Err(err) = repl::clear_definitions(&mut env, name.trim()) {
+                        eprintln!("error: {err}");
                     }
                 } else {
                     eval(input, set, typst, &mut env);

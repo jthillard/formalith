@@ -321,7 +321,7 @@ impl<K: Ring + SetParseExpression> SetParseExpression for Poly<K> {
 
     fn parse_literal(&self, parser: &mut Parser) -> Result<Option<Self::Element>, String> {
         if matches!(&parser.token.kind, TokenKind::Ident(ident)
-            if *ident == Context::get_symbol_data(&self.variable).name)
+            if *ident == self.variable.name())
         {
             parser.next_token();
             return Ok(Some(self.x()));
@@ -333,6 +333,6 @@ impl<K: Ring + SetParseExpression> SetParseExpression for Poly<K> {
     }
 
     fn is_constant(&self, name: &str) -> bool {
-        name == Context::get_symbol_data(&self.variable).name || self.coefficients.is_constant(name)
+        name == self.variable.name() || self.coefficients.is_constant(name)
     }
 }

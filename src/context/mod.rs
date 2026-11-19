@@ -46,6 +46,12 @@ impl Symbol {
             .unwrap()
             .get_symbol(name.into())
     }
+
+    /// The name of the symbol.
+    #[must_use]
+    pub fn name(self) -> &'static str {
+        &Context::get_symbol_data(&self).name
+    }
 }
 
 impl Print for Symbol {
@@ -54,7 +60,7 @@ impl Print for Symbol {
         _options: &crate::printer::PrintOptions,
         f: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result {
-        f.write_str(&Context::get_symbol_data(self).name)
+        f.write_str(self.name())
     }
 }
 impl PrettyPrint for Symbol {
@@ -62,7 +68,7 @@ impl PrettyPrint for Symbol {
         &self,
         _options: &crate::printer::PrintOptions,
     ) -> crate::printer::PrettyPrinter {
-        PrettyPrinter::from(Context::get_symbol_data(self).name.clone())
+        PrettyPrinter::from(self.name().to_owned())
     }
 }
 

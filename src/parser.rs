@@ -265,7 +265,7 @@ impl Parser<'_> {
             return Ok(None);
         };
         self.next_token();
-        let name = &Context::get_symbol_data(&definition.name()).name;
+        let name = definition.name().name();
         let params = definition.params();
         let args = if self.token.kind == TokenKind::OpenParen {
             if params.is_empty() {
@@ -405,7 +405,7 @@ where
                         };
                         return Err(ParserError::new(format!(
                             "Function {} expects {expected}, found {args_count}",
-                            Context::get_symbol_data(&ident).name
+                            ident.name()
                         )));
                     }
                     node = fun.normalize();

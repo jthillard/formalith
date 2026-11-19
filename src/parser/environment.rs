@@ -55,14 +55,11 @@ impl fmt::Display for Definition {
 
 /// Return `name(x, y)`, or `name` if there is no parameter.
 pub(crate) fn head(name: Symbol, params: &[Symbol]) -> String {
-    let name = &Context::get_symbol_data(&name).name;
+    let name = name.name();
     if params.is_empty() {
-        return name.clone();
+        return name.to_owned();
     }
-    let params: Vec<&str> = params
-        .iter()
-        .map(|param| Context::get_symbol_data(param).name.as_str())
-        .collect();
+    let params: Vec<&str> = params.iter().map(|param| param.name()).collect();
     format!("{name}({})", params.join(", "))
 }
 
@@ -220,7 +217,7 @@ impl<'a> Parser<'a> {
         };
         let source = self.input[body_start..].trim().to_owned();
         for (i, &symbol) in params.iter().chain([&name]).enumerate() {
-            let symbol_name = &Context::get_symbol_data(&symbol).name;
+            let symbol_name = symbol.name();
             if Context::is_builtin_constant(symbol) {
                 return Err(ParserError::new(format!(
                     "`{symbol_name}` is a builtin constant"
@@ -319,13 +316,13 @@ impl<'a> Parser<'a> {
             if Context::is_builtin_constant(symbol.symbol) {
                 return Err(ParserError::new(format!(
                     "`{}` is a builtin constant, not an unknown",
-                    Context::get_symbol_data(&symbol.symbol).name
+                    symbol.symbol.name()
                 )));
             }
             if unknowns.contains(&symbol.symbol) {
                 return Err(ParserError::new(format!(
                     "Unknown `{}` is repeated",
-                    Context::get_symbol_data(&symbol.symbol).name
+                    symbol.symbol.name()
                 )));
             }
             unknowns.push(symbol.symbol);

@@ -1,15 +1,9 @@
 //! Solving systems of equations.
-use formalith::{parser::environment::Environment, repl::SetChoice};
+mod common;
 
 /// Evaluate each statement in `set`, returning the result of the last one.
 fn eval_in(set: &str, statements: &[&str], typst: bool) -> Result<String, String> {
-    let set: SetChoice = set.parse().unwrap();
-    let mut env = Environment::new();
-    let mut result = Ok(String::new());
-    for statement in statements {
-        result = set.eval(statement, typst, &mut env);
-    }
-    result
+    common::eval_statements(set.parse().unwrap(), statements, typst)
 }
 
 /// Solve `system` in `set`, printed as Typst so that the output doesn't depend on colors.

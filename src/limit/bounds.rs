@@ -24,7 +24,7 @@ use super::{only_symbols, rational_bound};
 
 /// Whether `symbol` is an angle introduced for an oscillating `sin` or `cos`.
 fn is_angle(symbol: Symbol) -> bool {
-    Context::get_symbol_data(&symbol).name.starts_with("@t")
+    symbol.name().starts_with("@t")
 }
 
 /// Whether `term` contains an angle.

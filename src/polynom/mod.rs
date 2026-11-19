@@ -13,7 +13,6 @@ use std::{
 use tracing::trace;
 
 use crate::{
-    context::Context,
     field::{Group, Ring, Set, TryElementFrom},
     iter,
     printer::{PrettyPrint, PrettyPrinter, Print, PrintOptions},
@@ -40,9 +39,10 @@ impl<T: Group> Monomial for Term<T> {
         // Symbol ids depend on the order symbols were created in (nondeterministic across threads), so symbols
         // are compared by name: the leading variable, hence the sign of factors, must not depend on it.
         match (self, other) {
-            (Self::Symbol(s1), Self::Symbol(s2)) => Context::get_symbol_data(&s1.symbol)
-                .name
-                .cmp(&Context::get_symbol_data(&s2.symbol).name)
+            (Self::Symbol(s1), Self::Symbol(s2)) => s1
+                .symbol
+                .name()
+                .cmp(s2.symbol.name())
                 .then_with(|| s1.symbol.cmp(&s2.symbol)),
             _ => self.cmp(other),
         }

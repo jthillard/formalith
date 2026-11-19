@@ -44,12 +44,7 @@ pub fn is_definition(input: &str) -> bool {
 #[wasm_bindgen]
 #[must_use]
 pub fn definitions() -> String {
-    ENV.with_borrow(|env| {
-        env.definitions()
-            .map(ToString::to_string)
-            .collect::<Vec<_>>()
-            .join("\n")
-    })
+    ENV.with_borrow(repl::definitions)
 }
 
 /// Remove the definition of `name`, or every definition if `name` is empty.
@@ -58,16 +53,7 @@ pub fn definitions() -> String {
 /// Returns an error message if `name` is not defined.
 #[wasm_bindgen]
 pub fn clear_definitions(name: &str) -> Result<(), String> {
-    ENV.with_borrow_mut(|env| {
-        if name.is_empty() {
-            env.clear();
-            Ok(())
-        } else if env.remove(name) {
-            Ok(())
-        } else {
-            Err(format!("`{name}` is not defined"))
-        }
-    })
+    ENV.with_borrow_mut(|env| repl::clear_definitions(env, name))
 }
 
 /// List the available sets with their description.

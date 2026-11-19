@@ -255,12 +255,7 @@ impl From<SolveError> for ParserError {
 
 /// Print `term` on one line, without colors, for error messages.
 pub(crate) fn plain<T: PrettyPrint>(term: &T) -> String {
-    term.with_options(PrintOptions {
-        colors: false,
-        typst: false,
-        pretty_print: false,
-    })
-    .to_string()
+    term.with_options(PrintOptions::plain()).to_string()
 }
 
 /// Sets in which systems of equations can be solved. Implemented for every set, but solving fails at runtime
@@ -280,11 +275,7 @@ pub trait Solve: Set {
             .collect::<BTreeSet<_>>()
             .into_iter()
             .collect();
-        unknowns.sort_by(|a, b| {
-            Context::get_symbol_data(a)
-                .name
-                .cmp(&Context::get_symbol_data(b).name)
-        });
+        unknowns.sort_by(|a, b| a.name().cmp(b.name()));
         self.solve_for(equations, &unknowns)
     }
 

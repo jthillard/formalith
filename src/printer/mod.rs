@@ -39,6 +39,15 @@ impl PrintOptions {
             pretty_print: false,
         }
     }
+    /// Single line, without colors.
+    #[must_use]
+    pub const fn plain() -> Self {
+        Self {
+            colors: false,
+            typst: false,
+            pretty_print: false,
+        }
+    }
     /// Single-line typst math source, without colors.
     #[must_use]
     pub const fn typst() -> Self {

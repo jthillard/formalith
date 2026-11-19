@@ -35,7 +35,7 @@ pub trait Function<T: Set>: Debug + DynClone + DynEq + DynHash + Flags + PrettyP
     fn collect_symbols(&self, symbols: &mut BTreeSet<Symbol>);
     /// Get the identifier of the function as a string.
     fn get_ident_as_str(&self) -> &str {
-        Context::get_symbol_data(&self.get_ident()).name.as_str()
+        self.get_ident().name()
     }
 }
 

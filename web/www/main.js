@@ -180,24 +180,25 @@ function finish() {
   busy.hidden = true;
 }
 
-function evaluate(expression) {
-  pending = { id: nextId++, set, typst, input: expression };
+// Sends `message` to the worker, remembered in `pending` until it answers
+function request(message) {
+  pending = { id: nextId++, ...message };
   busy.hidden = false;
-  worker.postMessage({ id: pending.id, input: expression, set, typst });
+  worker.postMessage(pending);
+}
+
+function evaluate(expression) {
+  request({ set, typst, input: expression });
 }
 
 // Lists definitions if `defs` is set, or removes the definition `clear` (all of them if empty)
 function definitionCommand(command) {
-  pending = { id: nextId++, ...command };
-  busy.hidden = false;
-  worker.postMessage({ id: pending.id, ...command });
+  request(command);
 }
 
 // Sets are parameterized (like `Z/7` or `R[x]`), names are checked by the worker
 function changeSet(name) {
-  pending = { id: nextId++, setName: name };
-  busy.hidden = false;
-  worker.postMessage({ id: pending.id, setName: name });
+  request({ setName: name });
 }
 
 // Commands

@@ -110,7 +110,7 @@ impl fmt::Display for SetChoice {
                     Coefficients::C => Self::C,
                     Coefficients::Zn(n) => Self::Zn(*n),
                 };
-                write!(f, "{coefficients}[{}]", Context::get_symbol_data(x).name)
+                write!(f, "{coefficients}[{}]", x.name())
             }
         }
     }
@@ -152,10 +152,7 @@ impl FromStr for SetChoice {
                 } else {
                     "function"
                 };
-                return Err(format!(
-                    "`{}` is a builtin {kind}",
-                    Context::get_symbol_data(&variable).name
-                ));
+                return Err(format!("`{}` is a builtin {kind}", variable.name()));
             }
             return Ok(Self::Poly(coefficients, variable));
         }
@@ -220,5 +217,29 @@ fn eval_in<E: SetParseExpression>(
         } else {
             solution.to_string()
         }),
+    }
+}
+
+/// The definitions of `env`, one per line.
+#[must_use]
+pub fn definitions(env: &Environment) -> String {
+    env.definitions()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Remove the definition of `name` from `env`, or every definition if `name` is empty.
+///
+/// # Errors
+/// Returns an error message if `name` is not defined.
+pub fn clear_definitions(env: &mut Environment, name: &str) -> Result<(), String> {
+    if name.is_empty() {
+        env.clear();
+        Ok(())
+    } else if env.remove(name) {
+        Ok(())
+    } else {
+        Err(format!("`{name}` is not defined"))
     }
 }

@@ -1,4 +1,6 @@
 //! User definitions of variables and functions.
+mod common;
+
 use formalith::{
     field::{complex::C, real::R},
     parse,
@@ -9,12 +11,7 @@ use formalith::{
 
 /// Evaluate each statement in `R`, returning the result of the last one.
 fn eval(statements: &[&str]) -> Result<String, String> {
-    let mut env = Environment::new();
-    let mut result = Ok(String::new());
-    for statement in statements {
-        result = SetChoice::R.eval(statement, false, &mut env);
-    }
-    result
+    common::eval_statements(SetChoice::R, statements, false)
 }
 
 fn ok(expression: &str) -> Result<String, String> {
