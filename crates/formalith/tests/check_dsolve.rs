@@ -201,7 +201,6 @@ fn regression(input: &str) {
 }
 
 #[test]
-#[ignore = "bug: dsolve(2*y'' - 3*y = 0) panics on a debug assertion (as_fraction of an unnormalized term in split_complex)"]
 fn bug_dsolve_irrational_characteristic_roots_panic() {
     // Same root cause as `x^2 - 3/2 = 0` in C (`check_solve.rs`)
     regression("2*y'' - 3*y = 0");

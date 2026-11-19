@@ -295,7 +295,6 @@ fn regression(input: &str) {
 }
 
 #[test]
-#[ignore = "bug: x^2 - 3/2 = 0 in C panics on a debug assertion (as_fraction of an unnormalized term in split_complex)"]
 fn bug_solve_irrational_roots_in_c_panic() {
     regression("C; x^2 - 3/2 = 0");
 }

@@ -161,12 +161,17 @@ impl C<R<Rational>> {
         if *base >= 0 {
             // Real power of a positive real number, computed in the real field
             let real = self.real();
-            let res = real.normalize(Term::Pow(term::Pow::new(
+            let pow = Term::Pow(term::Pow::new(
                 Term::Value(Value::new(base.clone(), real)),
                 Term::Value(Value::new(exponant.clone(), real)),
                 real,
-            )));
-            return self.try_from_expr(res).ok();
+            ));
+            let res = real.normalize(pow.clone());
+            if res == pow {
+                return None;
+            }
+            // The conversion doesn't keep normalization flags, `{$(3/2)^(1/2) = 6^(1/2)/2$}`
+            return self.try_from_expr(res).ok().map(|res| res.normalize());
         }
         if *exponant.denominator_ref() == 2 {
             // `{$(-a)^(p/2) = i^p a^(p/2)$}`
