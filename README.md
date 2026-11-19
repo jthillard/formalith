@@ -18,6 +18,13 @@ algorithm, `sum(k^2, k, 1, n)`, `sum(1/k^2, k, 1, oo)`, `product(k, k, 1, n)`), 
 factorization, solving systems of polynomial equations and ordinary differential equations (`dsolve(y' = x*y)`,
 `dsolve(y'' + y = 0, y(0) = 1, y'(0) = 0)`: separable, first-order linear, and linear with constant coefficients).
 
+## Crates
+
+- `crates/formalith`: the computer algebra system library
+- `crates/formalith-session`: interactive sessions (commands, definitions, results), shared by the interfaces
+- `crates/formalith-cli`: the command line interface (binary `formalith`)
+- `crates/formalith-web`: the browser interface (WebAssembly)
+
 ## Library
 
 Nightly Rust is required (`rust-toolchain.toml` pins it).
@@ -51,8 +58,8 @@ Assumptions on symbols are declared with `assume(a > 0, b != 0, n integer)`, giv
 ## Tests
 
 ```sh
-cargo test
+cargo test --workspace
 ```
 
-CI runs `cargo fmt --all --check` and `cargo test` on pushes and pull requests. A pre-commit hook formatting the
+CI runs `cargo fmt --all --check` and `cargo test --workspace` on pushes and pull requests. A pre-commit hook formatting the
 staged Rust files is enabled with `git config core.hooksPath .githooks`.

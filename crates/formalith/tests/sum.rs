@@ -1,5 +1,5 @@
 //! Sums and products with `sum` and `product`: closed forms, Gosper's algorithm, infinite sums and products.
-use formalith::{field::real::R, parse, repl::SetChoice};
+use formalith::{dynamic::SetChoice, field::real::R, parse};
 
 mod common;
 use common::{eval_statements, line, typst};

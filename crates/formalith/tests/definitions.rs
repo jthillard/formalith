@@ -2,10 +2,10 @@
 mod common;
 
 use formalith::{
+    dynamic::SetChoice,
     field::{complex::C, real::R},
     parse,
     parser::environment::{Environment, Statement},
-    repl::SetChoice,
     try_parse,
 };
 

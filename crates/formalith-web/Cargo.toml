@@ -1,16 +1,16 @@
 [package]
 name = "formalith-web"
 description = "Formalith command line interface running in the browser"
-version = "0.1.0"
-edition = "2024"
-repository = "https://github.com/supersurviveur/formalith"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
 publish = false
 
 [lib]
 crate-type = ["cdylib"]
 
 [dependencies]
-formalith = { path = "..", default-features = false }
+formalith-session.workspace = true
 wasm-bindgen = "=0.2.128"
 console_error_panic_hook = "0.1"
 

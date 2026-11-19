@@ -1,6 +1,7 @@
-// Terminal-like interface to the Formalith wasm build. Mirrors `src/bin/cli.rs`: expressions are evaluated in the
-// current set, `:set <name>` changes it, `:typst` toggles between rendered math and plain text output. Definitions
-// like `f(x) := x^2` live in the worker: they are replayed in a new worker after a panic.
+// Terminal-like interface to the Formalith wasm build. Lines are run by the session in the worker, like in the
+// command line interface (`formalith-cli`): `:set <name>` changes the set, `:typst` toggles between rendered math
+// and plain text output. Lines changing the session, like definitions `f(x) := x^2`, are replayed in a new worker
+// after a panic.
 
 const log = document.getElementById('log');
 const form = document.getElementById('prompt');
@@ -14,8 +15,6 @@ const HISTORY_SIZE = 500;
 const TYPST_FILL = '#010203';
 
 let set = 'R';
-let setsHelp = '';
-let typst = true;
 
 let history = [];
 try {
@@ -115,43 +114,42 @@ function printResult(text, rendered) {
 let worker;
 let pending = null;
 let nextId = 0;
-// Definitions and removals in order, with the set definitions were made in, replayed in a new worker
-let definitionLog = [];
+// Lines which changed the session, replayed in a new worker
+let replayLog = [];
 
 function startWorker() {
   worker = new Worker('worker.js', { type: 'module' });
   worker.onmessage = ({ data }) => {
     if (data.ready) {
-      setsHelp = data.help;
       return;
     }
     if (!pending || data.id !== pending.id) {
       return;
     }
-    const { set: evalSet, typst: rendered, setName, input: evalInput, defs, clear } = pending;
+    const { line } = pending;
     finish();
-    if (defs && data.ok !== undefined) {
-      print(data.ok || 'no definitions');
-    } else if (clear !== undefined && data.ok !== undefined) {
-      definitionLog = clear ? [...definitionLog, { clear }] : [];
-    } else if (setName !== undefined) {
-      if (data.ok !== undefined) {
-        set = data.ok;
-        label.textContent = `${set}>`;
-      } else {
-        print(`error: ${data.err ?? 'invalid set'}`, 'error');
-      }
-    } else if (data.ok !== undefined) {
-      if (data.definition) {
-        definitionLog.push({ input: evalInput, set: evalSet });
-      }
-      printResult(data.ok, rendered);
-    } else if (data.err !== undefined) {
-      print(`error: ${data.err}`, 'error');
-    } else {
+    if (data.panic !== undefined) {
       // The wasm instance aborted on a panic and can't be reused
-      print(`error: this operation is not supported in ${evalSet}`, 'error');
+      print(`error: this operation is not supported in ${set}`, 'error');
       restartWorker();
+    } else {
+      if (data.replay) {
+        replayLog.push(line);
+      }
+      set = data.set;
+      label.textContent = `${set}>`;
+      if (data.kind === 'result' || data.kind === 'typst') {
+        printResult(data.text, data.kind === 'typst');
+      } else if (data.kind === 'message') {
+        print(data.text);
+        if (line === 'help' || line === ':help') {
+          print(
+            '  clear         clear the screen (also Ctrl+L)\nCtrl+C interrupts a running computation.',
+          );
+        }
+      } else if (data.kind === 'error') {
+        print(`error: ${data.text}`, 'error');
+      }
     }
     scrollToPrompt();
   };
@@ -170,8 +168,8 @@ function restartWorker() {
   worker.terminate();
   startWorker();
   // Answers to these messages don't match a pending request and are ignored
-  for (const { input, set: evalSet, clear } of definitionLog) {
-    worker.postMessage(clear === undefined ? { id: -1, input, set: evalSet, typst: false } : { id: -1, clear });
+  for (const line of replayLog) {
+    worker.postMessage({ id: -1, line });
   }
 }
 
@@ -180,71 +178,12 @@ function finish() {
   busy.hidden = true;
 }
 
-// Sends `message` to the worker, remembered in `pending` until it answers
-function request(message) {
-  pending = { id: nextId++, ...message };
-  busy.hidden = false;
-  worker.postMessage(pending);
-}
-
-function evaluate(expression) {
-  request({ set, typst, input: expression });
-}
-
-// Lists definitions if `defs` is set, or removes the definition `clear` (all of them if empty)
-function definitionCommand(command) {
-  request(command);
-}
-
-// Sets are parameterized (like `Z/7` or `R[x]`), names are checked by the worker
-function changeSet(name) {
-  request({ setName: name });
-}
-
-// Commands
-
-function help() {
-  print(
-    [
-      'Enter an expression to evaluate it, like `expand((x+1)^3)` or `factor(x^2-1)`.',
-      'Define variables and functions with `a := x^2` or `f(x, y) := x*y`.',
-      'Solve polynomial systems with `x + y = 3, x*y = 2` (one solution per line), or `solve(a*x^2 = 1, x)` for chosen unknowns.',
-      'Declare assumptions with `assume(a > 0, b != 0, n integer)`, like `sqrt(a^2) = a`.',
-      'commands:',
-      '  :defs         list definitions',
-      '  :clear [name] remove a definition, or all of them',
-      '  :set          show the current set',
-      '  :set <name>   evaluate in another set',
-      `  :typst        toggle rendered math output (currently ${typst ? 'on' : 'off'})`,
-      '  clear         clear the screen (also Ctrl+L)',
-      '  help          show this help',
-      'Ctrl+C interrupts a running computation.',
-      setsHelp,
-    ].join('\n'),
-  );
-}
-
+// Sends `line` to the worker, remembered in `pending` until it answers
 function run(line) {
   echo(line);
-  if (line === ':typst') {
-    typst = !typst;
-    print(`typst output ${typst ? 'enabled' : 'disabled'}`);
-  } else if (line === 'help' || line === ':help') {
-    help();
-  } else if (line.startsWith(':set')) {
-    const name = line.slice(4).trim();
-    if (!name) {
-      print(`current set: ${set}\n${setsHelp}`);
-    } else {
-      changeSet(name);
-    }
-  } else if (line === ':defs') {
-    definitionCommand({ defs: true });
-  } else if (line.startsWith(':clear')) {
-    definitionCommand({ clear: line.slice(6).trim() });
-  } else {
-    evaluate(line);
-  }
+  pending = { id: nextId++, line };
+  busy.hidden = false;
+  worker.postMessage(pending);
 }
 
 form.addEventListener('submit', event => {

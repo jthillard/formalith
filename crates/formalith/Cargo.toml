@@ -1,0 +1,23 @@
+[package]
+name = "formalith"
+description = "Modern computer algebra system focused on flexibility"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+license-file.workspace = true
+readme = "../../README.md"
+keywords = ["mathematics", "symbolic", "algebra"]
+categories = ["mathematics", "science"]
+
+[dependencies]
+append-only-vec = "0.1"
+dyn-clone = "1"
+dyn-eq = "0.1"
+dyn-hash = "1"
+malachite = { version = "0.9", default-features = false, features = ["naturals_and_integers", "rationals"] }
+owo-colors = "4"
+supports-color = "3"
+tracing = "0.1"
+
+[features]
+concise-debug = []

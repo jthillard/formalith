@@ -2,15 +2,17 @@
 
 Formalith is a computer algebra system library in Rust, generic over the algebraic structure (set/group/ring/field) expressions live in.
 
+Cargo workspace (`crates/`): `formalith` (the CAS library; the `src/...` paths below are relative to `crates/formalith/`), `formalith-session` (interactive sessions shared by the interfaces), `formalith-cli` (binary `formalith`, the default `cargo run`), `formalith-web` (wasm).
+
 ## Commands
 
 Nightly Rust is required (`#![feature(specialization)]`); `rust-toolchain.toml` pins it, so plain `cargo` works.
 
-- `cargo build`, `cargo test` (unit, `tests/`, doctests), e.g. `cargo test --test parser test_try_parse`
-- `cargo run [expr...]` (the `cli` binary): REPL (`--set <name>` / `:set <name>`, `--typst` / `:typst`). Needs the default `cli` feature (pulls `rustyline`).
+- `cargo build`, `cargo test --workspace` (unit, `tests/`, doctests), e.g. `cargo test -p formalith --test parser test_try_parse`
+- `cargo run [expr...]` (`formalith-cli`): REPL (`--set <name>` / `:set <name>`, `--typst` / `:typst`).
 - Do not run `cargo clippy`: it hangs on this crate's recursive types. Verify with `cargo build` / `cargo test`. The crate still warns on `clippy::pedantic`, `nursery`, `cargo`, `missing_docs` and `rustdoc::all`, so every public item needs a doc comment.
-- `make web` builds the wasm package into `web/www/pkg/` (needs `wasm-pack` and the `wasm32-unknown-unknown` target), `make web-serve` serves it on port 8000. `wasm-bindgen` is pinned in `web/Cargo.toml` to the installed CLI version.
-- `cargo doc`: doc comments can contain Typst math as `{$ ... $}`, rendered by `docs/typstts.html` (injected by `.cargo/config.toml`).
+- `make web` builds the wasm package into `crates/formalith-web/www/pkg/` (needs `wasm-pack` and the `wasm32-unknown-unknown` target), `make web-serve` serves it on port 8000. `wasm-bindgen` is pinned in `crates/formalith-web/Cargo.toml` to the installed CLI version.
+- `cargo doc`: doc comments can contain Typst math as `{$ ... $}`, rendered by `docs/typstts.html` at the workspace root (injected by `.cargo/config.toml`).
 
 ## Architecture
 
@@ -51,7 +53,7 @@ Nightly Rust is required (`#![feature(specialization)]`); `rust-toolchain.toml` 
 
 **Other modules.** `polynom/`: `MultivariatePolynomial` (gcd, division, square-free factorization; full factorization over ℚ in `polynom/factor/`: Zassenhaus univariate, Wang/EEZ multivariate, modular and Gaussian variants), converted with `Term::to_polynomial` / `ToTerm`; dense univariate `Poly<F: Coefficient>` in `polynom/dense.rs`. Real expression shorthands shared by limits, series and integrals (`value`, `fun`, `depends`, `constant_sign`, `try_map_operands`, ...) are in `field/commons/real/expr.rs`. `matrix/`: generic `Matrix<T>` (det, inverse, row reduction; `linalg.rs`: transpose, trace, rank, kernel, characteristic polynomial; `normal_form.rs`, `eigen.rs`). `printer/`: `Print` (one line), `PrettyPrint` (2D layout), and Typst output via `PrintOptions::typst()`.
 
-**REPL and web.** `src/repl.rs` (`SetChoice`, `sets_help`, `definitions`, `clear_definitions`) holds the evaluation logic shared by `src/bin/cli.rs` and `web/` (`formalith-web` workspace member, `wasm-bindgen` cdylib exporting `evaluate`, `is_definition`, `definitions`, `clear_definitions`, `set_name`, `sets_help`). `web/www/` is a static terminal-like page: evaluation runs in a module Web Worker, results are printed as Typst and rendered to SVG with typst.ts from jsdelivr. Panics abort the wasm instance, so the page replaces the worker after one (also how Ctrl+C works).
+**Sessions, REPL and web.** `src/dynamic.rs` (core) evaluates in a set chosen at runtime: `SetChoice` (parsed from names like `Z/7`, `M(Z)`, `R[x]`), `SetChoice::evaluate` giving an `Evaluated` (a `StatementKind` plus a type-erased printer taking any `PrintOptions`; `Display` is the default rendering, `SetChoice::eval` a string), `sets_help`, `definitions`, `clear_definitions`. `formalith-session` holds a `Session` (set, `Environment`, Typst flag) whose `run(line)` handles the commands (`:set`, `:typst`, `:defs`, `:clear`, `help`), catches panics, and returns a `Response`: an `Output` (`None`, `Result`, `Message`, `Error`) and `replay`, set for lines changing the state (definitions, assumptions, commands), which restore it when run again. `formalith-cli` is an argument parser and a `rustyline` loop over a `Session`. `formalith-web` (`wasm-bindgen` cdylib exporting `run`, returning an `Answer` with `kind`, `text`, `replay`, `set`, plus `set_typst` and `help`) runs the session in a module Web Worker (`www/worker.js`); `www/main.js` is a static terminal-like page rendering Typst results to SVG with typst.ts from jsdelivr. Panics abort the wasm instance, so the page replaces the worker after one (also how Ctrl+C works) and runs the `replay` lines again.
 
 ## Quirks
 

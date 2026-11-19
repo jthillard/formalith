@@ -1,0 +1,17 @@
+[package]
+name = "formalith-cli"
+description = "Formalith command line interface"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+license-file.workspace = true
+keywords = ["mathematics", "symbolic", "algebra", "repl"]
+categories = ["mathematics", "science", "command-line-utilities"]
+
+[[bin]]
+name = "formalith"
+path = "src/main.rs"
+
+[dependencies]
+formalith-session.workspace = true
+rustyline = { version = "19.0.0", default-features = false }

@@ -9,7 +9,7 @@ use common::{
     random,
     rng::Rng,
 };
-use formalith::{parser::environment::Environment, repl::SetChoice};
+use formalith::{dynamic::SetChoice, parser::environment::Environment};
 use std::time::Duration;
 
 /// Random values tried for the free symbols of an alternative.

@@ -6,13 +6,13 @@
 //! makes the point invalid, so it is skipped.
 use formalith::{
     context::{Symbol, assumptions::SignSet},
+    dynamic::{Coefficients, SetChoice},
     field::{
         Set, SetParseExpression, complex::C, integer::Z, matrix::M, modular::Zn, natural::N,
         real::R,
     },
     parser::environment::{Environment, Statement, integers_line},
     printer::{Print, PrintOptions},
-    repl::{Coefficients, SetChoice},
     term::TermSet,
 };
 

@@ -1,6 +1,6 @@
 //! Numerical approximation with `approx`, and the transcendental functions and constants it evaluates.
 use formalith::{
-    field::real::R, parse, parser::environment::Environment, repl::SetChoice, try_parse,
+    dynamic::SetChoice, field::real::R, parse, parser::environment::Environment, try_parse,
 };
 
 mod common;

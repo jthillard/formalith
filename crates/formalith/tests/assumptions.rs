@@ -1,5 +1,5 @@
 //! Assumptions on symbols with `assume`, like `a > 0` or `n integer`.
-use formalith::{field::real::R, parse, parser::environment::Environment, repl::SetChoice};
+use formalith::{dynamic::SetChoice, field::real::R, parse, parser::environment::Environment};
 
 mod common;
 use common::{eval_statements, line};
@@ -145,10 +145,13 @@ fn definitions_and_assumptions() {
     let mut env = Environment::new();
     SetChoice::R.eval("assume(a > 0)", false, &mut env).unwrap();
     SetChoice::R.eval("b := 2", false, &mut env).unwrap();
-    assert_eq!(formalith::repl::definitions(&env), "b := 2\nassume(a > 0)");
-    formalith::repl::clear_definitions(&mut env, "a").unwrap();
-    assert_eq!(formalith::repl::definitions(&env), "b := 2");
-    assert!(formalith::repl::clear_definitions(&mut env, "a").is_err());
+    assert_eq!(
+        formalith::dynamic::definitions(&env),
+        "b := 2\nassume(a > 0)"
+    );
+    formalith::dynamic::clear_definitions(&mut env, "a").unwrap();
+    assert_eq!(formalith::dynamic::definitions(&env), "b := 2");
+    assert!(formalith::dynamic::clear_definitions(&mut env, "a").is_err());
 }
 
 #[test]

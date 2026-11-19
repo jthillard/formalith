@@ -1,6 +1,6 @@
 //! Limits with `lim`, computed with the Gruntz algorithm, and the constants `oo` and `undefined`.
 use formalith::{
-    field::real::R, parse, parser::environment::Environment, repl::SetChoice, try_parse,
+    dynamic::SetChoice, field::real::R, parse, parser::environment::Environment, try_parse,
 };
 
 mod common;

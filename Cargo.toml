@@ -1,34 +1,14 @@
-[package]
-name = "formalith"
-description = "Modern computer algebra system focused on flexibility"
+[workspace]
+members = ["crates/*"]
+default-members = ["crates/formalith", "crates/formalith-session", "crates/formalith-cli"]
+resolver = "3"
+
+[workspace.package]
 version = "0.1.0"
 edition = "2024"
-default-run = "cli"
 repository = "https://github.com/supersurviveur/formalith"
 license-file = "LICENSE"
-readme = "README.md"
-keywords = ["mathematics", "symbolic", "algebra"]
-categories = ["mathematics", "science"]
 
-[dependencies]
-append-only-vec = "0.1"
-dyn-clone = "1"
-dyn-eq = "0.1"
-dyn-hash = "1"
-malachite = { version = "0.9", default-features = false, features = ["naturals_and_integers", "rationals"] }
-owo-colors = "4"
-supports-color = "3"
-tracing = "0.1"
-rustyline = { version = "19.0.0", default-features = false, optional = true }
-
-[features]
-default = ["cli"]
-concise-debug = []
-cli = ["dep:rustyline"]
-
-[[bin]]
-name = "cli"
-required-features = ["cli"]
-
-[workspace]
-members = [".", "web"]
+[workspace.dependencies]
+formalith = { path = "crates/formalith" }
+formalith-session = { path = "crates/formalith-session" }

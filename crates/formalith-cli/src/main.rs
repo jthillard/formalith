@@ -1,0 +1,70 @@
+//! A minimal command line interface evaluating expressions in a chosen set (the reals by default).
+//!
+//! Expressions given as arguments are evaluated and printed, otherwise expressions are read line by line,
+//! with line editing and history. The set is chosen with `--set <name>` on the command line, or `:set <name>`
+//! in the interactive mode. Typst math output is enabled with `--typst`, or toggled with `:typst`. The other
+//! commands are those of [`Session::run`], listed by `help`.
+
+use std::process::ExitCode;
+
+use formalith_session::{Output, Session, sets_help};
+use rustyline::{DefaultEditor, error::ReadlineError};
+
+/// Run a line in `session` and print the answer.
+fn run(session: &mut Session, line: &str) {
+    match session.run(line).output {
+        Output::None => {}
+        Output::Error(err) => eprintln!("error: {err}"),
+        output => println!("{output}"),
+    }
+}
+
+fn main() -> Result<ExitCode, ReadlineError> {
+    let mut args = std::env::args().skip(1).peekable();
+    let mut session = Session::new();
+    while let Some(flag) =
+        args.next_if(|arg| ["--set", "-s", "--typst", "-t"].contains(&arg.as_str()))
+    {
+        if flag == "--typst" || flag == "-t" {
+            session.set_typst(true);
+            continue;
+        }
+        match args.next().as_deref().map(str::parse) {
+            Some(Ok(set)) => session.set_set(set),
+            Some(Err(err)) => {
+                eprintln!("error: {err}");
+                return Ok(ExitCode::FAILURE);
+            }
+            None => {
+                eprintln!("error: missing set after `{flag}`\n{}", sets_help());
+                return Ok(ExitCode::FAILURE);
+            }
+        }
+    }
+    let args: Vec<String> = args.collect();
+    if !args.is_empty() {
+        args.iter().for_each(|arg| run(&mut session, arg));
+        return Ok(ExitCode::SUCCESS);
+    }
+
+    let mut editor = DefaultEditor::new()?;
+    loop {
+        let line = match editor.readline(&format!("{}> ", session.set())) {
+            Ok(line) => line,
+            Err(ReadlineError::Eof | ReadlineError::Interrupted) => break,
+            Err(err) => return Err(err),
+        };
+        match line.trim() {
+            "" => {}
+            "exit" | "quit" => break,
+            input => {
+                editor.add_history_entry(input)?;
+                run(&mut session, input);
+                if matches!(input, "help" | ":help") {
+                    println!("exit or quit (also Ctrl+D) leaves");
+                }
+            }
+        }
+    }
+    Ok(ExitCode::SUCCESS)
+}

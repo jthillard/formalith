@@ -26,6 +26,7 @@
 
 pub mod combinatorics;
 pub mod context;
+pub mod dynamic;
 pub mod field;
 pub mod integrate;
 mod iter;
@@ -35,7 +36,6 @@ pub mod ode;
 pub mod parser;
 pub mod polynom;
 pub mod printer;
-pub mod repl;
 pub mod solve;
 pub mod sum;
 pub mod term;

@@ -1,7 +1,7 @@
 //! Set selection and evaluation of the command line interface.
 use formalith::{
+    dynamic::{Coefficients, SetChoice},
     parser::environment::Environment,
-    repl::{Coefficients, SetChoice},
 };
 
 fn parse(name: &str) -> Result<SetChoice, String> {

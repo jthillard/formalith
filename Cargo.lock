@@ -103,9 +103,23 @@ dependencies = [
  "dyn-hash",
  "malachite",
  "owo-colors",
- "rustyline",
  "supports-color",
  "tracing",
+]
+
+[[package]]
+name = "formalith-cli"
+version = "0.1.0"
+dependencies = [
+ "formalith-session",
+ "rustyline",
+]
+
+[[package]]
+name = "formalith-session"
+version = "0.1.0"
+dependencies = [
+ "formalith",
 ]
 
 [[package]]
@@ -113,7 +127,7 @@ name = "formalith-web"
 version = "0.1.0"
 dependencies = [
  "console_error_panic_hook",
- "formalith",
+ "formalith-session",
  "wasm-bindgen",
 ]
 

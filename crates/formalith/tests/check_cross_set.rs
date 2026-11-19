@@ -8,7 +8,7 @@ use common::{
     random,
     rng::Rng,
 };
-use formalith::{parser::environment::Environment, repl::SetChoice};
+use formalith::{dynamic::SetChoice, parser::environment::Environment};
 use malachite::Integer;
 use std::str::FromStr;
 

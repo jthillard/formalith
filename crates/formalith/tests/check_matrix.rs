@@ -9,7 +9,7 @@ use common::{
     random,
     rng::Rng,
 };
-use formalith::{parser::environment::Environment, repl::SetChoice};
+use formalith::{dynamic::SetChoice, parser::environment::Environment};
 
 /// Rows of a printed matrix `[[a, b], [c, d]]`.
 fn rows(matrix: &str) -> Option<Vec<Vec<String>>> {

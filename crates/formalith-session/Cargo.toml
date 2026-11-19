@@ -1,0 +1,12 @@
+[package]
+name = "formalith-session"
+description = "Formalith interactive sessions: commands, definitions and results shared by its interfaces"
+version.workspace = true
+edition.workspace = true
+repository.workspace = true
+license-file.workspace = true
+keywords = ["mathematics", "symbolic", "algebra", "repl"]
+categories = ["mathematics", "science"]
+
+[dependencies]
+formalith.workspace = true

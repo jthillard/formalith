@@ -8,9 +8,9 @@ pub mod random;
 pub mod rng;
 
 use formalith::{
+    dynamic::SetChoice,
     parser::environment::Environment,
     printer::{PrettyPrint, PrintOptions},
-    repl::SetChoice,
 };
 
 /// Evaluate each statement in `set` with shared definitions, returning the result of the last one.

@@ -1,4 +1,4 @@
-//! Evaluation of expressions in a set chosen at runtime, shared by the command line and web interfaces.
+//! Evaluation of expressions in a set chosen at runtime, by name (`Z/7`, `R[x]`...), used by interactive sessions.
 
 use std::{fmt, str::FromStr};
 
@@ -86,21 +86,87 @@ impl SetChoice {
     /// # Panics
     /// Panics if an operation is not supported by the set.
     pub fn eval(self, input: &str, typst: bool, env: &mut Environment) -> Result<String, String> {
+        self.evaluate(input, env).map(|result| {
+            if typst {
+                result.print(PrintOptions::typst())
+            } else {
+                result.to_string()
+            }
+        })
+    }
+
+    /// Parse and evaluate `input` in this set like [`SetChoice::eval`], to be printed later.
+    ///
+    /// # Errors
+    /// Returns the parsing error message if `input` is not a valid expression or definition.
+    ///
+    /// # Panics
+    /// Panics if an operation is not supported by the set.
+    pub fn evaluate(self, input: &str, env: &mut Environment) -> Result<Evaluated, String> {
         match self {
-            Self::N => eval_in(input, N, typst, env),
-            Self::Z => eval_in(input, Z, typst, env),
-            Self::R => eval_in(input, R, typst, env),
-            Self::C => eval_in(input, C, typst, env),
-            Self::M => eval_in(input, M, typst, env),
-            Self::MZ => eval_in(input, M::new(TermSet::new(Z)), typst, env),
-            Self::MZn(n) => eval_in(input, M::new(TermSet::new(Zn::new(n))), typst, env),
-            Self::Zn(n) => eval_in(input, Zn::new(n), typst, env),
-            Self::Poly(Coefficients::R, x) => eval_in(input, R.get_polynomial_ring(x), typst, env),
-            Self::Poly(Coefficients::C, x) => eval_in(input, C.get_polynomial_ring(x), typst, env),
+            Self::N => eval_in(input, N, env),
+            Self::Z => eval_in(input, Z, env),
+            Self::R => eval_in(input, R, env),
+            Self::C => eval_in(input, C, env),
+            Self::M => eval_in(input, M, env),
+            Self::MZ => eval_in(input, M::new(TermSet::new(Z)), env),
+            Self::MZn(n) => eval_in(input, M::new(TermSet::new(Zn::new(n))), env),
+            Self::Zn(n) => eval_in(input, Zn::new(n), env),
+            Self::Poly(Coefficients::R, x) => eval_in(input, R.get_polynomial_ring(x), env),
+            Self::Poly(Coefficients::C, x) => eval_in(input, C.get_polynomial_ring(x), env),
             Self::Poly(Coefficients::Zn(n), x) => {
-                eval_in(input, Zn::new(n).get_polynomial_ring(x), typst, env)
+                eval_in(input, Zn::new(n).get_polynomial_ring(x), env)
             }
         }
+    }
+}
+
+/// The kind of statement an evaluated input was.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StatementKind {
+    /// An expression.
+    Expression,
+    /// A definition, like `f(x) := x^2`.
+    Definition,
+    /// Assumptions, like `assume(a > 0)`.
+    Assumption,
+    /// Solved equations, inequalities or differential equations.
+    Solution,
+}
+
+/// An evaluated statement, which can be printed with any [`PrintOptions`], or displayed like its result is
+/// (colored if stdout supports colors).
+pub struct Evaluated {
+    kind: StatementKind,
+    print: Box<dyn Fn(Option<PrintOptions>) -> String>,
+}
+
+impl Evaluated {
+    /// The kind of the evaluated statement.
+    #[must_use]
+    pub const fn kind(&self) -> StatementKind {
+        self.kind
+    }
+
+    /// Print the statement with `options`.
+    #[must_use]
+    pub fn print(&self, options: PrintOptions) -> String {
+        (self.print)(Some(options))
+    }
+}
+
+impl fmt::Display for Evaluated {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&(self.print)(None))
+    }
+}
+
+impl fmt::Debug for Evaluated {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Evaluated")
+            .field("kind", &self.kind)
+            .field("print", &self.print(PrintOptions::plain()))
+            .finish()
     }
 }
 
@@ -223,51 +289,75 @@ pub fn sets_help() -> String {
 fn eval_in<E: SetParseExpression>(
     input: &str,
     set: E,
-    typst: bool,
     env: &mut Environment,
-) -> Result<String, String> {
-    let print = |term: &crate::term::Term<E>| {
-        if typst {
-            term.with_options(PrintOptions::typst()).to_string()
-        } else {
-            term.to_string()
+) -> Result<Evaluated, String> {
+    let statement = env.eval(input, set).map_err(|err| err.to_string())?;
+    let kind = match statement {
+        Statement::Expression(_) => StatementKind::Expression,
+        Statement::Definition { .. } => StatementKind::Definition,
+        Statement::Assume(_) => StatementKind::Assumption,
+        Statement::System { .. } | Statement::Inequalities { .. } | Statement::Ode { .. } => {
+            StatementKind::Solution
         }
     };
-    match env.eval(input, set).map_err(|err| err.to_string())? {
-        Statement::Expression(term) => Ok(print(&term)),
+    Ok(Evaluated {
+        kind,
+        print: Box::new(move |options| print_statement(&statement, options)),
+    })
+}
+
+/// Print an evaluated statement with `options`, or with the `Display` implementations of its parts.
+fn print_statement<E: SetParseExpression>(
+    statement: &Statement<E>,
+    options: Option<PrintOptions>,
+) -> String {
+    let typst = options.as_ref().is_some_and(|options| options.typst);
+    let print = |value: &dyn Fn(PrintOptions) -> String, display: String| {
+        options.map_or(display, |options| value(options))
+    };
+    match statement {
+        Statement::Expression(term) => print(
+            &|options| term.with_options(options).to_string(),
+            term.to_string(),
+        ),
         Statement::Definition {
             name, params, body, ..
-        } => Ok(format!("{} := {}", head(name, &params), print(&body))),
+        } => format!(
+            "{} := {}",
+            head(*name, params),
+            print(
+                &|options| body.with_options(options).to_string(),
+                body.to_string()
+            )
+        ),
         Statement::System {
             solution, integers, ..
         } => {
-            let mut res = if typst {
-                solution.with_options(PrintOptions::typst()).to_string()
-            } else {
-                solution.to_string()
-            };
+            let mut res = print(
+                &|options| solution.with_options(options).to_string(),
+                solution.to_string(),
+            );
             if !integers.is_empty() {
                 res.push_str(if typst { " \\ " } else { "\n" });
-                res.push_str(&integers_line(&integers, typst));
+                res.push_str(&integers_line(integers, typst));
             }
-            Ok(res)
+            res
         }
-        Statement::Inequalities { solution, .. } => Ok(if typst {
-            solution.with_options(PrintOptions::typst()).to_string()
+        Statement::Inequalities { solution, .. } => print(
+            &|options| solution.with_options(options).to_string(),
+            solution.to_string(),
+        ),
+        Statement::Ode { solution, .. } => print(
+            &|options| solution.with_options(options).to_string(),
+            solution.to_string(),
+        ),
+        Statement::Assume(assumptions) if assumptions.is_empty() => if typst {
+            "\"no assumption\""
         } else {
-            solution.to_string()
-        }),
-        Statement::Ode { solution, .. } => Ok(if typst {
-            solution.with_options(PrintOptions::typst()).to_string()
-        } else {
-            solution.to_string()
-        }),
-        Statement::Assume(assumptions) if assumptions.is_empty() => Ok(if typst {
-            "\"no assumption\"".to_owned()
-        } else {
-            "no assumption".to_owned()
-        }),
-        Statement::Assume(assumptions) => Ok(assumptions.describe(typst)),
+            "no assumption"
+        }
+        .to_owned(),
+        Statement::Assume(assumptions) => assumptions.describe(typst),
     }
 }
 
