@@ -22,6 +22,7 @@
 //! ```
 
 pub mod inequality;
+mod inverse;
 mod lattice;
 mod linear;
 pub(crate) mod polynomial;
@@ -36,6 +37,8 @@ use crate::{
     term::{Expand, Normalize, SymbolTerm, Term},
 };
 
+use inverse::Transcendental;
+pub(crate) use inverse::is_integer_parameter;
 use polynomial::Assumed;
 
 /// An equation `lhs = rhs`.
@@ -141,6 +144,15 @@ impl<T: Set> Solution<T> {
             Self::Assignments(assignments) => std::slice::from_ref(assignments),
             Self::Alternatives(branches) => branches,
         }
+    }
+
+    /// The symbols of the values of the solutions.
+    pub(crate) fn symbols(&self) -> BTreeSet<Symbol> {
+        self.branches()
+            .iter()
+            .flatten()
+            .flat_map(|(_, value)| value.symbols())
+            .collect()
     }
 
     /// The text printed when there isn't any assignment.
@@ -325,9 +337,19 @@ impl<T: Ring> Solve for T {
                 (num.expand(), den)
             })
             .unzip();
-        let solution = match linear::solve(&expressions, unknowns, *self) {
-            Err(SolveError::NonLinear(_)) => polynomial::solve(&expressions, unknowns),
-            res => res,
+        let solution = if Self::is_transcendental(&expressions, unknowns) {
+            let error = SolveError::NotPolynomial(plain(&expressions[0]));
+            Self::solve_transcendental(&expressions, unknowns, error)
+        } else {
+            match linear::solve(&expressions, unknowns, *self) {
+                Err(SolveError::NonLinear(_)) => match polynomial::solve(&expressions, unknowns) {
+                    Err(error @ SolveError::NotPolynomial(_)) => {
+                        Self::solve_transcendental(&expressions, unknowns, error)
+                    }
+                    res => res,
+                },
+                res => res,
+            }
         }?;
         let denominators: Vec<_> = denominators
             .into_iter()

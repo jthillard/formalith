@@ -59,8 +59,8 @@ fn other_sets() {
 
 #[test]
 fn errors() {
-    assert!(solve("abs(x) = 1").unwrap_err().contains("not polynomial"));
-    assert!(solve("2^x = 1").unwrap_err().contains("not polynomial"));
+    assert!(solve("abs(x) = y").unwrap_err().contains("not polynomial"));
+    assert!(solve("2^x = y").unwrap_err().contains("not polynomial"));
     // Irreducible quartic over the rationals, and not a polynomial in `x^k`
     assert!(
         solve("x^4 + x + 1 = 0")
@@ -473,7 +473,12 @@ fn cyclotomic_polynomials() {
 
 #[test]
 fn non_polynomial_equations_are_rejected() {
-    for system in ["sin(x) = 0", "exp(x) = 2", "sqrt(x) = 2"] {
+    for system in [
+        "sin(x) = x",
+        "sin(x) = cos(x)",
+        "exp(x) = x^2",
+        "x + y = 1, sin(x) = y",
+    ] {
         assert!(
             solve(system).unwrap_err().contains("not polynomial"),
             "{system}"
@@ -538,4 +543,61 @@ fn unsupported_inequalities() {
             .unwrap_err()
             .contains("single unknown")
     );
+}
+
+#[test]
+fn trigonometric_equations() {
+    assert_eq!(
+        solve("sin(x) = 1/2"),
+        ok("x = frac(1, 6) pi+2 pi k \\ x = frac(5, 6) pi+2 pi k \\ k in ZZ")
+    );
+    assert_eq!(
+        solve("cos(x) = 0"),
+        ok("x = -frac(1, 2) pi+2 pi k \\ x = frac(1, 2) pi+2 pi k \\ k in ZZ")
+    );
+    assert_eq!(solve("cos(x) = 1"), ok("x = 2 pi k \\ k in ZZ"));
+    assert_eq!(
+        solve("tan(2*x) = 1"),
+        ok("x = frac(1, 8) pi+frac(1, 2) pi k \\ k in ZZ")
+    );
+    // A polynomial in `sin(x)`
+    assert_eq!(
+        solve("2*sin(x)^2 = 1").map(|s| s.matches(" \\ ").count()),
+        Ok(4)
+    );
+    assert_eq!(solve("sin(x) = 2"), ok("\"no solution\""));
+    // `k` is taken, the parameter is `k_1`
+    assert_eq!(
+        solve("solve(sin(x) = k, x)"),
+        ok("x = arcsin(k)+2 pi k_1 \\ x = pi-arcsin(k)+2 pi k_1 \\ k_1 in ZZ")
+    );
+}
+
+#[test]
+fn exponential_and_logarithmic_equations() {
+    assert_eq!(solve("exp(x) = 3"), ok("x = ln(3)"));
+    assert_eq!(solve("exp(x) = -1"), ok("\"no solution\""));
+    assert_eq!(solve("ln(x) = 2"), ok("x = exp(2)"));
+    assert_eq!(solve("2^x = 8"), ok("x = 3"));
+    // A polynomial in `{$e^x$}`
+    assert_eq!(
+        solve("exp(2*x) - 3*exp(x) + 2 = 0"),
+        ok("x = ln(2) \\ x = 0")
+    );
+    assert_eq!(solve("x + sqrt(x) = 6"), ok("x = 4"));
+    assert_eq!(solve("sqrt(x) = -2"), ok("\"no solution\""));
+    assert_eq!(solve("abs(x - 1) = 3"), ok("x = -2 \\ x = 4"));
+    assert_eq!(solve("atan(x) = 2"), ok("\"no solution\""));
+    assert_eq!(solve("abs(x) = 1"), ok("x = -1 \\ x = 1"));
+    assert_eq!(solve("2^x = 1"), ok("x = 0"));
+}
+
+#[test]
+fn lambert_equations() {
+    assert_eq!(solve("x*exp(x) = 1"), ok("x = W(1)"));
+    assert_eq!(
+        solve("2*x*exp(3*x) = 5"),
+        ok("x = frac(1, 3) W(frac(15, 2))")
+    );
+    assert_eq!(solve("lambertw(x) = 2"), ok("x = 2 exp(2)"));
 }

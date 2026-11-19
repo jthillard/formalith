@@ -5,7 +5,11 @@
 //! later doesn't change `b := a + 1`, and `a := a + 1` refers to the previous `a`. Arguments of a function are
 //! passed by name: each use of a parameter parses the argument again.
 
-use std::{collections::BTreeMap, fmt, rc::Rc};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fmt,
+    rc::Rc,
+};
 
 use crate::{
     context::{
@@ -17,7 +21,7 @@ use crate::{
     solve::{
         Equation, Solution, Solve,
         inequality::{Inequality, Intervals, SolveInequality},
-        plain,
+        is_integer_parameter, plain,
     },
     term::{Normalize, Term, relation::Relation},
 };
@@ -256,6 +260,8 @@ pub enum Statement<E: Set> {
         equations: Vec<Equation<E>>,
         /// The solutions of the system.
         solution: Solution<E>,
+        /// The new integer parameters of the solutions, like `k` in `{$x = pi/6 + 2 k pi$}`.
+        integers: Vec<Symbol>,
     },
     /// A differential equation `dsolve(y' = y, y(0) = 1)`, solved.
     Ode {
@@ -275,6 +281,32 @@ pub enum Statement<E: Set> {
     },
 }
 
+/// The integer parameters `k`, `k_1`... of the periodic solutions of `equations` (see `solve::inverse`), the
+/// symbols of `solution` named like them which aren't in the equations.
+fn integer_parameters<E: Set>(equations: &[Equation<E>], solution: &Solution<E>) -> Vec<Symbol> {
+    let used: BTreeSet<Symbol> = equations
+        .iter()
+        .flat_map(|equation| [&equation.lhs, &equation.rhs])
+        .flat_map(Term::symbols)
+        .collect();
+    solution
+        .symbols()
+        .into_iter()
+        .filter(|symbol| !used.contains(symbol) && is_integer_parameter(*symbol))
+        .collect()
+}
+
+/// The line `k, k_1 ∈ ℤ` stating that `integers` are integers, `k, k_1 in ZZ` in Typst.
+#[must_use]
+pub fn integers_line(integers: &[Symbol], typst: bool) -> String {
+    let names: Vec<_> = integers.iter().map(|symbol| symbol.name()).collect();
+    if typst {
+        format!("{} in ZZ", names.join(", "))
+    } else {
+        format!("{} ∈ ℤ", names.join(", "))
+    }
+}
+
 /// An expression, or a relation `lhs op rhs`, in a list of equations.
 type Item<E> = (Term<E>, Option<(Relation, Term<E>)>);
 
@@ -285,7 +317,15 @@ impl<E: Set> fmt::Display for Statement<E> {
             Self::Definition {
                 name, params, body, ..
             } => write!(f, "{} := {body}", head(*name, params)),
-            Self::System { solution, .. } => write!(f, "{solution}"),
+            Self::System {
+                solution, integers, ..
+            } => {
+                write!(f, "{solution}")?;
+                if !integers.is_empty() {
+                    write!(f, "\n{}", integers_line(integers, false))?;
+                }
+                Ok(())
+            }
             Self::Ode { solution, .. } => write!(f, "{solution}"),
             Self::Inequalities { solution, .. } => write!(f, "{solution}"),
             Self::Assume(assumptions) if assumptions.is_empty() => f.write_str("no assumption"),
@@ -383,9 +423,11 @@ impl<'a> Parser<'a> {
             })
             .collect::<Result<Vec<_>, _>>()?;
         let solution = set.solve(&equations)?;
+        let integers = integer_parameters(&equations, &solution);
         Ok(Statement::System {
             equations,
             solution,
+            integers,
         })
     }
 
@@ -552,9 +594,11 @@ impl<'a> Parser<'a> {
         } else {
             set.solve_for(&equations, &unknowns)?
         };
+        let integers = integer_parameters(&equations, &solution);
         Ok(Statement::System {
             equations,
             solution,
+            integers,
         })
     }
 

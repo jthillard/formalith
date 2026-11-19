@@ -8,7 +8,7 @@ use crate::{
         Set, SetParseExpression, complex::C, integer::Z, matrix::M, modular::Zn, natural::N,
         real::R,
     },
-    parser::environment::{Environment, Statement, head},
+    parser::environment::{Environment, Statement, head, integers_line},
     printer::{Print, PrintOptions},
     term::TermSet,
 };
@@ -238,11 +238,20 @@ fn eval_in<E: SetParseExpression>(
         Statement::Definition {
             name, params, body, ..
         } => Ok(format!("{} := {}", head(name, &params), print(&body))),
-        Statement::System { solution, .. } => Ok(if typst {
-            solution.with_options(PrintOptions::typst()).to_string()
-        } else {
-            solution.to_string()
-        }),
+        Statement::System {
+            solution, integers, ..
+        } => {
+            let mut res = if typst {
+                solution.with_options(PrintOptions::typst()).to_string()
+            } else {
+                solution.to_string()
+            };
+            if !integers.is_empty() {
+                res.push_str(if typst { " \\ " } else { "\n" });
+                res.push_str(&integers_line(&integers, typst));
+            }
+            Ok(res)
+        }
         Statement::Inequalities { solution, .. } => Ok(if typst {
             solution.with_options(PrintOptions::typst()).to_string()
         } else {
