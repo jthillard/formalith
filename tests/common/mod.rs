@@ -1,10 +1,10 @@
 //! Helpers shared by integration tests.
 #![allow(dead_code)]
 
-pub mod random;
 pub mod guard;
 pub mod harness;
 pub mod numeric;
+pub mod random;
 pub mod rng;
 
 use formalith::{

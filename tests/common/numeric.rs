@@ -7,7 +7,8 @@
 use formalith::{
     context::{Symbol, assumptions::SignSet},
     field::{
-        Set, SetParseExpression, complex::C, integer::Z, matrix::M, modular::Zn, natural::N, real::R,
+        Set, SetParseExpression, complex::C, integer::Z, matrix::M, modular::Zn, natural::N,
+        real::R,
     },
     parser::environment::{Environment, Statement, integers_line},
     printer::{Print, PrintOptions},
@@ -47,7 +48,11 @@ pub fn eval_in(set: SetChoice, env: &mut Environment, input: &str) -> Result<Str
 }
 
 /// Evaluate `input` in `set`, printing every kind of statement on plain lines.
-fn eval_plain<E: SetParseExpression>(input: &str, set: E, env: &mut Environment) -> Result<String, String> {
+fn eval_plain<E: SetParseExpression>(
+    input: &str,
+    set: E,
+    env: &mut Environment,
+) -> Result<String, String> {
     let plain = PrintOptions::plain();
     Ok(match env.eval(input, set).map_err(|err| err.to_string())? {
         Statement::Expression(term) => term.with_options(plain).to_string(),
@@ -156,7 +161,10 @@ impl Function {
     /// The value at `args` given as approximations with `digits` digits, so that powers like `(1 + 10^-7)^(10^7)`
     /// are computed approximately (the exact rational would be huge).
     pub fn at_approx(&self, args: &[String], digits: usize) -> Option<f64> {
-        let args: Vec<_> = args.iter().map(|a| format!("approx({a}, {digits})")).collect();
+        let args: Vec<_> = args
+            .iter()
+            .map(|a| format!("approx({a}, {digits})"))
+            .collect();
         self.at(&args)
     }
 
@@ -268,7 +276,10 @@ impl Domain {
 
 /// Variables with their domains taken from the assumptions of `env`.
 pub fn assumed_vars<'a>(env: &Environment, names: &[&'a str]) -> Vec<(&'a str, Domain)> {
-    names.iter().map(|&n| (n, Domain::assumed(env, n))).collect()
+    names
+        .iter()
+        .map(|&n| (n, Domain::assumed(env, n)))
+        .collect()
 }
 
 /// Whether two values are equal up to the tolerance of checks.
@@ -321,7 +332,11 @@ pub fn equivalent(
             continue;
         };
         if !close(va, vb, TOLERANCE) {
-            let at: Vec<_> = names.iter().zip(&point).map(|(n, v)| format!("{n} = {v}")).collect();
+            let at: Vec<_> = names
+                .iter()
+                .zip(&point)
+                .map(|(n, v)| format!("{n} = {v}"))
+                .collect();
             return Check::Differ(format!(
                 "`{a}` = {va} but `{b}` = {vb} at {}",
                 at.join(", ")

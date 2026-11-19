@@ -90,7 +90,12 @@ fn product(rng: &mut Rng) -> String {
 #[test]
 #[ignore = "fuzz: random expansions, run with --ignored"]
 fn fuzz_expand() {
-    fuzz("fuzz expand", 60, |rng| format!("expand; {}", random::expr(rng, &["x", "y"], 3)), rewrite);
+    fuzz(
+        "fuzz expand",
+        60,
+        |rng| format!("expand; {}", random::expr(rng, &["x", "y"], 3)),
+        rewrite,
+    );
 }
 
 #[test]
@@ -136,7 +141,11 @@ fn fuzz_apart() {
             let p = random::polynomial(rng, &["x"], 3, 3);
             let count = rng.range(1, 3) as usize;
             let q = random::linear_factors(rng, "x", count);
-            let extra = if rng.chance(0.4) { format!("*(x^2 + {})", rng.range(1, 3)) } else { String::new() };
+            let extra = if rng.chance(0.4) {
+                format!("*(x^2 + {})", rng.range(1, 3))
+            } else {
+                String::new()
+            };
             format!("apart; {p}/({q}{extra})")
         },
         rewrite,
@@ -146,13 +155,20 @@ fn fuzz_apart() {
 #[test]
 #[ignore = "fuzz: normalization of random expressions, run with --ignored"]
 fn fuzz_normalization() {
-    fuzz("fuzz normalization", 100, |rng| random::expr(rng, &["x", "y"], 4), normalization);
+    fuzz(
+        "fuzz normalization",
+        100,
+        |rng| random::expr(rng, &["x", "y"], 4),
+        normalization,
+    );
 }
 
 /// A product of a constant and powers sharing bases, like `3/2*x^(1/3)*y*x^(-1/3)`.
 fn powers(rng: &mut Rng) -> String {
     let bases = ["x", "y", "pi", "(x + 1)", "e", "3"];
-    let exponents = ["1", "2", "-1", "-2", "1/2", "-1/2", "1/3", "-1/3", "3/2", "-3/2"];
+    let exponents = [
+        "1", "2", "-1", "-2", "1/2", "-1/2", "1/3", "-1/3", "3/2", "-3/2",
+    ];
     let mut factors = vec![random::constant(rng)];
     for _ in 0..rng.range(2, 4) {
         let base = rng.pick(&bases);
@@ -176,7 +192,12 @@ fn regression(input: &str, check: fn(&str) -> Verdict) {
 fn bug_coefficient_times_cancelling_powers_is_zero() {
     let mut env = env_with(&[]);
     // `2*x*x^(-1)` is right, but not other exponents; also `(1/2)*sqrt(pi)/sqrt(pi)` and `pi^(-1/2)*gamma(3/2)`
-    for f in ["2*x^2*x^(-2)", "2*sqrt(x)/sqrt(x)", "(1/2)*pi^(1/3)*pi^(-1/3)", "pi^(-1/2)*gamma(3/2)"] {
+    for f in [
+        "2*x^2*x^(-2)",
+        "2*sqrt(x)/sqrt(x)",
+        "(1/2)*pi^(1/3)*pi^(-1/3)",
+        "pi^(-1/2)*gamma(3/2)",
+    ] {
         let res = eval(&mut env, f).unwrap();
         assert_ne!(res, "0", "{f}");
     }

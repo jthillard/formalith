@@ -48,8 +48,14 @@ fn closed_form(input: &str, product: bool) -> Verdict {
             continue;
         };
         if !close(step, value, 1e-9) {
-            let rel = if product { "S(n)/S(n-1)" } else { "S(n) - S(n-1)" };
-            return Verdict::Wrong(format!("S(n) = {closed}: {rel} = {step} but f({n}) = {value}"));
+            let rel = if product {
+                "S(n)/S(n-1)"
+            } else {
+                "S(n) - S(n-1)"
+            };
+            return Verdict::Wrong(format!(
+                "S(n) = {closed}: {rel} = {step} but f({n}) = {value}"
+            ));
         }
         valid += 1;
     }
@@ -58,7 +64,9 @@ fn closed_form(input: &str, product: bool) -> Verdict {
         let direct = number(&env, &format!("{op}({f}, k, {a}, {n})"));
         if let (Some(direct), Some(value)) = (direct, s.at(&[n.to_string()])) {
             if !close(direct, value, 1e-9) {
-                return Verdict::Wrong(format!("S(n) = {closed}: S({n}) = {value} but {op}({f}, k, {a}, {n}) = {direct}"));
+                return Verdict::Wrong(format!(
+                    "S(n) = {closed}: S({n}) = {value} but {op}({f}, k, {a}, {n}) = {direct}"
+                ));
             }
             valid += 1;
         }
@@ -107,10 +115,20 @@ fn infinite_sum(input: &str) -> Verdict {
         return Verdict::Skip(format!("`{value}` isn't a number"));
     };
     // Partial sum of 1000 terms (term by term since there is no closed form for large ranges otherwise)
-    let partial = number(&env, &format!("sum({f}, k, {a}, {}) + sum({f}, k, {}, {})", a + 99, a + 100, a + 199));
+    let partial = number(
+        &env,
+        &format!(
+            "sum({f}, k, {a}, {}) + sum({f}, k, {}, {})",
+            a + 99,
+            a + 100,
+            a + 199
+        ),
+    );
     match partial {
         Some(partial) if close(partial, value, 1e-2) => Verdict::Pass,
-        Some(partial) => Verdict::Wrong(format!("sum to oo = {value} but the first 200 terms give {partial}")),
+        Some(partial) => Verdict::Wrong(format!(
+            "sum to oo = {value} but the first 200 terms give {partial}"
+        )),
         None => Verdict::Skip("partial sum".to_owned()),
     }
 }
@@ -160,7 +178,13 @@ fn products() {
 fn long_sums() {
     check_all(
         "long sums",
-        &["k^2", "1/(k*(k + 1))", "k*2^k", "(-1)^k * k^2", "binomial(k, 3)"],
+        &[
+            "k^2",
+            "1/(k*(k + 1))",
+            "k*2^k",
+            "(-1)^k * k^2",
+            "binomial(k, 3)",
+        ],
         long_sum,
     );
 }
@@ -191,8 +215,15 @@ fn summand(rng: &mut Rng) -> String {
             random::univariate(rng, "k", degree, 4)
         }
         1 => format!("{}^k", rng.pick(&["2", "3", "1/2", "-2", "(-1)"])),
-        2 => format!("1/{}", random::linear_factors(rng, "k", 2).replace("(1*k + -4)", "(k + 5)")),
-        3 => format!("{}^k * {}", rng.pick(&["2", "1/3", "-1"]), random::univariate(rng, "k", 1, 3)),
+        2 => format!(
+            "1/{}",
+            random::linear_factors(rng, "k", 2).replace("(1*k + -4)", "(k + 5)")
+        ),
+        3 => format!(
+            "{}^k * {}",
+            rng.pick(&["2", "1/3", "-1"]),
+            random::univariate(rng, "k", 1, 3)
+        ),
         4 => format!("factorial(k) * {}", random::univariate(rng, "k", 1, 2)),
         5 => format!("binomial(k, {})", rng.range(1, 3)),
         6 => format!("1/(k + {})^2", rng.range(0, 2)),

@@ -21,7 +21,10 @@ fn series(input: &str) -> Verdict {
     let (f, a, n) = (parts[0], parts[1], parts[2]);
     let side: Option<i64> = parts.get(3).map(|s| s.parse().unwrap());
     let mut env = env_with(&[]);
-    let call = side.map_or_else(|| format!("series({f}, x, {a}, {n})"), |s| format!("series({f}, x, {a}, {n}, {s})"));
+    let call = side.map_or_else(
+        || format!("series({f}, x, {a}, {n})"),
+        |s| format!("series({f}, x, {a}, {n}, {s})"),
+    );
     let s = match eval(&mut env, &call) {
         Ok(res) if !res.contains("series(") => res,
         Ok(res) => return Verdict::Skip(format!("unevaluated: {res}")),
@@ -33,11 +36,15 @@ fn series(input: &str) -> Verdict {
 /// Check that `f - s` is `O((x - a)^n)` numerically.
 fn remainder(env: &Environment, f: &str, s: &str, a: &str, n: &str, side: Option<i64>) -> Verdict {
     let mut env = env.clone();
-    let (Ok(fun), Ok(ser)) = (Function::new_in(&mut env, f, &["x"]), Function::new_in(&mut env, s, &["x"])) else {
+    let (Ok(fun), Ok(ser)) = (
+        Function::new_in(&mut env, f, &["x"]),
+        Function::new_in(&mut env, s, &["x"]),
+    ) else {
         return Verdict::Skip(format!("can't define `{s}`"));
     };
     let infinite = a == "oo" || a == "-oo";
-    let sides: Vec<i64> = side.map_or_else(|| if infinite { vec![1] } else { vec![1, -1] }, |s| vec![s]);
+    let sides: Vec<i64> =
+        side.map_or_else(|| if infinite { vec![1] } else { vec![1, -1] }, |s| vec![s]);
     let mut checked = false;
     for sign in sides {
         let mut ratios = Vec::new();
@@ -60,10 +67,16 @@ fn remainder(env: &Environment, f: &str, s: &str, a: &str, n: &str, side: Option
         }
         checked = true;
         if ratios[2] > GROWTH * ratios[1] + 1e-9 && ratios[1] > GROWTH * ratios[0] + 1e-9 {
-            return Verdict::Wrong(format!("S = {s}: |f - S|/h^n grows like {ratios:?} on side {sign}"));
+            return Verdict::Wrong(format!(
+                "S = {s}: |f - S|/h^n grows like {ratios:?} on side {sign}"
+            ));
         }
     }
-    if checked { Verdict::Pass } else { Verdict::Skip(format!("can't evaluate f - S for S = {s}")) }
+    if checked {
+        Verdict::Pass
+    } else {
+        Verdict::Skip(format!("can't evaluate f - S for S = {s}"))
+    }
 }
 
 #[test]

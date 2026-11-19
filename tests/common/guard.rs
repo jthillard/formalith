@@ -35,7 +35,10 @@ pub struct Pending<T>(mpsc::Receiver<Result<T, String>>);
 impl<T> Pending<T> {
     /// Wait for the result until `deadline`.
     pub fn wait(self, deadline: Instant) -> Outcome<T> {
-        match self.0.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+        match self
+            .0
+            .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+        {
             Ok(Ok(value)) => Outcome::Done(value),
             Ok(Err(message)) => Outcome::Panic(message),
             Err(_) => Outcome::Timeout,

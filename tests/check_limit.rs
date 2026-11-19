@@ -34,7 +34,10 @@ fn limit(input: &str) -> Verdict {
     let (f, a) = (parts[0], parts[1]);
     let side: Option<i64> = parts.get(2).map(|s| s.parse().unwrap());
     let mut env = env_with(&[]);
-    let call = side.map_or_else(|| format!("lim({f}, x, {a})"), |s| format!("lim({f}, x, {a}, {s})"));
+    let call = side.map_or_else(
+        || format!("lim({f}, x, {a})"),
+        |s| format!("lim({f}, x, {a}, {s})"),
+    );
     let result = match eval(&mut env, &call) {
         Ok(res) if !res.contains("lim(") => res,
         Ok(res) => return Verdict::Skip(format!("unevaluated: {res}")),
@@ -51,7 +54,10 @@ fn limit(input: &str) -> Verdict {
     let mut checked = false;
     for s in sides {
         let [far, near] = approach(a, s);
-        let (Some(v_far), Some(v_near)) = (eval_point(&function, a, &far), eval_point(&function, a, &near)) else {
+        let (Some(v_far), Some(v_near)) = (
+            eval_point(&function, a, &far),
+            eval_point(&function, a, &near),
+        ) else {
             continue;
         };
         checked = true;
@@ -60,7 +66,9 @@ fn limit(input: &str) -> Verdict {
             "oo" | "-oo" => {
                 let sign = if result == "oo" { 1.0 } else { -1.0 };
                 if !(v_near * sign > 1e2 && v_near * sign > v_far * sign) {
-                    return Verdict::Wrong(format!("lim = {result} but f({near}) = {v_near}, f({far}) = {v_far}"));
+                    return Verdict::Wrong(format!(
+                        "lim = {result} but f({near}) = {v_near}, f({far}) = {v_far}"
+                    ));
                 }
             }
             _ => {
@@ -69,12 +77,18 @@ fn limit(input: &str) -> Verdict {
                 };
                 let (e_far, e_near) = ((v_far - l).abs(), (v_near - l).abs());
                 if e_near > 1e-3 * l.abs().max(1.0) && e_near >= e_far / 5.0 {
-                    return Verdict::Wrong(format!("lim = {result} = {l} but f({far}) = {v_far}, f({near}) = {v_near}"));
+                    return Verdict::Wrong(format!(
+                        "lim = {result} = {l} but f({far}) = {v_far}, f({near}) = {v_near}"
+                    ));
                 }
             }
         }
     }
-    if checked { Verdict::Pass } else { Verdict::Skip("f doesn't evaluate near the point".to_owned()) }
+    if checked {
+        Verdict::Pass
+    } else {
+        Verdict::Skip("f doesn't evaluate near the point".to_owned())
+    }
 }
 
 #[test]
@@ -136,12 +150,20 @@ fn limit_case(rng: &mut Rng) -> String {
             format!("{p}/{q}; {}", rng.pick(&["oo", "-oo"]))
         }
         // Exponential and logarithmic growth
-        3 => format!("x^{}*exp({}*x)*ln(x)^{}; oo", rng.range(-2, 3), rng.pick(&["-1", "-1/2", "1/3"]), rng.range(0, 2)),
+        3 => format!(
+            "x^{}*exp({}*x)*ln(x)^{}; oo",
+            rng.range(-2, 3),
+            rng.pick(&["-1", "-1/2", "1/3"]),
+            rng.range(0, 2)
+        ),
         // Classic `0/0` forms
         4 => {
             let f = rng.pick(&["sin", "tan", "atan", "sinh"]);
             let g = rng.pick(&["exp", "cosh"]);
-            format!("({f}({c}*x) - {c}*x)/({g}(x) - 1 - x)^{}; 0", rng.range(1, 2))
+            format!(
+                "({f}({c}*x) - {c}*x)/({g}(x) - 1 - x)^{}; 0",
+                rng.range(1, 2)
+            )
         }
         // Continuous point: the limit is the value
         _ => format!("{}; {a}/3", random::expr(rng, &["x"], 3)),

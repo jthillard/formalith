@@ -13,12 +13,21 @@ fn equivalence_detects_equal_and_different() {
     let env = env_with(&[]);
     let vars = [("x", Domain::Any), ("y", Domain::Any)];
     let mut rng = case_rng("helpers");
-    assert!(matches!(equivalent(&env, "(x + y)^2", "x^2 + 2*x*y + y^2", &vars, &mut rng), Check::Equal));
+    assert!(matches!(
+        equivalent(&env, "(x + y)^2", "x^2 + 2*x*y + y^2", &vars, &mut rng),
+        Check::Equal
+    ));
     assert!(equivalent(&env, "(x + y)^2", "x^2 + x*y + y^2", &vars, &mut rng).is_differ());
-    assert!(matches!(equivalent(&env, "sin(x)^2 + cos(x)^2", "1", &vars, &mut rng), Check::Equal));
+    assert!(matches!(
+        equivalent(&env, "sin(x)^2 + cos(x)^2", "1", &vars, &mut rng),
+        Check::Equal
+    ));
     // `ln` of negative values doesn't evaluate, so points are skipped
     let neg = [("x", Domain::Negative)];
-    assert!(matches!(equivalent(&env, "ln(x)", "ln(x)", &neg, &mut rng), Check::Inconclusive(_)));
+    assert!(matches!(
+        equivalent(&env, "ln(x)", "ln(x)", &neg, &mut rng),
+        Check::Inconclusive(_)
+    ));
 }
 
 #[test]
@@ -28,7 +37,10 @@ fn assumptions_restrict_sampling() {
     assert!(matches!(Domain::assumed(&env, "n"), Domain::Integer(..)));
     let mut rng = case_rng("assumed");
     let vars = common::numeric::assumed_vars(&env, &["x"]);
-    assert!(matches!(equivalent(&env, "sqrt(x^2)", "x", &vars, &mut rng), Check::Equal));
+    assert!(matches!(
+        equivalent(&env, "sqrt(x^2)", "x", &vars, &mut rng),
+        Check::Equal
+    ));
 }
 
 #[test]

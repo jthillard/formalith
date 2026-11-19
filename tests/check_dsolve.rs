@@ -18,7 +18,10 @@ fn substitute(equation: &str, derivatives: &[String]) -> Option<String> {
     let mut res = String::new();
     let mut i = 0;
     while i < chars.len() {
-        if chars[i] == 'y' && (i == 0 || !ident(chars[i - 1])) && chars.get(i + 1).is_none_or(|&c| !ident(c)) {
+        if chars[i] == 'y'
+            && (i == 0 || !ident(chars[i - 1]))
+            && chars.get(i + 1).is_none_or(|&c| !ident(c))
+        {
             let mut order = 0;
             i += 1;
             while chars.get(i) == Some(&'\'') {
@@ -55,7 +58,10 @@ fn dsolve(input: &str) -> Verdict {
     let mut parts = input.split(',').map(str::trim);
     let equation = parts.next().unwrap();
     let conditions: Vec<_> = parts.collect();
-    let order = (1..=4).rev().find(|&n| equation.contains(&format!("y{}", "'".repeat(n)))).unwrap_or(0);
+    let order = (1..=4)
+        .rev()
+        .find(|&n| equation.contains(&format!("y{}", "'".repeat(n))))
+        .unwrap_or(0);
     let (lhs, rhs) = equation.split_once('=').unwrap();
     let mut checked = 0;
     for line in output.lines() {
@@ -70,7 +76,8 @@ fn dsolve(input: &str) -> Verdict {
                 Err(e) => return Verdict::Skip(format!("diff: {e}")),
             }
         }
-        let (Some(l), Some(r)) = (substitute(lhs, &derivatives), substitute(rhs, &derivatives)) else {
+        let (Some(l), Some(r)) = (substitute(lhs, &derivatives), substitute(rhs, &derivatives))
+        else {
             return Verdict::Skip("substitution".to_owned());
         };
         let names = constants(g);
@@ -93,7 +100,10 @@ fn dsolve(input: &str) -> Verdict {
             let Ok(d) = Function::new(&env, &derivatives[n], &["x"]) else {
                 continue;
             };
-            let (Some(got), Some(want)) = (d.at(&[point.to_owned()]), common::numeric::number(&env, value)) else {
+            let (Some(got), Some(want)) = (
+                d.at(&[point.to_owned()]),
+                common::numeric::number(&env, value),
+            ) else {
                 continue;
             };
             if !close(got, want, 1e-9) {
@@ -139,12 +149,19 @@ fn linear_equation(rng: &mut Rng) -> String {
     let order = rng.range(1, 3) as usize;
     let mut terms = Vec::new();
     for n in (0..=order).rev() {
-        let c = if n == order { rng.range(1, 2) } else { rng.range(-3, 3) };
+        let c = if n == order {
+            rng.range(1, 2)
+        } else {
+            rng.range(-3, 3)
+        };
         if c != 0 {
             terms.push(format!("{c}*y{}", "'".repeat(n)));
         }
     }
-    let rhs = (*rng.pick(&["0", "x", "exp(2*x)", "sin(x)", "x^2", "cos(3*x)", "exp(-x)", "1", "x*exp(x)"])).to_owned();
+    let rhs = (*rng.pick(&[
+        "0", "x", "exp(2*x)", "sin(x)", "x^2", "cos(3*x)", "exp(-x)", "1", "x*exp(x)",
+    ]))
+    .to_owned();
     let mut equation = format!("{} = {rhs}", terms.join(" + "));
     if rng.chance(0.4) {
         for n in 0..order {

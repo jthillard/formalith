@@ -112,6 +112,9 @@ fn known_constants() {
         ("approx(euler_gamma)", "0.5772156649015329"),
     ] {
         let (x, y) = (number(&env, a), number(&env, b));
-        assert!(x.is_some() && y.is_some() && close(x.unwrap(), y.unwrap(), 1e-12), "{a} = {x:?}, {b} = {y:?}");
+        assert!(
+            x.is_some() && y.is_some() && close(x.unwrap(), y.unwrap(), 1e-12),
+            "{a} = {x:?}, {b} = {y:?}"
+        );
     }
 }

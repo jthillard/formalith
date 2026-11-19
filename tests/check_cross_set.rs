@@ -42,7 +42,11 @@ fn consistent(input: &str) -> Verdict {
         match value(SetChoice::Zn(n)) {
             Ok(v) if v == expected.to_string() => {}
             v if unevaluated(&v) => {}
-            other => return Verdict::Wrong(format!("{z} in Z, so {expected} mod {n}, but {other:?} in Z/{n}")),
+            other => {
+                return Verdict::Wrong(format!(
+                    "{z} in Z, so {expected} mod {n}, but {other:?} in Z/{n}"
+                ));
+            }
         }
     }
     Verdict::Pass
@@ -68,7 +72,9 @@ fn integer_expressions() {
 fn integer_case(rng: &mut Rng) -> String {
     let p = random::polynomial(rng, &["x", "y"], 4, 4);
     let (x, y) = (rng.range(-9, 9), rng.range(-9, 9));
-    let mut e = p.replace('x', &format!("({x})")).replace('y', &format!("({y})"));
+    let mut e = p
+        .replace('x', &format!("({x})"))
+        .replace('y', &format!("({y})"));
     if rng.chance(0.3) {
         e = format!("{e} * factorial({})", rng.range(0, 8));
     }

@@ -52,7 +52,10 @@ fn solve(input: &str) -> Verdict {
         .map_or_else(|| split_top(system, ','), |s| split_top(s, ','));
     let equations: Vec<(String, String)> = items
         .iter()
-        .filter_map(|item| item.split_once('=').map(|(l, r)| (l.trim().to_owned(), r.trim().to_owned())))
+        .filter_map(|item| {
+            item.split_once('=')
+                .map(|(l, r)| (l.trim().to_owned(), r.trim().to_owned()))
+        })
         .collect();
     if output == "no solution" {
         return match known {
@@ -70,14 +73,20 @@ fn solve(input: &str) -> Verdict {
         let assignments: Vec<(String, String)> = split_top(line, ',')
             .iter()
             .map(|a| {
-                let (u, v) = a.split_once(" = ").unwrap_or_else(|| panic!("bad assignment `{a}` in `{output}`"));
+                let (u, v) = a
+                    .split_once(" = ")
+                    .unwrap_or_else(|| panic!("bad assignment `{a}` in `{output}`"));
                 (u.trim().to_owned(), v.trim().to_owned())
             })
             .collect();
         let assigned: Vec<_> = assignments.iter().map(|(u, _)| u.clone()).collect();
         // Free unknowns, parameters, integers
         let mut free: Vec<String> = assignments.iter().flat_map(|(_, v)| symbols(v)).collect();
-        free.extend(equations.iter().flat_map(|(l, r)| symbols(&format!("{l} + {r}"))));
+        free.extend(
+            equations
+                .iter()
+                .flat_map(|(l, r)| symbols(&format!("{l} + {r}"))),
+        );
         free.retain(|s| !assigned.contains(s) && s != "i");
         free.sort();
         free.dedup();
@@ -119,7 +128,9 @@ fn solve(input: &str) -> Verdict {
                 checked += 1;
             }
         }
-        if free.iter().all(|s| !assigned.contains(s)) && symbols(&line.replace(" = ", " + ")).len() == assigned.len() {
+        if free.iter().all(|s| !assigned.contains(s))
+            && symbols(&line.replace(" = ", " + ")).len() == assigned.len()
+        {
             alternatives.push(assignments);
         }
     }
@@ -197,7 +208,9 @@ fn polynomial_system(rng: &mut Rng) -> String {
     for _ in 0..rng.range(1, 2) {
         let degree = rng.range(1, 2) as usize;
         let p = random::polynomial(rng, &["x", "y"], degree, 3);
-        let at = p.replace('x', &format!("({x0})")).replace('y', &format!("({y0})"));
+        let at = p
+            .replace('x', &format!("({x0})"))
+            .replace('y', &format!("({y0})"));
         equations.push(format!("{p} = {at}"));
     }
     if equations.len() == 1 {
@@ -236,8 +249,16 @@ fn transcendental(rng: &mut Rng) -> String {
     let x0 = format!("{p}/{q}");
     let inner = |x: &str| format!("({a}*{x} + {b})");
     // Domains of `ln`, `sqrt`
-    let shift = if matches!(*f, "ln" | "sqrt") { format!("abs({}) + 1", inner("x")) } else { inner("x") };
-    let shift0 = if matches!(*f, "ln" | "sqrt") { format!("abs({}) + 1", inner(&x0)) } else { inner(&x0) };
+    let shift = if matches!(*f, "ln" | "sqrt") {
+        format!("abs({}) + 1", inner("x"))
+    } else {
+        inner("x")
+    };
+    let shift0 = if matches!(*f, "ln" | "sqrt") {
+        format!("abs({}) + 1", inner(&x0))
+    } else {
+        inner(&x0)
+    };
     if rng.chance(0.5) {
         format!("R; {f}({shift}) = {f}({shift0})")
     } else {

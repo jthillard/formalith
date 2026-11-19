@@ -23,10 +23,26 @@ pub fn expr(rng: &mut Rng, vars: &[&str], depth: usize) -> String {
         };
     }
     match rng.below(8) {
-        0 | 1 => format!("({} + {})", expr(rng, vars, depth - 1), expr(rng, vars, depth - 1)),
-        2 => format!("({} - {})", expr(rng, vars, depth - 1), expr(rng, vars, depth - 1)),
-        3 | 4 => format!("({} * {})", expr(rng, vars, depth - 1), expr(rng, vars, depth - 1)),
-        5 => format!("({} / {})", expr(rng, vars, depth - 1), expr(rng, vars, depth - 1)),
+        0 | 1 => format!(
+            "({} + {})",
+            expr(rng, vars, depth - 1),
+            expr(rng, vars, depth - 1)
+        ),
+        2 => format!(
+            "({} - {})",
+            expr(rng, vars, depth - 1),
+            expr(rng, vars, depth - 1)
+        ),
+        3 | 4 => format!(
+            "({} * {})",
+            expr(rng, vars, depth - 1),
+            expr(rng, vars, depth - 1)
+        ),
+        5 => format!(
+            "({} / {})",
+            expr(rng, vars, depth - 1),
+            expr(rng, vars, depth - 1)
+        ),
         6 => format!("({})^{}", expr(rng, vars, depth - 1), rng.pick(&[2, 3, -1])),
         _ => format!("{}({})", rng.pick(&FUNCTIONS), expr(rng, vars, depth - 1)),
     }
@@ -139,7 +155,13 @@ pub fn trig_poly(rng: &mut Rng) -> String {
 /// A sum of products of exponentials and polynomials in `x`.
 pub fn exp_poly(rng: &mut Rng) -> String {
     let terms: Vec<_> = (0..rng.range(1, 3))
-        .map(|_| format!("{}*exp({})", polynomial(rng, &["x"], 2, 2), linear(rng, "x")))
+        .map(|_| {
+            format!(
+                "{}*exp({})",
+                polynomial(rng, &["x"], 2, 2),
+                linear(rng, "x")
+            )
+        })
         .collect();
     terms.join(" + ")
 }
@@ -148,7 +170,9 @@ pub fn exp_poly(rng: &mut Rng) -> String {
 pub fn int_matrix(rng: &mut Rng, n: usize, m: usize, bound: i64) -> String {
     let rows: Vec<_> = (0..n)
         .map(|_| {
-            let row: Vec<_> = (0..m).map(|_| rng.range(-bound, bound).to_string()).collect();
+            let row: Vec<_> = (0..m)
+                .map(|_| rng.range(-bound, bound).to_string())
+                .collect();
             format!("[{}]", row.join(", "))
         })
         .collect();
@@ -159,7 +183,11 @@ pub fn int_matrix(rng: &mut Rng, n: usize, m: usize, bound: i64) -> String {
 pub fn mat_mul(a: &[Vec<i64>], b: &[Vec<i64>]) -> Vec<Vec<i64>> {
     let (n, k, m) = (a.len(), b.len(), b[0].len());
     (0..n)
-        .map(|i| (0..m).map(|j| (0..k).map(|l| a[i][l] * b[l][j]).sum()).collect())
+        .map(|i| {
+            (0..m)
+                .map(|j| (0..k).map(|l| a[i][l] * b[l][j]).sum())
+                .collect()
+        })
         .collect()
 }
 
@@ -167,7 +195,15 @@ pub fn mat_mul(a: &[Vec<i64>], b: &[Vec<i64>]) -> Vec<Vec<i64>> {
 pub fn literal(rows: &[Vec<i64>]) -> String {
     let rows: Vec<_> = rows
         .iter()
-        .map(|r| format!("[{}]", r.iter().map(ToString::to_string).collect::<Vec<_>>().join(", ")))
+        .map(|r| {
+            format!(
+                "[{}]",
+                r.iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        })
         .collect();
     format!("[{}]", rows.join(", "))
 }
@@ -195,7 +231,11 @@ fn unitriangular_inverse(t: &[Vec<i64>], lower: bool) -> Vec<Vec<i64>> {
     let n = t.len();
     let mut inv = vec![vec![0; n]; n];
     for col in 0..n {
-        let order: Vec<usize> = if lower { (0..n).collect() } else { (0..n).rev().collect() };
+        let order: Vec<usize> = if lower {
+            (0..n).collect()
+        } else {
+            (0..n).rev().collect()
+        };
         for &i in &order {
             let e = i64::from(i == col);
             let s: i64 = (0..n)

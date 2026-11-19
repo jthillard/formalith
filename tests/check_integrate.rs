@@ -34,7 +34,9 @@ fn antiderivative(f: &str) -> Verdict {
             continue;
         };
         if !close(d, v, 1e-7) {
-            return Verdict::Wrong(format!("F = {antiderivative}: F'({x0}) = {d} but f({x0}) = {v}"));
+            return Verdict::Wrong(format!(
+                "F = {antiderivative}: F'({x0}) = {d} but f({x0}) = {v}"
+            ));
         }
         valid += 1;
         if valid == POINTS {
@@ -44,13 +46,20 @@ fn antiderivative(f: &str) -> Verdict {
     if valid >= 3 {
         Verdict::Pass
     } else {
-        Verdict::Skip(format!("only {valid} valid points for F = {antiderivative}"))
+        Verdict::Skip(format!(
+            "only {valid} valid points for F = {antiderivative}"
+        ))
     }
 }
 
 /// Check `integrate(f, x, a, b)` against Gauss-Legendre quadrature. `input` is `f; a; b`.
 fn definite(input: &str) -> Verdict {
-    let [f, a, b]: [&str; 3] = input.split(';').map(str::trim).collect::<Vec<_>>().try_into().unwrap();
+    let [f, a, b]: [&str; 3] = input
+        .split(';')
+        .map(str::trim)
+        .collect::<Vec<_>>()
+        .try_into()
+        .unwrap();
     let mut env = env_with(&[]);
     let exact = match eval(&mut env, &format!("integrate({f}, x, {a}, {b})")) {
         Ok(res) if !res.contains("integrate") => res,
@@ -77,7 +86,9 @@ fn definite(input: &str) -> Verdict {
     if close(value, quad, 1e-7) {
         Verdict::Pass
     } else {
-        Verdict::Wrong(format!("exact `{exact}` = {value} but quadrature gives {quad}"))
+        Verdict::Wrong(format!(
+            "exact `{exact}` = {value} but quadrature gives {quad}"
+        ))
     }
 }
 
@@ -129,7 +140,12 @@ fn definite_integrals() {
 #[test]
 #[ignore = "fuzz: random integrands, run with --ignored"]
 fn fuzz_antiderivatives() {
-    fuzz("fuzz antiderivatives", 60, random::integrand, antiderivative);
+    fuzz(
+        "fuzz antiderivatives",
+        60,
+        random::integrand,
+        antiderivative,
+    );
 }
 
 #[test]

@@ -127,10 +127,18 @@ where
             let index = chunk_index * workers + offset;
             match pending.wait(deadline) {
                 Outcome::Done(Verdict::Pass) => report.passed += 1,
-                Outcome::Done(Verdict::Skip(why)) => report.skipped.push(format!("#{index} `{input}`: {why}")),
-                Outcome::Done(Verdict::Wrong(why)) => report.wrong.push(format!("#{index} `{input}`: {why}")),
-                Outcome::Panic(message) => report.panics.push(format!("#{index} `{input}`: {message}")),
-                Outcome::Timeout => report.timeouts.push(format!("#{index} `{input}`: no result after {timeout:?}")),
+                Outcome::Done(Verdict::Skip(why)) => {
+                    report.skipped.push(format!("#{index} `{input}`: {why}"))
+                }
+                Outcome::Done(Verdict::Wrong(why)) => {
+                    report.wrong.push(format!("#{index} `{input}`: {why}"))
+                }
+                Outcome::Panic(message) => {
+                    report.panics.push(format!("#{index} `{input}`: {message}"))
+                }
+                Outcome::Timeout => report
+                    .timeouts
+                    .push(format!("#{index} `{input}`: no result after {timeout:?}")),
             }
         }
         // Timed out threads keep running
@@ -150,7 +158,12 @@ where
     let report = run_inputs(&inputs, TIMEOUT, check);
     assert!(!report.failed(), "{}", report.summary(name, 0));
     // Curated cases must actually be checked
-    assert!(report.skipped.is_empty(), "{}skipped: {:#?}", report.summary(name, 0), report.skipped);
+    assert!(
+        report.skipped.is_empty(),
+        "{}skipped: {:#?}",
+        report.summary(name, 0),
+        report.skipped
+    );
 }
 
 /// Generate `cases(default)` inputs with `generate` from the run seed, check them, and fail with the report.
@@ -179,8 +192,8 @@ where
 
 /// A fixed generator for checks that sample points, so that a case always uses the same points.
 pub fn case_rng(input: &str) -> Rng {
-    let hash = input
-        .bytes()
-        .fold(0xCBF2_9CE4_8422_2325_u64, |h, b| (h ^ u64::from(b)).wrapping_mul(0x100_0000_01B3));
+    let hash = input.bytes().fold(0xCBF2_9CE4_8422_2325_u64, |h, b| {
+        (h ^ u64::from(b)).wrapping_mul(0x100_0000_01B3)
+    });
     Rng::new(hash ^ seed())
 }

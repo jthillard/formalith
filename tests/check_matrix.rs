@@ -25,7 +25,15 @@ fn columns(matrix: &str) -> Option<Vec<String>> {
     let rows = rows(matrix)?;
     Some(
         (0..rows[0].len())
-            .map(|j| format!("[{}]", rows.iter().map(|r| format!("[{}]", r[j])).collect::<Vec<_>>().join(", ")))
+            .map(|j| {
+                format!(
+                    "[{}]",
+                    rows.iter()
+                        .map(|r| format!("[{}]", r[j]))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            })
             .collect(),
     )
 }
@@ -39,7 +47,9 @@ fn m(input: &str) -> Result<String, String> {
 fn numerically_zero(matrix: &str) -> bool {
     let env = env_with(&[]);
     rows(matrix).is_some_and(|rows| {
-        rows.iter().flatten().all(|e| number(&env, e).is_some_and(|v| v.abs() < 1e-9))
+        rows.iter()
+            .flatten()
+            .all(|e| number(&env, e).is_some_and(|v| v.abs() < 1e-9))
     })
 }
 
@@ -66,9 +76,15 @@ fn linear_algebra(a: &str) -> Verdict {
     if !numerically_zero(&product) {
         return Verdict::Wrong(format!("A kernel(A) = {product} with kernel {kernel}"));
     }
-    let dim = if rank == n { 0 } else { columns(&kernel).map_or(0, |c| c.len()) };
+    let dim = if rank == n {
+        0
+    } else {
+        columns(&kernel).map_or(0, |c| c.len())
+    };
     if dim != n - rank {
-        return Verdict::Wrong(format!("kernel {kernel} has {dim} columns but rank is {rank}"));
+        return Verdict::Wrong(format!(
+            "kernel {kernel} has {dim} columns but rank is {rank}"
+        ));
     }
     // Cayley-Hamilton: `p(A) = 0` with the coefficients of `charpoly(A, x)`
     let Ok(p) = eval(&mut renv, &format!("charpoly({a}, x)")) else {
@@ -101,21 +117,35 @@ fn linear_algebra(a: &str) -> Verdict {
         }
     }
     // Eigenvalues and eigenvectors
-    let (Ok(values), Ok(vectors)) = (m(&format!("eigenvalues({a})")), m(&format!("eigenvectors({a})"))) else {
+    let (Ok(values), Ok(vectors)) = (
+        m(&format!("eigenvalues({a})")),
+        m(&format!("eigenvectors({a})")),
+    ) else {
         return Verdict::Skip("eigen".to_owned());
     };
     if values.contains("eigen") || vectors.contains("eigen") {
         return Verdict::Pass;
     }
-    let values: Vec<String> = rows(&values).unwrap().into_iter().map(|r| r[0].clone()).collect();
+    let values: Vec<String> = rows(&values)
+        .unwrap()
+        .into_iter()
+        .map(|r| r[0].clone())
+        .collect();
     if values.len() != n {
-        return Verdict::Wrong(format!("{} eigenvalues {values:?} for size {n}", values.len()));
+        return Verdict::Wrong(format!(
+            "{} eigenvalues {values:?} for size {n}",
+            values.len()
+        ));
     }
     let numeric: Vec<f64> = values.iter().filter_map(|v| number(&env, v)).collect();
     if numeric.len() == n {
         let (prod, sum): (f64, f64) = (numeric.iter().product(), numeric.iter().sum());
-        if (prod - det_v).abs() > 1e-8 * det_v.abs().max(1.0) || (sum - trace_v).abs() > 1e-8 * trace_v.abs().max(1.0) {
-            return Verdict::Wrong(format!("eigenvalues {values:?}: product {prod}, sum {sum}, det {det_v}, trace {trace_v}"));
+        if (prod - det_v).abs() > 1e-8 * det_v.abs().max(1.0)
+            || (sum - trace_v).abs() > 1e-8 * trace_v.abs().max(1.0)
+        {
+            return Verdict::Wrong(format!(
+                "eigenvalues {values:?}: product {prod}, sum {sum}, det {det_v}, trace {trace_v}"
+            ));
         }
     }
     let mut distinct = values.clone();
@@ -134,7 +164,10 @@ fn linear_algebra(a: &str) -> Verdict {
 
 /// Integer matrix from rows of `i64`.
 fn integers(matrix: &str) -> Option<Vec<Vec<i64>>> {
-    rows(matrix)?.iter().map(|r| r.iter().map(|e| e.parse().ok()).collect()).collect()
+    rows(matrix)?
+        .iter()
+        .map(|r| r.iter().map(|e| e.parse().ok()).collect())
+        .collect()
 }
 
 fn gcd(a: i64, b: i64) -> i64 {
@@ -153,11 +186,18 @@ fn normal_forms(a: &str) -> Verdict {
     let env = env_with(&[]);
     let square = am.len() == am[0].len();
     let det = if square {
-        number(&env, &eval(&mut Environment::new(), &format!("det({a})")).unwrap()).unwrap()
+        number(
+            &env,
+            &eval(&mut Environment::new(), &format!("det({a})")).unwrap(),
+        )
+        .unwrap()
     } else {
         0.0
     };
-    let rank: usize = eval(&mut Environment::new(), &format!("rank({a})")).unwrap().parse().unwrap();
+    let rank: usize = eval(&mut Environment::new(), &format!("rank({a})"))
+        .unwrap()
+        .parse()
+        .unwrap();
     // Hermite: row echelon, positive pivots, entries above pivots reduced, rank nonzero rows
     let mut last_pivot: Option<usize> = None;
     let mut nonzero_rows = 0;
@@ -170,20 +210,27 @@ fn normal_forms(a: &str) -> Verdict {
         };
         nonzero_rows += 1;
         if last_pivot.is_some_and(|l| p <= l) || row[p] <= 0 {
-            return Verdict::Wrong(format!("H = {h} isn't in echelon form with positive pivots"));
+            return Verdict::Wrong(format!(
+                "H = {h} isn't in echelon form with positive pivots"
+            ));
         }
         if hm[..i].iter().any(|r| r[p] < 0 || r[p] >= row[p]) {
-            return Verdict::Wrong(format!("H = {h}: entries above the pivot of row {i} aren't reduced"));
+            return Verdict::Wrong(format!(
+                "H = {h}: entries above the pivot of row {i} aren't reduced"
+            ));
         }
         last_pivot = Some(p);
     }
     if nonzero_rows != rank {
-        return Verdict::Wrong(format!("H = {h} has {nonzero_rows} nonzero rows, rank {rank}"));
+        return Verdict::Wrong(format!(
+            "H = {h} has {nonzero_rows} nonzero rows, rank {rank}"
+        ));
     }
     // `H = U A` with `U` unimodular when `A` is invertible
     if square && det.abs() > 0.5 {
         let u = m(&format!("{h} * {a}^-1")).unwrap();
-        let unimodular = integers(&u).is_some() && eval(&mut Environment::new(), &format!("abs(det({u}))")).as_deref() == Ok("1");
+        let unimodular = integers(&u).is_some()
+            && eval(&mut Environment::new(), &format!("abs(det({u}))")).as_deref() == Ok("1");
         if !unimodular {
             return Verdict::Wrong(format!("H = {h} isn't U A with U unimodular: H A^-1 = {u}"));
         }
@@ -199,9 +246,17 @@ fn normal_forms(a: &str) -> Verdict {
     }
     let diagonal: Vec<i64> = (0..k).map(|i| dm[i][i]).collect();
     if diagonal.iter().any(|&e| e < 0)
-        || diagonal.windows(2).any(|w| if w[0] == 0 { w[1] != 0 } else { w[1] % w[0] != 0 })
+        || diagonal.windows(2).any(|w| {
+            if w[0] == 0 {
+                w[1] != 0
+            } else {
+                w[1] % w[0] != 0
+            }
+        })
     {
-        return Verdict::Wrong(format!("D = {d}: diagonal {diagonal:?} isn't a divisibility chain"));
+        return Verdict::Wrong(format!(
+            "D = {d}: diagonal {diagonal:?} isn't a divisibility chain"
+        ));
     }
     if diagonal.iter().filter(|&&e| e != 0).count() != rank {
         return Verdict::Wrong(format!("D = {d} doesn't have rank {rank}"));
