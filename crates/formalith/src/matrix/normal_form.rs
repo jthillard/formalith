@@ -50,16 +50,23 @@ impl<T: EuclideanRing> Tracked<'_, T> {
 
     /// Cancel the entry at `position` of the line `other` with unimodular operations between the lines `pivot`
     /// and `other` (rows if `rows`, columns otherwise), by the Euclidean algorithm. The entry of `pivot` ends up
-    /// being their greatest common divisor, up to a unit.
+    /// being their greatest common divisor, up to a unit. The line `pivot` is left unchanged when its entry
+    /// divides the other one, so that the Smith form doesn't refill lines it cleared.
     fn euclid(&mut self, pivot: usize, other: usize, position: usize, rows: bool) {
         let set = self.matrix.set;
         while !set.is_zero(self.entry(other, position, rows)) {
+            if set.is_zero(self.entry(pivot, position, rows)) {
+                self.swap(pivot, other, rows);
+                continue;
+            }
             let (quotient, _) = set.quot_rem(
-                self.entry(pivot, position, rows),
                 self.entry(other, position, rows),
+                self.entry(pivot, position, rows),
             );
-            self.add(pivot, other, &set.neg(&quotient), rows);
-            self.swap(pivot, other, rows);
+            self.add(other, pivot, &set.neg(&quotient), rows);
+            if !set.is_zero(self.entry(other, position, rows)) {
+                self.swap(pivot, other, rows);
+            }
         }
     }
 }

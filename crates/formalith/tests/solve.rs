@@ -413,7 +413,7 @@ fn linear_systems_with_new_parameters() {
     );
     assert_eq!(
         solve_in("Z/6", "2*x + 2*y = 2"),
-        ok("x = t_1, y = -t_1+1 \\ x = t_1, y = -t_1+4")
+        ok("x = -t_1+1, y = t_1 \\ x = -t_1+4, y = t_1")
     );
     assert_eq!(
         solve_in("Z/12", "4*x + 6*y = 2, x + y = 1"),

@@ -349,7 +349,6 @@ fn regression(input: &str, check: fn(&str) -> Verdict) {
 }
 
 #[test]
-#[ignore = "bug: smith([[2, 1], [1, 1]]) hangs in M(Z) (also smith([[1, 1], [0, 1]]), while diagonal ones work)"]
 fn bug_smith_of_unimodular_hangs() {
     regression("[[2, 1], [1, 1]]", normal_forms);
 }
