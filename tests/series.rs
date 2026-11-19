@@ -65,7 +65,7 @@ fn laurent_and_puiseux_series() {
     assert_eq!(series("series(cos(x)/x^2, x, 0, 3)"), "x^-2+1/24*(x^2)-1/2");
     assert_eq!(series("series(1/(x^2-1), x, 1, 1)"), "1/2*((x-1)^-1)-1/4");
     assert_eq!(series("series(1/x, x, 0)"), "x^-1");
-    assert_eq!(series("series(sqrt(x), x, 0, 2, 1)"), "x^1/2");
+    assert_eq!(series("series(sqrt(x), x, 0, 2, 1)"), "x^(1/2)");
     assert_eq!(
         series("series(x^x, x, 0, 3, 1)"),
         "x*ln(x)+1/2*(x^2)*(ln(x)^2)+1"
@@ -87,7 +87,7 @@ fn series_at_infinity() {
 fn unsupported_series_stay_unevaluated() {
     // Both sides differ, or the left side isn't real
     assert_eq!(series("series(abs(x), x, 0)"), "series(abs(x), x, 0)");
-    assert_eq!(series("series(sqrt(x), x, 0, 2)"), "series(x^1/2, x, 0, 2)");
+    assert_eq!(series("series(sqrt(x), x, 0, 2)"), "series(x^(1/2), x, 0, 2)");
     // Not a power series
     assert_eq!(series("series(exp(x), x, oo)"), "series(exp(x), x, oo)");
     assert_eq!(series("series(exp(1/x), x, 0)"), "series(exp(x^-1), x, 0)");
@@ -97,7 +97,7 @@ fn unsupported_series_stay_unevaluated() {
 
 #[test]
 fn roots_of_negative_values_are_unsupported() {
-    assert_eq!(series("lim(sqrt(x), x, 0, -1)"), "lim(x^1/2, x, 0, -1)");
+    assert_eq!(series("lim(sqrt(x), x, 0, -1)"), "lim(x^(1/2), x, 0, -1)");
 }
 
 #[test]

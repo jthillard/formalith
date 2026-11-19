@@ -30,7 +30,7 @@ fn printed_values_are_parsed_back() {
 fn compound_values_are_grouped() {
     assert_eq!(eval("(1+i)*x"), "(1+i)*x");
     assert_eq!(eval("x^(1+i)"), "x^(1+i)");
-    assert_eq!(eval("(2*i)^(1/3)"), "(2*i)^1/3");
+    assert_eq!(eval("(2*i)^(1/3)"), "(2*i)^(1/3)");
     assert_eq!(pretty(&parse!("(1+i)*x", C)), "(1 + i)⋅x");
 }
 
@@ -52,13 +52,13 @@ fn roots() {
     assert_eq!(eval("(-4)^(3/2)"), "-8*i");
     assert_eq!(eval("(-4)^(-1/2)"), "-1/2*i");
     assert_eq!(parse!("4^(1/2)", C), 2.into());
-    assert_eq!(eval("2^(1/2)"), "2^1/2");
+    assert_eq!(eval("2^(1/2)"), "2^(1/2)");
 }
 
 #[test]
 fn builtins() {
     assert_eq!(parse!("abs(3+4*i)", C), 5.into());
-    assert_eq!(eval("abs(1+i)"), "2^1/2");
+    assert_eq!(eval("abs(1+i)"), "2^(1/2)");
     assert_eq!(eval("re(3+4*i)"), "3");
     assert_eq!(eval("im(3+4*i)"), "4");
     assert_eq!(eval("conj(3+4*i)"), "3-4*i");
@@ -122,7 +122,7 @@ fn powers_of_i() {
 fn square_roots_of_negative_values() {
     assert_eq!(eval("sqrt(-1)"), "i");
     assert_eq!(eval("sqrt(-4)"), "2*i");
-    assert_eq!(eval("sqrt(i)"), "i^1/2");
+    assert_eq!(eval("sqrt(i)"), "i^(1/2)");
 }
 
 #[test]
@@ -132,7 +132,6 @@ fn complex_polynomials() {
 }
 
 #[test]
-#[ignore = "bug: a factor x - i is printed as `x+-i`"]
 fn complex_factors_are_printed_with_their_sign() {
     assert_eq!(eval("factor(x^2+1)"), "(x-i)*(x+i)");
 }

@@ -158,7 +158,25 @@ impl<T: Set> Print for Pow<T> {
             Self::group(&self.base, options, f)?;
         }
         Self::operator("^", options, f)?;
-        Self::group(&**self.exponant, options, f)?;
+        // `x^1/2` would read as `(x^1)/2`
+        if !options.typst
+            && let Term::Value(value) = &**self.exponant
+            && {
+                struct Printed<'a, V>(&'a V, &'a PrintOptions);
+                impl<V: Print> Display for Printed<'_, V> {
+                    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        self.0.print(self.1, f)
+                    }
+                }
+                Printed(value, options).to_string().contains('/')
+            }
+        {
+            Self::group_delim("(", options, f)?;
+            self.exponant.print(options, f)?;
+            Self::group_delim(")", options, f)?;
+        } else {
+            Self::group(&**self.exponant, options, f)?;
+        }
         Ok(())
     }
 }

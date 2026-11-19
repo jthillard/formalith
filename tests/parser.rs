@@ -180,7 +180,6 @@ fn test_parse_builtin_arity_messages() {
 }
 
 #[test]
-#[ignore = "bug: a non-ASCII character is reported as `Input was empty`"]
 fn test_parse_unknown_characters_message() {
     let message = try_parse!("α + 1", R).unwrap_err().to_string();
     assert_ne!(message, "Input was empty");

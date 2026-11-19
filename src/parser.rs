@@ -198,9 +198,13 @@ impl Parser<'_> {
     /// # Errors
     /// This method can return an error if the parsing failed.
     pub fn parse<E: Set>(&mut self, set: E) -> Result<Term<E>, ParserError> {
-        let term = self
-            .parse_operand(set)?
-            .ok_or_else(|| ParserError::new("Input was empty"))?;
+        let term = self.parse_operand(set)?.ok_or_else(|| {
+            if self.token.kind == TokenKind::Eof {
+                ParserError::new("Input was empty")
+            } else {
+                ParserError::new(format!("Unexpected token at position {}", self.start_span))
+            }
+        })?;
         self.expect_eof()?;
         Ok(term.normalize())
     }
@@ -489,7 +493,7 @@ impl<E: Ring> ParseBinary<E> for Parser<'_> {
         if Op::Pow == op {
             if let Some(right) = ParseExpression::<E::ExponantSet>::parse_expression(
                 self,
-                op.get_priority(),
+                op.get_priority() - 1,
                 set.get_exponant_set(),
             )? {
                 return Ok((current.pow(&right), true));

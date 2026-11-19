@@ -182,7 +182,9 @@ fn to_f64(term: &Expr) -> Option<f64> {
 
 /// Whether `term` has no denominator, `tan`, `ln` or fractional power depending on `x`, so that it is continuous.
 fn regular(term: &Expr, x: Symbol) -> bool {
-    const FUNCTIONS: [Symbol; 5] = [
+    const FUNCTIONS: [Symbol; 7] = [
+        Context::ERF,
+        Context::ERFI,
         Context::EXP,
         Context::SIN,
         Context::COS,
@@ -382,12 +384,16 @@ fn periodic_zeros(
 
 /// Check that `term` keeps the same sign on the finite interval, at sample points.
 fn same_sign(term: &Expr, x: Symbol, interval: (f64, f64)) -> IntegrateResult<()> {
-    if !interval.0.is_finite() || !interval.1.is_finite() {
-        return Err(IntegrateError::Unsupported);
-    }
     let mut sign = None;
     for i in 1..SAMPLES {
-        let point = interval.0 + (interval.1 - interval.0) * (i as f64) / (SAMPLES as f64);
+        let u = (i as f64) / (SAMPLES as f64);
+        // Samples spread on the whole interval, infinite ones being mapped from `(0, 1)`
+        let point = match (interval.0.is_finite(), interval.1.is_finite()) {
+            (true, true) => interval.0 + (interval.1 - interval.0) * u,
+            (true, false) => interval.0 + u / (1.0 - u),
+            (false, true) => interval.1 - (1.0 - u) / u,
+            (false, false) => (u - 0.5) / (u * (1.0 - u)),
+        };
         let point = Rational::try_from(point).map_err(|_| IntegrateError::Unsupported)?;
         let s = term
             .substitute(x, &value(point))

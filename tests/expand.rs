@@ -291,7 +291,6 @@ fn factor_irreducible_polynomials() {
 }
 
 #[test]
-#[ignore = "bug: factor of a determinant keeps a factor (a-b)^2/(b-a) instead of cancelling it"]
 fn factor_cancels_opposite_factors() {
     assert_eq!(parse!("factor((a-b)^2/(b-a))", R), parse!("-(a-b)", R));
 }

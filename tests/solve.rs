@@ -217,7 +217,7 @@ fn polynomial_systems() {
     assert_eq!(
         solve("x^2 + y^2 = 1, x = y"),
         ok(
-            "x = sqrt(frac(1, 2)), y = sqrt(frac(1, 2)) \\ x = -sqrt(frac(1, 2)), y = -sqrt(frac(1, 2))"
+            "x = -frac(1, 2) sqrt(2), y = -frac(1, 2) sqrt(2) \\ x = frac(1, 2) sqrt(2), y = frac(1, 2) sqrt(2)"
         )
     );
     assert_eq!(
@@ -337,7 +337,7 @@ fn nonlinear_systems() {
     assert_eq!(
         solve("x^2 + y^2 = 1, x = y"),
         ok(
-            "x = sqrt(frac(1, 2)), y = sqrt(frac(1, 2)) \\ x = -sqrt(frac(1, 2)), y = -sqrt(frac(1, 2))"
+            "x = -frac(1, 2) sqrt(2), y = -frac(1, 2) sqrt(2) \\ x = frac(1, 2) sqrt(2), y = frac(1, 2) sqrt(2)"
         )
     );
     assert_eq!(
@@ -364,7 +364,7 @@ fn complex_roots() {
     );
     assert_eq!(
         solve_in("C", "x^2 = i"),
-        ok("x = (-1-i) sqrt(frac(1, 2)) \\ x = (1+i) sqrt(frac(1, 2))")
+        ok("x = (-frac(1, 2)-frac(1, 2) i) sqrt(2) \\ x = (frac(1, 2)+frac(1, 2) i) sqrt(2)")
     );
     // The 6th roots of unity
     assert_eq!(

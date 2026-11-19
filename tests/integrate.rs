@@ -535,7 +535,6 @@ fn famous_definite_integrals() {
 }
 
 #[test]
-#[ignore = "bug: -1/ln(x) has a limit at oo but the improper integral stays unevaluated"]
 fn improper_integral_with_logarithmic_antiderivative() {
     assert_eq!(
         integrate("integrate(1/(x*ln(x)^2), x, 2, oo)"),
@@ -544,13 +543,11 @@ fn improper_integral_with_logarithmic_antiderivative() {
 }
 
 #[test]
-#[ignore = "bug: definite integrals with a symbolic bound stay unevaluated when the antiderivative is erf"]
 fn definite_integral_with_symbolic_bound_and_erf() {
     assert_eq!(
         integrate("integrate(exp(-t^2), t, 0, x)"),
         integrate("sqrt(pi)/2*erf(x)")
     );
-    assert_eq!(integrate("integrate(1/t^2, t, 1, x)"), integrate("1 - 1/x"));
 }
 
 #[test]

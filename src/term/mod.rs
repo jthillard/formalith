@@ -857,6 +857,45 @@ impl<T: Ring<ExponantSet: Ring, ProductCoefficientSet = T>> Term<T> {
                 self.get_set().get_exponant_set(),
             ));
         }
+        res.with_opposite_factors_merged()
+    }
+
+    /// Write the sum bases of a product with a positive leading term, so that opposite factors like `a - b` and
+    /// `b - a` cancel: `{$(a - b)^2 / (b - a) = -(a - b)$}`.
+    fn with_opposite_factors_merged(self) -> Self {
+        let Self::Mul(mul) = &self else { return self };
+        let set = self.get_set();
+        let mut res = Self::Value(Value::new(mul.coefficient.clone(), set));
+        for factor in mul {
+            let (base, exponant) = match factor {
+                Self::Pow(pow) => (&*pow.base, Some(&**pow.exponant)),
+                _ => (factor, None),
+            };
+            let negative = matches!(base, Self::Add(add)
+                if add.iter().next().is_some_and(|first| set.is_strictly_negative(&Self::coefficients(first).next().unwrap())));
+            if !negative {
+                res *= factor;
+                continue;
+            }
+            // `{$(-1)^e$}` is a value only for integer exponants
+            let sign = exponant.map_or_else(
+                || Some(Self::nth(-1, set)),
+                |e| {
+                    let sign = Self::nth(-1, set).pow(e).normalize();
+                    matches!(sign, Self::Value(_)).then_some(sign)
+                },
+            );
+            let flipped = (-base.clone()).expand().normalize();
+            let opposite_exists = mul.iter().any(|other| match other {
+                Self::Pow(pow) => *pow.base == flipped,
+                other => *other == flipped,
+            });
+            let Some(sign) = sign.filter(|_| opposite_exists) else {
+                res *= factor;
+                continue;
+            };
+            res *= sign * exponant.map_or_else(|| flipped.clone(), |e| flipped.pow(e));
+        }
         res
     }
 
@@ -1006,6 +1045,44 @@ impl<T: Ring> Term<T> {
                     terms.push(current_merge);
                 }
 
+                // `{$(x + y) - (x + y) = 0$}`: distribute a product `c (a + b)` when it cancels with other terms
+                for j in 0..terms.len() {
+                    let Self::Mul(mul) = &terms[j] else { continue };
+                    if mul.factors.len() != 1 {
+                        continue;
+                    }
+                    let Self::Add(inner) = &mul.factors[0] else {
+                        continue;
+                    };
+                    let mut candidate: Vec<Self> = terms
+                        .iter()
+                        .enumerate()
+                        .filter(|(k, _)| *k != j)
+                        .map(|(_, t)| t.clone())
+                        .collect();
+                    let others = candidate.len();
+                    for part in inner {
+                        candidate.push(
+                            Self::Mul(Mul::new(
+                                mul.coefficient.clone(),
+                                vec![part.clone()],
+                                self.get_set(),
+                            ))
+                            .normalize(),
+                        );
+                    }
+                    let expected = others + inner.len();
+                    let merged = Self::Add(Add::new(candidate, self.get_set())).normalize();
+                    let count = match &merged {
+                        Self::Add(add) => add.len(),
+                        t if t.is_zero() => 0,
+                        _ => 1,
+                    };
+                    if count < expected {
+                        return merged;
+                    }
+                }
+
                 if terms.is_empty() {
                     Self::zero(self.get_set())
                 } else if terms.len() == 1 {
@@ -1127,6 +1204,18 @@ impl<T: Ring<ExponantSet: Ring, ProductCoefficientSet = T>> Normalize for Term<T
                     true
                 }
             });
+            // `{$0/0$}` is undefined: a power of zero surviving normalization is a division by zero
+            if coefficient_set.is_zero(&new_coeff)
+                && mul
+                    .factors
+                    .iter()
+                    .any(|f| matches!(f.normalize(), Self::Pow(p) if p.base.is_zero()))
+            {
+                return Self::Symbol(symbol::SymbolTerm::new(
+                    crate::context::Context::UNDEFINED,
+                    self.get_set(),
+                ));
+            }
             mul.coefficient = new_coeff;
             mul.set_approximate(approximate);
             if mul.is_empty() {

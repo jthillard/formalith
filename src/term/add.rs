@@ -144,14 +144,34 @@ impl<T: Group> Print for Add<T> {
         options: &crate::printer::PrintOptions,
         f: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result {
+        let mut index = 0;
         self.print_default(
             |term, f| {
+                index += 1;
                 Ok(
                     if let Term::Value(Value { value, set, .. }) = term
                         && term.is_strictly_negative()
                     {
                         Self::operator("-", options, f)?;
                         Print::print(&Value::new(set.neg(value), *set), options, f)?;
+                        true
+                    } else if index > 1
+                        && let Term::Value(value) = term
+                        && let printed = {
+                            struct Printed<'a, V>(&'a V, &'a PrintOptions);
+                            impl<V: Print> std::fmt::Display for Printed<'_, V> {
+                                fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                                    self.0.print(self.1, f)
+                                }
+                            }
+                            Printed(value, options).to_string()
+                        }
+                        && let Some(rest) = printed.strip_prefix('-')
+                        && !rest.contains(['+', '-'])
+                    {
+                        // Values of unordered sets (`{$x - i$}`) are not negative, but print with a sign
+                        Self::operator("-", options, f)?;
+                        f.write_str(rest)?;
                         true
                     } else {
                         false

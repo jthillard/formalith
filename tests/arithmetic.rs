@@ -48,7 +48,7 @@ fn constant_powers() {
 fn irrational_powers_stay_symbolic() {
     let sqrt2 = parse!("2^(1/2)", R);
     assert!(matches!(sqrt2, Term::Pow(_)));
-    assert_eq!(line(&sqrt2), "2^1/2");
+    assert_eq!(line(&sqrt2), "2^(1/2)");
 }
 
 #[test]
@@ -308,20 +308,17 @@ fn one_to_any_power() {
 }
 
 #[test]
-#[ignore = "bug: 0/0 normalizes to 0 instead of staying undefined"]
 fn zero_over_zero() {
     assert_ne!(eval_r("0/0"), "0");
 }
 
 #[test]
-#[ignore = "bug: a sum minus itself is not normalized to 0, (x+y)-(x+y) stays as is without expand"]
 fn sum_minus_itself() {
     assert_eq!(eval_r("(x+y)-(x+y)"), "0");
     assert_eq!(eval_r("(x+x^2)-(x+x^2)"), "0");
 }
 
 #[test]
-#[ignore = "bug: 1/sqrt(3) is not merged with sqrt(3), 2/3*pi/sqrt(3) and 2/9*pi*sqrt(3) differ"]
 fn reciprocal_radicals_are_merged() {
     assert_eq!(parse!("2/3*pi/sqrt(3)", R), parse!("2/9*pi*sqrt(3)", R));
     assert_eq!(parse!("1/sqrt(2)", R), parse!("sqrt(2)/2", R));
@@ -340,7 +337,7 @@ fn power_rules() {
     assert_eq!(eval_r("(x^(1/3))^3"), "x");
     assert_eq!(eval_r("(x^3)^(1/3)"), "x");
     assert_eq!(eval_r("(x^2)^(1/2)"), "abs(x)");
-    assert_eq!(eval_r("(x^2)^(1/4)"), "abs(x)^1/2");
+    assert_eq!(eval_r("(x^2)^(1/4)"), "abs(x)^(1/2)");
     assert_eq!(eval_r("sqrt(x^4)"), "x^2");
     // Not valid for every real `x` and `a`, so kept as is
     assert_eq!(eval_r("(x^a)^b"), "(x^a)^b");
@@ -351,7 +348,6 @@ fn power_rules() {
 }
 
 #[test]
-#[ignore = "bug: `^` is left associative, x^y^z parses as (x^y)^z instead of x^(y^z)"]
 fn power_is_right_associative() {
     assert_eq!(eval_r("2^3^2"), "512");
     assert_eq!(parse!("x^y^z", R), parse!("x^(y^z)", R));
@@ -374,7 +370,6 @@ fn constant_radicals_are_simplified() {
 }
 
 #[test]
-#[ignore = "bug: even roots of negative constants panic in malachite instead of staying unevaluated"]
 fn even_roots_of_negative_constants() {
     let printed = std::panic::catch_unwind(|| eval_r("sqrt(-4)"));
     assert!(printed.is_ok(), "sqrt(-4) panicked");

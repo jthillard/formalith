@@ -276,6 +276,7 @@ impl Ring for R<Rational> {
                         res = Pow::pow(res, exponant);
                         num = Natural::ONE;
                         if let Ok(root_exponant) = i64::try_from(&den)
+                            && (res >= 0 || root_exponant % 2 != 0)
                             && let Some(root_free) = (&res).checked_root(root_exponant)
                         {
                             res = root_free;
@@ -289,9 +290,18 @@ impl Ring for R<Rational> {
                         // `{$(s^q r)^(1/q) = s r^(1/q)$}`
                         let (sn, rn) = Self::extract_power(res.numerator_ref(), root_exponant);
                         let (sd, rd) = Self::extract_power(res.denominator_ref(), root_exponant);
-                        if sn != 1 || sd != 1 {
+                        if sn != 1 || sd != 1 || rd != 1 {
+                            // `{$(a/b)^(1/q) = (a b^(q-1))^(1/q) / b$}`
+                            let (rn, sd) = if rd == 1 {
+                                (rn, sd)
+                            } else {
+                                (
+                                    rn * Pow::pow(rd.clone(), root_exponant - 1),
+                                    sd * rd,
+                                )
+                            };
                             let root =
-                                Term::Value(Value::new(Rational::from_naturals(rn, rd), *self))
+                                Term::Value(Value::new(Rational::from_naturals(rn, Natural::ONE), *self))
                                     .pow(&Term::Value(Value::new(
                                         Rational::from_naturals(Natural::ONE, den),
                                         *self,

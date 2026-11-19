@@ -71,7 +71,7 @@ fn approximations_are_contagious() {
     assert_eq!(approx("sin(approx(1))"), "0.841470984807897");
     assert_eq!(approx("approx(sqrt(2))*x + x"), "2.4142135623731*x");
     // Exact values are kept exact
-    assert_eq!(approx("sqrt(2) + 1"), "2^1/2+1");
+    assert_eq!(approx("sqrt(2) + 1"), "2^(1/2)+1");
 }
 
 #[test]

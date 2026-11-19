@@ -24,7 +24,7 @@ fn print_sums_and_powers() {
     assert_eq!(line(&parse!("x^2", R)), "x^2");
     assert_eq!(line(&parse!("x^-2", R)), "x^-2");
     assert_eq!(line(&parse!("(x+1)^2", R)), "(x+1)^2");
-    assert_eq!(line(&parse!("(x+1)^(1/2)", R)), "(x+1)^1/2");
+    assert_eq!(line(&parse!("(x+1)^(1/2)", R)), "(x+1)^(1/2)");
     assert_eq!(line(&parse!("x^(y+1)", R)), "x^(y+1)");
 }
 
@@ -234,7 +234,6 @@ fn printed_expressions_are_parsed_back() {
 }
 
 #[test]
-#[ignore = "bug: rational exponents are printed as `x^1/2`, which parses back as (x^1)/2"]
 fn rational_exponents_are_parsed_back() {
     for input in ["sqrt(x)", "x^(2/3)", "2^(1/2)", "(x+1)^(-1/2)"] {
         let term = parse!(input, R);
