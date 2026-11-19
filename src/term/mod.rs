@@ -179,9 +179,6 @@ impl<T: Set> From<SymbolTerm<T>> for Term<T> {
 }
 
 impl<T: Set> Term<T> {
-    /// Absolute function
-    pub const ABS: Symbol = Context::ABS;
-
     /// Get the ring where constants live
     pub fn get_set(&self) -> T {
         match self {
@@ -224,25 +221,11 @@ impl<T: Set> Term<T> {
             Self::Fun(fun) => fun.collect_symbols(symbols),
         }
     }
-    /// Create a new empty product expression
-    pub fn new_mul(ring: T) -> Self {
-        Self::Mul(Mul::empty(ring))
-    }
     /// Return `self` as [Value] if self is a `Value`, None otherwise.
     pub fn as_value(self) -> Option<Value<T>> {
         match self {
             Self::Value(value) => Some(value),
             _ => None,
-        }
-    }
-    /// Return `self` as [Value].
-    ///
-    /// # Safety
-    /// `self` must be a `Term::Value`, the method is UB otherwise.
-    pub unsafe fn as_value_unsafe(self) -> Value<T> {
-        match self {
-            Self::Value(value) => value,
-            _ => unreachable!(),
         }
     }
     /// Create a constant expression

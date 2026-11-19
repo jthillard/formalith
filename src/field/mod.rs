@@ -259,10 +259,6 @@ pub trait Ring: Group {
     fn as_fraction(&self, a: &Self::Element) -> (Self::Element, Self::Element) {
         (a.clone(), self.one())
     }
-    /// Return the expression unified
-    fn unify(&self, a: &Self::Element) -> Self::Element {
-        a.clone()
-    }
     /// Greatest common divisor of the numeric content of `a` and `b`, a constant which can be cancelled in a
     /// fraction. `{$gcd(0, b)$}` must be `b` up to a unit.
     ///
@@ -391,7 +387,7 @@ impl<From: Set, To: Set> TryExprFrom<From> for To {
     }
 }
 
-/// An euclidean ring is a [Ring] TODO
+/// A euclidean ring is a [Ring] with a euclidean division, hence a greatest common divisor.
 pub trait EuclideanRing: Ring {
     /// Return the remainder of the euclidean division of a by b.
     fn rem(&self, a: &Self::Element, b: &Self::Element) -> Self::Element;
@@ -401,7 +397,7 @@ pub trait EuclideanRing: Ring {
     fn gcd(&self, a: &Self::Element, b: &Self::Element) -> Self::Element;
 }
 
-/// A field is a [Ring] TODO
+/// A field is a [Ring] where every non-zero element is invertible.
 pub trait Field: Ring {
     /// Compute the inverse element of a.
     fn inv(&self, a: &Self::Element) -> Self::Element {
@@ -410,34 +406,8 @@ pub trait Field: Ring {
     }
 }
 
-/// TODO
+/// A [Ring] whose elements can be differentiated with respect to a symbol.
 pub trait Derivable: Ring {
-    /// TODO rework derivative system
+    /// The derivative of the element `expr` with respect to `x`.
     fn derivative(&self, expr: &Self::Element, x: Symbol) -> Self::Element;
-}
-
-/// Wrapper for an element living in a set. This wrapper implements all useful traits like `Eq` or `Hash` using the implementation of the set itself.
-///
-/// It's useful for sets like `{$ZZ/p ZZ$}`, where equality is not the equality on the integer type.
-#[derive(Eq)]
-pub struct SetElement<T: Set>(T, T::Element);
-
-impl<T: Set> Hash for SetElement<T> {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.0.hash(state);
-        self.1.hash(state);
-    }
-}
-
-impl<T: Set> PartialEq for SetElement<T> {
-    fn eq(&self, other: &Self) -> bool {
-        self.0 == other.0 && self.0.element_eq(&self.1, &other.1)
-    }
-}
-
-impl<T: Set> SetElement<T> {
-    /// Wrap an element in a set.
-    pub const fn new(set: T, value: T::Element) -> Self {
-        Self(set, value)
-    }
 }

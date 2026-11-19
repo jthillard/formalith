@@ -3,12 +3,12 @@ name = "formalith"
 description = "Modern computer algebra system focused on flexibility"
 version = "0.1.0"
 edition = "2024"
-default-run = "formalith"
+default-run = "cli"
 repository = "https://github.com/supersurviveur/formalith"
 license-file = "LICENSE"
 readme = "README.md"
 keywords = ["mathematics", "symbolic", "algebra"]
-categories = ["Mathematics", "Science"]
+categories = ["mathematics", "science"]
 
 [dependencies]
 append-only-vec = "0.1"
@@ -19,11 +19,7 @@ malachite = { version = "0.9", default-features = false, features = ["naturals_a
 owo-colors = "4"
 supports-color = "3"
 tracing = "0.1"
-tracing-subscriber = "0.3"
 rustyline = { version = "19.0.0", default-features = false, optional = true }
-
-# [profile.release]
-# debug = 1
 
 [features]
 default = ["cli"]

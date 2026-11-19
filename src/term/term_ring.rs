@@ -6,7 +6,7 @@ use crate::{
     field::{Field, Group, PartiallyOrderedSet, Ring, Set, SetParseExpression, TryExprFrom},
     parser::{ParseExpression, Parser, ParserError},
     printer::{PrettyPrint, Print},
-    term::{Expand, Normalize, Unify, flags::Flags},
+    term::{Expand, Normalize, flags::Flags},
 };
 
 use super::{Term, Value};
@@ -119,9 +119,6 @@ impl<T: Ring> Ring for TermSet<T> {
     }
     fn as_fraction(&self, a: &Self::Element) -> (Self::Element, Self::Element) {
         a.as_fraction(false)
-    }
-    fn unify(&self, a: &Self::Element) -> Self::Element {
-        a.unify()
     }
 }
 

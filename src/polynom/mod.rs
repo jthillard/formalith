@@ -428,14 +428,11 @@ impl<V: Monomial, T: Ring, U: Ring> MultivariatePolynomial<V, T, U> {
                 self.set,
                 self.exponant_set,
             ) {
-                // trace!("{}", q_vars[0].1);
-                // std::thread::sleep_ms(300);
                 let term_poly = Self::from_term((q_vars, q_coeff), self.set, self.exponant_set);
 
                 quotient = &quotient + &term_poly;
 
                 let to_subtract = &term_poly * divisor;
-                // trace!("{:#?} / {:#?}", current_dividend, to_subtract);
                 current_dividend = &current_dividend - &to_subtract;
                 // A symbolic coefficient times its inverse may not simplify, move what is left to the remainder to terminate
                 if let Some(i) = current_dividend

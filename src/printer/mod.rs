@@ -85,21 +85,21 @@ impl<T: PrettyPrint> Display for Printer<'_, T> {
 
 /// Elements and expressions which can be printed using options.
 pub trait Print {
-    /// Create e new printer for self with specific options.
+    /// Create a new printer for self with specific options.
     fn with_options(&self, options: PrintOptions) -> Printer<'_, Self>
     where
         Self: Sized,
     {
         Printer::new(self, options)
     }
-    /// Create e new printer for self with default options for printing on the stdout.
+    /// Create a new printer for self with default options for printing on the stdout.
     fn stdout(&self) -> Printer<'_, Self>
     where
         Self: Sized,
     {
         self.with_options(PrintOptions::stdout())
     }
-    /// Create e new printer for self rendering typst math source.
+    /// Create a new printer for self rendering typst math source.
     fn typst(&self) -> Printer<'_, Self>
     where
         Self: Sized,

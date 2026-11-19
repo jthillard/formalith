@@ -561,7 +561,6 @@ impl Gruntz {
     }
 }
 
-/// `{$ln a$}`, simplifying `{$ln e^h = h$}`.
 /// The scaled complementary error function `{$"erfcx"(g) = e^(g^2) (1 - "erf" g)$}`, only used internally for
 /// `{$g -> +oo$}`.
 pub(super) fn erfcx() -> Symbol {
@@ -574,6 +573,7 @@ pub(super) fn erfix() -> Symbol {
     Symbol::new("@erfix")
 }
 
+/// `{$ln a$}`, simplifying `{$ln e^h = h$}`.
 fn log(a: &Expr) -> Expr {
     match unary(a) {
         Some((Context::EXP, h)) => h.clone(),

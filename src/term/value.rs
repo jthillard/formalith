@@ -36,10 +36,6 @@ impl<T: Set> Value<T> {
             set,
         }
     }
-    /// Get the inner constant
-    pub fn get_value(self) -> T::Element {
-        self.value
-    }
 }
 
 impl<T: Set> Flags for Value<T> {

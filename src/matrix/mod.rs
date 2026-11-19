@@ -343,21 +343,17 @@ impl<T: Ring> Matrix<T> {
 }
 
 impl<T: Ring> Matrix<T> {
-    /// Transforn the matrix in place in row echelon form, returning its rank.
+    /// Transform the matrix in place in row echelon form, returning its rank.
     ///
     /// # Errors
-    /// The method will fail if a pivot is not inversible.
+    /// The method will fail if a pivot is not invertible.
     pub fn partial_row_reduce(&mut self) -> MatrixResult<usize> {
-        self.partial_row_reduce_counting_swaps()
+        self.partial_row_reduce_left(self.width())
             .map(|(rank, _)| rank)
     }
 
-    /// Transform the matrix in place in row echelon form, returning its rank and whether an odd number of rows swaps happened.
-    fn partial_row_reduce_counting_swaps(&mut self) -> MatrixResult<(usize, bool)> {
-        self.partial_row_reduce_left(self.width())
-    }
-
-    /// [`Matrix::partial_row_reduce_counting_swaps`] with pivots in the first `columns` columns.
+    /// Transform the matrix in place in row echelon form with pivots in the first `columns` columns, returning its
+    /// rank and whether an odd number of rows swaps happened.
     fn partial_row_reduce_left(&mut self, columns: usize) -> MatrixResult<(usize, bool)> {
         let (rows, cols) = self.size;
         let mut pivot_row = 0;
@@ -432,7 +428,7 @@ impl<T: Ring> Matrix<T> {
             return Err(MatrixError::NotSquare);
         }
 
-        let (_, odd_swaps) = self.partial_row_reduce_counting_swaps()?;
+        let (_, odd_swaps) = self.partial_row_reduce_left(self.width())?;
         let mut det = self.set.one();
         for line in 0..self.width() {
             self.set
