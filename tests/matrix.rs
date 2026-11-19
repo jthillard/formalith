@@ -369,7 +369,6 @@ fn matrix_powers() {
 }
 
 #[test]
-#[ignore = "future: M^0 is the scalar 1, not an identity matrix of the right size"]
 fn matrix_to_the_zero() {
     assert_eq!(line(&parse!("[[1,2],[3,4]]^0", M)), "[[1,0],[0,1]]");
 }
@@ -398,11 +397,10 @@ fn invalid_operations_stay_unevaluated() {
 }
 
 #[test]
-#[ignore = "future: symbolic determinants and inverses are not simplified (Vandermonde, A*A^-1 = I)"]
 fn symbolic_matrices_are_simplified() {
     assert_eq!(
         parse!("factor(det([[1,1,1],[a,b,c],[a^2,b^2,c^2]]))", R),
-        parse!("(b-a)*(c-a)*(c-b)", R)
+        parse!("-(a-b)*(a-c)*(b-c)", R)
     );
     assert_eq!(
         parse!(

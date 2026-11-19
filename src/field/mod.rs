@@ -221,6 +221,12 @@ pub trait Ring: Group {
     fn is_one(&self, a: &Self::Element) -> bool {
         *a == self.one()
     }
+    /// The one of the same shape as `a`, like the identity matrix of its size: `{$a^0$}`.
+    ///
+    /// Defaults to [`Ring::one`].
+    fn one_like(&self, _a: &Self::Element) -> Self::Element {
+        self.one()
+    }
     /// Multiply two elements of this ring
     fn mul(&self, a: &Self::Element, b: &Self::Element) -> Self::Element;
     /// Multiply two elements of this ring, returning `None` if they can't be multiplied (like matrices of incompatible sizes).

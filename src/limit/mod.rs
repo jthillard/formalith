@@ -8,7 +8,8 @@
 //! them as powers of a single `{$w -> 0^+$}`, and takes the leading term `{$c_0 w^(e_0)$}` of the series of `f`
 //! in `w`. The limit is 0 if `{$e_0 > 0$}`, `{$plus.minus oo$}` if `{$e_0 < 0$}`, and the limit of
 //! `{$c_0$}`, which varies less rapidly, otherwise. It is complete for expressions built with `exp` and `ln`.
-//! `min`, `max` and `sign` are rewritten with `abs`.
+//! `min`, `max` and `sign` are rewritten with `abs`. `floor` and `ceil` are replaced by their constant value near
+//! the point, from the limit of their argument.
 //!
 //! `{$sin g$}` and `{$cos g$}` with `{$g -> plus.minus oo$}` oscillate: `g` is replaced by an angle `{$theta$}`, a
 //! constant for the algorithm, after checking that the expression stays bounded away from its singularities for
@@ -34,7 +35,10 @@ mod series;
 
 use std::{cmp::Ordering, error::Error, fmt};
 
-use malachite::Rational;
+use malachite::{
+    Rational,
+    base::num::{arithmetic::traits::Floor, basic::traits::One},
+};
 
 use crate::{
     context::{Context, Symbol},
@@ -83,7 +87,7 @@ pub enum LimitError {
     /// The limit doesn't exist, like the two-sided limit of `{$1/x$}` at 0 or `{$sin(x)$}` at `{$oo$}`. `lim`
     /// evaluates to `undefined`.
     Undefined,
-    /// The expression contains something the algorithm can't handle, like `{$floor(x)$}`.
+    /// The expression contains something the algorithm can't handle, like `{$floor(x)$}` at `{$oo$}`.
     Unsupported,
     /// The limit couldn't be determined, like `{$1/(x sin x)$}` at `{$oo$}` (unbounded near the zeros of `sin`),
     /// or a too deep recursion.
@@ -129,6 +133,16 @@ impl Term<Real> {
         if !depends(self, x) {
             return Ok(self.clone());
         }
+        if has_step(self, x) {
+            return match remove_steps(self, x, point, direction) {
+                Ok(f) => f.limit(x, point, direction),
+                Err(Step::BothSides) => both_sides(
+                    &self.limit(x, point, Direction::Right)?,
+                    &self.limit(x, point, Direction::Left)?,
+                ),
+                Err(Step::Limit(error)) => Err(error),
+            };
+        }
         let (f, infinite) = prepare(self, x, point, direction)?;
         let at_infinity = |f: &Self| Gruntz::new(x).limit(f);
         if let Some(sign) = infinite {
@@ -151,24 +165,105 @@ impl Term<Real> {
         match direction {
             Direction::Right => side(1),
             Direction::Left => side(-1),
-            Direction::Both => {
-                let (right, left) = (side(1)?, side(-1)?);
-                if right == left {
-                    return Ok(right);
-                }
-                match (infinity_part(&right), infinity_part(&left)) {
-                    // Parameters are assumed non-zero, so `{$sign(a) oo != -sign(a) oo$}`
-                    (Some(r), Some(l)) if (&r + &l).is_zero() => Err(LimitError::Undefined),
-                    (Some(_), Some(_)) => Err(LimitError::Unknown),
-                    (Some(_), None) | (None, Some(_)) => Err(LimitError::Undefined),
-                    (None, None) => match const_sign(&(&right - &left))? {
-                        Ordering::Equal => Ok(right),
-                        _ => Err(LimitError::Undefined),
-                    },
-                }
-            }
+            Direction::Both => both_sides(&side(1)?, &side(-1)?),
         }
     }
+}
+
+/// The two-sided limit from the `right` and `left` limits, `undefined` when they surely differ.
+fn both_sides(right: &Expr, left: &Expr) -> LimitResult<Expr> {
+    if right == left {
+        return Ok(right.clone());
+    }
+    match (infinity_part(right), infinity_part(left)) {
+        // Parameters are assumed non-zero, so `{$sign(a) oo != -sign(a) oo$}`
+        (Some(r), Some(l)) if (&r + &l).is_zero() => Err(LimitError::Undefined),
+        (Some(_), Some(_)) => Err(LimitError::Unknown),
+        (Some(_), None) | (None, Some(_)) => Err(LimitError::Undefined),
+        (None, None) => match const_sign(&(right - left))? {
+            Ordering::Equal => Ok(right.clone()),
+            _ => Err(LimitError::Undefined),
+        },
+    }
+}
+
+/// Why `floor` and `ceil` couldn't be removed by [`remove_steps`].
+enum Step {
+    /// The argument tends to an integer at a finite point, each side must be computed.
+    BothSides,
+    /// The limit of the argument failed.
+    Limit(LimitError),
+}
+
+impl From<LimitError> for Step {
+    fn from(error: LimitError) -> Self {
+        Self::Limit(error)
+    }
+}
+
+/// Whether `f` contains `floor` or `ceil` of an argument depending on `x`.
+fn has_step(f: &Expr, x: Symbol) -> bool {
+    match f {
+        Term::Value(_) | Term::Symbol(_) => false,
+        Term::Add(add) => add.iter().any(|t| has_step(t, x)),
+        Term::Mul(mul) => mul.iter().any(|t| has_step(t, x)),
+        Term::Pow(pow) => has_step(&pow.base, x) || has_step(&pow.exponant, x),
+        Term::Fun(function) => {
+            matches!(unary(f), Some((Context::FLOOR | Context::CEIL, g)) if depends(g, x))
+                || function
+                    .get_args::<Real>()
+                    .is_some_and(|args| args.iter().any(|arg| has_step(arg, x)))
+        }
+    }
+}
+
+/// Replace `{$floor g$}` and `{$ceil g$}` in `f` by their constant value when `x` tends to `point`: the integer
+/// part of `{$L = lim g$}` for a non-integer `L`. For an integer `L = n`, it depends on the sign `s` of `{$g - n$}`
+/// on the side of the limit, `{$floor g = n$}` or `{$n - 1$}` and `{$ceil g = n + 1$}` or `{$n$}`.
+fn remove_steps(f: &Expr, x: Symbol, point: &Expr, direction: Direction) -> Result<Expr, Step> {
+    let Some((ident @ (Context::FLOOR | Context::CEIL), g)) = unary(f) else {
+        return try_map_operands(f, |t| remove_steps(t, x, point, direction));
+    };
+    if !depends(g, x) {
+        return Ok(f.clone());
+    }
+    let limit = g.limit(x, point, direction)?;
+    if !limit
+        .symbols()
+        .iter()
+        .all(|s| matches!(*s, Context::PI | Context::E))
+    {
+        return Err(LimitError::Unsupported.into());
+    }
+    let n = match &limit {
+        Term::Value(n) => n.value.clone(),
+        _ => Rational::from(approximate(&limit, DIGITS).ok_or(LimitError::Unknown)?.floor()),
+    };
+    if n.denominator_ref() != &1 || limit != value(n.clone()) {
+        // `{$n < L < n + 1$}`
+        let n = Rational::from(n.floor());
+        if const_sign(&(&limit - &value(n.clone())))? != Ordering::Greater
+            || const_sign(&(value(&n + Rational::ONE) - &limit))? != Ordering::Greater
+        {
+            return Err(LimitError::Unknown.into());
+        }
+        return Ok(value(if ident == Context::FLOOR { n } else { n + Rational::ONE }));
+    }
+    let direction = match direction {
+        Direction::Both if infinity_sign(point).is_none() => return Err(Step::BothSides),
+        direction => direction,
+    };
+    // The sign of `{$g - n$}` near the point
+    let difference = g - &value(n.clone());
+    let sign = (&difference / &fun(Context::ABS, difference.clone())).limit(x, point, direction)?;
+    let n = match (ident, sign) {
+        (Context::FLOOR, sign) if sign == one() => n,
+        (Context::FLOOR, sign) if sign == -one() => n - Rational::ONE,
+        (_, sign) if sign == one() => n + Rational::ONE,
+        (_, sign) if sign == -one() => n,
+        _ => return Err(LimitError::Unknown.into()),
+    };
+    Ok(value(n))
 }
 
 /// Checks and rewrites shared by limits and series of `f` when `x` tends to `point`: `f` in the form of
@@ -198,9 +293,11 @@ pub(crate) fn prepare(
 fn infinity_part(term: &Expr) -> Option<Expr> {
     match term {
         Term::Symbol(_) if *term == infinity() => Some(one()),
-        Term::Mul(mul) if mul.iter().any(|factor| *factor == infinity()) => {
-            Some(term / &infinity())
-        }
+        Term::Mul(mul) if mul.iter().any(|factor| *factor == infinity()) => Some(
+            mul.iter()
+                .filter(|factor| **factor != infinity())
+                .fold(value(mul.coefficient.clone()), |res, factor| res * factor),
+        ),
         _ => None,
     }
 }

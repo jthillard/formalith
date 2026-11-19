@@ -308,19 +308,46 @@ impl<T: Ring> Solve for T {
         equations: &[Equation<Self>],
         unknowns: &[Symbol],
     ) -> Result<Solution<Self>, SolveError> {
-        // Solve `lhs - rhs = 0`
-        let expressions: Vec<_> = equations
+        // Solve `lhs - rhs = 0`, written as a fraction `n / d`: solutions of `n = 0` where `d` vanishes are dropped
+        let (expressions, denominators): (Vec<_>, Vec<_>) = equations
             .iter()
             .map(|equation| {
-                (equation.lhs.clone() - equation.rhs.clone())
+                let (num, den) = (equation.lhs.clone() - equation.rhs.clone())
                     .normalize()
-                    .expand()
+                    .as_fraction(true);
+                (num.expand(), den)
             })
-            .collect();
-        match linear::solve(&expressions, unknowns, *self) {
+            .unzip();
+        let solution = match linear::solve(&expressions, unknowns, *self) {
             Err(SolveError::NonLinear(_)) => polynomial::solve(&expressions, unknowns),
             res => res,
+        }?;
+        let denominators: Vec<_> = denominators
+            .into_iter()
+            .filter(|den| den.symbols().iter().any(|s| unknowns.contains(s)))
+            .collect();
+        if denominators.is_empty() {
+            return Ok(solution);
         }
+        let vanishes = |assignments: &Assignments<Self>| {
+            denominators.iter().any(|den| {
+                assignments
+                    .iter()
+                    .try_fold(den.clone(), |den, (symbol, value)| den.substitute(*symbol, value))
+                    .is_some_and(|den| den.expand().is_zero())
+            })
+        };
+        let branches = match solution {
+            Solution::NoSolution => vec![],
+            Solution::Assignments(assignments) => vec![assignments],
+            Solution::Alternatives(branches) => branches,
+        };
+        Ok(Solution::from_branches(
+            branches
+                .into_iter()
+                .filter(|assignments| !vanishes(assignments))
+                .collect(),
+        ))
     }
 }
 

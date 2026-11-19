@@ -46,7 +46,7 @@ mod substitution;
 mod table;
 mod trig;
 
-use std::{cmp::Ordering, collections::HashMap, convert::Infallible, error::Error, fmt};
+use std::{cmp::Ordering, collections::HashMap, error::Error, fmt};
 
 use malachite::Rational;
 
@@ -55,7 +55,7 @@ use crate::{
     field::real::{
         R,
         expr::{
-            Expr, Real, constant_sign, depends, fun, has_special_constant, one, try_map_operands,
+            Expr, Real, constant_sign, depends, fun, has_special_constant, map_tree, one,
             unary, value, variable, zero,
         },
     },
@@ -274,16 +274,6 @@ fn factors(term: &Expr) -> Vec<Expr> {
         }
         _ => vec![term.clone()],
     }
-}
-
-/// Rewrite `term` from the top: subterms for which `rewrite` gives a result are replaced, the others are rebuilt
-/// from their rewritten parts.
-fn map_tree(term: &Expr, rewrite: &impl Fn(&Expr) -> Option<Expr>) -> Expr {
-    if let Some(res) = rewrite(term) {
-        return res;
-    }
-    let Ok(res) = try_map_operands::<Infallible>(term, |operand| Ok(map_tree(operand, rewrite)));
-    res
 }
 
 /// Replace the symbol `x` by `with`, even in exponents.

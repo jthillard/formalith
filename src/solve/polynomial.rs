@@ -29,11 +29,11 @@ use malachite::{
 };
 
 use crate::{
-    context::Symbol,
+    context::{Context, Symbol},
     field::{
         Group, Ring, TryElementFrom, TryExprFrom, complex::C, integer::Z, modular::Zn, real::R,
     },
-    term::{Expand, Mul, Normalize, Term, TermSet},
+    term::{Expand, Fun, Mul, Normalize, SymbolTerm, Term, TermSet},
 };
 
 use super::{Assignments, Solution, SolveError, plain};
@@ -134,8 +134,8 @@ where
 
 impl PolynomialRoots for R<Rational> {
     /// Polynomials of degree one or two, and polynomials of these degrees in `{$x^k$}`, like `{$x^4 - x^2 - 1$}`
-    /// or `{$x^3 - 2$}`, are solved with radicals. Signs of radicals are found by approximating them. Other
-    /// polynomials are irreducible over `{$QQ$}`, their roots aren't computed.
+    /// or `{$x^3 - 2$}`, are solved with radicals, as well as cubics with rational coefficients (see [`cubic_roots`]).
+    /// Signs of radicals are found by approximating them. Roots of other polynomials aren't computed.
     fn roots(coefficients: &[Term<Self>]) -> Option<Vec<Term<Self>>> {
         let value = |value: i64| Term::constant(Rational::from(value), R);
         // A polynomial in `x^k`
@@ -162,9 +162,69 @@ impl PolynomialRoots for R<Rational> {
                     }
                 })
             }
+            [_, _, _, _] => cubic_roots(&values(coefficients)?),
             _ => None,
         }
     }
+}
+
+/// The real roots of the cubic `{$a x^3 + b x^2 + c x + d$}` with rational coefficients `[d, c, b, a]`. With
+/// `{$x = t - b/(3 a)$}`, it becomes `{$t^3 + p t + q$}`, whose roots are given by Cardano's formula when
+/// `{$Delta = (q/2)^2 + (p/3)^3 > 0$}` (one real root), the trigonometric form
+/// `{$t_k = 2 sqrt(-p/3) cos(1/3 acos((3 q)/(2 p) sqrt(-3/p)) - (2 pi k)/3)$}` when `{$Delta < 0$}` (three real
+/// roots), and `{$(3 q)/p$}`, `{$-(3 q)/(2 p)$}` when `{$Delta = 0$}`.
+fn cubic_roots(coefficients: &[Rational]) -> Option<Vec<Term<R<Rational>>>> {
+    let [d, c, b, a] = coefficients else {
+        return None;
+    };
+    let value = |value: Rational| Term::constant(value, R);
+    let ratio = |p: i64, q: i64| Rational::from_signeds(p, q);
+    let p = (Rational::from(3) * a * c - b * b) / (Rational::from(3) * a * a);
+    let q = (Rational::from(2) * b * b * b - Rational::from(9) * a * b * c
+        + Rational::from(27) * a * a * d)
+        / (Rational::from(27) * a * a * a);
+    let shift = value(-(b / (Rational::from(3) * a)));
+    let discriminant = (&q * &q) / Rational::from(4) + (&p * &p * &p) / Rational::from(27);
+    let roots = match discriminant.cmp(&Rational::ZERO) {
+        Ordering::Equal if p == 0 => vec![Term::zero(R)],
+        Ordering::Equal => vec![
+            value(Rational::from(3) * &q / &p),
+            value(Rational::from(-3) * &q / (Rational::from(2) * &p)),
+        ],
+        Ordering::Greater => {
+            let root = value(discriminant).pow(&value(ratio(1, 2)));
+            let half = value(-&q / Rational::from(2));
+            let (u, v) = (&half + &root, half - root);
+            let cube_root = |t: &Term<R<Rational>>| real_roots(t, 3).pop();
+            vec![cube_root(&u)? + cube_root(&v)?]
+        }
+        Ordering::Less => {
+            let pi = Term::Symbol(SymbolTerm::new(Context::PI, R));
+            let angle = Term::Fun(Box::new(Fun::new(
+                Context::ACOS,
+                vec![
+                    value(Rational::from(3) * &q / (Rational::from(2) * &p))
+                        * value(Rational::from(-3) / &p).pow(&value(ratio(1, 2))),
+                ],
+                R,
+            )))
+            .normalize()
+                / value(Rational::from(3));
+            let amplitude = value(Rational::from(2)) * value(-&p / Rational::from(3)).pow(&value(ratio(1, 2)));
+            (0..3)
+                .map(|k| {
+                    let cos = Term::Fun(Box::new(Fun::new(
+                        Context::COS,
+                        vec![&angle - &(value(ratio(2 * k, 3)) * &pi)],
+                        R,
+                    )))
+                    .normalize();
+                    &amplitude * &cos
+                })
+                .collect()
+        }
+    };
+    Some(roots.into_iter().map(|t| t + &shift).collect())
 }
 
 impl PolynomialRoots for C<R<Rational>> {

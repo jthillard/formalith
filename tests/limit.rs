@@ -119,6 +119,8 @@ fn limits_with_parameter_signs() {
     assert_eq!(lim("lim(-a*x, x, oo)"), "-oo*sign(a)");
     assert_eq!(lim("lim(a^2*x, x, oo)"), "oo");
     assert_eq!(lim("lim(a/x^2, x, 0)"), "oo*sign(a)");
+    // `{$sign(a) oo$}` and `{$-sign(a) oo$}` on each side
+    assert_eq!(lim("lim(a/x, x, 0)"), "undefined");
 }
 
 #[test]
@@ -176,7 +178,7 @@ fn infinity_is_a_constant() {
     let eval = |input| SetChoice::R.eval(input, false, &mut Environment::new());
     assert!(eval("oo := 1").is_err());
     assert!(eval("undefined := 1").is_err());
-    assert_eq!(eval("x + 1 = oo"), Ok("x = ∞ - 1".to_string()));
+    assert_eq!(eval("x + 1 = oo"), Ok("x = ∞".to_string()));
 }
 
 #[test]
@@ -264,7 +266,6 @@ fn limits_of_special_functions() {
 }
 
 #[test]
-#[ignore = "future: -ln(1/2) should be printed as ln(2)"]
 fn limits_with_logarithms_of_rationals() {
     assert_eq!(lim("lim(x - ln(cosh(x)), x, oo)"), "ln(2)");
 }
@@ -310,11 +311,13 @@ fn limits_with_factorials() {
 }
 
 #[test]
-#[ignore = "future: limits of floor and ceil at integers"]
 fn limits_of_step_functions() {
     assert_eq!(lim("lim(floor(x), x, 1)"), "undefined");
     assert_eq!(lim("lim(floor(x), x, 1, 1)"), "1");
     assert_eq!(lim("lim(floor(x), x, 1, -1)"), "0");
+    assert_eq!(lim("lim(ceil(x^2), x, 0)"), "1");
+    assert_eq!(lim("lim(floor(x), x, pi)"), "3");
+    assert_eq!(lim("lim(x*floor(1/x), x, oo)"), "0");
 }
 
 #[test]

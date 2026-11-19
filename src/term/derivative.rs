@@ -10,8 +10,8 @@ use super::{Flags, Fun, Normalize, SymbolTerm, Term, Value};
 impl<T: Derivable<ExponantSet = T, ProductCoefficientSet = T>> Term<T> {
     /// Derivative of the expression with respect to `x`.
     ///
-    /// Parts which can't be differentiated, like `abs` or `{$x^x$}`,
-    /// are kept as an unevaluated `diff(f, x)`.
+    /// Parts which can't be differentiated, like `floor` or unknown functions, are kept as an unevaluated
+    /// `diff(f, x)`.
     #[must_use]
     pub fn derivative(&self, x: Symbol) -> Self {
         let set = self.get_set();
@@ -41,11 +41,17 @@ impl<T: Derivable<ExponantSet = T, ProductCoefficientSet = T>> Term<T> {
                 res
             }
             Self::Pow(pow) => {
-                if !pow.exponant.derivative(x).is_zero() {
-                    return self.unevaluated_derivative(x);
+                let exponant = &**pow.exponant;
+                let exponant_derivative = exponant.derivative(x);
+                if !exponant_derivative.is_zero() {
+                    // `{$(b^e)' = b^e (e' ln b + e b' / b)$}`
+                    let ln = Self::Fun(Box::new(Fun::new(Context::LN, vec![(*pow.base).clone()], set)))
+                        .normalize();
+                    return self
+                        * &(exponant_derivative * ln
+                            + exponant * &pow.base.derivative(x) / &*pow.base);
                 }
                 // `{$(b^e)' = e b^(e-1) b'$}`
-                let exponant = &**pow.exponant;
                 exponant * &pow.base.pow(&(exponant - &Self::one(set))) * pow.base.derivative(x)
             }
             Self::Fun(fun) => {
@@ -56,6 +62,15 @@ impl<T: Derivable<ExponantSet = T, ProductCoefficientSet = T>> Term<T> {
                     && variable.symbol == x
                 {
                     return f.clone();
+                }
+                // `{$d/dx integral_a^b f(t) dif t = f(b) b' - f(a) a'$}`
+                if fun.get_ident() == Context::INTEGRATE
+                    && let Some([f, Self::Symbol(t), a, b]) = fun.get_args::<T>().map(Vec::as_slice)
+                    && t.symbol != x
+                    && !f.symbols().contains(&x)
+                    && let (Some(at_a), Some(at_b)) = (f.substitute(t.symbol, a), f.substitute(t.symbol, b))
+                {
+                    return at_b * b.derivative(x) - at_a * a.derivative(x);
                 }
                 if let Some([u]) = fun.get_args::<T>().map(Vec::as_slice) {
                     let apply = |ident| {

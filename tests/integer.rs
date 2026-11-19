@@ -63,7 +63,6 @@ fn exact_division_and_euclidean_operations() {
 }
 
 #[test]
-#[ignore = "future: gcd, lcm and factorial of integers in Z"]
 fn integer_builtins() {
     assert_eq!(line(&parse!("gcd(12, 18)", Z)), "6");
     assert_eq!(line(&parse!("lcm(4, 6)", Z)), "12");

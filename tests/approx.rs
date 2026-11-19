@@ -230,5 +230,7 @@ fn approx_oscillating_integrals() {
 #[test]
 fn approx_keeps_singular_values() {
     assert_eq!(approx("approx(ln(0))"), "ln(0.0)");
-    assert_eq!(approx("approx(binomial(1/2, 2))"), "binomial(0.5, 2.0)");
+    assert_eq!(approx("approx(binomial(1/3, 1/2))"), "binomial(0.333333333333333, 0.5)");
+    // Evaluated exactly before being approximated
+    assert_eq!(approx("approx(binomial(1/2, 2))"), "-0.125");
 }

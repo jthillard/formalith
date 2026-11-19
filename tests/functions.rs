@@ -130,7 +130,7 @@ fn diff() {
 #[test]
 fn diff_unevaluated() {
     let is_diff = |term| matches!(term, Term::Fun(fun) if fun.get_ident() == Context::DIFF);
-    assert!(is_diff(parse!("diff(x^x, x)", R)));
+    assert!(is_diff(parse!("diff(f(x), x)", R)));
     assert_eq!(
         parse!("diff(f(x) + x^2, x)", R),
         parse!("diff(f(x), x) + 2*x", R)
@@ -189,7 +189,7 @@ fn factorial_and_binomial() {
     assert_eq!(parse!("binomial(5, -1)", R), parse!("0", R));
     assert!(matches!(parse!("factorial(x)", R), Term::Fun(_)));
     assert!(matches!(parse!("factorial(-1)", R), Term::Fun(_)));
-    assert!(matches!(parse!("factorial(1/2)", R), Term::Fun(_)));
+    assert!(matches!(parse!("factorial(1/3)", R), Term::Fun(_)));
 }
 
 #[test]
@@ -237,7 +237,6 @@ fn tangent_at_its_poles_stays_unevaluated() {
 }
 
 #[test]
-#[ignore = "future: exact values at pi/12, pi/5 and other angles with radicals"]
 fn trigonometric_values_with_radicals() {
     assert_eq!(parse!("sin(pi/12)", R), parse!("(sqrt(6)-sqrt(2))/4", R));
     assert_eq!(parse!("cos(pi/5)", R), parse!("(1+sqrt(5))/4", R));
@@ -245,13 +244,23 @@ fn trigonometric_values_with_radicals() {
 }
 
 #[test]
-#[ignore = "future: parity and periodicity of trigonometric functions"]
 fn trigonometric_symmetries() {
     assert_eq!(parse!("sin(-x)", R), parse!("-sin(x)", R));
     assert_eq!(parse!("cos(-x)", R), parse!("cos(x)", R));
     assert_eq!(parse!("cos(x+2*pi)", R), parse!("cos(x)", R));
     assert_eq!(parse!("sin(x+pi)", R), parse!("-sin(x)", R));
     assert_eq!(parse!("tan(x+pi)", R), parse!("tan(x)", R));
+    assert_eq!(parse!("cos(x+pi/2)", R), parse!("-sin(x)", R));
+    assert_eq!(parse!("sin(x+4*pi/3)", R), parse!("-sin(x+pi/3)", R));
+    // Already reduced, `{$-1/2 < 1/3 < 1/2$}`
+    assert_eq!(
+        parse!("sin(x+pi/3)", R).to_string(),
+        parse!("sin(pi/3+x)", R).to_string()
+    );
+    let Term::Fun(fun) = parse!("sin(x+pi/3)", R) else {
+        panic!("sin(x+pi/3) is not a function");
+    };
+    assert!(matches!(fun.get_arg::<R<malachite::Rational>>(), Some(Term::Add(_))));
 }
 
 #[test]
@@ -277,7 +286,6 @@ fn inverse_functions_out_of_their_domain() {
 }
 
 #[test]
-#[ignore = "future: values of functions at infinity"]
 fn functions_at_infinity() {
     assert_eq!(parse!("atan(oo)", R), parse!("pi/2", R));
     assert_eq!(parse!("exp(-oo)", R), parse!("0", R));
@@ -302,7 +310,6 @@ fn big_factorials_and_binomials() {
 }
 
 #[test]
-#[ignore = "future: symbolic and generalized binomials and factorials"]
 fn generalized_factorials_and_binomials() {
     assert_eq!(parse!("binomial(n, 0)", R), parse!("1", R));
     assert_eq!(parse!("binomial(n, 1)", R), parse!("n", R));
@@ -358,7 +365,6 @@ fn derivatives_of_compositions() {
 }
 
 #[test]
-#[ignore = "future: derivatives of powers with a variable exponent"]
 fn derivatives_of_variable_powers() {
     assert_eq!(parse!("diff(x^x, x)", R), parse!("x^x*(ln(x)+1)", R));
     assert_eq!(parse!("diff(a^x, x)", R), parse!("a^x*ln(a)", R));
@@ -366,7 +372,6 @@ fn derivatives_of_variable_powers() {
 }
 
 #[test]
-#[ignore = "future: fundamental theorem of calculus, d/dx integrate(f(t), t, a, x) = f(x)"]
 fn derivative_of_an_integral_with_a_variable_bound() {
     assert_eq!(
         parse!("diff(integrate(exp(-t^2)*ln(t), t, 1, x), x)", R),

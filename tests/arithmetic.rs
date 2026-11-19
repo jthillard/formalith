@@ -302,7 +302,6 @@ fn powers_of_zero_and_one() {
 }
 
 #[test]
-#[ignore = "future: 1^x should normalize to 1"]
 fn one_to_any_power() {
     assert_eq!(eval_r("1^x"), "1");
 }
@@ -377,16 +376,16 @@ fn even_roots_of_negative_constants() {
 }
 
 #[test]
-#[ignore = "future: denesting of radicals"]
 fn radicals_are_denested() {
     assert_eq!(parse!("sqrt(3+2*sqrt(2))", R), parse!("1+sqrt(2)", R));
     assert_eq!(parse!("sqrt(5+2*sqrt(6))", R), parse!("sqrt(2)+sqrt(3)", R));
 }
 
 #[test]
-#[ignore = "future: sqrt(4*x^2) should be 2*abs(x)"]
 fn radicals_of_products() {
     assert_eq!(parse!("sqrt(4*x^2)", R), parse!("2*abs(x)", R));
+    // `{$sqrt(2)$}` isn't rational, the coefficient stays inside
+    assert_eq!(eval_r("sqrt(2*x)"), "(2*x)^(1/2)");
 }
 
 #[test]
@@ -429,17 +428,20 @@ fn abs_sign_min_max() {
 }
 
 #[test]
-#[ignore = "future: sign is odd and sign(x)^2 is not simplified"]
 fn sign_symmetries() {
     assert_eq!(parse!("sign(-x)", R), parse!("-sign(x)", R));
 }
 
 #[test]
-#[ignore = "future: arithmetic with oo is not simplified (oo - oo and oo/oo should be undefined)"]
 fn arithmetic_with_infinity() {
     assert_eq!(eval_r("oo - oo"), "undefined");
     assert_eq!(eval_r("oo/oo"), "undefined");
     assert_eq!(eval_r("0*oo"), "undefined");
     assert_eq!(eval_r("oo + 1"), "oo");
     assert_eq!(eval_r("2*oo"), "oo");
+    assert_eq!(eval_r("oo*oo"), "oo");
+    assert_eq!(eval_r("-2*pi*oo"), "-oo");
+    assert_eq!(eval_r("oo^-1"), "0");
+    // Symbols aren't assumed finite
+    assert_eq!(eval_r("x+oo"), "oo+x");
 }

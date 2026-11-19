@@ -1,12 +1,14 @@
 //! Integration by substitution `{$u = g(x)$}`, when `{$f / g'$}` is an expression of `u` (derivative-divides).
 
-use crate::field::real::expr::{Expr, depends, one, unary, variable};
+use crate::field::real::expr::{
+    Expr, depends, exp_of_ln, fun, map_tree, one, size, unary, variable,
+};
 use crate::{
     context::{Context, Symbol},
     term::Term,
 };
 
-use super::{Integrator, is_positive, linear, map_tree, replace_symbol};
+use super::{Integrator, is_positive, linear, replace_symbol};
 
 /// Maximum number of substitutions tried for an integrand.
 const MAX_CANDIDATES: usize = 8;
@@ -61,21 +63,6 @@ fn collect_candidates(f: &Expr, x: Symbol, candidates: &mut Vec<Expr>) {
     }
 }
 
-/// The number of nodes of a term.
-fn size(term: &Expr) -> usize {
-    match term {
-        Term::Value(_) | Term::Symbol(_) => 1,
-        Term::Add(add) => 1 + add.iter().map(size).sum::<usize>(),
-        Term::Mul(mul) => 1 + mul.iter().map(size).sum::<usize>(),
-        Term::Pow(pow) => 1 + size(&pow.base) + size(&pow.exponant),
-        Term::Fun(fun) => {
-            1 + fun
-                .get_args::<super::Real>()
-                .map_or(0, |args| args.iter().map(size).sum())
-        }
-    }
-}
-
 /// `{$integral f dif x = integral h(t) dif t$}` with `{$t = u(x)$}`, if `{$f / u'$}` is an expression `h` of `u`.
 fn substitute(integrator: &mut Integrator, f: &Expr, x: Symbol, u: &Expr) -> Option<Expr> {
     let du = u.derivative(x);
@@ -100,16 +87,22 @@ fn substitute(integrator: &mut Integrator, f: &Expr, x: Symbol, u: &Expr) -> Opt
         return None;
     }
     let res = integrator.integrate(&h, t_symbol)?;
-    Some(replace_symbol(&res, t_symbol, u))
+    Some(exp_of_ln(&replace_symbol(&res, t_symbol, u)))
 }
 
 /// Replace `u` by `t` in `term`, also writing related subexpressions as powers of `t`: `{$b^q = t^(q/p)$}` for
 /// `{$u = b^p$}` (and `{$b = t^(1/p)$}`) when `{$q / p$}` is an integer or `b` is positive (`{$x = sqrt(x^2)$}`
-/// only holds for `{$x >= 0$}`), and `{$exp(c) = t^(c/a)$}` for `{$u = exp(a)$}`.
+/// only holds for `{$x >= 0$}`), `{$exp(c) = t^(c/a)$}` for `{$u = exp(a)$}`, and `{$b = exp(t)$}` for `{$u = ln b$}`.
 fn replace(term: &Expr, u: &Expr, t: &Expr, x: Symbol) -> Expr {
     map_tree(term, &|s| {
         if s == u {
             return Some(t.clone());
+        }
+        // `{$b = exp(t)$}` for `{$u = ln b$}`, `b` being positive
+        if let Some((Context::LN, b)) = unary(u)
+            && s == b
+        {
+            return Some(fun(Context::EXP, t.clone()));
         }
         if let Term::Pow(pu) = u {
             let valid = |ratio: &Expr| ratio.to_i64().is_some() || is_positive(&pu.base, x);

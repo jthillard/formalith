@@ -110,6 +110,10 @@ impl C<R<Rational>> {
                     _ => value(self.conj(c)) * self.fun(Context::CONJ, rest),
                 })
             }
+            // `{$overline(overline(z)) = z$}`
+            Term::Fun(inner) if ident == Context::CONJ && inner.get_ident() == Context::CONJ => {
+                inner.get_arg::<Self>().cloned()
+            }
             Term::Mul(mul) if ident == Context::CONJ => {
                 Some(mul.iter().fold(Term::one(self), |res, factor| {
                     res * self.fun(ident, factor.clone())
@@ -117,6 +121,26 @@ impl C<R<Rational>> {
             }
             _ => None,
         }
+    }
+
+    /// Evaluate `{$e^(q i pi)$}` for a half-integer `q`, which is 1, `i`, -1 or `-i`.
+    fn eval_exp(self, arg: &Term<Self>) -> Option<Term<Self>> {
+        let Term::Mul(mul) = arg else { return None };
+        if !matches!(mul.iter().collect::<Vec<_>>().as_slice(),
+            [Term::Symbol(symbol)] if symbol.symbol == Context::PI)
+            || mul.coefficient[0] != 0
+        {
+            return None;
+        }
+        let half_turns = &mul.coefficient[1] * Rational::from(2);
+        let quarters = i64::try_from(&half_turns).ok()?.rem_euclid(4);
+        let z = match quarters {
+            0 => [Rational::ONE, Rational::ZERO],
+            1 => [Rational::ZERO, Rational::ONE],
+            2 => [-Rational::ONE, Rational::ZERO],
+            _ => [Rational::ZERO, -Rational::ONE],
+        };
+        Some(Term::Value(Value::new(z, self)))
     }
 
     /// Normalize `base^exponant` where both are constants.
@@ -353,6 +377,11 @@ impl Ring for C<R<Rational>> {
                         .get_arg::<Self>()
                         .and_then(|arg| self.eval_part(ident, arg))
                     {
+                        return res;
+                    }
+                }
+                Context::EXP => {
+                    if let Some(res) = fun.get_arg::<Self>().and_then(|arg| self.eval_exp(arg)) {
                         return res;
                     }
                 }

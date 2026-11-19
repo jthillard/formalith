@@ -161,22 +161,25 @@ impl Parser<'_> {
         }
     }
     /// Whether the current token starts an implicit product with the number literal just before it, like `2x` or
-    /// `3(x + 1)`. A space (`5 x`) or an exponent-like identifier (`1e3`) is not a product.
+    /// `3(x + 1)`, or with the closing parenthesis just before it, like `(x + 1)(x - 1)`. A space (`5 x`) or an
+    /// exponent-like identifier (`1e3`) is not a product.
     fn implicit_product(&self) -> bool {
-        self.adjacent
-            && matches!(
-                self.prev_token.kind,
-                TokenKind::Literal {
-                    kind: LiteralTokenKind::Int | LiteralTokenKind::Float
-                }
-            )
-            && match &self.token.kind {
+        if !self.adjacent {
+            return false;
+        }
+        match self.prev_token.kind {
+            TokenKind::Literal {
+                kind: LiteralTokenKind::Int | LiteralTokenKind::Float,
+            } => match &self.token.kind {
                 TokenKind::OpenParen => true,
                 TokenKind::Ident(name) => !name
                     .strip_prefix(['e', 'E'])
                     .is_some_and(|rest| rest.starts_with(|c: char| c.is_ascii_digit())),
                 _ => false,
-            }
+            },
+            TokenKind::CloseParen => self.token.kind == TokenKind::OpenParen,
+            _ => false,
+        }
     }
     /// Return the next operator if it exists, a number literal followed by an identifier or a parenthesis being an
     /// implicit product
@@ -382,7 +385,10 @@ where
         match (node, node_in_coefficient_set) {
             (None, Err(_) | Ok(None)) => Ok(None),
             (Some(mut node), mut node_in_coefficient_set) => {
-                if let (TokenKind::OpenParen, Term::Symbol(symbol)) = (&self.token.kind, &node) {
+                // A parenthesized symbol isn't a function name, `{$(x)(y) = x y$}`
+                if let (TokenKind::OpenParen, Term::Symbol(symbol)) = (&self.token.kind, &node)
+                    && self.prev_token.kind != TokenKind::CloseParen
+                {
                     self.next_token();
                     let ident = symbol.symbol;
                     let (fun, args_count): (Term<E>, _) = match ident {

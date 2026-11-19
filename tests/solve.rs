@@ -61,9 +61,9 @@ fn other_sets() {
 fn errors() {
     assert!(solve("abs(x) = 1").unwrap_err().contains("not polynomial"));
     assert!(solve("2^x = 1").unwrap_err().contains("not polynomial"));
-    // Irreducible over the rationals, and not a polynomial in `x^k`
+    // Irreducible quartic over the rationals, and not a polynomial in `x^k`
     assert!(
-        solve("x^3 + x + 1 = 0")
+        solve("x^4 + x + 1 = 0")
             .unwrap_err()
             .contains("can't solve")
     );
@@ -403,7 +403,6 @@ fn linear_systems_with_non_invertible_pivots() {
 }
 
 #[test]
-#[ignore = "future: cubics by Cardano's formula (and casus irreducibilis)"]
 fn cubics_and_quintics() {
     assert!(solve("x^3 + x + 1 = 0").is_ok());
     assert!(solve("x^3 - 3*x + 1 = 0").is_ok());
@@ -415,8 +414,6 @@ fn non_polynomial_equations_are_rejected() {
         "sin(x) = 0",
         "exp(x) = 2",
         "sqrt(x) = 2",
-        "1/x = 2",
-        "x/(x-1) = 2",
     ] {
         assert!(
             solve(system).unwrap_err().contains("not polynomial"),
@@ -432,8 +429,9 @@ fn non_polynomial_equations_are_rejected() {
 }
 
 #[test]
-#[ignore = "future: rational equations, solved by clearing denominators"]
 fn rational_equations() {
     assert_eq!(solve("1/x = 2"), ok("x = frac(1, 2)"));
     assert_eq!(solve("x/(x-1) = 2"), ok("x = 2"));
+    // `x = 1` cancels the denominator
+    assert_eq!(solve("x/(x-1) = 1/(x-1)"), ok("\"no solution\""));
 }

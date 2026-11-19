@@ -1,6 +1,6 @@
 //! Shorthands to build and inspect real expressions, shared by limits, series and integrals.
 
-use std::cmp::Ordering;
+use std::{cmp::Ordering, convert::Infallible};
 
 use malachite::{
     Rational,
@@ -156,5 +156,51 @@ pub(crate) fn try_map_operands<E>(
             .normalize(),
             None => term.clone(),
         },
+    })
+}
+
+/// Rewrite `term` from the top: subterms for which `rewrite` gives a result are replaced, the others are rebuilt
+/// from their rewritten parts.
+pub(crate) fn map_tree(term: &Expr, rewrite: &impl Fn(&Expr) -> Option<Expr>) -> Expr {
+    if let Some(res) = rewrite(term) {
+        return res;
+    }
+    let Ok(res) = try_map_operands::<Infallible>(term, |operand| Ok(map_tree(operand, rewrite)));
+    res
+}
+
+/// The number of nodes of a term.
+pub(crate) fn size(term: &Expr) -> usize {
+    1 + match term {
+        Term::Value(_) | Term::Symbol(_) => 0,
+        Term::Add(add) => add.iter().map(size).sum(),
+        Term::Mul(mul) => mul.iter().map(size).sum(),
+        Term::Pow(pow) => size(&pow.base) + size(&pow.exponant),
+        Term::Fun(fun) => fun
+            .get_args::<Real>()
+            .map_or(0, |args| args.iter().map(size).sum()),
+    }
+}
+
+/// Rewrite `{$exp(c ln u) = u^c$}` for a rational `c`, and `{$exp(ln u) = u$}`.
+///
+/// Not done by normalization, as limits and integrals build `{$exp(g ln b)$}` on purpose.
+pub(crate) fn exp_of_ln(term: &Expr) -> Expr {
+    map_tree(term, &|t| {
+        let (Context::EXP, arg) = unary(t)? else {
+            return None;
+        };
+        let arg = exp_of_ln(arg);
+        let (c, ln) = match &arg {
+            Term::Mul(mul) => match mul.iter().collect::<Vec<_>>().as_slice() {
+                [ln] => (value(mul.coefficient.clone()), *ln),
+                _ => return Some(fun(Context::EXP, arg.clone())),
+            },
+            _ => (one(), &arg),
+        };
+        match unary(ln) {
+            Some((Context::LN, u)) => Some(u.pow(&c)),
+            _ => Some(fun(Context::EXP, arg.clone())),
+        }
     })
 }

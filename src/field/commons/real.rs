@@ -2,6 +2,7 @@
 
 pub(crate) mod approx;
 pub(crate) mod expr;
+mod rewrite;
 
 use std::{cmp::Ordering, marker::PhantomData};
 
@@ -9,7 +10,7 @@ use malachite::{
     Integer, Natural, Rational,
     base::num::{
         arithmetic::traits::{
-            Abs, BinomialCoefficient, Ceiling, CheckedRoot, Factorial, Floor, Gcd, Lcm, Parity,
+            Abs, BinomialCoefficient, Ceiling, CheckedRoot, CheckedSqrt, Factorial, Floor, Gcd, Lcm, Parity,
             Pow, Reciprocal, Sign,
         },
         basic::traits::{NegativeOne, One, Zero},
@@ -18,7 +19,7 @@ use malachite::{
 
 use super::parse_rational_literal;
 
-use crate::term::fun::{eval_calculus_builtin, eval_rewrite_builtin};
+use crate::term::fun::eval_calculus_builtin;
 use crate::{
     context::{Context, Symbol},
     field::{
@@ -33,7 +34,7 @@ use crate::{
 };
 
 /// Largest `n` for which `{$n!$}` is evaluated, to avoid huge computations.
-const MAX_FACTORIAL: u64 = 100_000;
+pub(crate) const MAX_FACTORIAL: u64 = 100_000;
 /// Maximum exponent tried when evaluating `{$log_b(x)$}` as an integer.
 const MAX_LOG_ITERATIONS: i64 = 4096;
 
@@ -171,6 +172,9 @@ impl Ring for R<Rational> {
     }
 
     fn normalize(&self, a: Term<Self>) -> Term<Self> {
+        if let Some(res) = self.eval_infinite(&a) {
+            return res;
+        }
         match &a {
             Term::Pow(term::Pow { base, exponant, .. }) => match (&**base, &***exponant) {
                 (Term::Symbol(e), _) if e.symbol == Context::E => {
@@ -180,6 +184,21 @@ impl Ring for R<Rational> {
                 (Term::Mul(mul), Term::Value(value)) if value.value.denominator_ref() == &1 => {
                     // `{$(x y)^n = x^n y^n$}` for integer `n`
                     return Term::distribute_pow(mul, exponant);
+                }
+                (Term::Mul(mul), Term::Value(_))
+                    if mul.coefficient > 0
+                        && mul.coefficient != 1
+                        && matches!(self.value(mul.coefficient.clone()).pow(exponant), Term::Value(_)) =>
+                {
+                    // `{$(c u)^e = c^e u^e$}` for `{$c > 0$}` when `{$c^e$}` is rational, `{$sqrt(4 x^2) = 2 |x|$}`
+                    let rest = mul.iter().fold(self.value(Rational::ONE), |res, f| res * f);
+                    return self.value(mul.coefficient.clone()).pow(exponant) * rest.pow(exponant);
+                }
+                (Term::Add(add), Term::Value(exponant))
+                    if exponant.value == Rational::from_signeds(1, 2)
+                        && let Some(res) = self.denest(add) =>
+                {
+                    return res;
                 }
                 (Term::Mul(mul), Term::Value(_))
                     if mul.coefficient > 0 && mul.iter().all(Self::is_positive_constant) =>
@@ -357,9 +376,14 @@ impl Ring for R<Rational> {
                         return res;
                     }
                 }
-                Context::EXPAND | Context::SIMPLIFY => {
-                    if let Some(res) = eval_rewrite_builtin(&**fun) {
-                        return res;
+                Context::EXPAND => {
+                    if let Some(arg) = fun.get_arg::<Self>() {
+                        return rewrite::expand(arg);
+                    }
+                }
+                Context::SIMPLIFY => {
+                    if let Some(arg) = fun.get_arg::<Self>() {
+                        return rewrite::simplify(arg);
                     }
                 }
                 Context::FACTOR => {
@@ -498,9 +522,109 @@ impl Ring for R<Rational> {
 }
 
 impl R<Rational> {
+    /// The constant `value`.
+    const fn value(self, value: Rational) -> Term<Self> {
+        Term::Value(Value::new(value, self))
+    }
+
+    /// Denest `{$sqrt(a + b sqrt(c)) = sqrt((a + d)/2) + "sign"(b) sqrt((a - d)/2)$}` for rationals `a`, `b` and `c`,
+    /// when `{$d^2 = a^2 - b^2 c$}` is the square of a rational `d`.
+    fn denest(self, add: &term::Add<Self>) -> Option<Term<Self>> {
+        let (a, radical) = match add.iter().collect::<Vec<_>>().as_slice() {
+            [Term::Value(a), radical] | [radical, Term::Value(a)] => (a.value.clone(), *radical),
+            _ => return None,
+        };
+        let (b, radical) = match radical {
+            Term::Mul(mul) => match mul.iter().collect::<Vec<_>>().as_slice() {
+                [radical] => (mul.coefficient.clone(), *radical),
+                _ => return None,
+            },
+            _ => (Rational::ONE, radical),
+        };
+        let Term::Pow(pow) = radical else { return None };
+        let (Term::Value(c), Term::Value(half)) = (&*pow.base, &**pow.exponant) else {
+            return None;
+        };
+        if half.value != Rational::from_signeds(1, 2) || a <= 0 || add.is_approximate() {
+            return None;
+        }
+        let square = &a * &a - &b * &b * &c.value;
+        if square < 0 {
+            return None;
+        }
+        let d = (&square).checked_sqrt()?;
+        let two = Rational::from(2);
+        let root = |x: Rational| self.value(x).pow(&self.value(Rational::from_signeds(1, 2)));
+        let (plus, minus) = (root((&a + &d) / &two), root((&a - &d) / &two));
+        Some(if b > 0 { plus + minus } else { plus - minus })
+    }
+
     /// Build the function `ident(arg)`, normalized.
     fn fun(self, ident: Symbol, arg: Term<Self>) -> Term<Self> {
         Term::Fun(Box::new(Fun::new(ident, vec![arg], self))).normalize()
+    }
+
+    /// Arithmetic with `{$oo$}`: `{$oo + c = oo$}` for a constant `c`, `{$oo - oo = "undefined"$}`, `{$c oo = oo$}` for a positive
+    /// constant `c`, `{$oo^n = oo$}` for `{$n > 0$}` and `{$oo^n = 0$}` for `{$n < 0$}`. `undefined` absorbs sums and
+    /// products. Returns `None` when nothing applies.
+    fn eval_infinite(self, a: &Term<Self>) -> Option<Term<Self>> {
+        let oo = || Term::Symbol(SymbolTerm::new(Context::OO, self));
+        let undefined = || Term::Symbol(SymbolTerm::new(Context::UNDEFINED, self));
+        let is_undefined = |t: &Term<Self>| matches!(t, Term::Symbol(s) if s.symbol == Context::UNDEFINED);
+        match a {
+            Term::Pow(pow) if matches!(&*pow.base, Term::Symbol(s) if s.symbol == Context::OO) => {
+                match &**pow.exponant {
+                    Term::Value(n) if n.value > 0 => Some(oo()),
+                    Term::Value(n) if n.value < 0 => Some(Term::zero(self)),
+                    _ => None,
+                }
+            }
+            Term::Add(add) => {
+                if add.iter().any(is_undefined) {
+                    return Some(undefined());
+                }
+                let (mut positive, mut negative) = (false, false);
+                for term in add {
+                    if term.is_infinity_factor() {
+                        match term {
+                            Term::Mul(mul) if mul.coefficient < 0 => negative = true,
+                            _ => positive = true,
+                        }
+                    } else if term
+                        .symbols()
+                        .iter()
+                        .any(|s| *s == Context::OO || !Context::is_builtin_constant(*s))
+                    {
+                        // Only finite constants are dropped, `{$x + oo$}` is kept
+                        return None;
+                    }
+                }
+                match (positive, negative) {
+                    (true, true) => Some(undefined()),
+                    (true, false) => Some(oo()),
+                    (false, true) => Some(-oo()),
+                    (false, false) => None,
+                }
+            }
+            Term::Mul(mul) => {
+                if mul.iter().any(is_undefined) {
+                    return Some(undefined());
+                }
+                let (infinite, rest): (Vec<_>, Vec<_>) =
+                    mul.iter().partition(|factor| factor.is_infinity_factor());
+                // `{$-oo$}` is already normalized
+                let normalized = infinite.len() == 1 && rest.is_empty() && (&mul.coefficient).abs() == 1;
+                if infinite.is_empty()
+                    || normalized
+                    || !infinite.iter().all(|factor| **factor == oo())
+                    || !rest.into_iter().all(Self::is_positive_constant)
+                {
+                    return None;
+                }
+                Some(if mul.coefficient > 0 { oo() } else { -oo() })
+            }
+            _ => None,
+        }
     }
 
     /// Whether `term` is a positive constant: a positive value, `{$pi$}`, `{$e$}`, or a power of one of them.
@@ -658,6 +782,14 @@ impl R<Rational> {
 
     fn eval_builtin(self, ident: Symbol, args: &[Term<Self>]) -> Option<Term<Self>> {
         let value = |value| Term::Value(Value::new(value, self));
+        if let [x] = args
+            && let Some(res) = self
+                .eval_parity(ident, x)
+                .or_else(|| self.eval_periodicity(ident, x))
+                .or_else(|| self.eval_at_infinity(ident, x))
+        {
+            return Some(res);
+        }
         match (ident, args) {
             (Context::EXP | Context::COS, [x]) if x.is_zero() => Some(value(Rational::ONE)),
             (Context::SIN | Context::TAN, [x]) if x.is_zero() => Some(value(Rational::ZERO)),
@@ -665,6 +797,10 @@ impl R<Rational> {
                 self.eval_trig_at_pi_multiple(ident, &self.pi_multiple(x)?)
             }
             (Context::LN, [x]) if x.is_one() => Some(value(Rational::ZERO)),
+            // `{$ln q = -ln(1/q)$}` for `{$0 < q < 1$}`
+            (Context::LN, [Term::Value(x)]) if x.value > 0 && x.value < 1 => {
+                Some(-self.fun(Context::LN, value((&x.value).reciprocal())))
+            }
             (Context::LN, [Term::Symbol(x)]) if x.symbol == Context::E => {
                 Some(value(Rational::ONE))
             }
@@ -700,14 +836,6 @@ impl R<Rational> {
                 Some(value(Rational::ZERO))
             }
             (Context::ERF | Context::ERFI, [x]) if x.is_zero() => Some(value(Rational::ZERO)),
-            // `{$"erf"(oo) = 1$}`
-            (Context::ERF, [Term::Symbol(x)]) if x.symbol == Context::OO => {
-                Some(value(Rational::ONE))
-            }
-            // `{$"erf"(-u) = -"erf"(u)$}`, same for `{$"erfi"$}`
-            (Context::ERF | Context::ERFI, [Term::Mul(mul)]) if mul.coefficient < 0 => {
-                Some(-self.fun(ident, -Term::Mul(mul.clone())))
-            }
             (Context::COSH, [x]) if x.is_zero() => Some(value(Rational::ONE)),
             (Context::ACOSH, [x]) if x.is_one() => Some(value(Rational::ZERO)),
             (Context::ASIN | Context::ACOS | Context::ATAN, [x]) => {
@@ -720,22 +848,35 @@ impl R<Rational> {
             (Context::CSC, [x]) => Some(self.fun(Context::SIN, x.clone()).inv()),
             (Context::LOG, [x]) => Some(self.eval_log(x, &value(Rational::from(10)))),
             (Context::LOG, [x, base]) => Some(self.eval_log(x, base)),
-            (Context::FACTORIAL, [Term::Value(n)]) => {
-                let n = u64::try_from(&n.value)
-                    .ok()
-                    .filter(|n| *n <= MAX_FACTORIAL)?;
-                Some(value(Rational::from(Natural::factorial(n))))
+            // Approximations stay unevaluated, the singular values being exact
+            (Context::FACTORIAL | Context::BINOMIAL, args)
+                if args.iter().any(term::flags::Flags::is_approximate) =>
+            {
+                None
+            }
+            (Context::FACTORIAL, [Term::Value(n)]) => self.eval_factorial(&n.value),
+            (Context::BINOMIAL, [n, Term::Value(k)]) if k.value == 0 || k.value == 1 => {
+                Some(if k.value == 0 { value(Rational::ONE) } else { n.clone() })
             }
             (Context::BINOMIAL, [Term::Value(n), Term::Value(k)]) => {
-                let (n, k) = (
-                    Integer::try_from(&n.value).ok()?,
-                    Integer::try_from(&k.value).ok()?,
-                );
-                if k < 0 || (n >= 0 && k > n) {
+                let k = Integer::try_from(&k.value).ok()?;
+                if k < 0 {
                     return Some(value(Rational::ZERO));
                 }
-                let (n, k) = (Natural::try_from(n).ok()?, Natural::try_from(k).ok()?);
-                Some(value(Rational::from(Natural::binomial_coefficient(n, k))))
+                if let Ok(n) = Natural::try_from(&n.value) {
+                    let k = Natural::try_from(k).ok()?;
+                    if k > n {
+                        return Some(value(Rational::ZERO));
+                    }
+                    return Some(value(Rational::from(Natural::binomial_coefficient(n, k))));
+                }
+                // `{$binom(n, k) = (n (n - 1) ... (n - k + 1)) / k!$}`
+                let k = u64::try_from(&k).ok().filter(|k| *k <= MAX_FACTORIAL)?;
+                let mut res = Rational::ONE;
+                for i in 0..k {
+                    res *= (&n.value - Rational::from(i)) / Rational::from(i + 1);
+                }
+                Some(value(res))
             }
             (Context::GCD, [Term::Value(a), Term::Value(b)]) => {
                 Some(value(Self::gcd_rational(&a.value, &b.value)))
@@ -756,6 +897,34 @@ impl R<Rational> {
             }
             _ => None,
         }
+    }
+
+    /// Evaluate `{$n!$}` for a natural `n`, or a half-integer `n` with `{$Gamma(1/2) = sqrt(pi)$}`.
+    fn eval_factorial(self, n: &Rational) -> Option<Term<Self>> {
+        if let Ok(n) = u64::try_from(n) {
+            return (n <= MAX_FACTORIAL).then(|| self.value(Rational::from(Natural::factorial(n))));
+        }
+        let half = Rational::from_signeds(1, 2);
+        // `{$n! = Gamma(x)$}` with `{$x = n + 1$}`, `{$x - 1/2$}` being an integer
+        let x = n + Rational::ONE;
+        let steps = i64::try_from(&(&x - &half)).ok()?;
+        if steps.unsigned_abs() > MAX_FACTORIAL {
+            return None;
+        }
+        // `{$Gamma(t + 1) = t Gamma(t)$}`
+        let mut coefficient = Rational::ONE;
+        let mut t = half.clone();
+        for _ in 0..steps.abs() {
+            if steps > 0 {
+                coefficient *= &t;
+                t += Rational::ONE;
+            } else {
+                t -= Rational::ONE;
+                coefficient /= &t;
+            }
+        }
+        let pi = Term::Symbol(SymbolTerm::new(Context::PI, self));
+        Some(self.value(coefficient) * pi.pow(&self.value(half)))
     }
 
     /// Evaluate `{$log_b(x) = ln(x) / ln(b)$}`, an integer `k` when `{$x = b^k$}` for rational `x` and `b`.
@@ -809,32 +978,148 @@ impl R<Rational> {
         }
     }
 
-    /// Evaluate `sin`, `cos` or `tan` at `{$q pi$}` for the classic values, `q` being a multiple of `{$1/4$}` or
-    /// `{$1/6$}`, like `{$cos(pi/3) = 1/2$}`. `tan` stays unevaluated at its poles.
-    fn eval_trig_at_pi_multiple(self, ident: Symbol, q: &Rational) -> Option<Term<Self>> {
-        // `{$q pi = k pi / 12$}` with `{$0 <= k < 24$}`
-        let twelfths = q * Rational::from(12);
-        if twelfths.denominator_ref() != &Natural::ONE {
+    /// Whether `x` is written with a minus sign: a negative value, or a product with a negative coefficient.
+    fn has_minus_sign(x: &Term<Self>) -> bool {
+        match x {
+            Term::Value(value) => value.value < 0,
+            Term::Mul(mul) => mul.coefficient < 0,
+            _ => false,
+        }
+    }
+
+    /// `{$f(-u) = -f(u)$}` for odd functions and `{$f(-u) = f(u)$}` for even ones.
+    fn eval_parity(self, ident: Symbol, x: &Term<Self>) -> Option<Term<Self>> {
+        if !Self::has_minus_sign(x) {
             return None;
         }
-        let k = i64::try_from(&twelfths).ok()?.rem_euclid(24);
+        match ident {
+            Context::SIN
+            | Context::TAN
+            | Context::SINH
+            | Context::TANH
+            | Context::ASIN
+            | Context::ATAN
+            | Context::ASINH
+            | Context::ATANH
+            | Context::SIGN
+            | Context::ERF
+            | Context::ERFI => Some(-self.fun(ident, -x)),
+            Context::COS | Context::COSH => Some(self.fun(ident, -x)),
+            _ => None,
+        }
+    }
+
+    /// Reduce the multiples of `{$pi$}` in the argument `{$u + q pi$}` of `sin`, `cos` or `tan`: quarter turns
+    /// when `{$2 q$}` is an integer (`{$sin(u + pi) = -sin u$}`, `{$cos(u + pi/2) = -sin u$}`), otherwise half
+    /// turns bringing `q` into `{$(-1/2, 1/2)$}` (`{$sin(u + 4 pi/3) = -sin(u + pi/3)$}`).
+    fn eval_periodicity(self, ident: Symbol, x: &Term<Self>) -> Option<Term<Self>> {
+        if !matches!(ident, Context::SIN | Context::COS | Context::TAN) {
+            return None;
+        }
+        let Term::Add(add) = x else { return None };
+        let mut q = Rational::ZERO;
+        let mut rest = Term::zero(self);
+        let mut found = false;
+        for term in add {
+            match self.pi_multiple(term) {
+                Some(multiple) => {
+                    q += multiple;
+                    found = true;
+                }
+                None => rest = rest + term,
+            }
+        }
+        if !found {
+            return None;
+        }
+        let pi = Term::Symbol(SymbolTerm::new(Context::PI, self));
+        let value = |value| Term::Value(Value::new(value, self));
+        let half_turns = &q * Rational::from(2);
+        if half_turns.denominator_ref() == &1 {
+            let quarters = i64::try_from(&half_turns).ok()?.rem_euclid(4);
+            let (sin, cos) = (
+                || self.fun(Context::SIN, rest.clone()),
+                || self.fun(Context::COS, rest.clone()),
+            );
+            return Some(match (ident, quarters) {
+                (Context::SIN, 0) | (Context::COS, 3) => sin(),
+                (Context::SIN, 1) | (Context::COS, 0) => cos(),
+                (Context::SIN, 2) | (Context::COS, 1) => -sin(),
+                (Context::SIN, 3) | (Context::COS, 2) => -cos(),
+                (_, 0 | 2) => self.fun(Context::TAN, rest),
+                // `{$tan(u + pi/2)$}`, written once with this angle
+                _ if q == Rational::from_signeds(1, 2) => return None,
+                _ => self.fun(Context::TAN, rest + value(Rational::from_signeds(1, 2)) * pi),
+            });
+        }
+        // Nearest integer, `q` being at distance at least `{$1/4$}` from a half-integer
+        let n = Integer::from((&q + Rational::from_signeds(1, 2)).floor());
+        if n == 0 {
+            return None;
+        }
+        let res = self.fun(ident, rest + value(q - Rational::from(n.clone())) * pi);
+        Some(if ident != Context::TAN && n.odd() { -res } else { res })
+    }
+
+    /// Values of functions at `{$oo$}` and `{$-oo$}`, those at `{$-oo$}` coming from [`Self::eval_parity`] for
+    /// odd and even functions.
+    fn eval_at_infinity(self, ident: Symbol, x: &Term<Self>) -> Option<Term<Self>> {
+        let value = |value| Term::Value(Value::new(value, self));
+        let oo = Term::Symbol(SymbolTerm::new(Context::OO, self));
+        if *x == -&oo {
+            return (ident == Context::EXP).then(|| value(Rational::ZERO));
+        }
+        if *x != oo {
+            return None;
+        }
+        match ident {
+            Context::EXP
+            | Context::LN
+            | Context::SINH
+            | Context::COSH
+            | Context::ASINH
+            | Context::ACOSH => Some(oo),
+            Context::TANH | Context::ERF => Some(value(Rational::ONE)),
+            Context::ATAN => Some(Term::Symbol(SymbolTerm::new(Context::PI, self)) / value(Rational::from(2))),
+            _ => None,
+        }
+    }
+
+    /// Evaluate `sin`, `cos` or `tan` at `{$q pi$}` for the angles with values in radicals, `q` being a multiple of
+    /// `{$1/12$}`, `{$1/10$}` or `{$1/8$}`, like `{$cos(pi/3) = 1/2$}`. `tan` stays unevaluated at its poles.
+    fn eval_trig_at_pi_multiple(self, ident: Symbol, q: &Rational) -> Option<Term<Self>> {
+        // `{$q pi = k pi / 120$}` with `{$0 <= k < 240$}`
+        let parts = q * Rational::from(120);
+        if parts.denominator_ref() != &Natural::ONE {
+            return None;
+        }
+        let k = i64::try_from(&parts).ok()?.rem_euclid(240);
         let value = |n, d| Term::Value(Value::new(Rational::from_signeds(n, d), self));
-        let sqrt = |n| value(n, 1).pow(&value(1, 2));
-        // `{$sin(k pi / 12)$}`
+        let sqrt = |x: Term<Self>| x.pow(&value(1, 2));
+        let sqrt_of = |n| sqrt(value(n, 1));
+        // `{$sin(k pi / 120)$}`
         let sin = |k: i64| -> Option<Term<Self>> {
-            let (k, sign) = if k >= 12 { (k - 12, -1) } else { (k, 1) };
-            let k = if k > 6 { 12 - k } else { k };
+            let (k, sign) = if k >= 120 { (k - 120, -1) } else { (k, 1) };
+            let k = if k > 60 { 120 - k } else { k };
             let res = match k {
                 0 => value(0, 1),
-                2 => value(1, 2),
-                3 => sqrt(2) / value(2, 1),
-                4 => sqrt(3) / value(2, 1),
-                6 => value(1, 1),
+                10 => (sqrt_of(6) - sqrt_of(2)) / value(4, 1),
+                12 => (sqrt_of(5) - value(1, 1)) / value(4, 1),
+                15 => sqrt(value(2, 1) - sqrt_of(2)) / value(2, 1),
+                20 => value(1, 2),
+                24 => sqrt(value(10, 1) - value(2, 1) * sqrt_of(5)) / value(4, 1),
+                30 => sqrt_of(2) / value(2, 1),
+                36 => (sqrt_of(5) + value(1, 1)) / value(4, 1),
+                40 => sqrt_of(3) / value(2, 1),
+                45 => sqrt(value(2, 1) + sqrt_of(2)) / value(2, 1),
+                48 => sqrt(value(10, 1) + value(2, 1) * sqrt_of(5)) / value(4, 1),
+                50 => (sqrt_of(6) + sqrt_of(2)) / value(4, 1),
+                60 => value(1, 1),
                 _ => return None,
             };
             Some(value(sign, 1) * res)
         };
-        let (sin_value, cos_value) = (sin(k), sin((k + 6) % 24));
+        let (sin_value, cos_value) = (sin(k), sin((k + 60) % 240));
         match ident {
             Context::SIN => sin_value,
             Context::COS => cos_value,

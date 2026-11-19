@@ -216,6 +216,18 @@ impl<T: Ring> Ring for M<T> {
     fn one(&self) -> Self::Element {
         VectorSpaceElement::Scalar(self.scalar_sub_set.one(), self.scalar_sub_set)
     }
+    fn one_like(&self, a: &Self::Element) -> Self::Element {
+        match a {
+            VectorSpaceElement::Vector(matrix) if matrix.width() == matrix.height() => {
+                let mut identity = Matrix::zero((matrix.height(), matrix.width()), self.scalar_sub_set);
+                for i in 0..matrix.height() {
+                    identity[(i, i)] = self.scalar_sub_set.one();
+                }
+                VectorSpaceElement::Vector(identity)
+            }
+            _ => self.one(),
+        }
+    }
     fn mul(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
         self.try_mul(a, b)
             .unwrap_or_else(|| panic!("Can't multiply {a} and {b} !"))
@@ -297,8 +309,16 @@ impl<T: Ring> Ring for M<T> {
         };
         match &a {
             Term::Value(value) => {
+                let scalars = self.scalar_sub_set;
                 return self.map_entries(&value.value, "Normalized", |x| {
-                    self.scalar_sub_set.normalize(x)
+                    // Fractions are simplified, so that `{$A A^(-1) = I$}` for symbolic matrices
+                    let x = scalars.normalize(x);
+                    match &x {
+                        Term::Value(v) if !scalars.is_one(&scalars.as_fraction(&v.value).1) => {
+                            scalars.simplify(x)
+                        }
+                        _ => x,
+                    }
                 });
             }
             Term::Pow(term::Pow { base, exponant, .. }) => {

@@ -137,7 +137,6 @@ fn complex_factors_are_printed_with_their_sign() {
 }
 
 #[test]
-#[ignore = "future: Euler's identity and conj(conj(x)) = x"]
 fn euler_identity_and_involutions() {
     assert_eq!(parse!("exp(i*pi)", C), (-1).into());
     assert_eq!(parse!("conj(conj(x))", C), parse!("x", C));

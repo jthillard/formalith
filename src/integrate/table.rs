@@ -1,9 +1,10 @@
 //! Integrals of elementary functions of a linear argument, of square roots of quadratic polynomials, of
 //! products `{$e^u sin v$}` and `{$e^u cos v$}`, and of `{$p e^q$}` for polynomials `p` and quadratic
-//! polynomials `q` with the error functions `{$"erf"$}` and `{$"erfi"$}`.
+//! polynomials `q` with the error functions `{$"erf"$}` and `{$"erfi"$}`, and of `{$1 / (A x^2 + B)$}` with
+//! symbolic `A` and `B`.
 
 use crate::field::real::expr::{
-    Expr, constant_sign, depends, fun, one, ratio, unary, value, variable, zero,
+    Expr, constant_sign, depends, fun, map_tree, one, ratio, unary, value, variable, zero,
 };
 use crate::field::real::expr::{half, sqrt};
 use std::cmp::Ordering;
@@ -30,6 +31,11 @@ pub(super) fn integrate(_: &mut Integrator, f: &Expr, x: Symbol) -> Option<Expr>
                     }
                     let n = exponant + &one();
                     return Some(base.pow(&n) / (n * a));
+                }
+                if *exponant == value(Rational::from(-1))
+                    && let Some(res) = symbolic_atan(base, x)
+                {
+                    return Some(res);
                 }
                 return quadratic_power(base, exponant, x);
             }
@@ -82,6 +88,9 @@ fn elementary(ident: Symbol, u: &Expr) -> Option<Expr> {
         Context::ATANH => u * &f + half() * fun(Context::LN, &one - &u2),
         Context::ABS => half() * u * f,
         Context::SIGN => fun(Context::ABS, u.clone()),
+        // By parts, `{$integral "erf" = u "erf" u + e^(-u^2) / sqrt(pi)$}`
+        Context::ERF => u * &f + fun(Context::EXP, -u2) / sqrt(variable(Context::PI)),
+        Context::ERFI => u * &f - fun(Context::EXP, u2) / sqrt(variable(Context::PI)),
         _ => return None,
     })
 }
@@ -168,6 +177,47 @@ fn polynomial_gaussian(f: &Expr, x: Symbol) -> Option<Expr> {
         part = part.add(&a);
     }
     Some(part.to_term(x) * fun(Context::EXP, q.clone()) + value(constant) * gaussian(&q, x)?)
+}
+
+/// `{$integral 1 / (A x^2 + B) = atan(x / s) / (A s)$}` with `{$s = sqrt(B / A)$}`, for `A` and `B` free of `x` and
+/// not both values (those are rational functions). Absolute values are dropped from `s`, `atan` being odd, and `s`
+/// must not have roots left (like `{$sqrt(2/a)$}`, which may be the root of a negative number).
+fn symbolic_atan(q: &Expr, x: Symbol) -> Option<Expr> {
+    let Term::Add(add) = q else { return None };
+    let square = variable(x).pow(&value(Rational::from(2)));
+    let (mut a, mut b) = (zero(), zero());
+    for term in add {
+        if depends(term, x) {
+            a = a + term / &square;
+        } else {
+            b = b + term;
+        }
+    }
+    if depends(&a, x) || a.is_zero() || b.is_zero() {
+        return None;
+    }
+    if matches!((&a, &b), (Term::Value(_), Term::Value(_))) {
+        return None;
+    }
+    let s = map_tree(&sqrt(&b / &a), &|t| match unary(t) {
+        Some((Context::ABS, u)) => Some(u.clone()),
+        _ => None,
+    });
+    if has_root(&s) {
+        return None;
+    }
+    Some(fun(Context::ATAN, variable(x) / &s) / (a * s))
+}
+
+/// Whether `term` contains a power with a non-integer exponent.
+fn has_root(term: &Expr) -> bool {
+    match term {
+        Term::Value(_) | Term::Symbol(_) => false,
+        Term::Add(add) => add.iter().any(has_root),
+        Term::Mul(mul) => mul.iter().any(has_root),
+        Term::Pow(pow) => pow.exponant.to_i64().is_none() || has_root(&pow.base),
+        Term::Fun(_) => unary(term).is_some_and(|(_, u)| has_root(u)),
+    }
 }
 
 /// `{$integral q^e$}` for a quadratic polynomial `q` and `{$e in {1/2, -1/2, -3/2}$}`, completing the square.

@@ -438,7 +438,6 @@ fn rational_function_with_cyclotomic_denominator() {
 }
 
 #[test]
-#[ignore = "future: rational functions with symbolic coefficients"]
 fn rational_function_with_parameter() {
     assert_eq!(
         integrate("integrate(1/(x^2+a^2), x)"),
@@ -447,13 +446,11 @@ fn rational_function_with_parameter() {
 }
 
 #[test]
-#[ignore = "future: integration by parts of cos(ln(x)) (cyclic)"]
 fn cyclic_integration_by_parts() {
     check("cos(ln(x))");
 }
 
 #[test]
-#[ignore = "future: antiderivative of erf"]
 fn antiderivative_of_erf() {
     check("erf(x)");
 }

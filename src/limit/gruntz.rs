@@ -8,7 +8,7 @@
 
 use crate::field::real::expr::try_map_operands;
 use crate::field::real::expr::{
-    DIGITS, Expr, depends, fun, infinity, is_infinite, one, unary, value, variable, zero,
+    DIGITS, Expr, depends, fun, infinity, is_infinite, one, size, unary, value, variable, zero,
 };
 use std::cmp::Ordering;
 
@@ -617,16 +617,5 @@ fn product_sign(a: Ordering, b: Ordering) -> Ordering {
         (Ordering::Equal, _) | (_, Ordering::Equal) => Ordering::Equal,
         _ if a == b => Ordering::Greater,
         _ => Ordering::Less,
-    }
-}
-
-/// Number of nodes of a term.
-fn size(term: &Expr) -> usize {
-    1 + match term {
-        Term::Value(_) | Term::Symbol(_) => 0,
-        Term::Add(add) => add.iter().map(size).sum(),
-        Term::Mul(mul) => mul.iter().map(size).sum(),
-        Term::Pow(pow) => size(&pow.base) + size(&pow.exponant),
-        Term::Fun(_) => unary(term).map_or(0, |(_, arg)| size(arg)),
     }
 }

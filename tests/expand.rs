@@ -208,7 +208,6 @@ fn simplify_corner_cases() {
 }
 
 #[test]
-#[ignore = "future: trigonometric simplification"]
 fn simplify_trigonometric_identities() {
     assert_eq!(parse!("simplify(sin(x)^2+cos(x)^2)", R), parse!("1", R));
     assert_eq!(
@@ -219,14 +218,12 @@ fn simplify_trigonometric_identities() {
 }
 
 #[test]
-#[ignore = "future: exp(2*ln(x)) should simplify to x^2"]
 fn simplify_exponentials_of_logarithms() {
     assert_eq!(parse!("simplify(exp(2*ln(x)))", R), parse!("x^2", R));
     assert_eq!(parse!("simplify(ln(8)/ln(2))", R), parse!("3", R));
 }
 
 #[test]
-#[ignore = "future: expansion of trigonometric functions of sums"]
 fn expand_trigonometric_sums() {
     assert_eq!(
         parse!("expand(sin(x+y))", R),

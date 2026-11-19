@@ -416,8 +416,24 @@ impl<T: Set> Term<T> {
             self.set_approximate(true);
         }
     }
+    /// Whether the term is `{$oo$}`, a power of it or a product `{$c oo$}`. Such terms aren't merged, so that
+    /// `{$oo - oo$}` and `{$oo/oo$}` are left to the set's normalization instead of giving 0 and 1.
+    pub(crate) fn is_infinity_factor(&self) -> bool {
+        match self {
+            Self::Symbol(symbol) => symbol.symbol == Context::OO,
+            Self::Pow(pow) => pow.base.is_infinity_factor(),
+            Self::Mul(mul) => {
+                let mut factors = mul.iter();
+                factors.next().is_some_and(Self::is_infinity_factor) && factors.next().is_none()
+            }
+            _ => false,
+        }
+    }
     /// [`MergeTerms::merge_terms`], the result being approximate if `self` or `other` is.
     pub(crate) fn try_merge_terms(&mut self, other: &Self) -> bool {
+        if self.is_infinity_factor() || other.is_infinity_factor() {
+            return false;
+        }
         let approximate = self.is_approximate() || other.is_approximate();
         let merged = self.merge_terms(other);
         if merged {
@@ -427,6 +443,9 @@ impl<T: Set> Term<T> {
     }
     /// [`MergeFactors::merge_factors`], the result being approximate if `self` or `other` is.
     pub(crate) fn try_merge_factors(&mut self, other: &Self) -> bool {
+        if self.is_infinity_factor() || other.is_infinity_factor() {
+            return false;
+        }
         let approximate = self.is_approximate() || other.is_approximate();
         let merged = self.merge_factors(other);
         if merged {
@@ -1098,7 +1117,7 @@ impl<T: Ring> Term<T> {
                 for factor in mul {
                     let normalized = factor.normalize();
                     if normalized.is_zero() {
-                        return Self::zero(self.get_set());
+                        return Self::zero_times(self.get_set(), mul.iter());
                     }
                     if normalized.is_one() {
                         continue;
@@ -1152,7 +1171,16 @@ impl<T: Ring> Term<T> {
                 let base = (*pow.base).normalize();
                 let exponant = (**pow.exponant).normalize();
                 if exponant.is_zero() {
-                    return Self::one(self.get_set());
+                    // `{$a^0$}` has the shape of `a`, like the identity matrix
+                    return match &base {
+                        Self::Value(value) => {
+                            Self::Value(Value::new(value.set.one_like(&value.value), value.set))
+                        }
+                        _ => Self::one(self.get_set()),
+                    };
+                }
+                if base.is_one() {
+                    return base;
                 }
                 Self::Pow(Pow::new(Box::new(base), Box::new(exponant), self.get_set()))
             }
@@ -1161,6 +1189,16 @@ impl<T: Ring> Term<T> {
         res = res.get_set().normalize(res);
         res.set_normalized(true);
         res
+    }
+}
+impl<T: Ring> Term<T> {
+    /// The product of zero with `factors`: zero, or `undefined` when a factor is infinite, `{$0 oo$}`.
+    fn zero_times<'a>(set: T, mut factors: impl Iterator<Item = &'a Self>) -> Self {
+        if factors.any(|f| f.normalize().is_infinity_factor()) {
+            Self::Symbol(symbol::SymbolTerm::new(Context::UNDEFINED, set))
+        } else {
+            Self::zero(set)
+        }
     }
 }
 impl<T: Ring<ExponantSet: Ring>> Term<T> {
@@ -1204,12 +1242,12 @@ impl<T: Ring<ExponantSet: Ring, ProductCoefficientSet = T>> Normalize for Term<T
                     true
                 }
             });
-            // `{$0/0$}` is undefined: a power of zero surviving normalization is a division by zero
+            // `{$0/0$}` and `{$0 oo$}` are undefined: a power of zero surviving normalization is a division by zero
             if coefficient_set.is_zero(&new_coeff)
-                && mul
-                    .factors
-                    .iter()
-                    .any(|f| matches!(f.normalize(), Self::Pow(p) if p.base.is_zero()))
+                && mul.factors.iter().any(|f| {
+                    let f = f.normalize();
+                    matches!(&f, Self::Pow(p) if p.base.is_zero()) || f.is_infinity_factor()
+                })
             {
                 return Self::Symbol(symbol::SymbolTerm::new(
                     crate::context::Context::UNDEFINED,

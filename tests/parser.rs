@@ -212,7 +212,6 @@ fn test_parse_decimal_literals() {
 }
 
 #[test]
-#[ignore = "future: implicit product of parenthesized factors, (x+1)(x-1)"]
 fn test_parse_implicit_product_of_parentheses() {
     assert_eq!(parse!("(x+1)(x-1)", R), parse!("(x+1)*(x-1)", R));
 }
