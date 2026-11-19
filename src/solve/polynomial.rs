@@ -43,6 +43,7 @@ use crate::{
             sign::{SignMode, sign_set},
         },
     },
+    integrate::{poly::Poly, rational::rational_roots},
     term::{Expand, Fun, Mul, Normalize, SymbolTerm, Term, TermSet},
 };
 
@@ -206,9 +207,175 @@ impl PolynomialRoots for R<Rational> {
                 })
             }
             [_, _, _, _] => cubic_roots(&values(coefficients)?),
-            _ => None,
+            [_, _, _, _, _] => quartic_roots(&values(coefficients)?, Some, Self::roots),
+            _ => {
+                // Primitive `{$n$}`-th roots of unity aren't real for `{$n > 2$}`
+                let coefficients = values(coefficients)?;
+                cyclotomic_order(&coefficients).map(|_| vec![])
+            }
         }
     }
+}
+
+/// The depressed form `{$t^4 + p t^2 + q t + r$}` of the quartic `{$a x^4 + b x^3 + c x^2 + d x + e$}` given by
+/// `[e, d, c, b, a]`, with `{$x = t + s$}`, as `(s, p, q, r)`.
+fn depressed_quartic(
+    coefficients: &[Rational],
+) -> Option<(Rational, Rational, Rational, Rational)> {
+    let [e, d, c, b, a] = coefficients else {
+        return None;
+    };
+    let (e, d, c, b) = (e / a, d / a, c / a, b / a);
+    let ratio = |p: i64, q: i64| Rational::from_signeds(p, q);
+    let b2 = &b * &b;
+    let p = &c - ratio(3, 8) * &b2;
+    let q = &d - ratio(1, 2) * &b * &c + ratio(1, 8) * &b2 * &b;
+    let r = &e - ratio(1, 4) * &b * &d + ratio(1, 16) * &b2 * &c - ratio(3, 256) * &b2 * &b2;
+    Some((-(b * ratio(1, 4)), p, q, r))
+}
+
+/// The roots of the quartic given by `[e, d, c, b, a]` with rational coefficients, by Ferrari's method, in a set
+/// `T` whose elements are built from real radicals with `convert` and whose quadratics are solved by `roots`.
+/// The depressed quartic `{$t^4 + p t^2 + q t + r$}` with `{$q != 0$}` is
+/// `{$(t^2 + p/2 + m)^2 - 2m (t - q/(4m))^2$}` for a positive root `{$m$}` of the resolvent cubic
+/// `{$8m^3 + 8p m^2 + (2p^2 - 8r) m - q^2$}`, a rational one if possible, so it splits into
+/// `{$t^2 minus.plus S t + p/2 + m plus.minus q/(2S)$}` with `{$S = sqrt(2m)$}`.
+fn quartic_roots<T: Ring>(
+    coefficients: &[Rational],
+    convert: impl Fn(Term<R<Rational>>) -> Option<Term<T>>,
+    roots: impl Fn(&[Term<T>]) -> Option<Vec<Term<T>>>,
+) -> Option<Vec<Term<T>>> {
+    let value = |value: Rational| Term::constant(value, R);
+    let (shift, p, q, r) = depressed_quartic(coefficients)?;
+    let shift = convert(value(shift))?;
+    let shifted = |roots: Vec<Term<T>>| roots.into_iter().map(|t| t + &shift).collect();
+    if q == 0 {
+        // A polynomial in `{$t^2$}`
+        let depressed = [r, Rational::ZERO, p, Rational::ZERO, Rational::ONE]
+            .map(|c| convert(value(c)))
+            .into_iter()
+            .collect::<Option<Vec<_>>>()?;
+        return roots(&depressed).map(shifted);
+    }
+    let resolvent = [
+        -(&q * &q),
+        Rational::from(2) * &p * &p - Rational::from(8) * &r,
+        Rational::from(8) * &p,
+        Rational::from(8),
+    ];
+    let (rational, _) = rational_roots(&Poly::new(resolvent.to_vec()), Context::PI);
+    let m = match rational.into_iter().find(|m| *m > 0) {
+        Some(m) => value(m),
+        None => cubic_roots(&resolvent)?
+            .into_iter()
+            .find(|m| sign(m) == Some(Ordering::Greater))?,
+    };
+    let half = value(Rational::from_signeds(1, 2));
+    let s = (value(Rational::from(2)) * &m).pow(&half);
+    let constant = &value(p) * &half + &m;
+    let correction = value(q) * &half / &s;
+    let mut res = vec![];
+    for sign in [-1, 1] {
+        let sign = value(Rational::from(sign));
+        let quadratic = [
+            (&constant - &(&sign * &correction)).expand(),
+            &sign * &s,
+            Term::one(R),
+        ]
+        .map(&convert)
+        .into_iter()
+        .collect::<Option<Vec<_>>>()?;
+        res.extend(roots(&quadratic)?);
+    }
+    Some(shifted(res))
+}
+
+/// The integer `{$n$}` such that the monic polynomial given by `coefficients` is the cyclotomic polynomial
+/// `{$Phi_n$}`, if there is one.
+fn cyclotomic_order(coefficients: &[Rational]) -> Option<usize> {
+    let p = Poly::new(coefficients.to_vec());
+    let degree = p.degree();
+    if degree == 0 || p.leading() != 1 {
+        return None;
+    }
+    // `{$phi(n) >= sqrt(n / 2)$}`
+    (1..=2 * degree * degree + 2)
+        .filter(|n| euler_phi(*n) == degree)
+        .find(|n| cyclotomic(*n) == p)
+}
+
+/// Euler's totient `{$phi(n)$}`.
+fn euler_phi(n: usize) -> usize {
+    (1..=n).filter(|k| gcd(*k, n) == 1).count()
+}
+
+/// The cyclotomic polynomial `{$Phi_n = (x^n - 1) / product_(d | n, d < n) Phi_d$}`.
+fn cyclotomic(n: usize) -> Poly {
+    let mut res = Poly::monomial(Rational::ONE, n).sub(&Poly::one());
+    for d in (1..n).filter(|d| n % d == 0) {
+        res = res.exact_div(&cyclotomic(d));
+    }
+    res
+}
+
+/// `{$f(q pi)$}` for `{$f$}` being `sin` or `cos`, with radicals, if it is a classic value or `{$q pi$}` is the sum
+/// of two classic angles (`{$(2 pi) / 15 = (3 pi) / 10 - pi / 6$}`).
+fn trig_radical(ident: Symbol, q: &Rational) -> Option<Term<R<Rational>>> {
+    let pi = Term::Symbol(SymbolTerm::new(Context::PI, R));
+    let eval = |ident: Symbol, q: &Rational| {
+        let res = Term::Fun(Box::new(Fun::new(
+            ident,
+            vec![Term::constant(q.clone(), R) * &pi],
+            R,
+        )))
+        .normalize();
+        (!has_function(&res)).then_some(res)
+    };
+    if let Some(res) = eval(ident, q) {
+        return Some(res);
+    }
+    // Classic angles are multiples of `{$pi / 120$}`
+    (1..240).find_map(|k| {
+        let a = Rational::from_signeds(k, 120);
+        let b = q - &a;
+        let (sin_a, cos_a) = (eval(Context::SIN, &a)?, eval(Context::COS, &a)?);
+        let (sin_b, cos_b) = (eval(Context::SIN, &b)?, eval(Context::COS, &b)?);
+        Some(
+            if ident == Context::SIN {
+                sin_a * cos_b + cos_a * sin_b
+            } else {
+                cos_a * cos_b - sin_a * sin_b
+            }
+            .expand(),
+        )
+    })
+}
+
+/// Whether `term` contains a function.
+fn has_function(term: &Term<R<Rational>>) -> bool {
+    match term {
+        Term::Value(_) | Term::Symbol(_) => false,
+        Term::Add(add) => add.iter().any(has_function),
+        Term::Mul(mul) => mul.iter().any(has_function),
+        Term::Pow(pow) => has_function(&pow.base) || has_function(&pow.exponant),
+        Term::Fun(_) => true,
+    }
+}
+
+/// The roots of the cyclotomic polynomial `{$Phi_n$}`, `{$cos((2 pi j) / n) + i sin((2 pi j) / n)$}` for
+/// `{$j$}` coprime with `{$n$}`, if their values are radicals.
+fn roots_of_unity(n: usize) -> Option<Vec<Term<C<R<Rational>>>>> {
+    let i = Term::constant(C.i(), C);
+    (0..n)
+        .filter(|j| gcd(*j, n) == 1)
+        .map(|j| {
+            let q = Rational::from_unsigneds(2 * j as u64, n as u64);
+            let convert = |t| C.try_from_expr(t).ok().map(|t| t.normalize());
+            let re = convert(trig_radical(Context::COS, &q)?)?;
+            let im = convert(trig_radical(Context::SIN, &q)?)?;
+            Some((re + &i * &im).expand())
+        })
+        .collect()
 }
 
 /// The real roots of the cubic `{$a x^3 + b x^2 + c x + d$}` with rational coefficients `[d, c, b, a]`. With
@@ -299,9 +466,32 @@ impl PolynomialRoots for C<R<Rational>> {
                 let root = complex_sqrt(&discriminant);
                 Some(vec![(&b - &root) / &a, (b + root) / a])
             }
-            _ => None,
+            _ => {
+                let coefficients = rational_coefficients(coefficients)?;
+                let monic: Vec<_> = coefficients
+                    .iter()
+                    .map(|c| c / coefficients.last().expect("The degree is at least one"))
+                    .collect();
+                if let Some(n) = cyclotomic_order(&monic) {
+                    return roots_of_unity(n);
+                }
+                if coefficients.len() == 5 {
+                    let convert =
+                        |t: Term<R<Rational>>| C.try_from_expr(t).ok().map(|t| t.normalize());
+                    return quartic_roots(&coefficients, convert, Self::roots);
+                }
+                None
+            }
         }
     }
+}
+
+/// The coefficients of a polynomial in `{$CC$}`, if they are all rational numbers.
+fn rational_coefficients(coefficients: &[Term<C<R<Rational>>>]) -> Option<Vec<Rational>> {
+    values(coefficients)?
+        .into_iter()
+        .map(|[re, im]| (im == 0).then_some(re))
+        .collect()
 }
 
 impl PolynomialRoots for Zn {

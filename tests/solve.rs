@@ -432,6 +432,46 @@ fn cubics_and_quintics() {
 }
 
 #[test]
+fn quartics() {
+    // Ferrari's method, the resolvent cubic having the rational root 1
+    assert_eq!(
+        solve("x^4 - 4*x - 1 = 0"),
+        ok(
+            "x = -frac(1, 2) sqrt(4 sqrt(2)-2)+frac(1, 2) sqrt(2) \\ x = frac(1, 2) sqrt(4 sqrt(2)-2)+frac(1, 2) sqrt(2)"
+        )
+    );
+    assert_eq!(
+        solve_in("C", "x^4 - 4*x - 1 = 0").map(|s| s.matches(" \\ ").count() + 1),
+        Ok(4)
+    );
+    // Shifted, with an irrational resolvent root
+    assert!(solve("x^4 + 4*x^3 - 2 = 0").is_ok());
+    assert_eq!(
+        solve("(x - 1)^4 = 2").map(|s| s.matches(" \\ ").count() + 1),
+        Ok(2)
+    );
+}
+
+#[test]
+fn cyclotomic_polynomials() {
+    assert_eq!(
+        solve_in("C", "x^4 - x^3 + x^2 - x + 1 = 0"),
+        ok(
+            "x = -frac(1, 4) i sqrt(-2 sqrt(5)+10)+frac(1, 4) sqrt(5)+frac(1, 4) \\ x = -frac(1, 4) i sqrt(2 sqrt(5)+10)-frac(1, 4) sqrt(5)+frac(1, 4) \\ x = frac(1, 4) i sqrt(-2 sqrt(5)+10)+frac(1, 4) sqrt(5)+frac(1, 4) \\ x = frac(1, 4) i sqrt(2 sqrt(5)+10)-frac(1, 4) sqrt(5)+frac(1, 4)"
+        )
+    );
+    assert_eq!(solve("x^4 - x^3 + x^2 - x + 1 = 0"), ok("\"no solution\""));
+    // `{$Phi_15$}`, with `{$(2 pi) / 15 = (3 pi) / 10 - pi / 6$}`
+    assert_eq!(
+        solve_in("C", "x^8 - x^7 + x^5 - x^4 + x^3 - x + 1 = 0")
+            .map(|s| s.matches(" \\ ").count() + 1),
+        Ok(8)
+    );
+    // `{$Phi_7$}` has no real radical values
+    assert!(solve_in("C", "x^6 + x^5 + x^4 + x^3 + x^2 + x + 1 = 0").is_err());
+}
+
+#[test]
 fn non_polynomial_equations_are_rejected() {
     for system in ["sin(x) = 0", "exp(x) = 2", "sqrt(x) = 2"] {
         assert!(

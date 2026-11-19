@@ -434,7 +434,6 @@ fn square_root_of_tangent() {
 }
 
 #[test]
-#[ignore = "future: roots of x^4-x^3+x^2-x+1 by radicals in the rational integrator"]
 fn rational_function_with_cyclotomic_denominator() {
     check("1/(x^5+1)");
 }
