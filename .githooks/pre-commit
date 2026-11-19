@@ -1,0 +1,22 @@
+#!/bin/sh
+# Formats the staged Rust files with `cargo fmt`.
+# Enable with `git config core.hooksPath .githooks`.
+set -e
+
+staged=$(git diff --cached --name-only --diff-filter=ACMR -- '*.rs')
+[ -z "$staged" ] && exit 0
+
+# Re-adding a partially staged file would stage its unstaged changes too
+unstaged=$(git diff --name-only -- $staged)
+if [ -n "$unstaged" ]; then
+    if ! cargo fmt --all --check >/dev/null; then
+        echo "pre-commit: files are not formatted, and some have unstaged changes:" >&2
+        echo "$unstaged" >&2
+        echo "Run \`cargo fmt --all\` and stage the result." >&2
+        exit 1
+    fi
+    exit 0
+fi
+
+cargo fmt --all
+git add -- $staged

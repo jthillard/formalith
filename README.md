@@ -53,3 +53,6 @@ Assumptions on symbols are declared with `assume(a > 0, b != 0, n integer)`, giv
 ```sh
 cargo test
 ```
+
+CI runs `cargo fmt --all --check` and `cargo test` on pushes and pull requests. A pre-commit hook formatting the
+staged Rust files is enabled with `git config core.hooksPath .githooks`.
