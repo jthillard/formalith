@@ -18,6 +18,11 @@ fn integrate(input: &str) -> String {
 
 /// Check that `integrate(f, x)` is evaluated, and that its derivative is `f` at a few points.
 fn check(f: &str) {
+    check_at(f, &["3/10", "7/10", "13/10", "21/10"]);
+}
+
+/// Like [`check`], at the given points.
+fn check_at(f: &str, points: &[&str]) {
     let x = symbol!("x");
     let integral = parse!(&format!("integrate({f}, x)"), R);
     let printed = line(&integral);
@@ -26,7 +31,7 @@ fn check(f: &str) {
         "{f} not integrated: {printed}"
     );
     let difference = integral.derivative(x) - parse!(f, R);
-    for point in ["3/10", "7/10", "13/10", "21/10"] {
+    for point in points {
         let at = difference.substitute(x, &parse!(point, R)).unwrap();
         // Shifted by 1, as approximating an exact 0 raises the precision until its maximum
         let shifted = at + Term::one(R);
@@ -457,15 +462,26 @@ fn antiderivative_of_erf() {
 }
 
 #[test]
-#[ignore = "future: products of exponentials and several trigonometric functions"]
 fn exponential_times_trigonometric_product() {
     check("exp(x)*sin(x)*cos(x)");
+    check("exp(2*x)*sin(x)^2*cos(3*x)");
+    check("exp(x)*cos(x)^3");
 }
 
 #[test]
-#[ignore = "future: trigonometric substitution x = 2*sec(t)"]
 fn trigonometric_substitution() {
-    check("1/(x^2*sqrt(x^2-4))");
+    // `{$x = 2 sec t$}`, for `{$x > 2$}`
+    check_at("1/(x^2*sqrt(x^2-4))", &["5/2", "3", "4", "7"]);
+    check_at("sqrt(x^2-4)/x", &["5/2", "3", "4", "7"]);
+    assert_eq!(
+        integrate("integrate(1/(x^2*sqrt(x^2-4)), x)"),
+        integrate("sqrt(x^2-4)/(4*x)")
+    );
+    // `{$x = 3 sin t$}`, `{$x = tan t$}`
+    check("x^2/sqrt(9-x^2)");
+    check_at("sqrt(4-x^2)/x^2", &["3/10", "7/10", "13/10", "19/10"]);
+    check("1/(x^2+1)^(3/2)");
+    check("1/((x^2+2*x+5)*sqrt(x^2+2*x+5))");
 }
 
 #[test]

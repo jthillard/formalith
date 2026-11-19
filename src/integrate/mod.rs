@@ -193,10 +193,11 @@ impl Integrator {
         if !constant.is_one() {
             return Some(constant * self.integrate(&g, x)?);
         }
-        let strategies: [fn(&mut Self, &Expr, Symbol) -> Option<Expr>; 5] = [
+        let strategies: [fn(&mut Self, &Expr, Symbol) -> Option<Expr>; 6] = [
             table::integrate,
             trig::integrate_powers,
             substitution::integrate,
+            trig::substitute,
             parts::integrate,
             trig::integrate_rewritten,
         ];

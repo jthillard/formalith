@@ -115,7 +115,7 @@ fn exp_trig(f: &Expr, x: Symbol) -> Option<Expr> {
 }
 
 /// A quadratic polynomial `{$c_2 x^2 + c_1 x + c_0$}` written `{$c_2 (x + h)^2 + k$}`, as `{$(c_2, h, k)$}`.
-fn quadratic(q: &Expr, x: Symbol) -> Option<(Rational, Rational, Rational)> {
+pub(super) fn quadratic(q: &Expr, x: Symbol) -> Option<(Rational, Rational, Rational)> {
     let p = Poly::from_term(q, x)?;
     if p.degree() != 2 {
         return None;
