@@ -11,6 +11,7 @@ use malachite::{
     rational::Rational,
 };
 
+use crate::term::fun::eval_rewrite_builtin;
 use crate::{
     context::{Context, Symbol},
     field::{Group, PartiallyOrderedSet, Ring, Set, SetParseExpression, integer::Z, matrix::M},
@@ -248,19 +249,14 @@ impl Ring for Zn {
                 }
             }
             Term::Fun(fun) => match fun.get_ident() {
-                Context::EXPAND => {
-                    if let Some(arg) = fun.get_arg::<Self>() {
-                        return arg.expand();
+                Context::EXPAND | Context::SIMPLIFY => {
+                    if let Some(res) = eval_rewrite_builtin(&**fun) {
+                        return res;
                     }
                 }
                 Context::FACTOR => {
                     if let Some(res) = fun.get_arg::<Self>().and_then(|arg| self.factor(arg)) {
                         return res;
-                    }
-                }
-                Context::SIMPLIFY => {
-                    if let Some(arg) = fun.get_arg::<Self>() {
-                        return arg.simplify();
                     }
                 }
                 _ => {}

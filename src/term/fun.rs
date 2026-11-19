@@ -9,10 +9,10 @@ use owo_colors::colors::Cyan;
 
 use crate::{
     context::{Context, Symbol},
-    field::{Group, Set},
+    field::{Derivable, Group, Ring, Set, matrix::M},
     iter,
     printer::{PrettyPrint, PrettyPrinter, Print, PrintOptions},
-    term::{Expand, Normalize},
+    term::{Expand, Normalize, TermSet},
 };
 
 use super::{Flags, Term};
@@ -289,5 +289,40 @@ impl<From: Set, T: Set> PrettyPrint for Fun<From, T> {
             fun.concat("", false, &res);
             fun
         }
+    }
+}
+
+/// Evaluate the builtins `expand(u)` and `simplify(u)`, which rewrite their argument in any ring. Returns `None`
+/// for other functions.
+pub(crate) fn eval_rewrite_builtin<T: Ring>(fun: &dyn Function<T>) -> Option<Term<T>> {
+    match fun.get_ident() {
+        Context::EXPAND => fun.get_arg::<T>().map(Expand::expand),
+        Context::SIMPLIFY => fun.get_arg::<T>().map(Term::simplify),
+        _ => None,
+    }
+}
+
+/// Evaluate the builtins `diff(f, x)` and `det(m)` in a field of scalars. Returns `None` for other functions,
+/// or when they can't be evaluated.
+pub(crate) fn eval_calculus_builtin<T>(fun: &dyn Function<T>) -> Option<Term<T>>
+where
+    T: Derivable<ExponantSet = T, ProductCoefficientSet = T>,
+{
+    match fun.get_ident() {
+        Context::DIFF => {
+            let Some([f, Term::Symbol(x)]) = fun.get_args::<T>().map(Vec::as_slice) else {
+                return None;
+            };
+            let res = f.derivative(x.symbol);
+            // `f` can't be differentiated, keep the term to avoid normalizing forever
+            let unevaluated = matches!(&res, Term::Fun(inner)
+                if inner.get_ident() == Context::DIFF && inner.get_arg::<T>() == Some(f));
+            (!unevaluated).then_some(res)
+        }
+        Context::DET => match fun.get_arg::<M<TermSet<T>>>() {
+            Some(Term::Value(matrix)) => matrix.value.det().ok(),
+            _ => None,
+        },
+        _ => None,
     }
 }

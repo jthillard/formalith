@@ -10,6 +10,7 @@ use malachite::{
     },
 };
 
+use crate::term::fun::{eval_calculus_builtin, eval_rewrite_builtin};
 use crate::{
     context::{Context, Symbol},
     field::{
@@ -18,7 +19,7 @@ use crate::{
     },
     parser::{Parser, lexer::TokenKind},
     printer::{PrettyPrinter, PrintOptions},
-    term::{self, Expand, Fun, Mul, Normalize, Term, TermSet, Value},
+    term::{self, Fun, Mul, Normalize, Term, TermSet, Value},
 };
 
 /// The complex field `{$CC$}`, defined as the plane `{$RR^2$}` with the complex multiplication.
@@ -376,9 +377,9 @@ impl Ring for C<R<Rational>> {
                         return res;
                     }
                 }
-                Context::EXPAND => {
-                    if let Some(arg) = fun.get_arg::<Self>() {
-                        return arg.expand();
+                Context::EXPAND | Context::SIMPLIFY => {
+                    if let Some(res) = eval_rewrite_builtin(&**fun) {
+                        return res;
                     }
                 }
                 Context::FACTOR => {
@@ -386,26 +387,8 @@ impl Ring for C<R<Rational>> {
                         return arg.factor();
                     }
                 }
-                Context::SIMPLIFY => {
-                    if let Some(arg) = fun.get_arg::<Self>() {
-                        return arg.simplify();
-                    }
-                }
-                Context::DIFF => {
-                    if let Some([f, Term::Symbol(x)]) = fun.get_args::<Self>().map(Vec::as_slice) {
-                        let res = f.derivative(x.symbol);
-                        // `f` can't be differentiated, keep the term to avoid normalizing forever
-                        if !matches!(&res, Term::Fun(inner)
-                            if inner.get_ident() == Context::DIFF && inner.get_arg::<Self>() == Some(f))
-                        {
-                            return res;
-                        }
-                    }
-                }
-                Context::DET => {
-                    if let Some(Term::Value(matrix)) = fun.get_arg::<M<TermSet<Self>>>()
-                        && let Ok(res) = matrix.value.det()
-                    {
+                Context::DIFF | Context::DET => {
+                    if let Some(res) = eval_calculus_builtin(&**fun) {
                         return res;
                     }
                 }

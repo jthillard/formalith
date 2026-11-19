@@ -4,6 +4,7 @@ use std::cmp::Ordering;
 
 use malachite::{Integer, base::num::arithmetic::traits::Parity};
 
+use crate::term::fun::eval_rewrite_builtin;
 use crate::{
     context::{Context, Symbol},
     field::{
@@ -13,7 +14,7 @@ use crate::{
     parser::{Parser, lexer::TokenKind},
     polynom::MultivariatePolynomial,
     printer::{PrettyPrint, PrettyPrinter, Print, PrintOptions},
-    term::{self, Add, Expand, Function, SymbolTerm, Term, TermSet, flags::Flags},
+    term::{self, Add, Function, SymbolTerm, Term, TermSet, flags::Flags},
 };
 
 /// A polynomial of [`Poly`], with coefficients in `K` and integer exponants.
@@ -153,9 +154,10 @@ impl<K: Ring> Poly<K> {
     /// Evaluate the builtin function `fun`, returning `None` if it can't be evaluated.
     fn eval_builtin(self, fun: &dyn Function<Self>) -> Option<Term<Self>> {
         let value = |value| Term::constant(value, self);
+        if let Some(res) = eval_rewrite_builtin(fun) {
+            return Some(res);
+        }
         match (fun.get_ident(), fun.get_args::<Self>()?.as_slice()) {
-            (Context::EXPAND, [arg]) => Some(arg.expand()),
-            (Context::SIMPLIFY, [arg]) => Some(arg.simplify()),
             (Context::GCD, [Term::Value(a), Term::Value(b)]) => {
                 Some(value(self.gcd(&a.value, &b.value)))
             }

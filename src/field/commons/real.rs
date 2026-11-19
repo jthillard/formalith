@@ -17,6 +17,7 @@ use malachite::{
     },
 };
 
+use crate::term::fun::{eval_calculus_builtin, eval_rewrite_builtin};
 use crate::{
     context::{Context, Symbol},
     field::{
@@ -27,7 +28,7 @@ use crate::{
     parser::Parser,
     polynom::ToTerm,
     printer::PrettyPrinter,
-    term::{self, Expand, Fun, Normalize, SymbolTerm, Term, TermSet, Value, flags::Flags},
+    term::{self, Fun, Normalize, SymbolTerm, Term, TermSet, Value, flags::Flags},
 };
 
 /// Largest `n` for which `{$n!$}` is evaluated, to avoid huge computations.
@@ -345,9 +346,9 @@ impl Ring for R<Rational> {
                         return res;
                     }
                 }
-                Context::EXPAND => {
-                    if let Some(arg) = fun.get_arg::<Self>() {
-                        return arg.expand();
+                Context::EXPAND | Context::SIMPLIFY => {
+                    if let Some(res) = eval_rewrite_builtin(&**fun) {
+                        return res;
                     }
                 }
                 Context::FACTOR => {
@@ -355,20 +356,9 @@ impl Ring for R<Rational> {
                         return arg.factor();
                     }
                 }
-                Context::SIMPLIFY => {
-                    if let Some(arg) = fun.get_arg::<Self>() {
-                        return arg.simplify();
-                    }
-                }
-                Context::DIFF => {
-                    if let Some([f, Term::Symbol(x)]) = fun.get_args::<Self>().map(Vec::as_slice) {
-                        let res = f.derivative(x.symbol);
-                        // `f` can't be differentiated, keep the term to avoid normalizing forever
-                        if !matches!(&res, Term::Fun(inner)
-                            if inner.get_ident() == Context::DIFF && inner.get_arg::<Self>() == Some(f))
-                        {
-                            return res;
-                        }
+                Context::DIFF | Context::DET => {
+                    if let Some(res) = eval_calculus_builtin(&**fun) {
+                        return res;
                     }
                 }
                 Context::LIM => {
@@ -419,13 +409,6 @@ impl Ring for R<Rational> {
                             return Term::Symbol(SymbolTerm::new(Context::UNDEFINED, *self));
                         }
                         Err(IntegrateError::Unsupported | IntegrateError::NonElementary) => {}
-                    }
-                }
-                Context::DET => {
-                    if let Some(Term::Value(matrix)) = fun.get_arg::<M<TermSet<Self>>>()
-                        && let Ok(res) = matrix.value.det()
-                    {
-                        return res;
                     }
                 }
                 Context::APPROX => {
