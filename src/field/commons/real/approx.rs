@@ -13,6 +13,7 @@ use malachite::{
                 Pow, Reciprocal, UnsignedAbs,
             },
             basic::traits::{One, Zero},
+            conversion::traits::RoundingFrom,
         },
         rounding_modes::RoundingMode,
     },
@@ -392,6 +393,50 @@ impl Fixed {
         Some(self.to_rational(self.exp(&ln_gamma)?) / product)
     }
 
+    /// `{$W_0(x)$}` for `{$x >= -1/e$}`, by Newton's iteration on `{$w e^w = x$}` from a float approximation.
+    fn lambert_w(self, x: &Rational) -> Option<Rational> {
+        if *x == 0 {
+            return Some(Rational::ZERO);
+        }
+        // `{$e x + 1 >= 0$}`
+        let branch = self.exp_rational(&Rational::ONE)? * x + Rational::ONE;
+        if branch < 0 {
+            return None;
+        }
+        let float = |x: &Rational| f64::rounding_from(x, RoundingMode::Nearest).0;
+        let x_float = float(x);
+        let guess = if x_float < 1. {
+            // Series at the branch point `{$-1/e$}`
+            let p = (2. * float(&branch)).sqrt();
+            p.mul_add(1. - p / 3. + 11. / 72. * p * p, -1.)
+        } else if x_float < 3. {
+            x_float.ln_1p()
+        } else {
+            // `{$W(x) ~ ln x - ln ln x + (ln ln x) / ln x$}`
+            let ln = x_float.ln();
+            ln - ln.ln() + ln.ln() / ln
+        };
+        if !guess.is_finite() {
+            return None;
+        }
+        let target = self.from_rational(x);
+        let mut w = self.from_rational(&Rational::try_from(guess).ok()?);
+        let one = self.one();
+        for _ in 0..self.bits + 64 {
+            let exp = self.exp(&w)?;
+            let derivative = self.mul(&exp, &(&w + &one));
+            if derivative == 0 {
+                break;
+            }
+            let step = self.div(&(self.mul(&w, &exp) - &target), &derivative);
+            w -= &step;
+            if step.unsigned_abs() <= 1u32 {
+                break;
+            }
+        }
+        Some(self.to_rational(w))
+    }
+
     /// `{$arcsin(x)$}` for `{$|x| <= 1$}`, `{$arcsin(x) = arctan(x / sqrt(1 - x^2))$}`.
     fn arcsin(self, x: &Rational) -> Option<Rational> {
         let cos = self.root(&(Rational::ONE - x * x), 2)?;
@@ -650,6 +695,7 @@ impl Fixed {
                             _ => (cos != 0).then(|| self.to_rational(self.div(&sin, &cos))),
                         }
                     }
+                    (Context::LAMBERTW, [x]) => self.lambert_w(&self.evaluate(x)?),
                     (Context::GAMMA, [x]) => self.gamma(&self.evaluate(x)?),
                     (Context::FACTORIAL, [x]) => self.gamma(&(self.evaluate(x)? + Rational::ONE)),
                     (Context::BINOMIAL, [n, k]) => {

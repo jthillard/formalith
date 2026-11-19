@@ -10,7 +10,7 @@ use std::ops::Range;
 
 use crate::context::{Context, Symbol};
 use crate::field::{Group, Ring, Set, SetParseExpression};
-use crate::term::{Fun, Mul, Normalize, SymbolTerm, Term, Value, flags::Flags};
+use crate::term::{Fun, Mul, Normalize, SymbolTerm, Term, Value, flags::Flags, relation::Relation};
 
 use environment::Environment;
 use lexer::{Lexer, LiteralTokenKind, Token, TokenKind};
@@ -386,6 +386,45 @@ impl Parser<'_> {
         }
     }
 
+    /// Parse the arguments of `piecewise(c_1, v_1, ..., default)`, whose conditions are comparisons like `x < 0`,
+    /// written `@lt(x, 0)` (see [`Relation`]).
+    fn parse_piecewise_args<E: Set>(&mut self, set: E) -> Result<Vec<Term<E>>, ParserError> {
+        let mut args = vec![];
+        loop {
+            let position = self.start_span;
+            let lhs = ParseExpression::<E>::parse_expression(self, 0, set)?.ok_or_else(|| {
+                ParserError::new(format!("Argument expected at position {position}"))
+            })?;
+            let arg = match Relation::from_token(&self.token.kind) {
+                Some(relation) if args.len() % 2 == 0 => {
+                    self.next_token();
+                    let position = self.start_span;
+                    let rhs =
+                        ParseExpression::<E>::parse_expression(self, 0, set)?.ok_or_else(|| {
+                            ParserError::new(format!("Expression expected at position {position}"))
+                        })?;
+                    Term::Fun(Box::new(Fun::new(relation.symbol(), vec![lhs, rhs], set)))
+                }
+                _ => lhs,
+            };
+            args.push(arg);
+            if self.token.kind != TokenKind::Comma {
+                break;
+            }
+            self.next_token();
+        }
+        let is_condition = |arg: &Term<E>| matches!(arg, Term::Fun(fun) if Relation::from_symbol(fun.get_ident()).is_some());
+        let conditions = args.len() / 2;
+        for (i, arg) in args.iter().enumerate() {
+            if (i % 2 == 0 && i / 2 < conditions) != is_condition(arg) {
+                return Err(ParserError::new(
+                    "piecewise expects conditions like `x < 0` followed by values, and a default value",
+                ));
+            }
+        }
+        Ok(args)
+    }
+
     /// parse arguments of a function, separated by a comma.
     fn parse_args<E: Set>(&mut self, arg_set: E) -> Result<Vec<Term<E>>, ParserError> {
         let mut args = vec![];
@@ -451,6 +490,11 @@ where
                         | Context::HERMITE
                         | Context::SMITH => {
                             let args = self.parse_args(set.get_matrix_argument_set())?;
+                            let count = args.len();
+                            (Term::Fun(Box::new(Fun::new(ident, args, set))), count)
+                        }
+                        Context::PIECEWISE => {
+                            let args = self.parse_piecewise_args(set)?;
                             let count = args.len();
                             (Term::Fun(Box::new(Fun::new(ident, args, set))), count)
                         }

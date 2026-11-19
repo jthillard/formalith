@@ -77,6 +77,25 @@ impl<T: Derivable<ExponantSet = T, ProductCoefficientSet = T>> Term<T> {
                 {
                     return at_b * b.derivative(x) - at_a * a.derivative(x);
                 }
+                // Values of `piecewise` are differentiated, except at the boundaries of the conditions
+                if fun.get_ident() == Context::PIECEWISE
+                    && let Some(args) = fun.get_args::<T>()
+                {
+                    let conditions = args.len() / 2;
+                    let args = args
+                        .iter()
+                        .enumerate()
+                        .map(|(i, arg)| {
+                            if i % 2 == 0 && i / 2 < conditions {
+                                arg.clone()
+                            } else {
+                                arg.derivative(x)
+                            }
+                        })
+                        .collect();
+                    return Self::Fun(Box::new(Fun::new(Context::PIECEWISE, args, set)))
+                        .normalize();
+                }
                 // `{$d/dx psi^((m))(u) = psi^((m + 1))(u) u'$}`
                 if fun.get_ident() == Context::POLYGAMMA
                     && let Some([m, u]) = fun.get_args::<T>().map(Vec::as_slice)
@@ -148,6 +167,8 @@ impl<T: Derivable<ExponantSet = T, ProductCoefficientSet = T>> Term<T> {
                         // `{$Gamma'(u) = Gamma(u) psi(u)$}`, `{$(u!)' = u! psi(u + 1)$}`
                         Context::GAMMA => Some(self * &digamma(u.clone())),
                         Context::FACTORIAL => Some(self * &digamma(u.clone() + one.clone())),
+                        // `{$W'(u) = W(u) / (u (1 + W(u)))$}`
+                        Context::LAMBERTW => Some(self / &(u * &(&one + self))),
                         // `{$|u|' = sign(u) u'$}`, except at 0
                         Context::ABS => Some(apply(Context::SIGN)),
                         // `{$sign' = 0$}`, except at 0

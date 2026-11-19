@@ -152,7 +152,8 @@ fn structural_sign(term: &Expr, mode: SignMode) -> SignSet {
                 | Context::ATAN
                 | Context::ASIN
                 | Context::ERF
-                | Context::ERFI => structural_sign(arg, mode),
+                | Context::ERFI
+                | Context::LAMBERTW => structural_sign(arg, mode),
                 Context::ACOS | Context::ACOSH => SignSet::NONNEGATIVE,
                 // `{$Gamma(u) > 0$}` for `{$u > 0$}`, `{$u! > 0$}` for `{$u >= 0$}`
                 Context::GAMMA if structural_sign(arg, mode).is_subset(SignSet::POSITIVE) => {

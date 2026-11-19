@@ -37,6 +37,7 @@
 //! assert_eq!(parse!("integrate(exp(-x), x, 0, oo)", R), parse!("1", R));
 //! ```
 
+mod apart;
 mod definite;
 mod parts;
 pub(crate) mod poly;

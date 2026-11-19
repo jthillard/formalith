@@ -41,6 +41,7 @@ pub mod fun;
 pub use fun::*;
 pub mod derivative;
 pub mod flags;
+pub mod relation;
 pub mod substitute;
 use flags::{Flags, NORMALIZED};
 

@@ -437,3 +437,78 @@ fn derivatives_of_unknown_functions_stay_unevaluated() {
     assert!(matches!(parse!("diff(binomial(x, 2), x)", R), Term::Fun(_)));
     assert!(matches!(parse!("diff(zeta(x), x)", R), Term::Fun(_)));
 }
+
+#[test]
+fn repeated_derivatives() {
+    assert_eq!(parse!("diff(sin(x), x, 3)", R), parse!("-cos(x)", R));
+    assert_eq!(parse!("diff(x^5, x, 2)", R), parse!("20*x^3", R));
+    assert_eq!(parse!("diff(x^2, x, 0)", R), parse!("x^2", R));
+    assert_eq!(parse!("diff(x^2*y, x, 2)", R), parse!("2*y", R));
+    // Non natural orders stay unevaluated
+    assert!(matches!(parse!("diff(x^3, x, n)", R), Term::Fun(_)));
+}
+
+#[test]
+fn partial_fractions() {
+    assert_eq!(
+        parse!("apart((x+1)/(x^2*(x-1)), x)", R),
+        parse!("2/(x-1) - 2/x - 1/x^2", R)
+    );
+    assert_eq!(
+        parse!("apart(1/(x^2-1))", R),
+        parse!("1/(2*(x-1)) - 1/(2*(x+1))", R)
+    );
+    // Polynomial part and irreducible quadratic factors
+    assert_eq!(
+        parse!("apart(x^3/(x-1))", R),
+        parse!("x^2 + x + 1 + 1/(x-1)", R)
+    );
+    assert_eq!(
+        parse!("apart((x^3+1)/(x^2+1)^2)", R),
+        parse!("x/(x^2+1) + (1-x)/(x^2+1)^2", R)
+    );
+    assert_eq!(
+        parse!("apart(1/((x^2+1)*(x-2)), x)", R),
+        parse!("1/(5*(x-2)) + (-x/5 - 2/5)/(x^2+1)", R)
+    );
+    // Symbolic coefficients aren't supported
+    assert!(matches!(parse!("apart(a/(x^2-1), x)", R), Term::Fun(_)));
+}
+
+#[test]
+fn lambert_w() {
+    assert_eq!(parse!("lambertw(0)", R), parse!("0", R));
+    assert_eq!(parse!("lambertw(e)", R), parse!("1", R));
+    assert_eq!(parse!("lambertw(-exp(-1))", R), parse!("-1", R));
+    assert_eq!(parse!("lambertw(2*exp(2))", R), parse!("2", R));
+    assert_eq!(parse!("lambertw(oo)", R), parse!("oo", R));
+    assert_eq!(
+        parse!("diff(lambertw(x), x)", R),
+        parse!("lambertw(x)/(x*(1 + lambertw(x)))", R)
+    );
+    assert_eq!(parse!("sign(lambertw(2))", R), parse!("1", R));
+}
+
+#[test]
+fn piecewise() {
+    assert_eq!(parse!("piecewise(2 < 1, 5, 7)", R), parse!("7", R));
+    assert_eq!(parse!("piecewise(pi > 3, 1, 0)", R), parse!("1", R));
+    assert_eq!(parse!("piecewise(x^2 + 1 > 0, 1, 0)", R), parse!("1", R));
+    assert_eq!(parse!("piecewise(1 > 2, 1)", R), parse!("undefined", R));
+    // Undecided conditions are kept, false ones dropped
+    assert_eq!(
+        parse!("piecewise(1 = 2, 0, x < 0, -x, x)", R),
+        parse!("piecewise(x < 0, -x, x)", R)
+    );
+    assert_eq!(
+        parse!("diff(piecewise(x < 0, x^2, sin(x)), x)", R),
+        parse!("piecewise(x < 0, 2*x, cos(x))", R)
+    );
+    assert_eq!(
+        parse!("piecewise(x < 0, -x, x)", R)
+            .substitute(formalith::symbol!("x"), &parse!("-2", R))
+            .map(|t| formalith::term::Normalize::normalize(&t)),
+        Some(parse!("2", R))
+    );
+    assert!(try_parse!("piecewise(x, 1)", R).is_err());
+}

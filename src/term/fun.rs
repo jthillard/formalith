@@ -18,7 +18,7 @@ use crate::{
     term::{Expand, Normalize, TermSet},
 };
 
-use super::{Flags, Term, Value};
+use super::{Flags, Term, Value, relation::Relation};
 
 /// To allow function from any set to the set `T`, a dynamic dispatch is used with this trait, implementing needed methods.
 ///
@@ -151,6 +151,31 @@ impl<From: Set, T> Flags for Fun<From, T> {
 impl<From: Set, T: Set> Print for Fun<From, T> {
     fn print(&self, options: &PrintOptions, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut args: Vec<_> = self.args.iter().collect();
+        if let (Some(relation), [lhs, rhs]) = (Relation::from_symbol(self.ident), args.as_slice()) {
+            // A condition `lhs < rhs`
+            lhs.print(options, f)?;
+            f.write_str(" ")?;
+            Self::operator(relation.operator(), options, f)?;
+            f.write_str(" ")?;
+            return rhs.print(options, f);
+        }
+        if options.typst && self.ident == Context::PIECEWISE {
+            // `{$cases(v_1 & "if" c_1, ..., d & "otherwise")$}`
+            f.write_str("cases(")?;
+            for (i, pair) in args.chunks(2).enumerate() {
+                if i != 0 {
+                    f.write_str(", ")?;
+                }
+                pair[pair.len() - 1].print(options, f)?;
+                if let [condition, _] = pair {
+                    f.write_str(" & \"if \" ")?;
+                    condition.print(options, f)?;
+                } else {
+                    f.write_str(" & \"otherwise\"")?;
+                }
+            }
+            return f.write_str(")");
+        }
         if options.typst {
             let name = self.get_ident_as_str();
             if let (Context::LIM, [fun, x, point, direction @ ..]) = (self.ident, args.as_slice()) {
@@ -257,6 +282,7 @@ impl<From: Set, T: Set> Print for Fun<From, T> {
                 }
                 Context::BINOMIAL => f.write_str("binom")?,
                 Context::GAMMA => f.write_str("Gamma")?,
+                Context::LAMBERTW => f.write_str("W")?,
                 Context::BETA => f.write_str("Beta")?,
                 Context::ZETA => f.write_str("zeta")?,
                 Context::ASIN => f.write_str("arcsin")?,
@@ -335,6 +361,13 @@ impl<From: Set, T: Set> PrettyPrint for Fun<From, T> {
             res.big_operator(sign, &lower, &b.pretty_print(options));
             return res;
         }
+        if let (Some(relation), [lhs, rhs]) =
+            (Relation::from_symbol(self.ident), self.args.as_slice())
+        {
+            let mut res = lhs.pretty_print(options);
+            res.concat(relation.pretty_operator(), true, &rhs.pretty_print(options));
+            return res;
+        }
         let mut args = self.args.iter().map(|x| x.pretty_print(options));
         let mut res = args.next().unwrap();
         for mut arg in args {
@@ -364,22 +397,34 @@ pub(crate) fn eval_rewrite_builtin<T: Ring>(fun: &dyn Function<T>) -> Option<Ter
     }
 }
 
-/// Evaluate the builtin `diff(f, x)` in a field of scalars. Returns `None` for other functions,
-/// or when they can't be evaluated.
+/// Evaluate the builtin `diff(f, x)`, or `diff(f, x, n)` for the `n`-th derivative with a natural `n`, in a field
+/// of scalars. Returns `None` for other functions, or when they can't be evaluated.
 pub(crate) fn eval_calculus_builtin<T>(fun: &dyn Function<T>) -> Option<Term<T>>
 where
     T: Derivable<ExponantSet = T, ProductCoefficientSet = T>,
 {
     match fun.get_ident() {
         Context::DIFF => {
-            let Some([f, Term::Symbol(x)]) = fun.get_args::<T>().map(Vec::as_slice) else {
-                return None;
+            let (f, x, order) = match fun.get_args::<T>()?.as_slice() {
+                [f, Term::Symbol(x)] => (f.clone(), x.symbol, 1),
+                [f, Term::Symbol(x), Term::Value(n)] => {
+                    let n = usize::try_from(fun.get_set().to_i64(&n.value)?).ok()?;
+                    (f.clone(), x.symbol, n)
+                }
+                _ => return None,
             };
-            let res = f.derivative(x.symbol);
-            // `f` can't be differentiated, keep the term to avoid normalizing forever
-            let unevaluated = matches!(&res, Term::Fun(inner)
-                if inner.get_ident() == Context::DIFF && inner.get_arg::<T>() == Some(f));
-            (!unevaluated).then_some(res)
+            let mut res = f;
+            for _ in 0..order {
+                let derivative = res.derivative(x);
+                // `f` can't be differentiated, keep the term to avoid normalizing forever
+                if matches!(&derivative, Term::Fun(inner)
+                    if inner.get_ident() == Context::DIFF && inner.get_arg::<T>() == Some(&res))
+                {
+                    return None;
+                }
+                res = derivative;
+            }
+            Some(res)
         }
         _ => None,
     }

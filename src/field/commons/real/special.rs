@@ -11,10 +11,13 @@ use malachite::{
     },
 };
 
-use super::R;
+use super::{
+    R,
+    sign::{SignMode, sign_set},
+};
 use crate::{
     context::{Context, Symbol},
-    term::{Fun, Normalize, SymbolTerm, Term},
+    term::{Fun, Normalize, SymbolTerm, Term, relation::Relation},
 };
 
 /// Largest `n` for which harmonic sums `{$H_n^((s))$}` are evaluated exactly.
@@ -102,6 +105,53 @@ impl R<Rational> {
         }
     }
 
+    /// Exact values of the Lambert W function: `{$W(0) = 0$}`, `{$W(e) = 1$}` and `{$W(c e^c) = c$}` for a
+    /// rational `{$c >= -1$}`, like `{$W(-1/e) = -1$}`.
+    pub(super) fn eval_lambertw(self, x: &Term<Self>) -> Option<Term<Self>> {
+        if x.is_zero() {
+            return Some(Term::zero(self));
+        }
+        let c = match x {
+            Term::Symbol(s) if s.symbol == Context::E => return Some(Term::one(self)),
+            Term::Mul(mul) => mul.coefficient.clone(),
+            _ => return None,
+        };
+        let c_term = Term::constant(c.clone(), self);
+        (c >= -1 && &(&c_term * &self.call(Context::EXP, vec![c_term.clone()])) == x)
+            .then_some(c_term)
+    }
+
+    /// Simplify `piecewise(c_1, v_1, ..., default)` by deciding its conditions from the signs of `lhs - rhs`
+    /// (assumptions apply): false conditions are dropped, the value of a leading true condition is the result, and
+    /// without conditions left the result is the default value, or `undefined`. `None` if nothing changes.
+    pub(super) fn eval_piecewise(self, args: &[Term<Self>]) -> Option<Term<Self>> {
+        let default = (args.len() % 2 == 1).then(|| args[args.len() - 1].clone());
+        let mut kept = vec![];
+        for pair in args.chunks_exact(2) {
+            let [condition, value] = pair else {
+                unreachable!("Chunks have two elements")
+            };
+            match decide(condition) {
+                Some(false) => {}
+                Some(true) if kept.is_empty() => return Some(value.clone()),
+                // Later conditions are never reached
+                Some(true) => {
+                    kept.push(value.clone());
+                    return Some(self.call(Context::PIECEWISE, kept));
+                }
+                None => kept.extend([condition.clone(), value.clone()]),
+            }
+        }
+        if kept.is_empty() {
+            return Some(
+                default.unwrap_or_else(|| Term::Symbol(SymbolTerm::new(Context::UNDEFINED, self))),
+            );
+        }
+        let changed = kept.len() + usize::from(default.is_some()) != args.len();
+        kept.extend(default);
+        changed.then(|| self.call(Context::PIECEWISE, kept))
+    }
+
     /// Build the function `ident(args)`, normalized.
     fn call(self, ident: Symbol, args: Vec<Term<Self>>) -> Term<Self> {
         Term::Fun(Box::new(Fun::new(ident, args, self))).normalize()
@@ -169,4 +219,16 @@ impl R<Rational> {
         let b = bernoulli(usize::try_from(m + 1).ok()?) / Rational::from(m + 1);
         Some(self.value(if m % 2 == 0 { b } else { -b }))
     }
+}
+
+/// Whether the condition `lhs op rhs` of a `piecewise` holds, `None` if it can't be decided.
+fn decide(condition: &Term<R<Rational>>) -> Option<bool> {
+    let Term::Fun(fun) = condition else {
+        return None;
+    };
+    let relation = Relation::from_symbol(fun.get_ident())?;
+    let [lhs, rhs] = fun.get_args::<R<Rational>>()?.as_slice() else {
+        return None;
+    };
+    relation.holds(sign_set(&(lhs - rhs), SignMode::APPROXIMATE))
 }

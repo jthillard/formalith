@@ -256,9 +256,15 @@ impl Context {
     pub const HERMITE: Symbol = Symbol(68);
     /// Smith normal form of a matrix over `{$ZZ$}` or `{$ZZ\/n ZZ$}`
     pub const SMITH: Symbol = Symbol(69);
+    /// Partial fraction decomposition `apart(f, x)` of a rational function, in its only symbol by default
+    pub const APART: Symbol = Symbol(70);
+    /// Principal branch `{$W_0$}` of the Lambert W function, the inverse of `{$x e^x$}` on `{$[-1, oo)$}`
+    pub const LAMBERTW: Symbol = Symbol(71);
+    /// Piecewise function `piecewise(c_1, v_1, c_2, v_2, ..., default)`, the value of the first true condition
+    pub const PIECEWISE: Symbol = Symbol(72);
 
     #[rustfmt::skip]
-    const BUILTIN_NAMES: [&'static str; 70] = [
+    const BUILTIN_NAMES: [&'static str; 73] = [
         "abs", "det", "expand", "factor", "simplify", "re", "im", "conj", "sqrt", "root", "sign",
         "floor", "ceil", "min", "max", "gcd", "lcm", "quo", "rem", "diff", "solve", "approx",
         "exp", "ln", "sin", "cos", "tan", "pi", "e", "lim", "oo", "undefined",
@@ -266,7 +272,7 @@ impl Context {
         "sec", "csc", "log", "factorial", "binomial", "integrate", "erf", "erfi", "assume",
         "gamma", "beta", "digamma", "polygamma", "zeta", "euler_gamma", "sum", "product",
         "dsolve", "transpose", "trace", "rank", "kernel", "charpoly", "eigenvalues", "eigenvectors",
-        "hermite", "smith",
+        "hermite", "smith", "apart", "lambertw", "piecewise",
     ];
 
     /// Return `true` if `symbol` is a builtin constant, like `{$pi$}`, which is not a function.
@@ -287,7 +293,6 @@ impl Context {
             | Self::LCM
             | Self::QUO
             | Self::REM
-            | Self::DIFF
             | Self::BINOMIAL
             | Self::BETA
             | Self::POLYGAMMA => Some((2, 2)),
@@ -295,6 +300,9 @@ impl Context {
                 Some((1, usize::MAX))
             }
             Self::APPROX | Self::LOG | Self::CHARPOLY => Some((1, 2)),
+            Self::DIFF => Some((2, 3)),
+            Self::APART => Some((1, 2)),
+            Self::PIECEWISE => Some((2, usize::MAX)),
             Self::LIM => Some((3, 4)),
             Self::SERIES => Some((3, 5)),
             Self::INTEGRATE => Some((2, 4)),

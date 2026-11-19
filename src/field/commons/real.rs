@@ -450,6 +450,26 @@ impl Ring for R<Rational> {
                         }
                     }
                 }
+                Context::APART => {
+                    let res = match fun.get_args::<Self>().map(Vec::as_slice) {
+                        Some([f, Term::Symbol(x)]) => f.apart(x.symbol),
+                        Some([f]) => {
+                            let symbols: Vec<_> = f
+                                .symbols()
+                                .into_iter()
+                                .filter(|s| !Context::is_builtin_constant(*s))
+                                .collect();
+                            match symbols.as_slice() {
+                                [x] => f.apart(*x),
+                                _ => None,
+                            }
+                        }
+                        _ => None,
+                    };
+                    if let Some(res) = res {
+                        return res;
+                    }
+                }
                 Context::INTEGRATE => {
                     let res = match fun.get_args::<Self>().map(Vec::as_slice) {
                         Some([f, Term::Symbol(x)]) => f.integrate(x.symbol),
@@ -934,6 +954,8 @@ impl R<Rational> {
                 | Context::ZETA,
                 args,
             ) => self.eval_gamma_family(ident, args),
+            (Context::LAMBERTW, [x]) if !x.is_approximate() => self.eval_lambertw(x),
+            (Context::PIECEWISE, args) => self.eval_piecewise(args),
             (Context::FACTORIAL, [Term::Value(n)]) => self.eval_factorial(&n.value),
             (Context::BINOMIAL, [n, Term::Value(k)]) if k.value == 0 || k.value == 1 => {
                 Some(if k.value == 0 {
@@ -1239,7 +1261,8 @@ impl R<Rational> {
             | Context::ASINH
             | Context::ACOSH
             | Context::GAMMA
-            | Context::FACTORIAL => Some(oo),
+            | Context::FACTORIAL
+            | Context::LAMBERTW => Some(oo),
             Context::TANH | Context::ERF | Context::ZETA => Some(value(Rational::ONE)),
             Context::ATAN => {
                 Some(Term::Symbol(SymbolTerm::new(Context::PI, self)) / value(Rational::from(2)))
