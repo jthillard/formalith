@@ -354,7 +354,6 @@ fn bug_smith_of_unimodular_hangs() {
 }
 
 #[test]
-#[ignore = "bug: eigenvalues([[3, 2, 3], [-2, 2, -1], [3, 1, -1]]) hangs (its companion matrix is unevaluated at once)"]
 fn bug_eigenvalues_of_cubic_with_complex_roots_hang() {
     // Characteristic polynomial `x^3 - 4 x^2 - 3 x + 37`, with one real root
     regression("[[3, 2, 3], [-2, 2, -1], [3, 1, -1]]", linear_algebra);

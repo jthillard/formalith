@@ -93,7 +93,7 @@ impl Matrix<TermSet<R<Rational>>> {
             Solution::Alternatives(branches) => branches,
             Solution::NoSolution => vec![],
         };
-        let mut eigenspaces = vec![];
+        let mut multiplicities = vec![];
         for assignments in roots {
             let [(_, value)] = assignments.as_slice() else {
                 return None;
@@ -110,17 +110,30 @@ impl Matrix<TermSet<R<Rational>>> {
                 multiplicity += 1;
                 derivative = derivative.derivative(x).expand();
             }
-            let mut shifted = self.clone();
-            for i in 0..self.height() {
-                shifted[(i, i)] = self.set.sub(&self[(i, i)], value);
-            }
-            eigenspaces.push(Eigenspace {
-                value: value.clone(),
-                multiplicity,
-                basis: kernel(shifted),
-            });
+            multiplicities.push((value.clone(), multiplicity));
         }
-        let total: usize = eigenspaces.iter().map(|space| space.multiplicity).sum();
-        (total == self.height()).then_some(eigenspaces)
+        // Before computing eigenspaces, which is slow with radicals, `{$x^3 - 4 x^2 - 3 x + 37$}` having non-real roots
+        let total: usize = multiplicities
+            .iter()
+            .map(|(_, multiplicity)| multiplicity)
+            .sum();
+        if total != self.height() {
+            return None;
+        }
+        let eigenspaces = multiplicities
+            .into_iter()
+            .map(|(value, multiplicity)| {
+                let mut shifted = self.clone();
+                for i in 0..self.height() {
+                    shifted[(i, i)] = self.set.sub(&self[(i, i)], &value);
+                }
+                Eigenspace {
+                    value,
+                    multiplicity,
+                    basis: kernel(shifted),
+                }
+            })
+            .collect();
+        Some(eigenspaces)
     }
 }
