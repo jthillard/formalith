@@ -1,6 +1,12 @@
 //! Helpers shared by integration tests.
 #![allow(dead_code)]
 
+pub mod random;
+pub mod guard;
+pub mod harness;
+pub mod numeric;
+pub mod rng;
+
 use formalith::{
     parser::environment::Environment,
     printer::{PrettyPrint, PrintOptions},
