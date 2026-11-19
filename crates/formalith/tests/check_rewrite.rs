@@ -203,9 +203,11 @@ fn bug_coefficient_times_cancelling_powers_is_zero() {
 }
 
 #[test]
-#[ignore = "bug: 0/0 and 0*(1/(2-2)) panic (assertion idx < self.len() in context/mod.rs)"]
 fn bug_zero_over_zero_panics() {
-    regression("simplify; x + 0/0", rewrite);
+    let mut env = env_with(&[]);
+    for f in ["0/0", "0*(1/(2-2))", "simplify(x + 0/0)"] {
+        assert_eq!(eval(&mut env, f).as_deref(), Ok("undefined"), "{f}");
+    }
 }
 
 #[test]

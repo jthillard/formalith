@@ -340,6 +340,8 @@ impl Context {
     /// Return a reference to the [`SymbolData`] of a given [Symbol]
     #[must_use]
     pub fn get_symbol_data(symbol: &Symbol) -> &'static SymbolData {
+        // Builtins like `Context::UNDEFINED` may be used before any symbol was interned
+        LazyLock::force(&GLOBAL_CONTEXT);
         &SYMBOLS[symbol.0]
     }
 }
