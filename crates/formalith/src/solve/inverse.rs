@@ -107,11 +107,13 @@ struct Inverter {
     used: BTreeSet<Symbol>,
 }
 
-/// A kernel `{$g^n$}`, `g` being a function, a power with an exponent depending on the unknown, or the base of a
-/// power with a rational exponent.
+/// A kernel `{$a g^n$}`, `g` being a function, a power with an exponent depending on the unknown, or the base of a
+/// power with a rational exponent, and `a` a constant.
 struct Kernel {
     /// The term found in the equation.
     term: Expr,
+    /// The constant factor `a`, `{$e^(2x - 2) = e^-2 (e^x)^2$}`.
+    factor: Expr,
     /// The kernel `g`.
     base: Expr,
     /// The exponent `n`.
@@ -185,7 +187,7 @@ impl Inverter {
             kernels
                 .iter()
                 .find(|kernel| kernel.term == *term)
-                .map(|kernel| power(&kernel.exponent))
+                .map(|kernel| &kernel.factor * &power(&kernel.exponent))
         });
         // `{$x + sqrt(x) = 6$}` is `{$s^2 + s = 6$}` with `{$s = sqrt(x)$}`
         if *base == variable(self.x) {
@@ -398,10 +400,11 @@ fn collect_kernels(term: &Expr, x: Symbol, kernels: &mut Vec<Kernel>) -> bool {
     if !depends(term, x) {
         return true;
     }
-    let mut push = |term: &Expr, base: Expr, exponent: Rational| {
+    let mut push = |term: &Expr, factor: Expr, base: Expr, exponent: Rational| {
         if !kernels.iter().any(|kernel| kernel.term == *term) {
             kernels.push(Kernel {
                 term: term.clone(),
+                factor,
                 base,
                 exponent,
             });
@@ -417,23 +420,47 @@ fn collect_kernels(term: &Expr, x: Symbol, kernels: &mut Vec<Kernel>) -> bool {
             Term::Value(e) if e.value.denominator_ref() == &1u32 && e.value > 0 => {
                 collect_kernels(&pow.base, x, kernels)
             }
-            Term::Value(e) => push(term, (*pow.base).clone(), e.value.clone()),
+            Term::Value(e) => push(term, one(), (*pow.base).clone(), e.value.clone()),
             exponent if !depends(&pow.base, x) => {
-                // `{$b^(n u) = (b^u)^n$}`
-                let (n, u) = split_coefficient(exponent);
-                push(term, pow.base.pow(&u), n)
+                // `{$b^(n u + c) = b^c (b^u)^n$}`
+                let (c, exponent) = split_constant(exponent, x);
+                let (n, u) = split_coefficient(&exponent);
+                push(term, pow.base.pow(&c), pow.base.pow(&u), n)
             }
             _ => false,
         },
         Term::Fun(_) => match unary(term) {
             Some((Context::EXP, u)) => {
-                let (n, u) = split_coefficient(u);
-                push(term, fun(Context::EXP, u), n)
+                // `{$e^(n u + c) = e^c (e^u)^n$}`
+                let (c, u) = split_constant(u, x);
+                let (n, u) = split_coefficient(&u);
+                push(term, fun(Context::EXP, c), fun(Context::EXP, u), n)
             }
-            Some(_) => push(term, term.clone(), Rational::from(1)),
+            Some(_) => push(term, one(), term.clone(), Rational::from(1)),
             None => false,
         },
     }
+}
+
+/// `u` as `{$c + v$}` with `c` its terms free of `x`.
+fn split_constant(u: &Expr, x: Symbol) -> (Expr, Expr) {
+    match u {
+        Term::Add(add) => {
+            let (constant, rest): (Vec<_>, Vec<_>) = add.iter().partition(|t| !depends(t, x));
+            let sum = |terms: Vec<&Expr>| {
+                terms
+                    .into_iter()
+                    .fold(value(Rational::from(0)), |a, t| a + t)
+            };
+            (sum(constant), sum(rest))
+        }
+        _ => (value(Rational::from(0)), u.clone()),
+    }
+}
+
+/// The constant 1.
+fn one() -> Expr {
+    value(Rational::from(1))
 }
 
 /// `u` as `{$n v$}` with `n` its rational coefficient.

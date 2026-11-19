@@ -300,7 +300,6 @@ fn bug_solve_irrational_roots_in_c_panic() {
 }
 
 #[test]
-#[ignore = "bug: exp(2*x - 2) - exp(x - 1) = 2 is rejected as not polynomial (exp(2*x) - exp(x) = 2 is solved)"]
 fn bug_solve_shifted_exponential_kernel() {
     regression("R; exp(2*x - 2) - exp(x - 1) = 2; x = 1 + ln(2)");
 }
