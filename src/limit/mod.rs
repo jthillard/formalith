@@ -46,9 +46,9 @@ use crate::{
         R,
         approx::approximate,
         expr::{
-            DIGITS, Expr, Real, depends, fun, half, has_special_constant,
-            hyperbolic_as_exp, infinity, infinity_sign, one, sqrt, try_map_operands, unary, value,
-            variable,
+            DIGITS, Expr, Real, depends, fun, gamma_pole, half, has_special_constant,
+            hyperbolic_as_exp, infinity, infinity_sign, one, polygamma, polygamma_args, sqrt,
+            try_map_operands, unary, value, variable,
         },
         sign::{SignMode, sign},
     },
@@ -232,7 +232,7 @@ fn remove_steps(f: &Expr, x: Symbol, point: &Expr, direction: Direction) -> Resu
     if !limit
         .symbols()
         .iter()
-        .all(|s| matches!(*s, Context::PI | Context::E))
+        .all(|s| matches!(*s, Context::PI | Context::E | Context::EULER_GAMMA))
     {
         return Err(LimitError::Unsupported.into());
     }
@@ -368,6 +368,12 @@ fn exp_log_form(term: &Expr, x: Symbol) -> LimitResult<Expr> {
                 .collect::<LimitResult<Vec<_>>>()?;
             match (f.get_ident(), args.as_slice()) {
                 (Context::TAN, [u]) => fun(Context::SIN, u.clone()) / fun(Context::COS, u.clone()),
+                // `{$u! = Gamma(u + 1)$}`, `{$binom(n, k) = Gamma(n + 1) / (Gamma(k + 1) Gamma(n - k + 1))$}`
+                (Context::FACTORIAL, [u]) => fun(Context::GAMMA, u + &one()),
+                (Context::BINOMIAL, [n, k]) => {
+                    fun(Context::GAMMA, n + &one())
+                        / (fun(Context::GAMMA, k + &one()) * fun(Context::GAMMA, n - k + one()))
+                }
                 (ident @ (Context::SINH | Context::COSH | Context::TANH), [u]) => {
                     hyperbolic_as_exp(ident, u).expect("A hyperbolic function")
                 }
@@ -438,6 +444,11 @@ fn eval_at(term: &Expr, x: Symbol, a: &Expr) -> Option<Expr> {
             };
             defined.then(|| base.pow(exponant))
         }
+        Term::Fun(_) if polygamma_args(term).is_some() => {
+            let (m, arg) = polygamma_args(term)?;
+            let arg = eval_at(arg, x, a)?;
+            gamma_pole(&arg).is_none().then(|| polygamma(m, arg))
+        }
         Term::Fun(_) => {
             let (ident, arg) = unary(term)?;
             let arg = eval_at(arg, x, a)?;
@@ -450,6 +461,7 @@ fn eval_at(term: &Expr, x: Symbol, a: &Expr) -> Option<Expr> {
                 | Context::ERF
                 | Context::ERFI => Some(fun(ident, arg)),
                 Context::LN if positive(&arg) => Some(fun(ident, arg)),
+                Context::GAMMA if gamma_pole(&arg).is_none() => Some(fun(ident, arg)),
                 _ => None,
             }
         }

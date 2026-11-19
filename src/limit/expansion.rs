@@ -42,15 +42,17 @@ impl Term<Real> {
     ) -> LimitResult<Self> {
         let (f, infinite) = prepare(self, x, point, direction)?;
         if let Some(sign) = infinite {
-            // `{$x = s/w$}`, so `{$w = s/x$}`
+            // `{$x = s/w$}`, so `{$w = s/x$}` and `{$ln w = -ln(s x)$}`
             let sign = value(Rational::from(sign as i64));
-            return side_series(&f, x, order, |w| &sign / w, &sign / &variable(x));
+            let ln_back = -fun(Context::LN, &sign * &variable(x));
+            return side_series(&f, x, order, |w| &sign / w, &sign / &variable(x), ln_back);
         }
         // `{$x = a + s w$}`, so `{$w = s (x - a)$}`
         let side = |sign: i64| {
             let sign = value(Rational::from(sign));
             let w = &sign * &(variable(x) - point.clone());
-            side_series(&f, x, order, |w| point + &(&sign * w), w)
+            let ln_back = fun(Context::LN, w.clone());
+            side_series(&f, x, order, |w| point + &(&sign * w), w, ln_back)
         };
         match direction {
             Direction::Right => side(1),
@@ -68,13 +70,14 @@ impl Term<Real> {
 }
 
 /// The series of `f` with `x` replaced by `at(w)` for `{$w -> 0^+$}`, up to `{$O(w^n)$}`, with `w` replaced back
-/// by `back`.
+/// by `back` and `{$ln w$}` by `ln_back`.
 fn side_series(
     f: &Expr,
     x: Symbol,
     order: &Rational,
     at: impl Fn(&Expr) -> Expr,
     back: Expr,
+    ln_back: Expr,
 ) -> LimitResult<Expr> {
     let mut gruntz = Gruntz::new(x);
     // Not a valid identifier, so it can't conflict with a symbol of the expression
@@ -83,7 +86,6 @@ fn side_series(
         .substitute(x, &at(&variable(gruntz.w)))
         .ok_or(LimitError::Unsupported)?;
     let terms = series::expand(&mut gruntz, &f, &variable(logw), order)?;
-    let ln_back = fun(Context::LN, back.clone());
     terms
         .into_iter()
         .try_fold(zero(), |res, (exponant, coefficient)| {

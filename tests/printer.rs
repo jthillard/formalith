@@ -182,6 +182,16 @@ fn print_typst_functions() {
 }
 
 #[test]
+fn print_typst_gamma_functions() {
+    assert_eq!(typst(&parse!("gamma(x)", R)), "Gamma(x)");
+    assert_eq!(typst(&parse!("digamma(x)", R)), "psi(x)");
+    assert_eq!(typst(&parse!("polygamma(2, x)", R)), "psi^((2))(x)");
+    assert_eq!(typst(&parse!("zeta(s)", R)), "zeta(s)");
+    assert_eq!(typst(&parse!("euler_gamma", R)), "gamma");
+    assert_eq!(pretty(&parse!("euler_gamma", R)), "γ");
+}
+
+#[test]
 fn print_typst_sets() {
     assert_eq!(typst(&parse!("[[1,x],[2,3]]", M)), "mat(1, x; 2, 3)");
     assert_eq!(typst(&parse!("2+3*i", C)), "2+3 i");
@@ -226,6 +236,8 @@ fn printed_expressions_are_parsed_back() {
         "x^(y+1)",
         "x^-2",
         "2^x*3^y",
+        "gamma(x)*polygamma(1, x)+euler_gamma",
+        "zeta(s)",
     ] {
         let term = parse!(input, R);
         let printed = line(&term);

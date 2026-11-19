@@ -303,11 +303,21 @@ fn limits_of_constants() {
 }
 
 #[test]
-#[ignore = "future: limits of factorial and binomial (Stirling's formula)"]
 fn limits_with_factorials() {
     assert_eq!(lim("lim(factorial(x)^(1/x)/x, x, oo)"), "exp(-1)");
     assert_eq!(lim("lim(ln(factorial(x))/(x*ln(x)), x, oo)"), "1");
     assert_eq!(lim("lim(binomial(2*x, x)^(1/x), x, oo)"), "4");
+    assert_eq!(lim("lim(gamma(x+1/2)/(sqrt(x)*gamma(x)), x, oo)"), "1");
+    assert_eq!(lim("lim(x*gamma(x), x, 0)"), "1");
+    assert_eq!(lim("lim(gamma(x), x, 0)"), "undefined");
+}
+
+#[test]
+fn limits_with_polygamma() {
+    assert_eq!(lim("lim(digamma(x) - ln(x), x, oo)"), "0");
+    assert_eq!(lim("lim(x*(digamma(x) - ln(x)), x, oo)"), "-1/2");
+    assert_eq!(lim("lim(x*polygamma(1, x), x, oo)"), "1");
+    assert_eq!(lim("lim(digamma(x) + 1/x, x, 0)"), "-euler_gamma");
 }
 
 #[test]

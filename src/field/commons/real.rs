@@ -4,6 +4,7 @@ pub(crate) mod approx;
 pub(crate) mod expr;
 mod rewrite;
 pub(crate) mod sign;
+pub(crate) mod special;
 
 use std::{cmp::Ordering, marker::PhantomData};
 
@@ -646,8 +647,10 @@ impl R<Rational> {
         match term {
             Term::Value(value) => value.value > 0,
             Term::Symbol(symbol) => {
-                matches!(symbol.symbol, Context::PI | Context::E)
-                    || assumption(symbol.symbol).sign == SignSet::POSITIVE
+                matches!(
+                    symbol.symbol,
+                    Context::PI | Context::E | Context::EULER_GAMMA
+                ) || assumption(symbol.symbol).sign == SignSet::POSITIVE
             }
             Term::Pow(pow) => {
                 matches!(&**pow.exponant, Term::Value(_)) && Self::is_positive_constant(&pow.base)
@@ -723,7 +726,7 @@ impl R<Rational> {
     pub(crate) fn is_non_negative(x: &Term<Self>) -> bool {
         match x {
             Term::Value(_) => x.is_positive(),
-            Term::Symbol(s) => matches!(s.symbol, Context::PI | Context::E),
+            Term::Symbol(s) => matches!(s.symbol, Context::PI | Context::E | Context::EULER_GAMMA),
             Term::Add(add) => add.iter().all(Self::is_non_negative),
             Term::Mul(mul) => mul.coefficient >= 0 && mul.iter().all(Self::is_non_negative),
             Term::Pow(pow) => match &**pow.exponant {
@@ -835,6 +838,15 @@ impl R<Rational> {
             {
                 inner.get_arg::<Self>().cloned()
             }
+            // `{$e^(q ln c) = c^q$}` for a rational `q` and a positive value `c`
+            (Context::EXP, [Term::Mul(mul)])
+                if let [Term::Fun(inner)] = mul.iter().collect::<Vec<_>>().as_slice()
+                    && inner.get_ident() == Context::LN
+                    && let Some(c @ Term::Value(_)) = inner.get_arg::<Self>()
+                    && c.is_strictly_positive() =>
+            {
+                Some(c.pow(&value(mul.coefficient.clone())))
+            }
             // `{$ln(e^u) = u$}` for a real `u`
             (Context::LN, [Term::Fun(inner)]) if inner.get_ident() == Context::EXP => {
                 inner.get_arg::<Self>().cloned()
@@ -874,11 +886,22 @@ impl R<Rational> {
             (Context::LOG, [x]) => Some(self.eval_log(x, &value(Rational::from(10)))),
             (Context::LOG, [x, base]) => Some(self.eval_log(x, base)),
             // Approximations stay unevaluated, the singular values being exact
-            (Context::FACTORIAL | Context::BINOMIAL, args)
-                if args.iter().any(term::flags::Flags::is_approximate) =>
-            {
-                None
-            }
+            (
+                Context::FACTORIAL
+                | Context::BINOMIAL
+                | Context::GAMMA
+                | Context::POLYGAMMA
+                | Context::ZETA,
+                args,
+            ) if args.iter().any(term::flags::Flags::is_approximate) => None,
+            (
+                Context::GAMMA
+                | Context::BETA
+                | Context::DIGAMMA
+                | Context::POLYGAMMA
+                | Context::ZETA,
+                args,
+            ) => self.eval_gamma_family(ident, args),
             (Context::FACTORIAL, [Term::Value(n)]) => self.eval_factorial(&n.value),
             (Context::BINOMIAL, [n, Term::Value(k)]) if k.value == 0 || k.value == 1 => {
                 Some(if k.value == 0 { value(Rational::ONE) } else { n.clone() })
@@ -1171,8 +1194,10 @@ impl R<Rational> {
             | Context::SINH
             | Context::COSH
             | Context::ASINH
-            | Context::ACOSH => Some(oo),
-            Context::TANH | Context::ERF => Some(value(Rational::ONE)),
+            | Context::ACOSH
+            | Context::GAMMA
+            | Context::FACTORIAL => Some(oo),
+            Context::TANH | Context::ERF | Context::ZETA => Some(value(Rational::ONE)),
             Context::ATAN => Some(Term::Symbol(SymbolTerm::new(Context::PI, self)) / value(Rational::from(2))),
             _ => None,
         }

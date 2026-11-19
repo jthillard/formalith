@@ -220,20 +220,36 @@ impl Context {
     pub const ERFI: Symbol = Symbol(50);
     /// Declare assumptions on symbols, like `assume(a > 0, n integer)`, only allowed as a whole statement
     pub const ASSUME: Symbol = Symbol(51);
+    /// Gamma function `{$Gamma(x) = integral_0^oo t^(x - 1) e^(-t) d t$}`, with `{$Gamma(n + 1) = n!$}`
+    pub const GAMMA: Symbol = Symbol(52);
+    /// Beta function, rewritten as `{$B(a, b) = (Gamma(a) Gamma(b)) / Gamma(a + b)$}`
+    pub const BETA: Symbol = Symbol(53);
+    /// Digamma function, rewritten as `{$psi(x) = "polygamma"(0, x)$}`
+    pub const DIGAMMA: Symbol = Symbol(54);
+    /// Polygamma function `polygamma(m, x)`, the `m`-th derivative of `{$psi(x) = Gamma'(x) / Gamma(x)$}`
+    pub const POLYGAMMA: Symbol = Symbol(55);
+    /// Riemann zeta function `{$zeta(s) = sum_(n >= 1) n^(-s)$}`
+    pub const ZETA: Symbol = Symbol(56);
+    /// The Euler-Mascheroni constant `{$gamma = -psi(1)$}`
+    pub const EULER_GAMMA: Symbol = Symbol(57);
 
     #[rustfmt::skip]
-    const BUILTIN_NAMES: [&'static str; 52] = [
+    const BUILTIN_NAMES: [&'static str; 58] = [
         "abs", "det", "expand", "factor", "simplify", "re", "im", "conj", "sqrt", "root", "sign",
         "floor", "ceil", "min", "max", "gcd", "lcm", "quo", "rem", "diff", "solve", "approx",
         "exp", "ln", "sin", "cos", "tan", "pi", "e", "lim", "oo", "undefined",
         "series", "asin", "acos", "atan", "sinh", "cosh", "tanh", "asinh", "acosh", "atanh", "cot",
         "sec", "csc", "log", "factorial", "binomial", "integrate", "erf", "erfi", "assume",
+        "gamma", "beta", "digamma", "polygamma", "zeta", "euler_gamma",
     ];
 
     /// Return `true` if `symbol` is a builtin constant, like `{$pi$}`, which is not a function.
     #[must_use]
     pub const fn is_builtin_constant(symbol: Symbol) -> bool {
-        matches!(symbol, Self::PI | Self::E | Self::OO | Self::UNDEFINED)
+        matches!(
+            symbol,
+            Self::PI | Self::E | Self::OO | Self::UNDEFINED | Self::EULER_GAMMA
+        )
     }
 
     /// Return the minimum and maximum number of arguments of a builtin function, or `None` if `symbol` isn't a builtin.
@@ -246,13 +262,15 @@ impl Context {
             | Self::QUO
             | Self::REM
             | Self::DIFF
-            | Self::BINOMIAL => Some((2, 2)),
+            | Self::BINOMIAL
+            | Self::BETA
+            | Self::POLYGAMMA => Some((2, 2)),
             Self::MIN | Self::MAX | Self::SOLVE | Self::ASSUME => Some((1, usize::MAX)),
             Self::APPROX | Self::LOG => Some((1, 2)),
             Self::LIM => Some((3, 4)),
             Self::SERIES => Some((3, 5)),
             Self::INTEGRATE => Some((2, 4)),
-            Self::PI | Self::E | Self::OO | Self::UNDEFINED => Some((0, 0)),
+            Self::PI | Self::E | Self::OO | Self::UNDEFINED | Self::EULER_GAMMA => Some((0, 0)),
             Symbol(id) if id < Self::BUILTIN_NAMES.len() => Some((1, 1)),
             _ => None,
         }

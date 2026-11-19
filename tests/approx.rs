@@ -228,9 +228,28 @@ fn approx_oscillating_integrals() {
 }
 
 #[test]
+fn approx_gamma_function_family() {
+    assert_eq!(approx("approx(euler_gamma)"), "0.577215664901533");
+    assert_eq!(
+        approx("approx(euler_gamma, 40)"),
+        "0.5772156649015328606065120900824024310422"
+    );
+    assert_eq!(approx("approx(gamma(1/3))"), "2.67893853470775");
+    assert_eq!(approx("approx(gamma(-3/2))"), "2.36327180120735");
+    assert_eq!(approx("approx(factorial(1/2))"), "0.886226925452758");
+    assert_eq!(approx("approx(zeta(3))"), "1.20205690315959");
+    assert_eq!(approx("approx(zeta(3/2))"), "2.61237534868549");
+    assert_eq!(approx("approx(digamma(1/3))"), "-3.13203378002081");
+    assert_eq!(approx("approx(polygamma(1, 1/4))"), "17.1973291545071");
+    assert_eq!(approx("approx(binomial(1/3, 1/2))"), "0.892656852710187");
+}
+
+#[test]
 fn approx_keeps_singular_values() {
     assert_eq!(approx("approx(ln(0))"), "ln(0.0)");
-    assert_eq!(approx("approx(binomial(1/3, 1/2))"), "binomial(0.333333333333333, 0.5)");
+    assert_eq!(approx("approx(gamma(-1))"), "gamma(-1.0)");
+    assert_eq!(approx("approx(zeta(1))"), "zeta(1.0)");
+    assert_eq!(approx("approx(digamma(0))"), "polygamma(0, 0.0)");
     // Evaluated exactly before being approximated
     assert_eq!(approx("approx(binomial(1/2, 2))"), "-0.125");
 }

@@ -68,7 +68,7 @@ fn structural_sign(term: &Expr, mode: SignMode) -> SignSet {
     match term {
         Term::Value(value) => SignSet::from_ordering(value.value.sign()),
         Term::Symbol(symbol) => match symbol.symbol {
-            Context::PI | Context::E | Context::OO => SignSet::POSITIVE,
+            Context::PI | Context::E | Context::OO | Context::EULER_GAMMA => SignSet::POSITIVE,
             Context::UNDEFINED => SignSet::ANY,
             symbol => {
                 let sign = assumption(symbol).sign;
@@ -154,6 +154,17 @@ fn structural_sign(term: &Expr, mode: SignMode) -> SignSet {
                 | Context::ERF
                 | Context::ERFI => structural_sign(arg, mode),
                 Context::ACOS | Context::ACOSH => SignSet::NONNEGATIVE,
+                // `{$Gamma(u) > 0$}` for `{$u > 0$}`, `{$u! > 0$}` for `{$u >= 0$}`
+                Context::GAMMA if structural_sign(arg, mode).is_subset(SignSet::POSITIVE) => {
+                    SignSet::POSITIVE
+                }
+                Context::FACTORIAL
+                    if structural_sign(arg, mode).is_subset(SignSet::NONNEGATIVE) =>
+                {
+                    SignSet::POSITIVE
+                }
+                // `{$zeta(s) > 0$}` for `{$s > 1$}`
+                Context::ZETA if matches!(arg, Term::Value(s) if s.value > 1) => SignSet::POSITIVE,
                 // `{$ln u$}` has the sign of `{$u - 1$}`, only checked on constants
                 Context::LN if mode.approximate => {
                     structural_sign(&(arg - &super::expr::one()), mode)

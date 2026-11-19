@@ -550,7 +550,7 @@ fn definite_integral_with_symbolic_bound_and_erf() {
 }
 
 #[test]
-#[ignore = "future: definite integrals without elementary antiderivatives (Dirichlet, ln(sin), Bose)"]
+#[ignore = "future: definite integrals without elementary antiderivatives (Dirichlet, ln(sin))"]
 fn definite_integrals_without_antiderivatives() {
     assert_eq!(
         integrate("integrate(sin(x)/x, x, 0, oo)"),
@@ -561,9 +561,33 @@ fn definite_integrals_without_antiderivatives() {
         integrate("-pi/2*ln(2)")
     );
     assert_eq!(integrate("integrate(ln(x)/(1+x^2), x, 0, oo)"), "0");
+}
+
+#[test]
+fn mellin_integrals_with_gamma_and_zeta() {
     assert_eq!(
         integrate("integrate(x^3/(exp(x)-1), x, 0, oo)"),
         integrate("pi^4/15")
+    );
+    assert_eq!(
+        integrate("integrate(sqrt(x)*exp(-x), x, 0, oo)"),
+        integrate("sqrt(pi)/2")
+    );
+    assert_eq!(
+        integrate("integrate(exp(-2*x)/sqrt(x), x, 0, oo)"),
+        integrate("sqrt(pi/2)")
+    );
+    assert_eq!(
+        integrate("integrate(x/(exp(x)+1), x, 0, oo)"),
+        integrate("pi^2/12")
+    );
+    assert_eq!(
+        integrate("integrate(1/(exp(2*x)+1), x, 0, oo)"),
+        integrate("ln(2)/2")
+    );
+    assert_eq!(
+        integrate("integrate(sqrt(x)/(exp(x)-1), x, 0, oo)"),
+        integrate("sqrt(pi)*zeta(3/2)/2")
     );
 }
 

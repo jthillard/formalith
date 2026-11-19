@@ -11,7 +11,7 @@
 
 use crate::field::real::expr::sqrt;
 use crate::field::real::expr::{
-    DIGITS, Expr, Real, constant_sign, depends, half, has_special_constant, infinity_sign,
+    DIGITS, Expr, Real, constant_sign, depends, fun, half, has_special_constant, infinity_sign,
     is_infinite, one, unary, value, variable, zero,
 };
 use std::cmp::Ordering;
@@ -56,6 +56,12 @@ pub(super) fn integrate(f: &Expr, x: Symbol, a: &Expr, b: &Expr) -> IntegrateRes
     if a == b {
         return Ok(zero());
     }
+    if a.is_zero()
+        && infinity_sign(b) == Some(Ordering::Greater)
+        && let Some(res) = mellin(f, x)
+    {
+        return Ok(res);
+    }
     let numeric = |t: &Expr| is_infinite(t) || is_constant(t);
     if !(numeric(a) && numeric(b)) {
         // Symbolic bounds: only without any possible singularity
@@ -93,6 +99,71 @@ pub(super) fn integrate(f: &Expr, x: Symbol, a: &Expr, b: &Expr) -> IntegrateRes
         .map(|(_, point)| (point.clone(), false));
     bounds.splice(1..1, inner);
     evaluate(&antiderivative, x, &bounds)
+}
+
+/// `{$integral_0^oo x^(s - 1) g(x) dif x$}` for a constant `{$s > 0$}` and `{$c > 0$}`:
+/// `{$Gamma(s) / c^s$}` for `{$g(x) = e^(-c x)$}`, `{$Gamma(s) zeta(s) / c^s$}` for `{$g(x) = 1/(e^(c x) - 1)$}`
+/// (Bose integrals, `{$s > 1$}`) and `{$(1 - 2^(1 - s)) Gamma(s) zeta(s) / c^s$}` for `{$g(x) = 1/(e^(c x) + 1)$}`
+/// (Fermi integrals, `{$ln 2 / c$}` for `{$s = 1$}`).
+fn mellin(f: &Expr, x: Symbol) -> Option<Expr> {
+    let (mut constant, factors) = match f {
+        Term::Mul(mul) => (value(mul.coefficient.clone()), mul.iter().collect()),
+        _ => (one(), vec![f]),
+    };
+    let mut s = one();
+    let mut rest = None;
+    for factor in factors {
+        match factor {
+            _ if !depends(factor, x) => constant = constant * factor,
+            Term::Symbol(_) => s = s + one(),
+            Term::Pow(pow) if *pow.base == variable(x) && !depends(&pow.exponant, x) => {
+                s = s + &**pow.exponant;
+            }
+            _ if rest.is_none() => rest = Some(factor),
+            _ => return None,
+        }
+    }
+    let positive = |t: &Expr| constant_sign(t) == Some(Ordering::Greater);
+    if !positive(&s) {
+        return None;
+    }
+    // `k` such that `{$g = e^(k x)$}`
+    let rate = |g: &Expr| {
+        let (Context::EXP, arg) = unary(g)? else {
+            return None;
+        };
+        let k = arg / &variable(x);
+        (!depends(&k, x)).then_some(k)
+    };
+    let gamma = fun(Context::GAMMA, s.clone());
+    let zeta = || fun(Context::ZETA, s.clone());
+    let res = match rest? {
+        g if rate(g).is_some_and(|k| positive(&-k)) => {
+            let c = -rate(g)?;
+            gamma / c.pow(&s)
+        }
+        Term::Pow(pow) if **pow.exponant == -one() => {
+            let Term::Add(add) = &*pow.base else {
+                return None;
+            };
+            let [exponential, Term::Value(sign)] = add.iter().collect::<Vec<_>>()[..] else {
+                return None;
+            };
+            let c = rate(exponential).filter(positive)?;
+            if sign.value == -1 && positive(&(&s - &one())) {
+                gamma * zeta() / c.pow(&s)
+            } else if sign.value == 1 && s.is_one() {
+                fun(Context::LN, value(Rational::from(2))) / c
+            } else if sign.value == 1 {
+                let eta = one() - value(Rational::from(2)).pow(&(one() - s.clone()));
+                eta * gamma * zeta() / c.pow(&s)
+            } else {
+                return None;
+            }
+        }
+        _ => return None,
+    };
+    Some(constant * res)
 }
 
 /// `{$sum_i F(p_(i+1)^-) - F(p_i^+)$}` for the increasing points `p_i`, with whether `F` is regular there.
@@ -164,7 +235,7 @@ fn nicer_value(antiderivative: &Expr, x: Symbol, point: &Expr, res: Expr) -> Exp
 fn is_constant(term: &Expr) -> bool {
     term.symbols()
         .iter()
-        .all(|s| matches!(*s, Context::PI | Context::E))
+        .all(|s| matches!(*s, Context::PI | Context::E | Context::EULER_GAMMA))
 }
 
 /// A bound as a float, `{$plus.minus oo$}` for infinite bounds.

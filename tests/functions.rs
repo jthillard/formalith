@@ -380,8 +380,57 @@ fn derivative_of_an_integral_with_a_variable_bound() {
 }
 
 #[test]
+fn gamma_function_family() {
+    assert_eq!(parse!("gamma(5)", R), parse!("24", R));
+    assert_eq!(parse!("gamma(1/2)", R), parse!("sqrt(pi)", R));
+    assert_eq!(parse!("gamma(-1/2)", R), parse!("-2*sqrt(pi)", R));
+    assert!(matches!(parse!("gamma(0)", R), Term::Fun(_)));
+    assert_eq!(parse!("beta(2, 3)", R), parse!("1/12", R));
+    assert_eq!(
+        parse!("beta(a, b)", R),
+        parse!("gamma(a)*gamma(b)/gamma(a+b)", R)
+    );
+    assert_eq!(parse!("digamma(1)", R), parse!("-euler_gamma", R));
+    assert_eq!(parse!("digamma(3)", R), parse!("3/2 - euler_gamma", R));
+    assert_eq!(
+        parse!("digamma(1/2)", R),
+        parse!("-euler_gamma - 2*ln(2)", R)
+    );
+    assert_eq!(parse!("digamma(x)", R), parse!("polygamma(0, x)", R));
+    assert_eq!(parse!("polygamma(1, 1)", R), parse!("pi^2/6", R));
+    assert_eq!(parse!("polygamma(1, 3/2)", R), parse!("pi^2/2 - 4", R));
+    assert_eq!(parse!("polygamma(2, 1)", R), parse!("-2*zeta(3)", R));
+    assert_eq!(parse!("zeta(2)", R), parse!("pi^2/6", R));
+    assert_eq!(parse!("zeta(4)", R), parse!("pi^4/90", R));
+    assert_eq!(parse!("zeta(0)", R), parse!("-1/2", R));
+    assert_eq!(parse!("zeta(-1)", R), parse!("-1/12", R));
+    assert_eq!(parse!("zeta(-2)", R), parse!("0", R));
+    assert!(matches!(parse!("zeta(3)", R), Term::Fun(_)));
+    assert!(matches!(parse!("zeta(1)", R), Term::Fun(_)));
+    assert_eq!(parse!("zeta(oo)", R), parse!("1", R));
+    assert_eq!(parse!("sign(gamma(x^2 + 1))", R), parse!("1", R));
+}
+
+#[test]
+fn derivatives_of_gamma_functions() {
+    assert_eq!(
+        parse!("diff(gamma(x^2), x)", R),
+        parse!("2*x*gamma(x^2)*polygamma(0, x^2)", R)
+    );
+    assert_eq!(
+        parse!("diff(factorial(x), x)", R),
+        parse!("factorial(x)*digamma(x + 1)", R)
+    );
+    assert_eq!(
+        parse!("diff(digamma(2*x), x)", R),
+        parse!("2*polygamma(1, 2*x)", R)
+    );
+}
+
+#[test]
 fn derivatives_of_unknown_functions_stay_unevaluated() {
     assert!(matches!(parse!("diff(f(x), x)", R), Term::Fun(_)));
     assert!(matches!(parse!("diff(floor(x), x)", R), Term::Fun(_)));
-    assert!(matches!(parse!("diff(factorial(x), x)", R), Term::Fun(_)));
+    assert!(matches!(parse!("diff(binomial(x, 2), x)", R), Term::Fun(_)));
+    assert!(matches!(parse!("diff(zeta(x), x)", R), Term::Fun(_)));
 }

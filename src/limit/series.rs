@@ -5,14 +5,21 @@
 //! Orders are requested as absolute orders `n`, each operation computing its operands to the precision it needs.
 //! `{$ln w$}` is replaced by its expression in `x`.
 
-use crate::field::real::expr::{
-    Expr, depends, fun, half, one, ratio, unary, value, variable, zero,
+use crate::field::real::{
+    expr::{
+        Expr, depends, fun, gamma_pole, half, one, polygamma, polygamma_args, ratio, unary, value,
+        variable, zero,
+    },
+    special::bernoulli,
 };
 use std::cmp::Ordering;
 
 use malachite::{
     Rational,
-    base::num::{arithmetic::traits::Pow, basic::traits::One},
+    base::num::{
+        arithmetic::traits::Pow,
+        basic::traits::{One, Zero},
+    },
 };
 
 use crate::{
@@ -22,7 +29,7 @@ use crate::{
 
 use super::{
     LimitError, LimitResult, const_cmp,
-    gruntz::{Gruntz, erfcx, erfix},
+    gruntz::{Gruntz, erfcx, erfix, lgammastar},
     rational_bound,
 };
 
@@ -284,8 +291,14 @@ impl Expander<'_> {
             Term::Pow(pow) if !depends(&pow.exponant, w) => {
                 self.power(&pow.base, &pow.exponant, n)?
             }
+            _ if polygamma_args(f).is_some() => {
+                let (m, a) = polygamma_args(f).ok_or(LimitError::Unsupported)?;
+                self.polygamma(m, a, n)?
+            }
             _ => match unary(f) {
                 Some((Context::EXP, a)) => self.exp(a, n)?,
+                Some((Context::GAMMA, a)) => self.gamma(a, n)?,
+                Some((ident, a)) if ident == lgammastar() => self.lgammastar(a, n)?,
                 Some((Context::LN, a)) => self.ln(a, n)?,
                 Some((ident @ (Context::SIN | Context::COS), a)) => self.sin_cos(ident, a, n)?,
                 Some((Context::ABS, a)) => self.abs(a, n)?,
@@ -627,6 +640,135 @@ impl Expander<'_> {
                 });
                 let c = if !alternating || k % 2 == 0 { c } else { -c };
                 Some(value(c) * &inv_sqrt_pi)
+            },
+            &n,
+        )
+    }
+
+    /// `{$Gamma(a)$}` for a bounded `a`, with `{$Gamma(a_0 + u) = Gamma(a_0) exp(sum_(j >= 1) psi^((j - 1))(a_0) u^j / j!)$}`,
+    /// and `{$Gamma(a) = Gamma(a + k + 1) / (a (a + 1) ... (a + k))$}` at a pole `{$a_0 = -k$}`. Unbounded arguments
+    /// are rewritten by Stirling's formula before (see [`lgammastar`]).
+    fn gamma(&mut self, a: &Expr, n: &Rational) -> LimitResult<Series> {
+        let n = n.max(&Rational::ONE).clone();
+        let series = self.series(a, &n)?;
+        let (a0, u) = self.split_constant(series)?;
+        if let Some(k) = gamma_pole(&a0) {
+            let shifted = (0..=k).fold(
+                fun(Context::GAMMA, a + &value(Rational::from(k + 1))),
+                |res, i| res / (a + &value(Rational::from(i))),
+            );
+            return self.series(&shifted, &n);
+        }
+        let exponant = Self::compose(
+            &u,
+            |j| {
+                Some(if j == 0 {
+                    zero()
+                } else {
+                    polygamma(u64::try_from(j - 1).ok()?, a0.clone()) * value(inverse_factorial(j))
+                })
+            },
+            &n,
+        )?;
+        let res = Self::compose(&exponant, |j| Some(value(inverse_factorial(j))), &n)?;
+        res.scale(&zero(), &fun(Context::GAMMA, a0))
+    }
+
+    /// `{$psi^((m))(a)$}`, with the Taylor series `{$psi^((m))(a_0 + u) = sum_j psi^((m + j))(a_0) u^j / j!$}`, the
+    /// recurrence `{$psi^((m))(a) = psi^((m))(a + k + 1) - (-1)^m m! sum_(i <= k) (a + i)^(-m - 1)$}` at a pole
+    /// `{$a_0 = -k$}`, and for `{$a -> +oo$}` the asymptotic series
+    /// `{$psi(a) ~ ln a - 1/(2 a) - sum_k B_(2 k) / (2 k a^(2 k))$}`, and for `{$m >= 1$}`
+    /// `{$psi^((m))(a) ~ (-1)^(m + 1) ((m - 1)!/a^m + m!/(2 a^(m + 1)) + sum_k B_(2 k) (2 k + m - 1)!/(2 k)! a^(-2 k - m))$}`.
+    fn polygamma(&mut self, m: u64, a: &Expr, n: &Rational) -> LimitResult<Series> {
+        let n = n.max(&Rational::ONE).clone();
+        let (series, e0, c0) = self.with_lead(a, &n)?;
+        if const_cmp(&e0, &zero())? == Ordering::Less {
+            if self.gruntz.sign(&c0)? != Ordering::Greater {
+                return Err(LimitError::Unsupported);
+            }
+            let v = self.series(&a.inv(), &n)?;
+            // `{$(-1)^(m + 1) j! / j!$}` scaled factorials, as rationals
+            let factorial = |j: u64| (1..=j).fold(Rational::ONE, |res, i| res * Rational::from(i));
+            let sign = if m % 2 == 0 {
+                -Rational::ONE
+            } else {
+                Rational::ONE
+            };
+            let rest = Self::compose(
+                &v,
+                |j| {
+                    let j = u64::try_from(j).ok()?;
+                    let c = if m == 0 {
+                        // `{$-1/(2 a) - sum_k B_(2 k) / (2 k a^(2 k))$}`
+                        match j {
+                            1 => -Rational::from_signeds(1, 2),
+                            _ if j >= 2 && j % 2 == 0 => {
+                                -bernoulli(usize::try_from(j).ok()?) / Rational::from(j)
+                            }
+                            _ => Rational::ZERO,
+                        }
+                    } else if j == m {
+                        &sign * factorial(m - 1)
+                    } else if j == m + 1 {
+                        &sign * factorial(m) / Rational::from(2)
+                    } else if j > m + 1 && (j - m) % 2 == 0 {
+                        let k = j - m;
+                        &sign * bernoulli(usize::try_from(k).ok()?) * factorial(j - 1)
+                            / factorial(k)
+                    } else {
+                        Rational::ZERO
+                    };
+                    Some(value(c))
+                },
+                &n,
+            )?;
+            return if m == 0 {
+                rest.add(&self.ln(a, &n)?)
+            } else {
+                Ok(rest)
+            };
+        }
+        let (a0, u) = self.split_constant(series)?;
+        if let Some(k) = gamma_pole(&a0) {
+            let order = value(Rational::from(m + 1));
+            let factorial = (1..=m).fold(Rational::ONE, |res, i| res * Rational::from(i));
+            let scale = value(if m % 2 == 0 { factorial } else { -factorial });
+            let shifted = (0..=k)
+                .fold(polygamma(m, a + &value(Rational::from(k + 1))), |res, i| {
+                    res - &scale * &(a + &value(Rational::from(i))).pow(&-&order)
+                });
+            return self.series(&shifted, &n);
+        }
+        Self::compose(
+            &u,
+            |j| {
+                Some(
+                    polygamma(m + u64::try_from(j).ok()?, a0.clone()) * value(inverse_factorial(j)),
+                )
+            },
+            &n,
+        )
+    }
+
+    /// `{$"lgammastar" a$}` for `{$a -> +oo$}`, the remainder of Stirling's formula, with the asymptotic series
+    /// `{$sum_k B_(2 k) / (2 k (2 k - 1) a^(2 k - 1))$}`.
+    fn lgammastar(&mut self, a: &Expr, n: &Rational) -> LimitResult<Series> {
+        let n = n.max(&Rational::ONE).clone();
+        let (_, e0, c0) = self.with_lead(a, &n)?;
+        if const_cmp(&e0, &zero())? != Ordering::Less || self.gruntz.sign(&c0)? != Ordering::Greater
+        {
+            return Err(LimitError::Unsupported);
+        }
+        let v = self.series(&a.inv(), &n)?;
+        Self::compose(
+            &v,
+            |j| {
+                if j % 2 == 0 {
+                    return Some(zero());
+                }
+                let k = (j + 1) / 2;
+                let c = bernoulli(2 * k) / Rational::from(u64::try_from(2 * k * (2 * k - 1)).ok()?);
+                Some(value(c))
             },
             &n,
         )

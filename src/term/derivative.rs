@@ -72,7 +72,30 @@ impl<T: Derivable<ExponantSet = T, ProductCoefficientSet = T>> Term<T> {
                 {
                     return at_b * b.derivative(x) - at_a * a.derivative(x);
                 }
+                // `{$d/dx psi^((m))(u) = psi^((m + 1))(u) u'$}`
+                if fun.get_ident() == Context::POLYGAMMA
+                    && let Some([m, u]) = fun.get_args::<T>().map(Vec::as_slice)
+                    && !m.symbols().contains(&x)
+                {
+                    let order = m.clone() + Self::one(set);
+                    let outer = Self::Fun(Box::new(Fun::new(
+                        Context::POLYGAMMA,
+                        vec![order, u.clone()],
+                        set,
+                    )))
+                    .normalize();
+                    return outer * u.derivative(x);
+                }
                 if let Some([u]) = fun.get_args::<T>().map(Vec::as_slice) {
+                    // `{$psi(v)$}`
+                    let digamma = |v: Self| {
+                        Self::Fun(Box::new(Fun::new(
+                            Context::POLYGAMMA,
+                            vec![Self::zero(set), v],
+                            set,
+                        )))
+                        .normalize()
+                    };
                     let apply = |ident| {
                         Self::Fun(Box::new(Fun::new(ident, vec![u.clone()], set))).normalize()
                     };
@@ -117,6 +140,9 @@ impl<T: Derivable<ExponantSet = T, ProductCoefficientSet = T>> Term<T> {
                                     .normalize(),
                             )
                         }
+                        // `{$Gamma'(u) = Gamma(u) psi(u)$}`, `{$(u!)' = u! psi(u + 1)$}`
+                        Context::GAMMA => Some(self * &digamma(u.clone())),
+                        Context::FACTORIAL => Some(self * &digamma(u.clone() + one.clone())),
                         // `{$|u|' = sign(u) u'$}`, except at 0
                         Context::ABS => Some(apply(Context::SIGN)),
                         // `{$sign' = 0$}`, except at 0

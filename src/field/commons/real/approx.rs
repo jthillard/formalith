@@ -9,8 +9,8 @@ use malachite::{
     base::{
         num::{
             arithmetic::traits::{
-                Abs, DivRound, DivisibleBy, Floor, FloorLogBase2, FloorRoot, Pow, Reciprocal,
-                UnsignedAbs,
+                Abs, Ceiling, DivRound, DivisibleBy, Factorial, Floor, FloorLogBase2, FloorRoot,
+                Pow, Reciprocal, UnsignedAbs,
             },
             basic::traits::{One, Zero},
         },
@@ -23,7 +23,7 @@ use crate::{
     term::{Add, Fun, Mul, Normalize, SymbolTerm, Term, Value, flags::Flags},
 };
 
-use super::R;
+use super::{R, special::bernoulli};
 
 type Real = R<Rational>;
 
@@ -276,6 +276,122 @@ impl Fixed {
         Some(fixed.to_rational(fixed.div(&(sum << 1_u64), &sqrt_pi)))
     }
 
+    /// The shift `N` such that the asymptotic series of the Gamma family at `{$y = x + N >= Y$}` reach the precision,
+    /// their smallest term being about `{$e^(-2 pi Y)$}`, and the product `{$x (x + 1) ... (x + N - 1)$}`.
+    /// `None` at the poles, non-positive integers.
+    fn gamma_shift(self, x: &Rational, extra: u64) -> Option<(u64, Rational)> {
+        if *x <= 0 && *x.denominator_ref() == 1 {
+            return None;
+        }
+        let target = Rational::from(self.bits / 8 + 16 + extra);
+        let n = if *x >= target {
+            0
+        } else {
+            u64::try_from(&(&target - x).ceiling()).ok()?
+        };
+        let product = (0..n).fold(Rational::ONE, |product, k| {
+            product * (x + Rational::from(k))
+        });
+        Some((n, product))
+    }
+
+    /// Sum the asymptotic series `{$sum_(k >= 1) c_k y^(-2 k)$}` scaled by `{$y^"shift"$}`, `{$c_k$}` given by
+    /// `coefficient` (with the Bernoulli number `{$B_(2 k)$}`), stopping when the terms vanish or grow.
+    fn asymptotic_sum(
+        self,
+        y: &Rational,
+        start: &Rational,
+        coefficient: impl Fn(u64, &Rational) -> Rational,
+    ) -> Integer {
+        // `{$y^(-2)$}`, then the powers `{$"start" y^(-2 k)$}`
+        let inv_square = self.from_rational(&(y * y).reciprocal());
+        let mut power = self.from_rational(start);
+        let mut sum = Integer::ZERO;
+        let mut previous: Option<Natural> = None;
+        for k in 1..=self.bits {
+            power = self.mul(&power, &inv_square);
+            let Ok(index) = usize::try_from(2 * k) else {
+                break;
+            };
+            let c = coefficient(k, &bernoulli(index));
+            let term = (Rational::from(power.clone()) * c).floor();
+            let size = (&term).unsigned_abs();
+            if size == 0 || previous.as_ref().is_some_and(|previous| size > *previous) {
+                break;
+            }
+            sum += term;
+            previous = Some(size);
+        }
+        sum
+    }
+
+    /// The Hurwitz zeta function `{$zeta(s, x) = sum_(k >= 0) (x + k)^(-s)$}` for a rational `{$s > 1$}`, with
+    /// `{$zeta(s, y) ~ y^(1 - s)/(s - 1) + y^(-s)/2 + sum_k B_(2 k)/(2 k)! s (s + 1) ... (s + 2 k - 2) y^(1 - s - 2 k)$}`.
+    /// `x` is only negative for integer `s`.
+    fn hurwitz_zeta(self, s: &Rational, x: &Rational) -> Option<Rational> {
+        if *s <= 1 {
+            return None;
+        }
+        let extra = u64::try_from(&s.ceiling()).ok()?;
+        let (n, _) = self.gamma_shift(x, extra)?;
+        let mut sum = Rational::ZERO;
+        for k in 0..n {
+            sum += self.pow(&(x + Rational::from(k)), &-s)?;
+        }
+        let y = x + Rational::from(n);
+        let power = self.pow(&y, &-s)?;
+        let tail = &power * &y / (s - Rational::ONE) + &power / Rational::from(2);
+        let start = &power * &y;
+        let series = self.asymptotic_sum(&y, &start, |k, b| {
+            // `{$B_(2 k)/(2 k)! s (s + 1) ... (s + 2 k - 2)$}`
+            (0..2 * k - 1).fold(b.clone(), |c, j| c * (s + Rational::from(j)))
+                / Rational::from(Natural::factorial(2 * k))
+        });
+        Some(sum + tail + self.to_rational(series))
+    }
+
+    /// The digamma function `{$psi(x) = psi(x + N) - sum_(k < N) 1/(x + k)$}`, with
+    /// `{$psi(y) ~ ln y - 1/(2 y) - sum_k B_(2 k) / (2 k y^(2 k))$}`.
+    fn digamma(self, x: &Rational) -> Option<Rational> {
+        let (n, _) = self.gamma_shift(x, 0)?;
+        let shift = (0..n).fold(Rational::ZERO, |sum, k| {
+            sum + (x + Rational::from(k)).reciprocal()
+        });
+        let y = x + Rational::from(n);
+        let series = self.asymptotic_sum(&y, &Rational::ONE, |k, b| -b / Rational::from(2 * k));
+        Some(self.to_rational(self.ln(&y) + series) - (&y * Rational::from(2)).reciprocal() - shift)
+    }
+
+    /// The polygamma function `{$psi^((m))(x)$}`, `{$psi^((m))(x) = (-1)^(m + 1) m! zeta(m + 1, x)$}` for `{$m >= 1$}`.
+    fn polygamma(self, m: u64, x: &Rational) -> Option<Rational> {
+        if m == 0 {
+            return self.digamma(x);
+        }
+        let res =
+            self.hurwitz_zeta(&Rational::from(m + 1), x)? * Rational::from(Natural::factorial(m));
+        Some(if m % 2 == 0 { -res } else { res })
+    }
+
+    /// `{$Gamma(x) = Gamma(x + N) / (x (x + 1) ... (x + N - 1))$}`, exact for small positive integers, with
+    /// Stirling's series `{$ln Gamma(y) ~ (y - 1/2) ln y - y + ln(2 pi)/2 + sum_k B_(2 k) / (2 k (2 k - 1) y^(2 k - 1))$}`.
+    fn gamma(self, x: &Rational) -> Option<Rational> {
+        if let Ok(n) = u64::try_from(x)
+            && n >= 1
+            && n <= MAX_EXPONENT
+        {
+            return Some(Rational::from(Natural::factorial(n - 1)));
+        }
+        let (n, product) = self.gamma_shift(x, 0)?;
+        let y = x + Rational::from(n);
+        let half = Rational::from_signeds(1, 2);
+        let two_pi = Rational::from(self.pi() << 1_u64) >> self.bits;
+        let ln_y = self.ln(&y);
+        let main = self.from_rational(&(&y - &half)) * &ln_y >> self.bits;
+        let series = self.asymptotic_sum(&y, &y, |k, b| b / Rational::from(2 * k * (2 * k - 1)));
+        let ln_gamma = main - self.from_rational(&y) + (self.ln(&two_pi) >> 1_u64) + series;
+        Some(self.to_rational(self.exp(&ln_gamma)?) / product)
+    }
+
     /// `{$arcsin(x)$}` for `{$|x| <= 1$}`, `{$arcsin(x) = arctan(x / sqrt(1 - x^2))$}`.
     fn arcsin(self, x: &Rational) -> Option<Rational> {
         let cos = self.root(&(Rational::ONE - x * x), 2)?;
@@ -505,6 +621,8 @@ impl Fixed {
             Term::Symbol(symbol) => match symbol.symbol {
                 Context::PI => Some(self.to_rational(self.pi())),
                 Context::E => Some(self.to_rational(self.exp(&self.one())?)),
+                // `{$gamma = -psi(1)$}`
+                Context::EULER_GAMMA => Some(-self.digamma(&Rational::ONE)?),
                 _ => None,
             },
             Term::Add(add) => add
@@ -531,6 +649,53 @@ impl Fixed {
                             Context::COS => Some(self.to_rational(cos)),
                             _ => (cos != 0).then(|| self.to_rational(self.div(&sin, &cos))),
                         }
+                    }
+                    (Context::GAMMA, [x]) => self.gamma(&self.evaluate(x)?),
+                    (Context::FACTORIAL, [x]) => self.gamma(&(self.evaluate(x)? + Rational::ONE)),
+                    (Context::BINOMIAL, [n, k]) => {
+                        let (n, k) = (self.evaluate(n)?, self.evaluate(k)?);
+                        if let (Ok(n), Ok(k)) = (Integer::try_from(&n), Integer::try_from(&k)) {
+                            // Exact, also when `{$Gamma$}` has poles
+                            let args = vec![
+                                Term::Value(Value::new(Rational::from(n), fun.get_set())),
+                                Term::Value(Value::new(Rational::from(k), fun.get_set())),
+                            ];
+                            return match Term::Fun(Box::new(Fun::new(
+                                Context::BINOMIAL,
+                                args,
+                                fun.get_set(),
+                            )))
+                            .normalize()
+                            {
+                                Term::Value(value) => Some(value.value),
+                                _ => None,
+                            };
+                        }
+                        // `{$binom(n, k) = Gamma(n + 1) / (Gamma(k + 1) Gamma(n - k + 1))$}`
+                        let one = Rational::ONE;
+                        Some(
+                            self.gamma(&(&n + &one))?
+                                / (self.gamma(&(&k + &one))? * self.gamma(&(n - k + one))?),
+                        )
+                    }
+                    (Context::POLYGAMMA, [m, x]) => {
+                        let m = u64::try_from(&self.evaluate(m)?).ok()?;
+                        self.polygamma(m, &self.evaluate(x)?)
+                    }
+                    (Context::ZETA, [s]) => {
+                        let s = self.evaluate(s)?;
+                        if *s.denominator_ref() == 1 && s <= 0 {
+                            // Exact values from the Bernoulli numbers
+                            let set = fun.get_set();
+                            let arg = vec![Term::Value(Value::new(s, set))];
+                            return match Term::Fun(Box::new(Fun::new(Context::ZETA, arg, set)))
+                                .normalize()
+                            {
+                                Term::Value(value) => Some(value.value),
+                                _ => None,
+                            };
+                        }
+                        self.hurwitz_zeta(&s, &Rational::ONE)
                     }
                     (Context::INTEGRATE, [f, Term::Symbol(x), a, b]) => {
                         self.integrate(f, x.symbol, a, b)
@@ -689,7 +854,15 @@ pub(super) fn approximate_term(term: &Term<Real>, digits: u64) -> Term<Real> {
             |args| {
                 let args = args
                     .iter()
-                    .map(|arg| approximate_term(arg, digits))
+                    .enumerate()
+                    .map(|(i, arg)| {
+                        // The order of `{$psi^((m))$}` stays an integer
+                        if i == 0 && fun.get_ident() == Context::POLYGAMMA {
+                            arg.clone()
+                        } else {
+                            approximate_term(arg, digits)
+                        }
+                    })
                     .collect();
                 Term::Fun(Box::new(Fun::new(fun.get_ident(), args, set))).normalize()
             },

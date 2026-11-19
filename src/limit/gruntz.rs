@@ -8,7 +8,8 @@
 
 use crate::field::real::expr::try_map_operands;
 use crate::field::real::expr::{
-    DIGITS, Expr, depends, fun, infinity, is_infinite, one, size, unary, value, variable, zero,
+    DIGITS, Expr, depends, fun, half, infinity, is_infinite, one, polygamma, polygamma_args, size,
+    unary, value, variable, zero,
 };
 use std::cmp::Ordering;
 
@@ -97,7 +98,7 @@ impl Gruntz {
             return Ok(f.clone());
         }
         Ok(match f {
-            Term::Fun(_) => {
+            Term::Fun(_) if unary(f).is_some() => {
                 let (ident, arg) = unary(f).ok_or(LimitError::Unsupported)?;
                 let arg = self.remove_oscillations(arg)?;
                 if matches!(ident, Context::SIN | Context::COS)
@@ -168,6 +169,10 @@ impl Gruntz {
                     Some(n) if n >= 0 => Ok(()),
                     n => away_from_zero(self, &pow.base, n.is_none()),
                 }
+            }
+            Term::Fun(_) if polygamma_args(f).is_some() => {
+                let (_, arg) = polygamma_args(f).ok_or(LimitError::Unsupported)?;
+                self.check_bounded(arg)
             }
             Term::Fun(_) => {
                 let (ident, arg) = unary(f).ok_or(LimitError::Unsupported)?;
@@ -321,7 +326,7 @@ impl Gruntz {
     }
 
     fn leadterm_inner(&mut self, f: &Expr) -> LimitResult<(Expr, Expr)> {
-        let mut f = self.erf_at_infinity(f)?;
+        let mut f = self.special_at_infinity(f)?;
         if !self.depends(&f) {
             // The rebuilt expression may normalize to a constant
             return Ok((f, zero()));
@@ -343,16 +348,37 @@ impl Gruntz {
     /// Rewrite each `{$"erf" g$}` with `{$g -> plus.minus oo$}` in `f` as
     /// `{$plus.minus (1 - e^(-g^2) "erfcx"(plus.minus g))$}`, and each `{$"erfi" g$}` as
     /// `{$plus.minus e^(g^2) "erfix"(plus.minus g)$}`, so that the exponentials are seen by [`Self::mrv`] and
-    /// `{$"erfcx"$}` (see [`erfcx`]) and `{$"erfix"$}` (see [`erfix`]) have asymptotic series.
-    fn erf_at_infinity(&mut self, f: &Expr) -> LimitResult<Expr> {
+    /// `{$"erfcx"$}` (see [`erfcx`]) and `{$"erfix"$}` (see [`erfix`]) have asymptotic series. Each `{$Gamma(g)$}`
+    /// with `{$g -> oo$}` is rewritten by Stirling's formula
+    /// `{$Gamma(g) = exp((g - 1/2) ln g - g + ln(2 pi)/2 + "lgammastar"(g))$}` (see [`lgammastar`]).
+    fn special_at_infinity(&mut self, f: &Expr) -> LimitResult<Expr> {
         if !self.depends(f) {
             return Ok(f.clone());
         }
         Ok(match f {
-            Term::Pow(pow) => self.erf_at_infinity(&pow.base)?.pow(&pow.exponant),
+            Term::Pow(pow) => self.special_at_infinity(&pow.base)?.pow(&pow.exponant),
+            Term::Fun(_) if polygamma_args(f).is_some() => {
+                let (m, arg) = polygamma_args(f).ok_or(LimitError::Unsupported)?;
+                polygamma(m, self.special_at_infinity(arg)?)
+            }
             Term::Fun(_) => {
                 let (ident, arg) = unary(f).ok_or(LimitError::Unsupported)?;
-                let arg = self.erf_at_infinity(arg)?;
+                let arg = self.special_at_infinity(arg)?;
+                if ident == Context::GAMMA {
+                    let limit = self.limit_infinity(&arg)?;
+                    if limit == -infinity() {
+                        // Poles accumulate at `{$-oo$}`
+                        return Err(LimitError::Unsupported);
+                    }
+                    if limit == infinity() {
+                        let two_pi = value(Rational::from(2)) * variable(Context::PI);
+                        let exponant = (&arg - &half()) * fun(Context::LN, arg.clone())
+                            - arg.clone()
+                            + fun(Context::LN, two_pi) * half()
+                            + fun(lgammastar(), arg);
+                        return Ok(fun(Context::EXP, exponant));
+                    }
+                }
                 if matches!(ident, Context::ERF | Context::ERFI) {
                     let limit = self.limit_infinity(&arg)?;
                     if is_infinite(&limit) {
@@ -368,7 +394,7 @@ impl Gruntz {
                 }
                 fun(ident, arg)
             }
-            _ => try_map_operands(f, |operand| self.erf_at_infinity(operand))?,
+            _ => try_map_operands(f, |operand| self.special_at_infinity(operand))?,
         })
     }
 
@@ -401,7 +427,17 @@ impl Gruntz {
                     Context::LN | Context::ABS | Context::ATAN | Context::ERF | Context::ERFI,
                     g,
                 )) => self.mrv(g),
-                Some((ident, g)) if ident == erfcx() || ident == erfix() => self.mrv(g),
+                Some((ident, g))
+                    if ident == erfcx() || ident == erfix() || ident == lgammastar() =>
+                {
+                    self.mrv(g)
+                }
+                // `{$Gamma g$}` with `{$g -> oo$}` was rewritten, and `{$psi^((m))(g)$}` has a series
+                Some((Context::GAMMA, g)) => self.mrv(g),
+                None if polygamma_args(f).is_some() => {
+                    let (_, g) = polygamma_args(f).ok_or(LimitError::Unsupported)?;
+                    self.mrv(g)
+                }
                 Some((Context::SIN | Context::COS, g)) => {
                     // Oscillates without a limit, or the limit can't be computed by series
                     if is_infinite(&self.limit_infinity(g)?) {
@@ -517,10 +553,6 @@ impl Gruntz {
         }
         Ok(match f {
             Term::Pow(pow) => replace(&pow.base)?.pow(&pow.exponant),
-            Term::Fun(_) => {
-                let (ident, arg) = unary(f).ok_or(LimitError::Unsupported)?;
-                fun(ident, replace(arg)?)
-            }
             _ => try_map_operands(f, replace)?,
         })
     }
@@ -571,6 +603,12 @@ pub(super) fn erfcx() -> Symbol {
 /// `{$g -> +oo$}`.
 pub(super) fn erfix() -> Symbol {
     Symbol::new("@erfix")
+}
+
+/// The remainder of Stirling's formula `{$"lgammastar"(g) = ln Gamma(g) - (g - 1/2) ln g + g - ln(2 pi)/2$}`, only
+/// used internally for `{$g -> +oo$}`.
+pub(super) fn lgammastar() -> Symbol {
+    Symbol::new("@lgammastar")
 }
 
 /// `{$ln a$}`, simplifying `{$ln e^h = h$}`.

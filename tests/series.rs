@@ -163,8 +163,30 @@ fn series_of_logarithms_stay_logarithms() {
 }
 
 #[test]
-#[ignore = "future: series of factorial (gamma function)"]
 fn series_of_factorial() {
-    // 1 - gamma*x, gamma being the Euler-Mascheroni constant
-    assert!(!series("series(factorial(x), x, 0, 2)").contains("series"));
+    // `euler_gamma` is the Euler-Mascheroni constant
+    assert_eq!(series("series(factorial(x), x, 0, 2)"), "-euler_gamma*x+1");
+    assert_eq!(
+        series("series(gamma(x), x, 2, 2)"),
+        "(-euler_gamma+1)*(x-2)+1"
+    );
+    // Laurent series at a pole
+    assert_eq!(series("series(gamma(x), x, 0, 1)"), "-euler_gamma+x^-1");
+    assert_eq!(
+        series("series(gamma(x), x, 1, 3)"),
+        series("1 - euler_gamma*(x-1) + (pi^2/12 + euler_gamma^2/2)*(x-1)^2")
+    );
+}
+
+#[test]
+fn series_of_polygamma() {
+    assert_eq!(
+        series("series(polygamma(1, x), x, 0, 2)"),
+        series("1/x^2 + pi^2/6 - 2*zeta(3)*x")
+    );
+    // Asymptotic series at infinity
+    assert_eq!(
+        series("series(digamma(x), x, oo, 4)"),
+        series("ln(x) - 1/(2*x) - 1/(12*x^2)")
+    );
 }

@@ -42,6 +42,9 @@ impl<T: Debug> Print for SymbolTerm<T> {
             // A multi-letter identifier isn't a valid Typst variable
             return f.write_str("\"undefined\"");
         }
+        if options.typst && self.symbol == Context::EULER_GAMMA {
+            return f.write_str("gamma");
+        }
         write!(f, "{}", self.symbol.name())
     }
 }
@@ -50,6 +53,7 @@ impl<T: Debug> PrettyPrint for SymbolTerm<T> {
         PrettyPrinter::from(match self.symbol {
             Context::PI => "π".to_string(),
             Context::OO => "∞".to_string(),
+            Context::EULER_GAMMA => "γ".to_string(),
             _ => self.symbol.name().to_owned(),
         })
     }

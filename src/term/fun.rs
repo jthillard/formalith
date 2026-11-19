@@ -182,6 +182,17 @@ impl<From: Set, T: Set> Print for Fun<From, T> {
                 Self::group(*n, options, f)?;
                 return f.write_str("!");
             }
+            if let (Context::POLYGAMMA, [m, u]) = (self.ident, args.as_slice()) {
+                // `{$psi(u)$}`, or `{$psi^((m))(u)$}`
+                f.write_str("psi")?;
+                let order = m.with_options(PrintOptions::typst()).to_string();
+                if order != "0" {
+                    write!(f, "^(({order}))")?;
+                }
+                f.write_str("(")?;
+                u.print(options, f)?;
+                return f.write_str(")");
+            }
             if self.ident == Context::INTEGRATE
                 && let [fun, x, bounds @ ..] = args.as_slice()
                 && matches!(bounds.len(), 0 | 2)
@@ -216,6 +227,9 @@ impl<From: Set, T: Set> Print for Fun<From, T> {
                     f.write_str("root")?;
                 }
                 Context::BINOMIAL => f.write_str("binom")?,
+                Context::GAMMA => f.write_str("Gamma")?,
+                Context::BETA => f.write_str("Beta")?,
+                Context::ZETA => f.write_str("zeta")?,
                 Context::ASIN => f.write_str("arcsin")?,
                 Context::ACOS => f.write_str("arccos")?,
                 Context::ATAN => f.write_str("arctan")?,

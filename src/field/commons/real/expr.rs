@@ -80,6 +80,37 @@ pub(crate) fn unary(term: &Expr) -> Option<(Symbol, &Expr)> {
     }
 }
 
+/// `{$psi^((m))(u)$}`, normalized.
+pub(crate) fn polygamma(m: u64, u: Expr) -> Expr {
+    Term::Fun(Box::new(Fun::new(
+        Context::POLYGAMMA,
+        vec![value(Rational::from(m)), u],
+        R,
+    )))
+    .normalize()
+}
+
+/// The order `m` and the argument `u` of `{$psi^((m))(u)$}`, for a natural `m`.
+pub(crate) fn polygamma_args(term: &Expr) -> Option<(u64, &Expr)> {
+    match term {
+        Term::Fun(fun) if fun.get_ident() == Context::POLYGAMMA => {
+            match fun.get_args::<Real>().map(Vec::as_slice) {
+                Some([Term::Value(m), u]) => Some((u64::try_from(&m.value).ok()?, u)),
+                _ => None,
+            }
+        }
+        _ => None,
+    }
+}
+
+/// `k` if `term` is the value `{$-k$}`, a non-positive integer, where `{$Gamma$}` and `{$psi^((m))$}` have poles.
+pub(crate) fn gamma_pole(term: &Expr) -> Option<u64> {
+    match term {
+        Term::Value(v) if v.value <= 0 => u64::try_from(&-&v.value).ok(),
+        _ => None,
+    }
+}
+
 /// Whether `term` contains the symbol `x`.
 pub(crate) fn depends(term: &Expr, x: Symbol) -> bool {
     term.symbols().contains(&x)
