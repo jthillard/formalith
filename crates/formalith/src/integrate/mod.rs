@@ -47,7 +47,12 @@ mod substitution;
 mod table;
 mod trig;
 
-use std::{cmp::Ordering, collections::HashMap, error::Error, fmt};
+use std::{
+    cmp::Ordering,
+    collections::{HashMap, HashSet},
+    error::Error,
+    fmt,
+};
 
 use malachite::Rational;
 
@@ -154,7 +159,12 @@ impl Term<Real> {
 #[derive(Default)]
 struct Integrator {
     depth: usize,
-    cache: HashMap<(Symbol, Expr), Option<Expr>>,
+    /// Results by variable, integrand, and whether the variable is in `affine`.
+    cache: HashMap<(Symbol, Expr, bool), Option<Expr>>,
+    /// Substitution variables `{$t = a x + b$}` of the current search, which aren't substituted affinely again
+    /// since two such substitutions are one, `{$sqrt(2x + 1) sqrt(3x + 1)$}` otherwise trying them until
+    /// [`MAX_DEPTH`].
+    affine: HashSet<Symbol>,
     risch_cache: HashMap<(Symbol, Expr), risch::RischResult<Expr>>,
 }
 
@@ -164,7 +174,7 @@ impl Integrator {
         if !depends(f, x) {
             return Some(f * &variable(x));
         }
-        let key = (x, f.clone());
+        let key = (x, f.clone(), self.affine.contains(&x));
         if let Some(res) = self.cache.get(&key) {
             return res.clone();
         }
@@ -192,6 +202,9 @@ impl Integrator {
         let (constant, g) = split_constant(f, x);
         if !constant.is_one() {
             return Some(constant * self.integrate(&g, x)?);
+        }
+        if let Some(g) = merge_square_roots(f, x) {
+            return self.integrate(&g, x);
         }
         let strategies: [fn(&mut Self, &Expr, Symbol) -> Option<Expr>; 6] = [
             table::integrate,
@@ -257,6 +270,39 @@ fn split_constant(f: &Expr, x: Symbol) -> (Expr, Expr) {
         }
         _ => (one(), f.clone()),
     }
+}
+
+/// `f` with its square roots depending on `x` merged, `{$sqrt(u) sqrt(v) = sqrt(u v)$}`, which holds where `f` is
+/// real (`{$u, v >= 0$}`), half-integer powers being split as `{$u^(3/2) = u sqrt(u)$}`. A root of a quadratic is
+/// easier to integrate than a product of roots of linear terms.
+fn merge_square_roots(f: &Expr, x: Symbol) -> Option<Expr> {
+    let Term::Mul(mul) = f else {
+        return None;
+    };
+    let half = Rational::from_signeds(1, 2);
+    let mut rest = value(mul.coefficient.clone());
+    let mut radicands = vec![];
+    for factor in mul {
+        match factor {
+            Term::Pow(pow)
+                if depends(&pow.base, x)
+                    && let Term::Value(e) = &**pow.exponant
+                    && *e.value.denominator_ref() == 2u32 =>
+            {
+                rest = rest * pow.base.pow(&value(&e.value - &half));
+                radicands.push((*pow.base).clone());
+            }
+            _ => rest = rest * factor,
+        }
+    }
+    if radicands.len() < 2 {
+        return None;
+    }
+    let radicand = radicands
+        .into_iter()
+        .fold(one(), |res, base| res * base)
+        .expand();
+    Some(rest * radicand.pow(&value(half)))
 }
 
 /// `{$a = u'$}` if `u` is a linear expression `{$a x + b$}` of `x`.

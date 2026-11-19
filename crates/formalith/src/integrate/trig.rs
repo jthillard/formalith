@@ -329,8 +329,18 @@ pub(super) fn substitute(integrator: &mut Integrator, f: &Expr, x: Symbol) -> Op
         return None;
     }
     let res = integrator.integrate(&g, t_symbol)?;
-    // `{$sin(n t)$}` and `{$cos(n t)$}` in `x` for small `n`, by the addition formulas
-    let multiples: Vec<_> = (1..=MAX_MULTIPLE)
+    // `{$sin(n t)$}` and `{$cos(n t)$}` in `x` for the small `n` of the result, by the addition formulas (only
+    // those needed, since expanding products of radicals is slow)
+    let largest = std::cell::Cell::new(0);
+    map_tree(&res, &|term| {
+        if let Some((Context::SIN | Context::COS | Context::TAN, v)) = unary(term)
+            && let Some(n) = (1..=MAX_MULTIPLE).find(|n| *v == value(Rational::from(*n)) * &t)
+        {
+            largest.set(largest.get().max(n));
+        }
+        None
+    });
+    let multiples: Vec<_> = (1..=largest.get())
         .scan((sin_x.clone(), cos_x.clone()), |(sin, cos), n| {
             let res = (n, sin.clone(), cos.clone());
             (*sin, *cos) = (

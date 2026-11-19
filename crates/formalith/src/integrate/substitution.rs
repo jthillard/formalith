@@ -76,18 +76,25 @@ fn substitute(integrator: &mut Integrator, f: &Expr, x: Symbol, u: &Expr) -> Opt
     if depends(&h, x) {
         h = replace(&quotient.simplify(), u, &t, x);
     }
-    // `{$x = (t - b) / a$}` for a linear `{$u = a x + b$}`
+    // `{$x = (t - b) / a$}` for a linear `{$u = a x + b$}`, unless `x` already comes from one
+    let mut affine = false;
     if depends(&h, x)
+        && !integrator.affine.contains(&x)
         && let Some(a) = linear(u, x)
     {
         let b = (u - &(&a * &variable(x))).simplify();
         h = h.substitute(x, &((&t - &b) / a))?;
+        affine = true;
     }
     if depends(&h, x) {
         return None;
     }
-    let res = integrator.integrate(&h, t_symbol)?;
-    Some(exp_of_ln(&replace_symbol(&res, t_symbol, u)))
+    if affine {
+        integrator.affine.insert(t_symbol);
+    }
+    let res = integrator.integrate(&h, t_symbol);
+    integrator.affine.remove(&t_symbol);
+    Some(exp_of_ln(&replace_symbol(&res?, t_symbol, u)))
 }
 
 /// Replace `u` by `t` in `term`, also writing related subexpressions as powers of `t`: `{$b^q = t^(q/p)$}` for

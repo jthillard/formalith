@@ -202,7 +202,6 @@ fn bug_integrate_sqrt_over_linear_panics() {
 }
 
 #[test]
-#[ignore = "bug: integrate(sqrt(2*x + 1)*sqrt(3*x + 1), x) hangs"]
 fn bug_integrate_product_of_square_roots_hangs() {
     regression("sqrt(2*x + 1)*sqrt(3*x + 1)", antiderivative);
 }
