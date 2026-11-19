@@ -184,7 +184,10 @@ impl Assumption {
             SignSet::NONZERO => Some("!= 0"),
             _ => None,
         };
-        let mut res: Vec<String> = relation.map(|r| format!("{name} {r}")).into_iter().collect();
+        let mut res: Vec<String> = relation
+            .map(|r| format!("{name} {r}"))
+            .into_iter()
+            .collect();
         if self.integer {
             res.push(if typst {
                 format!("{name} in ZZ")
@@ -244,7 +247,10 @@ impl Assumptions {
     /// Returns an error message if it contradicts the existing assumptions.
     pub fn assume(&mut self, symbol: Symbol, assumption: Assumption) -> Result<(), String> {
         let res = self.get(symbol).and(assumption).ok_or_else(|| {
-            format!("this contradicts {}", self.get(symbol).describe(symbol.name(), false).join(", "))
+            format!(
+                "this contradicts {}",
+                self.get(symbol).describe(symbol.name(), false).join(", ")
+            )
         })?;
         self.0.insert(symbol, res);
         Ok(())
@@ -268,7 +274,9 @@ impl Assumptions {
 
     /// Iterate over the symbols with assumptions.
     pub fn iter(&self) -> impl Iterator<Item = (Symbol, Assumption)> + '_ {
-        self.0.iter().map(|(symbol, assumption)| (*symbol, *assumption))
+        self.0
+            .iter()
+            .map(|(symbol, assumption)| (*symbol, *assumption))
     }
 
     /// The assumptions currently in use on this thread, see [`Assumptions::enter`].

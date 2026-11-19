@@ -260,7 +260,10 @@ fn trigonometric_symmetries() {
     let Term::Fun(fun) = parse!("sin(x+pi/3)", R) else {
         panic!("sin(x+pi/3) is not a function");
     };
-    assert!(matches!(fun.get_arg::<R<malachite::Rational>>(), Some(Term::Add(_))));
+    assert!(matches!(
+        fun.get_arg::<R<malachite::Rational>>(),
+        Some(Term::Add(_))
+    ));
 }
 
 #[test]

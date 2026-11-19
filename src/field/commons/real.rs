@@ -12,8 +12,8 @@ use malachite::{
     Integer, Natural, Rational,
     base::num::{
         arithmetic::traits::{
-            Abs, BinomialCoefficient, Ceiling, CheckedRoot, CheckedSqrt, Factorial, Floor, Gcd, Lcm, Parity,
-            Pow, Reciprocal, Sign,
+            Abs, BinomialCoefficient, Ceiling, CheckedRoot, CheckedSqrt, Factorial, Floor, Gcd,
+            Lcm, Parity, Pow, Reciprocal, Sign,
         },
         basic::traits::{NegativeOne, One, Zero},
     },
@@ -32,11 +32,11 @@ use crate::{
         Derivable, Field, Group, PartiallyOrderedSet, Ring, Set, SetParseExpression, matrix::M,
     },
     integrate::IntegrateError,
-    sum::SumError,
     limit::{Direction, LimitError},
     parser::Parser,
     polynom::ToTerm,
     printer::PrettyPrinter,
+    sum::SumError,
     term::{self, Fun, Normalize, SymbolTerm, Term, TermSet, Value, flags::Flags},
 };
 
@@ -203,7 +203,10 @@ impl Ring for R<Rational> {
                 (Term::Mul(mul), Term::Value(_))
                     if mul.coefficient > 0
                         && mul.coefficient != 1
-                        && matches!(self.value(mul.coefficient.clone()).pow(exponant), Term::Value(_)) =>
+                        && matches!(
+                            self.value(mul.coefficient.clone()).pow(exponant),
+                            Term::Value(_)
+                        ) =>
                 {
                     // `{$(c u)^e = c^e u^e$}` for `{$c > 0$}` when `{$c^e$}` is rational, `{$sqrt(4 x^2) = 2 |x|$}`
                     let rest = mul.iter().fold(self.value(Rational::ONE), |res, f| res * f);
@@ -329,17 +332,16 @@ impl Ring for R<Rational> {
                             let (rn, sd) = if rd == 1 {
                                 (rn, sd)
                             } else {
-                                (
-                                    rn * Pow::pow(rd.clone(), root_exponant - 1),
-                                    sd * rd,
-                                )
+                                (rn * Pow::pow(rd.clone(), root_exponant - 1), sd * rd)
                             };
-                            let root =
-                                Term::Value(Value::new(Rational::from_naturals(rn, Natural::ONE), *self))
-                                    .pow(&Term::Value(Value::new(
-                                        Rational::from_naturals(Natural::ONE, den),
-                                        *self,
-                                    )));
+                            let root = Term::Value(Value::new(
+                                Rational::from_naturals(rn, Natural::ONE),
+                                *self,
+                            ))
+                            .pow(&Term::Value(Value::new(
+                                Rational::from_naturals(Natural::ONE, den),
+                                *self,
+                            )));
                             return Term::Value(Value::new(Rational::from_naturals(sn, sd), *self))
                                 * root;
                         }
@@ -462,7 +464,9 @@ impl Ring for R<Rational> {
                     }
                 }
                 Context::SUM | Context::PRODUCT => {
-                    if let Some([f, Term::Symbol(k), a, b]) = fun.get_args::<Self>().map(Vec::as_slice) {
+                    if let Some([f, Term::Symbol(k), a, b]) =
+                        fun.get_args::<Self>().map(Vec::as_slice)
+                    {
                         let res = if fun.get_ident() == Context::SUM {
                             f.sum(k.symbol, a, b)
                         } else {
@@ -605,7 +609,8 @@ impl R<Rational> {
     fn eval_infinite(self, a: &Term<Self>) -> Option<Term<Self>> {
         let oo = || Term::Symbol(SymbolTerm::new(Context::OO, self));
         let undefined = || Term::Symbol(SymbolTerm::new(Context::UNDEFINED, self));
-        let is_undefined = |t: &Term<Self>| matches!(t, Term::Symbol(s) if s.symbol == Context::UNDEFINED);
+        let is_undefined =
+            |t: &Term<Self>| matches!(t, Term::Symbol(s) if s.symbol == Context::UNDEFINED);
         match a {
             Term::Pow(pow) if matches!(&*pow.base, Term::Symbol(s) if s.symbol == Context::OO) => {
                 match &**pow.exponant {
@@ -648,7 +653,8 @@ impl R<Rational> {
                 let (infinite, rest): (Vec<_>, Vec<_>) =
                     mul.iter().partition(|factor| factor.is_infinity_factor());
                 // `{$-oo$}` is already normalized
-                let normalized = infinite.len() == 1 && rest.is_empty() && (&mul.coefficient).abs() == 1;
+                let normalized =
+                    infinite.len() == 1 && rest.is_empty() && (&mul.coefficient).abs() == 1;
                 if infinite.is_empty()
                     || normalized
                     || !infinite.iter().all(|factor| **factor == oo())
@@ -925,7 +931,11 @@ impl R<Rational> {
             ) => self.eval_gamma_family(ident, args),
             (Context::FACTORIAL, [Term::Value(n)]) => self.eval_factorial(&n.value),
             (Context::BINOMIAL, [n, Term::Value(k)]) if k.value == 0 || k.value == 1 => {
-                Some(if k.value == 0 { value(Rational::ONE) } else { n.clone() })
+                Some(if k.value == 0 {
+                    value(Rational::ONE)
+                } else {
+                    n.clone()
+                })
             }
             (Context::BINOMIAL, [Term::Value(n), Term::Value(k)]) => {
                 let k = Integer::try_from(&k.value).ok()?;
@@ -1118,7 +1128,10 @@ impl R<Rational> {
                 (_, 0 | 2) => self.fun(Context::TAN, rest),
                 // `{$tan(u + pi/2)$}`, written once with this angle
                 _ if q == Rational::from_signeds(1, 2) => return None,
-                _ => self.fun(Context::TAN, rest + value(Rational::from_signeds(1, 2)) * pi),
+                _ => self.fun(
+                    Context::TAN,
+                    rest + value(Rational::from_signeds(1, 2)) * pi,
+                ),
             });
         }
         // Nearest integer, `q` being at distance at least `{$1/4$}` from a half-integer
@@ -1127,7 +1140,11 @@ impl R<Rational> {
             return None;
         }
         let res = self.fun(ident, rest + value(q - Rational::from(n.clone())) * pi);
-        Some(if ident != Context::TAN && n.odd() { -res } else { res })
+        Some(if ident != Context::TAN && n.odd() {
+            -res
+        } else {
+            res
+        })
     }
 
     /// The integer `m` (see [`sign::is_integer`]) with the integer coefficients of its terms reduced modulo 2, the
@@ -1219,7 +1236,9 @@ impl R<Rational> {
             | Context::GAMMA
             | Context::FACTORIAL => Some(oo),
             Context::TANH | Context::ERF | Context::ZETA => Some(value(Rational::ONE)),
-            Context::ATAN => Some(Term::Symbol(SymbolTerm::new(Context::PI, self)) / value(Rational::from(2))),
+            Context::ATAN => {
+                Some(Term::Symbol(SymbolTerm::new(Context::PI, self)) / value(Rational::from(2)))
+            }
             _ => None,
         }
     }

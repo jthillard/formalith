@@ -238,7 +238,11 @@ fn remove_steps(f: &Expr, x: Symbol, point: &Expr, direction: Direction) -> Resu
     }
     let n = match &limit {
         Term::Value(n) => n.value.clone(),
-        _ => Rational::from(approximate(&limit, DIGITS).ok_or(LimitError::Unknown)?.floor()),
+        _ => Rational::from(
+            approximate(&limit, DIGITS)
+                .ok_or(LimitError::Unknown)?
+                .floor(),
+        ),
     };
     if n.denominator_ref() != &1 || limit != value(n.clone()) {
         // `{$n < L < n + 1$}`
@@ -248,7 +252,11 @@ fn remove_steps(f: &Expr, x: Symbol, point: &Expr, direction: Direction) -> Resu
         {
             return Err(LimitError::Unknown.into());
         }
-        return Ok(value(if ident == Context::FLOOR { n } else { n + Rational::ONE }));
+        return Ok(value(if ident == Context::FLOOR {
+            n
+        } else {
+            n + Rational::ONE
+        }));
     }
     let direction = match direction {
         Direction::Both if infinity_sign(point).is_none() => return Err(Step::BothSides),

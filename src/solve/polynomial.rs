@@ -253,7 +253,8 @@ fn cubic_roots(coefficients: &[Rational]) -> Option<Vec<Term<R<Rational>>>> {
             )))
             .normalize()
                 / value(Rational::from(3));
-            let amplitude = value(Rational::from(2)) * value(-&p / Rational::from(3)).pow(&value(ratio(1, 2)));
+            let amplitude =
+                value(Rational::from(2)) * value(-&p / Rational::from(3)).pow(&value(ratio(1, 2)));
             (0..3)
                 .map(|k| {
                     let cos = Term::Fun(Box::new(Fun::new(

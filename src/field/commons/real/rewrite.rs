@@ -82,10 +82,8 @@ fn sin_cos(u: &Expr, multiple_angles: bool) -> (Expr, Expr) {
         let u = trigonometric_sums(u, multiple_angles);
         return (fun(Context::SIN, u.clone()), fun(Context::COS, u));
     };
-    let ((sin_a, cos_a), (sin_b, cos_b)) = (
-        sin_cos(&a, multiple_angles),
-        sin_cos(&b, multiple_angles),
-    );
+    let ((sin_a, cos_a), (sin_b, cos_b)) =
+        (sin_cos(&a, multiple_angles), sin_cos(&b, multiple_angles));
     (
         &sin_a * &cos_b + &cos_a * &sin_b,
         cos_a * cos_b - sin_a * sin_b,
@@ -115,7 +113,10 @@ fn logarithm_quotients(term: &Expr) -> Expr {
                 .iter()
                 .enumerate()
                 .filter(|(i, _)| *i != numerator && *i != denominator)
-                .fold(value(mul.coefficient.clone() * Rational::from(k)), |res, (_, f)| res * f),
+                .fold(
+                    value(mul.coefficient.clone() * Rational::from(k)),
+                    |res, (_, f)| res * f,
+                ),
         )
     })
 }

@@ -219,7 +219,8 @@ impl<T: Ring> Ring for M<T> {
     fn one_like(&self, a: &Self::Element) -> Self::Element {
         match a {
             VectorSpaceElement::Vector(matrix) if matrix.width() == matrix.height() => {
-                let mut identity = Matrix::zero((matrix.height(), matrix.width()), self.scalar_sub_set);
+                let mut identity =
+                    Matrix::zero((matrix.height(), matrix.width()), self.scalar_sub_set);
                 for i in 0..matrix.height() {
                     identity[(i, i)] = self.scalar_sub_set.one();
                 }

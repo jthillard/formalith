@@ -10,9 +10,9 @@ use malachite::Rational;
 
 use super::{
     Kind, Risch, RischError, RischResult,
+    field::sample_points,
     field::{EPoly, Elem},
     rational_roots,
-    field::sample_points,
     tower::integer,
 };
 use crate::polynom::dense::{Coefficient, Poly};

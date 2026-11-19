@@ -55,8 +55,8 @@ use crate::{
     field::real::{
         R,
         expr::{
-            Expr, Real, constant_sign, depends, fun, has_special_constant, map_tree, one,
-            unary, value, variable, zero,
+            Expr, Real, constant_sign, depends, fun, has_special_constant, map_tree, one, unary,
+            value, variable, zero,
         },
         sign::{SignMode, sign_set},
     },

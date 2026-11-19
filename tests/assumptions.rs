@@ -14,7 +14,11 @@ fn eval(statements: &[&str]) -> String {
     }
     if last.starts_with("assume") || last.starts_with("solve") {
         let res = SetChoice::R.eval(last, false, &mut env).unwrap();
-        return res.lines().map(str::trim_end).collect::<Vec<_>>().join("\n");
+        return res
+            .lines()
+            .map(str::trim_end)
+            .collect::<Vec<_>>()
+            .join("\n");
     }
     line(&parse!(last, R, &env))
 }
@@ -26,7 +30,10 @@ fn expr(expected: &str) -> String {
 
 #[test]
 fn assume_statements() {
-    assert_eq!(eval(&["assume(a > 0, b != 0, n integer)"]), "a > 0, b != 0, n integer");
+    assert_eq!(
+        eval(&["assume(a > 0, b != 0, n integer)"]),
+        "a > 0, b != 0, n integer"
+    );
     assert_eq!(eval(&["assume(0 < a)"]), "a > 0");
     assert_eq!(eval(&["assume(a >= 0, a <= 0)"]), "a = 0");
     assert_eq!(eval(&["assume(a >= 0)", "assume(a != 0)"]), "a > 0");
@@ -57,8 +64,14 @@ fn signs_of_symbols() {
     assert_eq!(eval(&["sqrt(x^2)"]), "abs(x)");
     assert_eq!(eval(&["assume(x >= 0)", "abs(-2*x)"]), expr("2*x"));
     assert_eq!(eval(&["assume(a > 0)", "sign(-a)"]), "-1");
-    assert_eq!(eval(&["assume(a > 0, b > 0)", "sqrt(a*b)"]), expr("sqrt(a)*sqrt(b)"));
-    assert_eq!(eval(&["assume(a > 0)", "abs(a^2 + exp(x))"]), expr("a^2+exp(x)"));
+    assert_eq!(
+        eval(&["assume(a > 0, b > 0)", "sqrt(a*b)"]),
+        expr("sqrt(a)*sqrt(b)")
+    );
+    assert_eq!(
+        eval(&["assume(a > 0)", "abs(a^2 + exp(x))"]),
+        expr("a^2+exp(x)")
+    );
 }
 
 #[test]
@@ -66,7 +79,10 @@ fn integers() {
     assert_eq!(eval(&["assume(n integer)", "sin(n*pi)"]), "0");
     assert_eq!(eval(&["assume(n integer)", "cos(n*pi)"]), expr("(-1)^n"));
     assert_eq!(eval(&["assume(n integer)", "cos(2*n*pi)"]), "1");
-    assert_eq!(eval(&["assume(n integer)", "sin(x + 3*n*pi)"]), expr("(-1)^n*sin(x)"));
+    assert_eq!(
+        eval(&["assume(n integer)", "sin(x + 3*n*pi)"]),
+        expr("(-1)^n*sin(x)")
+    );
     assert_eq!(eval(&["assume(n integer)", "tan(x + n*pi)"]), "tan(x)");
     assert_eq!(eval(&["assume(n integer)", "(-1)^(2*n + 1)"]), "-1");
     assert_eq!(eval(&["assume(n integer)", "floor(n + 1)"]), expr("n+1"));
@@ -82,7 +98,10 @@ fn integrals() {
         eval(&["assume(a > 0)", "integrate(2*x/(x^2 + a), x)"]),
         expr("ln(x^2+a)")
     );
-    assert_eq!(eval(&["assume(a > 0)", "integrate(exp(-a*x), x, 0, oo)"]), "a^-1");
+    assert_eq!(
+        eval(&["assume(a > 0)", "integrate(exp(-a*x), x, 0, oo)"]),
+        "a^-1"
+    );
 }
 
 #[test]
@@ -99,7 +118,10 @@ fn solve_pruning() {
     assert_eq!(eval(&["assume(x > 0)", "solve(x^2 = 4, x)"]), "x = 2");
     assert_eq!(eval(&["assume(x < 0)", "solve(x^2 = 4, x)"]), "x = -2");
     assert_eq!(eval(&["assume(a < 0)", "solve(x^2 = a, x)"]), "no solution");
-    assert_eq!(eval(&["assume(n integer)", "solve(2*n = 1, n)"]), "no solution");
+    assert_eq!(
+        eval(&["assume(n integer)", "solve(2*n = 1, n)"]),
+        "no solution"
+    );
     assert_eq!(eval(&["solve(x^2 = 4, x)"]), "x = -2\nx = 2");
 }
 

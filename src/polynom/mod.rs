@@ -1,8 +1,8 @@
 //! Polynom implementation
 
 pub(crate) mod dense;
-pub(crate) mod fraction;
 pub mod factor;
+pub(crate) mod fraction;
 
 use std::{
     cmp::Ordering,

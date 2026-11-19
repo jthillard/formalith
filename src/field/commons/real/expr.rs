@@ -199,7 +199,8 @@ pub(crate) fn subs(term: &Expr, x: Symbol, value: &Expr) -> Expr {
         _ if !depends(term, x) => term.clone(),
         Term::Symbol(_) => value.clone(),
         _ => {
-            let Ok(res) = try_map_operands::<Infallible>(term, |operand| Ok(subs(operand, x, value)));
+            let Ok(res) =
+                try_map_operands::<Infallible>(term, |operand| Ok(subs(operand, x, value)));
             res
         }
     }

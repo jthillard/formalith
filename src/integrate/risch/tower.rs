@@ -10,10 +10,7 @@
 use crate::field::real::expr::{fun, value, variable, zero};
 use malachite::{
     Rational,
-    base::num::{
-        arithmetic::traits::Lcm,
-        basic::traits::One,
-    },
+    base::num::{arithmetic::traits::Lcm, basic::traits::One},
 };
 
 use crate::{

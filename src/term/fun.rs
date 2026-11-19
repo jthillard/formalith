@@ -197,7 +197,15 @@ impl<From: Set, T: Set> Print for Fun<From, T> {
                 && let [fun, k, a, b] = args.as_slice()
             {
                 // `{$sum_(k = a)^b f$}`
-                write!(f, "{}_(", if self.ident == Context::SUM { "sum" } else { "product" })?;
+                write!(
+                    f,
+                    "{}_(",
+                    if self.ident == Context::SUM {
+                        "sum"
+                    } else {
+                        "product"
+                    }
+                )?;
                 k.print(options, f)?;
                 f.write_str(" = ")?;
                 a.print(options, f)?;
@@ -314,7 +322,11 @@ impl<From: Set, T: Set> PrettyPrint for Fun<From, T> {
             }
             let mut lower = k.pretty_print(options);
             lower.concat("=", false, &a.pretty_print(options));
-            let sign = if self.ident == Context::SUM { '∑' } else { '∏' };
+            let sign = if self.ident == Context::SUM {
+                '∑'
+            } else {
+                '∏'
+            };
             res.big_operator(sign, &lower, &b.pretty_print(options));
             return res;
         }

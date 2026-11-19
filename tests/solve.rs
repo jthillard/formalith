@@ -410,11 +410,7 @@ fn cubics_and_quintics() {
 
 #[test]
 fn non_polynomial_equations_are_rejected() {
-    for system in [
-        "sin(x) = 0",
-        "exp(x) = 2",
-        "sqrt(x) = 2",
-    ] {
+    for system in ["sin(x) = 0", "exp(x) = 2", "sqrt(x) = 2"] {
         assert!(
             solve(system).unwrap_err().contains("not polynomial"),
             "{system}"

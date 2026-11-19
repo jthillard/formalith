@@ -289,7 +289,10 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse comma-separated equations `lhs = rhs` and solve them, a call to `solve`, or a single expression.
-    fn parse_equations<E: SetParseExpression>(&mut self, set: E) -> Result<Statement<E>, ParserError> {
+    fn parse_equations<E: SetParseExpression>(
+        &mut self,
+        set: E,
+    ) -> Result<Statement<E>, ParserError> {
         if self.token.kind == TokenKind::Eof {
             return Err(ParserError::new("Input was empty"));
         }
@@ -371,7 +374,10 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse an argument of `assume`, returning the symbol and what is assumed.
-    fn parse_assumption<E: SetParseExpression>(&mut self, set: E) -> Result<(Symbol, Assumption), ParserError> {
+    fn parse_assumption<E: SetParseExpression>(
+        &mut self,
+        set: E,
+    ) -> Result<(Symbol, Assumption), ParserError> {
         let symbol = |term: &Term<E>| {
             let Term::Symbol(symbol) = term else {
                 return Err(ParserError::new(format!(

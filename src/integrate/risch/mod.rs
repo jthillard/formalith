@@ -321,4 +321,3 @@ fn to_rational_poly(p: &EPoly) -> Poly {
 fn from_rational_poly(p: &Poly) -> EPoly {
     p.map(|c| Elem::rational(c.clone()))
 }
-

@@ -87,7 +87,10 @@ fn series_at_infinity() {
 fn unsupported_series_stay_unevaluated() {
     // Both sides differ, or the left side isn't real
     assert_eq!(series("series(abs(x), x, 0)"), "series(abs(x), x, 0)");
-    assert_eq!(series("series(sqrt(x), x, 0, 2)"), "series(x^(1/2), x, 0, 2)");
+    assert_eq!(
+        series("series(sqrt(x), x, 0, 2)"),
+        "series(x^(1/2), x, 0, 2)"
+    );
     // Not a power series
     assert_eq!(series("series(exp(x), x, oo)"), "series(exp(x), x, oo)");
     assert_eq!(series("series(exp(1/x), x, 0)"), "series(exp(x^-1), x, 0)");

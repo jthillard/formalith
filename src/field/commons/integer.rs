@@ -153,16 +153,26 @@ impl Ring for Z<Integer> {
                     return Term::Value(Value::new((&value.value).abs(), *self));
                 }
                 match (fun.get_ident(), fun.get_args::<Self>().map(Vec::as_slice)) {
-                    (ident @ (Context::GCD | Context::LCM), Some([Term::Value(a), Term::Value(b)])) => {
+                    (
+                        ident @ (Context::GCD | Context::LCM),
+                        Some([Term::Value(a), Term::Value(b)]),
+                    ) => {
                         let (a, b) = ((&a.value).unsigned_abs(), (&b.value).unsigned_abs());
-                        let res = if ident == Context::GCD { a.gcd(b) } else { a.lcm(b) };
+                        let res = if ident == Context::GCD {
+                            a.gcd(b)
+                        } else {
+                            a.lcm(b)
+                        };
                         return Term::Value(Value::new(Integer::from(res), *self));
                     }
                     (Context::FACTORIAL, Some([Term::Value(n)])) => {
                         if let Ok(n) = u64::try_from(&n.value)
                             && n <= MAX_FACTORIAL
                         {
-                            return Term::Value(Value::new(Integer::from(Natural::factorial(n)), *self));
+                            return Term::Value(Value::new(
+                                Integer::from(Natural::factorial(n)),
+                                *self,
+                            ));
                         }
                     }
                     _ => {}

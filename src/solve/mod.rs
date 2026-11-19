@@ -338,7 +338,9 @@ impl<T: Ring> Solve for T {
             denominators.iter().any(|den| {
                 assignments
                     .iter()
-                    .try_fold(den.clone(), |den, (symbol, value)| den.substitute(*symbol, value))
+                    .try_fold(den.clone(), |den, (symbol, value)| {
+                        den.substitute(*symbol, value)
+                    })
                     .is_some_and(|den| den.expand().is_zero())
             })
         };

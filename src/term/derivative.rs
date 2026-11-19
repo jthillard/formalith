@@ -45,8 +45,12 @@ impl<T: Derivable<ExponantSet = T, ProductCoefficientSet = T>> Term<T> {
                 let exponant_derivative = exponant.derivative(x);
                 if !exponant_derivative.is_zero() {
                     // `{$(b^e)' = b^e (e' ln b + e b' / b)$}`
-                    let ln = Self::Fun(Box::new(Fun::new(Context::LN, vec![(*pow.base).clone()], set)))
-                        .normalize();
+                    let ln = Self::Fun(Box::new(Fun::new(
+                        Context::LN,
+                        vec![(*pow.base).clone()],
+                        set,
+                    )))
+                    .normalize();
                     return self
                         * &(exponant_derivative * ln
                             + exponant * &pow.base.derivative(x) / &*pow.base);
@@ -68,7 +72,8 @@ impl<T: Derivable<ExponantSet = T, ProductCoefficientSet = T>> Term<T> {
                     && let Some([f, Self::Symbol(t), a, b]) = fun.get_args::<T>().map(Vec::as_slice)
                     && t.symbol != x
                     && !f.symbols().contains(&x)
-                    && let (Some(at_a), Some(at_b)) = (f.substitute(t.symbol, a), f.substitute(t.symbol, b))
+                    && let (Some(at_a), Some(at_b)) =
+                        (f.substitute(t.symbol, a), f.substitute(t.symbol, b))
                 {
                     return at_b * b.derivative(x) - at_a * a.derivative(x);
                 }
