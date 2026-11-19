@@ -180,11 +180,20 @@ fn regression(input: &str, check: fn(&str) -> Verdict) {
 }
 
 #[test]
-#[ignore = "bug: integrate(sin(1/ln(x)), x) is 0"]
 fn bug_integrate_sin_of_reciprocal_ln() {
-    // Also `cos(1/ln(x))`; the definite integral on `[2, 3]` is 0 too, its integrand being positive there
-    regression("sin(1/ln(x)); 2; 3", definite);
-    regression("cos(1/ln(x))", antiderivative);
+    // Non-elementary, `{$integral e^t sin(1/t) dif t$}`, so unevaluated: it was 0, also on `[2, 3]` where the
+    // integrand is positive
+    let mut env = env_with(&[]);
+    for f in [
+        "integrate(sin(1/ln(x)), x)",
+        "integrate(cos(1/ln(x)), x)",
+        "integrate(sin(1/ln(x)), x, 2, 3)",
+    ] {
+        let res = eval(&mut env, f).unwrap();
+        assert!(res.contains("integrate"), "{f} = {res}");
+    }
+    let res = number(&env, "integrate(sin(1/ln(x)), x, 2, 3)").unwrap();
+    assert!(close(res, 0.889_345_715_682_013, 1e-9), "{res}");
 }
 
 #[test]
