@@ -11,7 +11,7 @@ use crate::{
 
 impl Poly<Rational> {
     /// The polynomial as an expression in `x`.
-    pub(super) fn to_term(&self, x: Symbol) -> Expr {
+    pub(crate) fn to_term(&self, x: Symbol) -> Expr {
         let x = variable(x);
         self.coefficients()
             .iter()
@@ -23,7 +23,7 @@ impl Poly<Rational> {
     }
 
     /// The polynomial in `x` given by an expression, if its coefficients are rational numbers.
-    pub(super) fn from_term(term: &Expr, x: Symbol) -> Option<Self> {
+    pub(crate) fn from_term(term: &Expr, x: Symbol) -> Option<Self> {
         Self::from_expanded(&term.expand(), x)
     }
 

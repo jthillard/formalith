@@ -378,7 +378,7 @@ fn tidy(res: &Expr) -> Expr {
 }
 
 /// Whether the term is a rational function of its symbols with rational coefficients.
-fn is_rational_function(term: &Expr) -> bool {
+pub(crate) fn is_rational_function(term: &Expr) -> bool {
     match term {
         Term::Value(_) => true,
         Term::Symbol(s) => !Context::is_builtin_constant(s.symbol),

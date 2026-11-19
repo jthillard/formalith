@@ -130,7 +130,7 @@ fn log_part(q: &Poly, p: &Poly, x: Symbol) -> Option<Expr> {
 }
 
 /// The real and imaginary parts of a complex expression made of real radicals.
-fn split(t: &Term<Complex>) -> Option<(Expr, Expr)> {
+pub(crate) fn split(t: &Term<Complex>) -> Option<(Expr, Expr)> {
     let real = |t: Term<Complex>| {
         TryExprFrom::<Complex>::try_from_expr(&R, t)
             .ok()

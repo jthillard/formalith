@@ -217,6 +217,11 @@ fn eval_in<E: SetParseExpression>(
         } else {
             solution.to_string()
         }),
+        Statement::Ode { solution, .. } => Ok(if typst {
+            solution.with_options(PrintOptions::typst()).to_string()
+        } else {
+            solution.to_string()
+        }),
         Statement::Assume(assumptions) if assumptions.is_empty() => Ok(if typst {
             "\"no assumption\"".to_owned()
         } else {

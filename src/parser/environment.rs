@@ -13,11 +13,48 @@ use crate::{
         assumptions::{Assumption, Assumptions, SignSet},
     },
     field::{Set, SetParseExpression},
+    ode::{Condition, Dsolve, OdeSolution},
     solve::{Equation, Solution, Solve, plain},
     term::{Normalize, Term},
 };
 
 use super::{Parser, ParserError, lexer::TokenKind};
+
+/// Whether `source` is a single identifier.
+fn is_identifier(source: &str) -> bool {
+    let mut parser = Parser::new(source);
+    if !matches!(parser.token.kind, TokenKind::Ident(_)) {
+        return false;
+    }
+    parser.next_token();
+    parser.token.kind == TokenKind::Eof
+}
+
+/// The variable of the unknown function of a differential equation: its argument where it is called with a
+/// symbol, like `y(t)`, `x` otherwise.
+fn ode_variable(args: &[String], function: Symbol) -> Symbol {
+    for source in args {
+        let mut parser = Parser::new(source);
+        let mut window: Vec<TokenKind> = vec![];
+        while parser.token.kind != TokenKind::Eof {
+            window.push(parser.token.kind.clone());
+            parser.next_token();
+        }
+        for tokens in window.windows(4) {
+            if let [
+                TokenKind::Ident(f),
+                TokenKind::OpenParen,
+                TokenKind::Ident(t),
+                TokenKind::CloseParen,
+            ] = tokens
+                && Symbol::new(f.as_str()) == function
+            {
+                return Symbol::new(t.as_str());
+            }
+        }
+    }
+    Symbol::new("x")
+}
 
 /// A definition `name(params) := body`.
 #[derive(Debug)]
@@ -216,6 +253,13 @@ pub enum Statement<E: Set> {
         /// The solutions of the system.
         solution: Solution<E>,
     },
+    /// A differential equation `dsolve(y' = y, y(0) = 1)`, solved.
+    Ode {
+        /// The equation, with the unknown function and its derivatives written `y(x)` and `diff(y(x), x)`.
+        equation: Equation<E>,
+        /// The solutions of the equation.
+        solution: OdeSolution<E>,
+    },
     /// Assumptions `assume(a > 0, n integer)`, with every assumption on the listed symbols, the new and previous ones.
     Assume(Assumptions),
 }
@@ -228,6 +272,7 @@ impl<E: Set> fmt::Display for Statement<E> {
                 name, params, body, ..
             } => write!(f, "{} := {body}", head(*name, params)),
             Self::System { solution, .. } => write!(f, "{solution}"),
+            Self::Ode { solution, .. } => write!(f, "{solution}"),
             Self::Assume(assumptions) if assumptions.is_empty() => f.write_str("no assumption"),
             Self::Assume(assumptions) => write!(f, "{assumptions}"),
         }
@@ -301,6 +346,9 @@ impl<'a> Parser<'a> {
         }
         if self.is_call(Context::ASSUME) {
             return self.parse_assume(set);
+        }
+        if self.is_call(Context::DSOLVE) {
+            return self.parse_dsolve(set);
         }
         let mut items = self.parse_items(set)?;
         self.expect_eof()?;
@@ -474,6 +522,154 @@ impl<'a> Parser<'a> {
             equations,
             solution,
         })
+    }
+
+    /// Parse `dsolve(equation, conditions, y, x)`, solving the differential equation for `y(x)` with initial
+    /// conditions like `y(0) = 1` or `y'(0) = 0`. In the equation, `y'`, `y''`... are the derivatives of `y`, and
+    /// `y` stands for `y(x)`. Without `y` and `x`, `y` is the first identifier followed by `'`, or else called
+    /// like a function, and `x` is its argument if it is a symbol, `x` otherwise.
+    fn parse_dsolve<E: SetParseExpression>(&mut self, set: E) -> Result<Statement<E>, ParserError> {
+        // `dsolve(`
+        self.next_token();
+        self.next_token();
+        let mut args = self.parse_args_source()?;
+        self.expect_eof()?;
+        let mut names = vec![];
+        while names.len() < 2 && args.len() > 1 && args.last().is_some_and(|arg| is_identifier(arg))
+        {
+            names.insert(0, Symbol::new(args.pop().expect("There is an argument")));
+        }
+        let function = match names.first() {
+            Some(&function) => function,
+            None => self.ode_function(&args).ok_or_else(|| {
+                ParserError::new(
+                    "can't find the unknown function, name it like in `dsolve(y' = y, y, x)`",
+                )
+            })?,
+        };
+        let x = names
+            .get(1)
+            .copied()
+            .unwrap_or_else(|| ode_variable(&args, function));
+        for symbol in [function, x] {
+            if Context::is_builtin_constant(symbol)
+                || Context::builtin_arity(symbol).is_some()
+                || set.is_constant(symbol.name())
+            {
+                return Err(ParserError::new(format!(
+                    "`{}` is a builtin or a constant",
+                    symbol.name()
+                )));
+            }
+        }
+        if function == x {
+            return Err(ParserError::new(
+                "the function and its variable must be different",
+            ));
+        }
+        let mut equation = None;
+        let mut conditions = vec![];
+        for source in &args {
+            if let Some(condition) = self.parse_condition(source, function, x, set)? {
+                conditions.push(condition);
+                continue;
+            }
+            if equation.is_some() {
+                return Err(ParserError::new(
+                    "dsolve expects a single equation, then initial conditions",
+                ));
+            }
+            let mut parser = Parser::new(source).with_ode(function, x);
+            parser.env = self.env;
+            let lhs = parser.parse_side(set)?;
+            parser.expect_token(&TokenKind::Equal).map_err(|_| {
+                ParserError::new(format!("expected `=` in the equation `{source}`"))
+            })?;
+            let rhs = parser.parse_side(set)?;
+            parser.expect_eof()?;
+            equation = Some(Equation::new(lhs, rhs));
+        }
+        let equation = equation.ok_or_else(|| ParserError::new("dsolve expects an equation"))?;
+        let solution = set.dsolve(&equation, &conditions, function, x)?;
+        Ok(Statement::Ode { equation, solution })
+    }
+
+    /// The unknown function of a differential equation: the first identifier followed by `'`, or else the first
+    /// one called like a function which isn't a builtin, a definition or a constant.
+    fn ode_function(&self, args: &[String]) -> Option<Symbol> {
+        let identifiers = |source: &str| {
+            let mut parser = Parser::new(source);
+            let mut res = vec![];
+            while parser.token.kind != TokenKind::Eof {
+                parser.next_token();
+                if let TokenKind::Ident(name) = &parser.prev_token.kind {
+                    res.push((Symbol::new(name.as_str()), parser.token.kind.clone()));
+                }
+            }
+            res
+        };
+        let calls: Vec<_> = args.iter().flat_map(|arg| identifiers(arg)).collect();
+        calls
+            .iter()
+            .find(|(_, next)| *next == TokenKind::Prime)
+            .or_else(|| {
+                calls.iter().find(|(symbol, next)| {
+                    *next == TokenKind::OpenParen
+                        && Context::builtin_arity(*symbol).is_none()
+                        && self.env.is_none_or(|env| env.get(*symbol).is_none())
+                })
+            })
+            .map(|(symbol, _)| *symbol)
+    }
+
+    /// Parse an initial condition `y''(a) = b`, returning `None` if `source` isn't one (like `y(x) = ...`).
+    fn parse_condition<E: SetParseExpression>(
+        &self,
+        source: &str,
+        function: Symbol,
+        x: Symbol,
+        set: E,
+    ) -> Result<Option<Condition<E>>, ParserError> {
+        let mut parser = Parser::new(source);
+        parser.env = self.env;
+        if !matches!(&parser.token.kind, TokenKind::Ident(name) if Symbol::new(name.as_str()) == function)
+        {
+            return Ok(None);
+        }
+        parser.next_token();
+        let mut order = 0;
+        while parser.token.kind == TokenKind::Prime {
+            order += 1;
+            parser.next_token();
+        }
+        if parser.token.kind != TokenKind::OpenParen {
+            return Ok(None);
+        }
+        parser.next_token();
+        let point = parser.parse_side(set)?;
+        if parser.token.kind != TokenKind::CloseParen
+            || matches!(&point, Term::Symbol(s) if s.symbol == x)
+        {
+            return Ok(None);
+        }
+        parser.next_token();
+        if parser.token.kind != TokenKind::Equal {
+            return Ok(None);
+        }
+        parser.next_token();
+        let value = parser.parse_side(set)?;
+        parser.expect_eof()?;
+        if [&point, &value].iter().any(|t| t.symbols().contains(&x)) {
+            return Err(ParserError::new(format!(
+                "the initial condition `{source}` can't depend on `{}`",
+                x.name()
+            )));
+        }
+        Ok(Some(Condition {
+            order,
+            point,
+            value,
+        }))
     }
 
     /// Parse comma-separated items, which are equations `lhs = rhs` or expressions.

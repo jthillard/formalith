@@ -15,7 +15,8 @@ A computer algebra system written in Rust. Expressions are generic over the alge
 
 `R` supports derivatives, limits, series, integrals (with the Risch algorithm), sums and products (with Gosper's
 algorithm, `sum(k^2, k, 1, n)`, `sum(1/k^2, k, 1, oo)`, `product(k, k, 1, n)`), numerical approximations,
-factorization and solving systems of polynomial equations.
+factorization, solving systems of polynomial equations and ordinary differential equations (`dsolve(y' = x*y)`,
+`dsolve(y'' + y = 0, y(0) = 1, y'(0) = 0)`: separable, first-order linear, and linear with constant coefficients).
 
 ## Library
 

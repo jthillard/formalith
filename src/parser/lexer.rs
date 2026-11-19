@@ -73,6 +73,8 @@ pub enum TokenKind {
     GreaterEqual,
     /// !=
     NotEqual,
+    /// ', a derivative in `dsolve`
+    Prime,
     /// End Of File
     Eof,
     /// Unknown character
@@ -167,6 +169,7 @@ impl Lexer<'_> {
                 TokenKind::NotEqual
             }
             '^' => TokenKind::Caret,
+            '\'' => TokenKind::Prime,
             '{' => TokenKind::OpenBrace,
             '}' => TokenKind::CloseBrace,
             '(' => TokenKind::OpenParen,

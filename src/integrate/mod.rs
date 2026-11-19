@@ -39,7 +39,7 @@
 
 mod definite;
 mod parts;
-mod poly;
+pub(crate) mod poly;
 pub(crate) mod rational;
 mod risch;
 mod substitution;

@@ -492,6 +492,17 @@ impl<T: Set> MergeTerms for Term<T> {
 
 impl<T: Group> MergeTerms for Term<T> {
     default fn merge_terms(&mut self, other: &Self) -> bool {
+        if matches!(self, Self::Fun(_)) && self == other {
+            // Merge f(x) + f(x)
+            let set = self.get_set();
+            *self = Self::Mul(Mul::new(
+                set.get_coefficient_set().nth(2),
+                vec![other.clone()],
+                set,
+            ))
+            .normalize();
+            return true;
+        }
         match (self.borrow_mut(), other) {
             (Self::Value(Value { value: v1, set, .. }), Self::Value(Value { value: v2, .. })) => {
                 set.try_add(v1, v2).is_some_and(|sum| {

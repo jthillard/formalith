@@ -236,15 +236,18 @@ impl Context {
     pub const SUM: Symbol = Symbol(58);
     /// Product `product(f, k, a, b)` of `f` for the integers `k` from `a` to `b`, which may be infinite
     pub const PRODUCT: Symbol = Symbol(59);
+    /// Solve an ordinary differential equation, like `dsolve(y' = y)`, only allowed as a whole statement
+    pub const DSOLVE: Symbol = Symbol(60);
 
     #[rustfmt::skip]
-    const BUILTIN_NAMES: [&'static str; 60] = [
+    const BUILTIN_NAMES: [&'static str; 61] = [
         "abs", "det", "expand", "factor", "simplify", "re", "im", "conj", "sqrt", "root", "sign",
         "floor", "ceil", "min", "max", "gcd", "lcm", "quo", "rem", "diff", "solve", "approx",
         "exp", "ln", "sin", "cos", "tan", "pi", "e", "lim", "oo", "undefined",
         "series", "asin", "acos", "atan", "sinh", "cosh", "tanh", "asinh", "acosh", "atanh", "cot",
         "sec", "csc", "log", "factorial", "binomial", "integrate", "erf", "erfi", "assume",
         "gamma", "beta", "digamma", "polygamma", "zeta", "euler_gamma", "sum", "product",
+        "dsolve",
     ];
 
     /// Return `true` if `symbol` is a builtin constant, like `{$pi$}`, which is not a function.
@@ -269,7 +272,9 @@ impl Context {
             | Self::BINOMIAL
             | Self::BETA
             | Self::POLYGAMMA => Some((2, 2)),
-            Self::MIN | Self::MAX | Self::SOLVE | Self::ASSUME => Some((1, usize::MAX)),
+            Self::MIN | Self::MAX | Self::SOLVE | Self::ASSUME | Self::DSOLVE => {
+                Some((1, usize::MAX))
+            }
             Self::APPROX | Self::LOG => Some((1, 2)),
             Self::LIM => Some((3, 4)),
             Self::SERIES => Some((3, 5)),

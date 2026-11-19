@@ -10,7 +10,7 @@ use std::ops::Range;
 
 use crate::context::{Context, Symbol};
 use crate::field::{Group, Ring, Set, SetParseExpression};
-use crate::term::{Fun, Mul, Normalize, SymbolTerm, Term, Value};
+use crate::term::{Fun, Mul, Normalize, SymbolTerm, Term, Value, flags::Flags};
 
 use environment::Environment;
 use lexer::{Lexer, LiteralTokenKind, Token, TokenKind};
@@ -76,6 +76,8 @@ pub struct Parser<'a> {
     /// Whether the current token directly follows the previous one, without whitespace
     adjacent: bool,
     env: Option<&'a Environment>,
+    /// The unknown function and its variable while parsing a differential equation, see [`Parser::parse_ode_function`]
+    ode: Option<(Symbol, Symbol)>,
 }
 
 impl<'a> Parser<'a> {
@@ -91,6 +93,7 @@ impl<'a> Parser<'a> {
             end_span: 0,
             adjacent: false,
             env: None,
+            ode: None,
         };
         parser.next_token();
         parser
@@ -305,6 +308,49 @@ impl Parser<'_> {
         Ok(term)
     }
 
+    /// In a differential equation for `y(x)`, parse `y`, `y(x)` or `y''` (`k` primes), as the `k`-th derivative of
+    /// `y(x)`, kept unevaluated.
+    fn parse_ode_function<E: Set>(&mut self, set: E) -> Result<Option<Term<E>>, ParserError> {
+        let (Some((function, x)), TokenKind::Ident(name)) = (self.ode, &self.token.kind) else {
+            return Ok(None);
+        };
+        if Symbol::new(name.as_str()) != function {
+            return Ok(None);
+        }
+        self.next_token();
+        let mut order = 0;
+        while self.token.kind == TokenKind::Prime {
+            order += 1;
+            self.next_token();
+        }
+        let x = Term::Symbol(SymbolTerm::new(x, set));
+        if self.token.kind == TokenKind::OpenParen {
+            self.next_token();
+            let args = self.parse_args(set)?;
+            self.expect_token(&TokenKind::CloseParen)?;
+            if args.len() != 1 || args[0].normalize() != x {
+                return Err(ParserError::new(format!(
+                    "`{}` must be evaluated at `{}` in the equation",
+                    function.name(),
+                    x
+                )));
+            }
+        }
+        let mut res = Term::Fun(Box::new(Fun::new(function, vec![x.clone()], set))).normalize();
+        for _ in 0..order {
+            res = Term::Fun(Box::new(Fun::new(Context::DIFF, vec![res, x.clone()], set)));
+            res.set_normalized(true);
+        }
+        Ok(Some(res))
+    }
+
+    /// Parse the input as a differential equation for `function(x)`, see [`Parser::parse_ode_function`].
+    #[must_use]
+    pub(crate) const fn with_ode(mut self, function: Symbol, x: Symbol) -> Self {
+        self.ode = Some((function, x));
+        self
+    }
+
     /// Return the source of arguments of a function, up to the closing parenthesis.
     fn parse_args_source(&mut self) -> Result<Vec<String>, ParserError> {
         let mut args = vec![];
@@ -373,8 +419,9 @@ where
         set: E,
     ) -> Result<Option<Term<E>>, ParserError> {
         let mut self_in_coefficient_set = self.clone();
+        let node = self.parse_ode_function(set)?;
         // Definitions are expanded in the outermost set, before sets parse identifiers (like scalars of `M`)
-        let node = self.parse_definition(set)?;
+        let node = node.map_or_else(|| self.parse_definition(set), |n| Ok(Some(n)))?;
         let node = node.map_or_else(|| set.parse_expression(self), |n| Ok(Some(n)))?;
         let node = node.map_or_else(|| ParseUnary::<E>::parse_unary(self, set), |n| Ok(Some(n)))?;
         let node_in_coefficient_set =
