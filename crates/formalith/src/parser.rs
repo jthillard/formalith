@@ -78,6 +78,9 @@ pub struct Parser<'a> {
     env: Option<&'a Environment>,
     /// The unknown function and its variable while parsing a differential equation, see [`Parser::parse_ode_function`]
     ode: Option<(Symbol, Symbol)>,
+    /// The priority of the expression being parsed, so that literals parsing a whole expression (the scalars of
+    /// `M<TermSet<R>>`) stop at the same operators, `{$A^2 + 2 A$}` not being `{$A^(2 + 2 A)$}`
+    pub(crate) priority: usize,
 }
 
 impl<'a> Parser<'a> {
@@ -94,6 +97,7 @@ impl<'a> Parser<'a> {
             adjacent: false,
             env: None,
             ode: None,
+            priority: 0,
         };
         parser.next_token();
         parser
@@ -457,6 +461,7 @@ where
         priority: usize,
         set: E,
     ) -> Result<Option<Term<E>>, ParserError> {
+        self.priority = priority;
         let mut self_in_coefficient_set = self.clone();
         let node = self.parse_ode_function(set)?;
         // Definitions are expanded in the outermost set, before sets parse identifiers (like scalars of `M`)
@@ -465,7 +470,14 @@ where
         let node = node.map_or_else(|| ParseUnary::<E>::parse_unary(self, set), |n| Ok(Some(n)))?;
         let node_in_coefficient_set =
             self_in_coefficient_set.parse_literal(set.get_coefficient_set());
-        let node = node.map_or_else(|| self.parse_literal_term(set), |n| Ok(Some(n)))?;
+        let node = node.map_or_else(
+            || {
+                // Nested expressions parsed above changed it
+                self.priority = priority;
+                self.parse_literal_term(set)
+            },
+            |n| Ok(Some(n)),
+        )?;
         let node = node.or_else(|| self.parse_symbol(set));
         let node = node.map_or_else(|| self.parse_group(set), |n| Ok(Some(n)))?;
 

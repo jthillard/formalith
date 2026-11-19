@@ -96,7 +96,6 @@ fn linear_algebra(a: &str) -> Verdict {
             return Verdict::Skip("coefficients".to_owned());
         };
         let c = c.replace('x', "0");
-        // Each term evaluated alone, see `bug_matrix_sum_of_scalar_multiple_and_power`
         match m(&format!("({c})*{a}^{k}")) {
             Ok(term) => terms.push(term),
             Err(e) => return Verdict::Skip(e),
@@ -338,7 +337,6 @@ fn fuzz_normal_forms() {
 }
 
 #[test]
-#[ignore = "bug: in M, A^2 + 2*A evaluates to A^5 (and A^2 - 4*A to A^-1)"]
 fn bug_matrix_sum_of_scalar_multiple_and_power() {
     let a = "[[2, 1], [1, 2]]";
     // `A^2 - A` is right

@@ -714,6 +714,8 @@ impl<T: SetParseExpression> SetParseExpression for M<T> {
 
                     let mut line_size = 0;
                     loop {
+                        // Entries are whole expressions
+                        parser.priority = 0;
                         if let Some(element) = parser.parse_literal(self.scalar_sub_set)? {
                             lines.push(element);
                         } else {

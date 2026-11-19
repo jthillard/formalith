@@ -138,9 +138,10 @@ impl<T: SetParseExpression> SetParseExpression for TermSet<T> {
     }
 
     fn parse_literal(&self, parser: &mut Parser<'_>) -> Result<Option<Self::Element>, String> {
+        let priority = parser.priority;
         Ok(ParseExpression::<T>::parse_expression(
             parser,
-            0,
+            priority,
             *self.get_set(),
         )?)
     }
