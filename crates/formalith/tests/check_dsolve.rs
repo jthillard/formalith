@@ -207,7 +207,6 @@ fn bug_dsolve_irrational_characteristic_roots_panic() {
 }
 
 #[test]
-#[ignore = "bug: dsolve(2*y''' + y'' - 3*y' + y = cos(3*x)) takes about 2 minutes in release"]
 fn bug_dsolve_third_order_is_slow() {
     regression("2*y''' + y'' - 3*y' + y = cos(3*x)");
 }

@@ -203,7 +203,7 @@ impl Integrator {
         if !constant.is_one() {
             return Some(constant * self.integrate(&g, x)?);
         }
-        if let Some(g) = merge_square_roots(f, x) {
+        if let Some(g) = merge_square_roots(f, x).or_else(|| pull_common_factors(f, x)) {
             return self.integrate(&g, x);
         }
         let strategies: [fn(&mut Self, &Expr, Symbol) -> Option<Expr>; 6] = [
@@ -303,6 +303,50 @@ fn merge_square_roots(f: &Expr, x: Symbol) -> Option<Expr> {
         .fold(one(), |res, base| res * base)
         .expand();
     Some(rest * radicand.pow(&value(half)))
+}
+
+/// `f` with the factors depending on `x` common to the terms of its powers of sums pulled out,
+/// `{$(5 e^x + 2 sqrt(5) e^x)^-1 = (5 + 2 sqrt(5))^-1 e^(-x)$}`, if there are some.
+fn pull_common_factors(f: &Expr, x: Symbol) -> Option<Expr> {
+    let pull = |term: &Expr| -> Option<Expr> {
+        let Term::Pow(pow) = term else {
+            return None;
+        };
+        let (Term::Add(add), Term::Value(_)) = (&*pow.base, &**pow.exponant) else {
+            return None;
+        };
+        let mut terms = add.iter();
+        let common: Vec<Expr> = factors(terms.next()?)
+            .into_iter()
+            .filter(|factor| depends(factor, x))
+            .filter(|factor| add.iter().all(|t| factors(t).contains(factor)))
+            .collect();
+        if common.is_empty() {
+            return None;
+        }
+        let common = common.into_iter().fold(one(), |res, factor| res * factor);
+        let rest = add.iter().fold(zero(), |res, t| res + &(t / &common));
+        let exponent = &**pow.exponant;
+        Some(rest.pow(exponent) * common.pow(exponent))
+    };
+    match f {
+        Term::Mul(mul) => {
+            let mut changed = false;
+            let res = mul
+                .iter()
+                .fold(value(mul.coefficient.clone()), |res, factor| {
+                    res * pull(factor).map_or_else(
+                        || factor.clone(),
+                        |pulled| {
+                            changed = true;
+                            pulled
+                        },
+                    )
+                });
+            changed.then_some(res)
+        }
+        _ => pull(f),
+    }
 }
 
 /// `{$a = u'$}` if `u` is a linear expression `{$a x + b$}` of `x`.
