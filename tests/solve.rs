@@ -494,3 +494,48 @@ fn rational_equations() {
     // `x = 1` cancels the denominator
     assert_eq!(solve("x/(x-1) = 1/(x-1)"), ok("\"no solution\""));
 }
+
+#[test]
+fn inequalities() {
+    assert_eq!(
+        solve("x^2 - 3*x + 2 > 0"),
+        ok("x in (-oo, 1) union (2, oo)")
+    );
+    assert_eq!(solve("x^2 <= 4"), ok("x in [-2, 2]"));
+    // Roots of the denominator are excluded
+    assert_eq!(
+        solve("(x-1)/(x+2) >= 0"),
+        ok("x in (-oo, -2) union [1, oo)")
+    );
+    assert_eq!(solve("x^2 + 1 < 0"), ok("\"no solution\""));
+    assert_eq!(solve("x^2 >= 0"), ok("x in RR"));
+    assert_eq!(solve("x^2 <= 0"), ok("x = 0"));
+    assert_eq!(solve("x^2*(x-1) >= 0"), ok("x in {0} union [1, oo)"));
+    assert_eq!(solve("x != 1"), ok("x in (-oo, 1) union (1, oo)"));
+    assert_eq!(solve("x^2 < 2"), ok("x in (-sqrt(2), sqrt(2))"));
+    assert_eq!(solve("1 < 2"), ok("\"true\""));
+}
+
+#[test]
+fn systems_of_inequalities() {
+    assert_eq!(solve("x > 0, x^2 < 4"), ok("x in (0, 2)"));
+    assert_eq!(solve("x^2 - 2 > 0, x < 0"), ok("x in (-oo, -sqrt(2))"));
+    // Equations restrict the solutions to points
+    assert_eq!(solve("x^2 = 4, x > 0"), ok("x = 2"));
+    assert_eq!(
+        solve("solve(x^3 < x, x)"),
+        ok("x in (-oo, -1) union (0, 1)")
+    );
+}
+
+#[test]
+fn unsupported_inequalities() {
+    assert!(solve("sin(x) > 0").unwrap_err().contains("not polynomial"));
+    assert!(solve("a*x > 1").unwrap_err().contains("single unknown"));
+    assert!(solve_in("Z", "x > 1").is_err());
+    assert!(
+        solve("x + y = 1, x != y")
+            .unwrap_err()
+            .contains("single unknown")
+    );
+}

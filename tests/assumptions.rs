@@ -39,6 +39,9 @@ fn assume_statements() {
     assert_eq!(eval(&["assume(a >= 0)", "assume(a != 0)"]), "a > 0");
     assert_eq!(eval(&["assume(a > 0)", "assume(a)"]), "a > 0");
     assert_eq!(eval(&["assume(a)"]), "no assumption");
+    // Outside of `assume`, a comparison is an inequality, restricted by the assumptions
+    assert_eq!(eval(&["solve(a > 0)"]), "a ∈ (0, ∞)");
+    assert_eq!(eval(&["assume(a < 0)", "solve(a^2 < 4)"]), "a ∈ (-2, 0)");
 }
 
 #[test]
@@ -49,7 +52,6 @@ fn assume_errors() {
     assert!(err(&["assume(a > 1)"]).contains("compare a symbol with 0"));
     assert!(err(&["assume(a + 1 > 0)"]).contains("not a symbol"));
     assert!(err(&["assume(pi > 0)"]).contains("constant"));
-    assert!(err(&["a > 0"]).contains("Unexpected"));
     // A rejected statement doesn't change the assumptions
     let mut env = Environment::new();
     env.eval("assume(a > 0)", R).unwrap();

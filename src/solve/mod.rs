@@ -21,6 +21,7 @@
 //! );
 //! ```
 
+pub mod inequality;
 mod lattice;
 mod linear;
 pub(crate) mod polynomial;
@@ -226,6 +227,8 @@ pub enum SolveError {
     NotInvertible,
     /// Equations can't be solved in this set.
     Unsupported,
+    /// Inequalities can't be solved, with the reason.
+    Inequality(String),
 }
 
 impl fmt::Display for SolveError {
@@ -244,6 +247,7 @@ impl fmt::Display for SolveError {
             Self::Unsolvable(term) => write!(f, "can't solve `{term} = 0`"),
             Self::NotInvertible => f.write_str("a pivot is not invertible in this set"),
             Self::Unsupported => f.write_str("equations can't be solved in this set"),
+            Self::Inequality(reason) => f.write_str(reason),
         }
     }
 }

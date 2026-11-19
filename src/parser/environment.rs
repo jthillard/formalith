@@ -14,8 +14,12 @@ use crate::{
     },
     field::{Set, SetParseExpression},
     ode::{Condition, Dsolve, OdeSolution},
-    solve::{Equation, Solution, Solve, plain},
-    term::{Normalize, Term},
+    solve::{
+        Equation, Solution, Solve,
+        inequality::{Inequality, Intervals, SolveInequality},
+        plain,
+    },
+    term::{Normalize, Term, relation::Relation},
 };
 
 use super::{Parser, ParserError, lexer::TokenKind};
@@ -262,7 +266,17 @@ pub enum Statement<E: Set> {
     },
     /// Assumptions `assume(a > 0, n integer)`, with every assumption on the listed symbols, the new and previous ones.
     Assume(Assumptions),
+    /// Inequalities in one unknown, like `x^2 < 4` or `x > 0, x^2 < 4`, solved.
+    Inequalities {
+        /// The relations, which may contain equations.
+        inequalities: Vec<Inequality<E>>,
+        /// The values of the unknown satisfying every relation.
+        solution: Intervals<E>,
+    },
 }
+
+/// An expression, or a relation `lhs op rhs`, in a list of equations.
+type Item<E> = (Term<E>, Option<(Relation, Term<E>)>);
 
 impl<E: Set> fmt::Display for Statement<E> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -273,6 +287,7 @@ impl<E: Set> fmt::Display for Statement<E> {
             } => write!(f, "{} := {body}", head(*name, params)),
             Self::System { solution, .. } => write!(f, "{solution}"),
             Self::Ode { solution, .. } => write!(f, "{solution}"),
+            Self::Inequalities { solution, .. } => write!(f, "{solution}"),
             Self::Assume(assumptions) if assumptions.is_empty() => f.write_str("no assumption"),
             Self::Assume(assumptions) => write!(f, "{assumptions}"),
         }
@@ -356,11 +371,15 @@ impl<'a> Parser<'a> {
             let (term, _) = items.pop().expect("There is one item");
             return Ok(Statement::Expression(term));
         }
+        if let Some(statement) = Self::inequalities(&items, None, set)? {
+            return Ok(statement);
+        }
         let equations = items
             .into_iter()
             .map(|(lhs, rhs)| {
-                rhs.map(|rhs| Equation::new(lhs, rhs))
-                    .ok_or_else(|| ParserError::new("expected `=` in each equation of a system"))
+                let (relation, rhs) = rhs
+                    .ok_or_else(|| ParserError::new("expected `=` in each equation of a system"))?;
+                Self::equation(lhs, relation, rhs)
             })
             .collect::<Result<Vec<_>, _>>()?;
         let solution = set.solve(&equations)?;
@@ -483,11 +502,11 @@ impl<'a> Parser<'a> {
         let items = self.parse_items(set)?;
         self.expect_token(&TokenKind::CloseParen)?;
         self.expect_eof()?;
-        let mut equations = vec![];
+        let mut relations = vec![];
         let mut unknowns = vec![];
         for (lhs, rhs) in items {
-            if let Some(rhs) = rhs {
-                equations.push(Equation::new(lhs, rhs));
+            if rhs.is_some() {
+                relations.push((lhs, rhs));
                 continue;
             }
             let Term::Symbol(symbol) = lhs else {
@@ -510,9 +529,24 @@ impl<'a> Parser<'a> {
             }
             unknowns.push(symbol.symbol);
         }
-        if equations.is_empty() {
+        if relations.is_empty() {
             return Err(ParserError::new("solve expects at least one equation"));
         }
+        if let Some(statement) = Self::inequalities(&relations, unknowns.first().copied(), set)? {
+            if unknowns.len() > 1 {
+                return Err(ParserError::new(
+                    "inequalities are solved for a single unknown",
+                ));
+            }
+            return Ok(statement);
+        }
+        let equations = relations
+            .into_iter()
+            .map(|(lhs, rhs)| {
+                let (relation, rhs) = rhs.expect("Relations have a right side");
+                Self::equation(lhs, relation, rhs)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         let solution = if unknowns.is_empty() {
             set.solve(&equations)?
         } else {
@@ -673,18 +707,16 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse comma-separated items, which are equations `lhs = rhs` or expressions.
-    fn parse_items<E: Set>(
-        &mut self,
-        set: E,
-    ) -> Result<Vec<(Term<E>, Option<Term<E>>)>, ParserError> {
+    fn parse_items<E: Set>(&mut self, set: E) -> Result<Vec<Item<E>>, ParserError> {
         let mut items = vec![];
         loop {
             let lhs = self.parse_side(set)?;
-            let rhs = if self.token.kind == TokenKind::Equal {
-                self.next_token();
-                Some(self.parse_side(set)?)
-            } else {
-                None
+            let rhs = match Relation::from_token(&self.token.kind) {
+                Some(relation) => {
+                    self.next_token();
+                    Some((relation, self.parse_side(set)?))
+                }
+                None => None,
             };
             items.push((lhs, rhs));
             if self.token.kind != TokenKind::Comma {
@@ -692,6 +724,45 @@ impl<'a> Parser<'a> {
             }
             self.next_token();
         }
+    }
+
+    /// Solve `items` as inequalities if one of them is an inequality, for `unknown` or their only symbol.
+    fn inequalities<E: Set>(
+        items: &[Item<E>],
+        unknown: Option<Symbol>,
+        set: E,
+    ) -> Result<Option<Statement<E>>, ParserError> {
+        let is_inequality = |item: &Item<E>| matches!(item, (_, Some((relation, _))) if *relation != Relation::Equal);
+        if !items.iter().any(is_inequality) {
+            return Ok(None);
+        }
+        let inequalities = items
+            .iter()
+            .map(|(lhs, rhs)| match rhs {
+                Some((relation, rhs)) => Ok(Inequality::new(lhs.clone(), *relation, rhs.clone())),
+                None => Err(ParserError::new(format!(
+                    "`{}` is not a relation, expected `=`, `<`, `<=`, `>`, `>=` or `!=`",
+                    plain(lhs)
+                ))),
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let solution = set.solve_inequalities(&inequalities, unknown)?;
+        Ok(Some(Statement::Inequalities {
+            inequalities,
+            solution,
+        }))
+    }
+
+    /// Equations `lhs = rhs` of `items`, or an error for other relations.
+    fn equation<E: Set>(
+        lhs: Term<E>,
+        relation: Relation,
+        rhs: Term<E>,
+    ) -> Result<Equation<E>, ParserError> {
+        if relation == Relation::NotEqual {
+            return Err(ParserError::new("`!=` is only allowed in inequalities"));
+        }
+        Ok(Equation::new(lhs, rhs))
     }
 
     /// Parse a side of an equation, normalized.
