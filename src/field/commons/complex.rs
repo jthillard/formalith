@@ -74,27 +74,6 @@ impl C<R<Rational>> {
         }
     }
 
-    /// Compute `base^exponant` using exponentiation by squaring.
-    ///
-    /// Returns `None` for negative powers of zero or too large exponants.
-    fn pow_integer(&self, base: &[Rational; 2], exponant: &Integer) -> Option<[Rational; 2]> {
-        let base = if *exponant < 0 {
-            self.try_inv(base)?
-        } else {
-            base.clone()
-        };
-        let mut remaining = u64::try_from(exponant.unsigned_abs_ref()).ok()?;
-        let (mut res, mut square) = (self.one(), base);
-        while remaining != 0 {
-            if remaining & 1 == 1 {
-                res = self.mul(&res, &square);
-            }
-            square = self.mul(&square, &square);
-            remaining >>= 1;
-        }
-        Some(res)
-    }
-
     /// Build the function `ident(arg)`, normalized.
     fn fun(self, ident: Symbol, arg: Term<Self>) -> Term<Self> {
         Term::Fun(Box::new(Fun::new(ident, vec![arg], self))).normalize()

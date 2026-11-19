@@ -6,36 +6,15 @@ use malachite::{
     Integer, Natural, Rational,
     base::num::{
         arithmetic::traits::{BinomialCoefficient, Gcd},
-        basic::traits::{One, Zero},
+        basic::traits::Zero,
     },
 };
 
 use super::multivariate::SparsePoly;
+use crate::field::{Ring, complex::C};
 
 /// A Gaussian rational `{$a + b i$}`, stored as `[a, b]`.
 pub type Gaussian = [Rational; 2];
-
-/// The Gaussian rational `{$1$}`.
-pub const fn gaussian_one() -> Gaussian {
-    [Rational::ONE, Rational::ZERO]
-}
-
-/// `a * b`
-pub fn gmul(a: &Gaussian, b: &Gaussian) -> Gaussian {
-    [&a[0] * &b[0] - &a[1] * &b[1], &a[0] * &b[1] + &a[1] * &b[0]]
-}
-
-/// `a / b`, `b` must be non-zero.
-pub fn gdiv(a: &Gaussian, b: &Gaussian) -> Gaussian {
-    let norm = &b[0] * &b[0] + &b[1] * &b[1];
-    let [re, im] = gmul(a, &[b[0].clone(), -&b[1]]);
-    [re / &norm, im / &norm]
-}
-
-/// `a^e`
-pub fn gpow(a: &Gaussian, e: u32) -> Gaussian {
-    (0..e).fold(gaussian_one(), |acc, _| gmul(&acc, a))
-}
 
 /// A sparse polynomial in `n` variables over `{$QQ(i)$}`, written `{$"re" + i "im"$}` with `{$"re", "im" in QQ[x_1, ..., x_n]$}`.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -128,8 +107,10 @@ impl GaussianPoly {
                     Natural::from(d),
                     Natural::from(j),
                 ));
-                let power = gpow(&value, d - j);
-                let coefficient = gmul(&c, &[&power[0] * &binomial, &power[1] * &binomial]);
+                let power = C
+                    .pow_integer(&value, &Integer::from(d - j))
+                    .expect("Natural powers exist");
+                let coefficient = C.mul(&c, &[&power[0] * &binomial, &power[1] * &binomial]);
                 res.add_term(e, coefficient);
             }
         }
@@ -143,7 +124,10 @@ impl GaussianPoly {
         if self.is_zero() {
             return self.clone();
         }
-        let monic = self.scale(&gdiv(&gaussian_one(), &self.leading_coefficient()));
+        let monic = self.scale(
+            &C.try_inv(&self.leading_coefficient())
+                .expect("The leading coefficient is non-zero"),
+        );
         let coefficients = || monic.re.terms().chain(monic.im.terms()).map(|(_, c)| c);
         let denominator = super::univariate::lcm_denominators(coefficients());
         let numerator = coefficients().fold(Natural::ZERO, |acc, c| {
@@ -159,12 +143,13 @@ impl GaussianPoly {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use malachite::base::num::basic::traits::One;
 
     /// `{$x^2 + 1$}` in one variable.
     fn x2_plus_1() -> GaussianPoly {
         let mut p = GaussianPoly::zero(1);
-        p.add_term(vec![2], gaussian_one());
-        p.add_term(vec![0], gaussian_one());
+        p.add_term(vec![2], C.one());
+        p.add_term(vec![0], C.one());
         p
     }
 
@@ -174,7 +159,7 @@ mod tests {
         let shifted = p.shift_imaginary(0, &Integer::from(2));
         // (x + 2i)^2 + 1 = x^2 + 4ix - 3
         let mut expected = GaussianPoly::zero(1);
-        expected.add_term(vec![2], gaussian_one());
+        expected.add_term(vec![2], C.one());
         expected.add_term(vec![1], [Rational::ZERO, Rational::from(4)]);
         expected.add_term(vec![0], [Rational::from(-3), Rational::ZERO]);
         assert_eq!(shifted, expected);
@@ -185,7 +170,7 @@ mod tests {
     fn norm() {
         // (x + i)(x - i) = x^2 + 1
         let mut p = GaussianPoly::zero(1);
-        p.add_term(vec![1], gaussian_one());
+        p.add_term(vec![1], C.one());
         p.add_term(vec![0], [Rational::ZERO, Rational::ONE]);
         assert_eq!(p.norm(), x2_plus_1().re);
     }

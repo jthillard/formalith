@@ -174,6 +174,44 @@ impl<T: Group> Group for M<T> {
         }
     }
 }
+impl<T: Ring> M<T> {
+    /// Apply `f` (an operation of the scalar set: normalize, expand or simplify) to a scalar, or to every entry
+    /// of a matrix. `f` must return a value; `done` names the operation in the panic message otherwise.
+    fn map_entries(
+        &self,
+        element: &VectorSpaceElement<T, Matrix<T>>,
+        done: &str,
+        f: impl Fn(Term<T>) -> Term<T>,
+    ) -> Term<Self> {
+        let not_a_value = || {
+            format!(
+                "{done} expression is not a value and should be converted inside the matrix ring"
+            )
+        };
+        let element = match element {
+            VectorSpaceElement::Vector(matrix) => {
+                let mut res = matrix.clone();
+                for x in &mut res.data {
+                    *x = f(Term::Value(Value::new(x.clone(), self.scalar_sub_set)))
+                        .as_value()
+                        .unwrap_or_else(|| panic!("{}", not_a_value()))
+                        .value;
+                }
+                VectorSpaceElement::Vector(res)
+            }
+            VectorSpaceElement::Scalar(scalar, _) => {
+                match f(Term::Value(Value::new(scalar.clone(), self.scalar_sub_set))) {
+                    Term::Value(Value { value, .. }) => {
+                        VectorSpaceElement::Scalar(value, self.scalar_sub_set)
+                    }
+                    _ => unimplemented!("{}", not_a_value()),
+                }
+            }
+        };
+        Term::Value(Value::new(element, *self))
+    }
+}
+
 impl<T: Ring> Ring for M<T> {
     fn one(&self) -> Self::Element {
         VectorSpaceElement::Scalar(self.scalar_sub_set.one(), self.scalar_sub_set)
@@ -258,34 +296,11 @@ impl<T: Ring> Ring for M<T> {
             a
         };
         match &a {
-            Term::Value(value) => match &value.value {
-                VectorSpaceElement::Vector(matrix) => {
-                    let mut res = matrix.clone();
-                    res.data.iter_mut().for_each(|x| *x = self
-                            .scalar_sub_set
-                            .normalize(Term::Value(Value::new(x.clone(), self.scalar_sub_set)))
-                            .as_value()
-                            .expect("Normalized expression is not a value and should be converted inside the matrix ring")
-                            .value);
-                    return Term::Value(Value::new(VectorSpaceElement::Vector(res), *self));
-                }
-                VectorSpaceElement::Scalar(scalar, _) => {
-                    let expanded = self
-                        .scalar_sub_set
-                        .normalize(Term::Value(Value::new(scalar.clone(), self.scalar_sub_set)));
-                    match expanded {
-                        Term::Value(Value { value, .. }) => {
-                            return Term::Value(Value::new(
-                                VectorSpaceElement::Scalar(value, self.scalar_sub_set),
-                                *self,
-                            ));
-                        }
-                        _ => unimplemented!(
-                            "Normalized expression is not a value and should be converted inside the matrix ring"
-                        ),
-                    }
-                }
-            },
+            Term::Value(value) => {
+                return self.map_entries(&value.value, "Normalized", |x| {
+                    self.scalar_sub_set.normalize(x)
+                });
+            }
             Term::Pow(term::Pow { base, exponant, .. }) => {
                 if let (
                     Term::Value(Value {
@@ -357,68 +372,18 @@ impl<T: Ring> Ring for M<T> {
 
     fn expand(&self, a: Term<Self>) -> Term<Self> {
         match &a {
-            Term::Value(value) => match &value.value {
-                VectorSpaceElement::Vector(matrix) => {
-                    let mut res = matrix.clone();
-                    res.data.iter_mut().for_each(|x| {
-                        *x = self
-                            .scalar_sub_set
-                            .expand(Term::Value(Value::new(x.clone(), self.scalar_sub_set)))
-                            .as_value()
-                            .expect("Expanded expression is not a value and should be converted inside the matrix ring")
-                            .value;
-                    });
-                    Term::Value(Value::new(VectorSpaceElement::Vector(res), *self))
-                }
-                VectorSpaceElement::Scalar(scalar, _) => {
-                    let expanded = self
-                        .scalar_sub_set
-                        .expand(Term::Value(Value::new(scalar.clone(), self.scalar_sub_set)));
-                    match expanded {
-                        Term::Value(Value { value, .. }) => Term::Value(Value::new(
-                            VectorSpaceElement::Scalar(value, self.scalar_sub_set),
-                            *self,
-                        )),
-                        _ => unimplemented!(
-                            "Expanded expression is not a value and should be converted inside the matrix ring"
-                        ),
-                    }
-                }
-            },
+            Term::Value(value) => {
+                self.map_entries(&value.value, "Expanded", |x| self.scalar_sub_set.expand(x))
+            }
             _ => a,
         }
     }
 
     fn simplify(&self, a: Term<Self>) -> Term<Self> {
         match &a {
-            Term::Value(value) => match &value.value {
-                VectorSpaceElement::Vector(matrix) => {
-                    let mut res = matrix.clone();
-                    res.data.iter_mut().for_each(|x| {
-                        *x = self
-                            .scalar_sub_set
-                            .simplify(Term::Value(Value::new(x.clone(), self.scalar_sub_set)))
-                            .as_value()
-                            .expect("Simplified expression is not a value and should be converted inside the matrix ring")
-                            .value;
-                    });
-                    Term::Value(Value::new(VectorSpaceElement::Vector(res), *self))
-                }
-                VectorSpaceElement::Scalar(scalar, _) => {
-                    let expanded = self
-                        .scalar_sub_set
-                        .simplify(Term::Value(Value::new(scalar.clone(), self.scalar_sub_set)));
-                    match expanded {
-                        Term::Value(Value { value, .. }) => Term::Value(Value::new(
-                            VectorSpaceElement::Scalar(value, self.scalar_sub_set),
-                            *self,
-                        )),
-                        _ => unimplemented!(
-                            "Simplified expression is not a value and should be converted inside the matrix ring"
-                        ),
-                    }
-                }
-            },
+            Term::Value(value) => self.map_entries(&value.value, "Simplified", |x| {
+                self.scalar_sub_set.simplify(x)
+            }),
             _ => a,
         }
     }

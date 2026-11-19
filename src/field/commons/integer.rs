@@ -7,10 +7,10 @@ use malachite::{
     base::num::{
         arithmetic::traits::{Abs, DivisibleBy, Mod, Pow, Sign},
         basic::traits::{One, Zero},
-        conversion::traits::FromSciString,
     },
-    rational::Rational,
 };
+
+use super::parse_integer_literal;
 
 use crate::{
     context::Context,
@@ -180,14 +180,7 @@ impl SetParseExpression for Z<Integer> {
     }
 
     fn parse_literal(&self, parser: &mut Parser) -> Result<Option<Self::Element>, String> {
-        parser.is_literal_and(|value| {
-            let rational = Rational::from_sci_string(value)
-                .ok_or_else(|| format!("Failed to parse \"{value}\" to malachite::Integer",))?;
-            Ok(Some(
-                Integer::try_from(rational)
-                    .map_err(|_| format!("\"{value}\" is not an integer"))?,
-            ))
-        })
+        parser.is_literal_and(|value| Ok(Some(parse_integer_literal(value)?)))
     }
 }
 

@@ -18,7 +18,7 @@ use crate::{
     term::{Term, TermSet},
 };
 
-use gaussian::{Gaussian, GaussianPoly, gaussian_one, gdiv, gpow};
+use gaussian::{Gaussian, GaussianPoly};
 use multivariate::{SparsePoly, WangResult};
 
 /// Sets whose elements can be rational numbers, allowing factorization algorithms over `{$QQ$}`.
@@ -331,14 +331,17 @@ where
                 continue;
             }
             for g in f.gaussian_irreducible_factors(&vars)? {
-                constant = gdiv(&constant, &gpow(&g.leading_coefficient(), multiplicity));
+                let power = C
+                    .pow_integer(&g.leading_coefficient(), &-Integer::from(multiplicity))
+                    .expect("The leading coefficient is non-zero");
+                constant = C.mul(&constant, &power);
                 factors.push((g, multiplicity));
             }
         }
         factors.sort_by_key(|(g, multiplicity)| (*multiplicity, g.total_degree()));
 
         let mut res = vec![];
-        if constant != gaussian_one() {
+        if constant != C.one() {
             let constant = self.set.from_gaussian(constant)?;
             res.push((Self::constant(constant, self.set, self.exponant_set), 1));
         }

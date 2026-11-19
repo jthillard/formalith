@@ -101,27 +101,6 @@ impl<K: Ring> Poly<K> {
         }
     }
 
-    /// Compute `base^exponant`, returning `None` for negative powers of non invertible polynomials.
-    fn pow(&self, base: &Polynomial<K>, exponant: &Integer) -> Option<Polynomial<K>> {
-        let mut square = if *exponant < 0 {
-            self.try_inv(base)?
-        } else {
-            base.clone()
-        };
-        let mut remaining = u64::try_from(exponant.unsigned_abs_ref()).ok()?;
-        let mut res = self.one();
-        while remaining != 0 {
-            if remaining & 1 == 1 {
-                res = self.mul(&res, &square);
-            }
-            remaining >>= 1;
-            if remaining != 0 {
-                square = self.mul(&square, &square);
-            }
-        }
-        Some(res)
-    }
-
     /// Convert a polynomial to an expression over its coefficients, keeping the terms sorted by decreasing degree.
     pub fn to_term(&self, a: &Polynomial<K>) -> Term<K> {
         let set = self.coefficients;
@@ -165,9 +144,7 @@ impl<K: Ring> Poly<K> {
                 if a.value.is_zero() || b.value.is_zero() {
                     return Some(Term::zero(self));
                 }
-                let gcd = self.gcd(&a.value, &b.value);
-                let lcm = a.value.exact_div(&gcd)? * b.value.clone();
-                Some(value(Self::normalized(lcm.monic())))
+                Some(value(Self::normalized(a.value.lcm(&b.value)?)))
             }
             (ident @ (Context::QUO | Context::REM), [Term::Value(a), Term::Value(b)])
                 if !b.value.is_zero() =>
@@ -289,7 +266,7 @@ impl<K: Ring> Ring for Poly<K> {
         match &a {
             Term::Pow(term::Pow { base, exponant, .. }) => {
                 if let (Term::Value(base), Term::Value(exponant)) = (&**base, &***exponant)
-                    && let Some(res) = self.pow(&base.value, &exponant.value)
+                    && let Some(res) = self.pow_integer(&base.value, &exponant.value)
                 {
                     return Term::constant(res, *self);
                 }

@@ -2,9 +2,9 @@
 
 use std::{cmp::Ordering, marker::PhantomData};
 
-use malachite::{
-    Integer, Natural, base::num::conversion::traits::FromSciString, rational::Rational,
-};
+use malachite::{Integer, Natural};
+
+use super::parse_rational_literal;
 
 use crate::{
     field::{PartiallyOrderedSet, Set, SetParseExpression, integer::Z, matrix::M},
@@ -72,8 +72,7 @@ impl SetParseExpression for N<Natural> {
 
     fn parse_literal(&self, parser: &mut Parser) -> Result<Option<Self::Element>, String> {
         parser.is_literal_and(|value| {
-            let rational = Rational::from_sci_string(value)
-                .ok_or_else(|| format!("Failed to parse \"{value}\" to malachite::Natural",))?;
+            let rational = parse_rational_literal(value, "Natural")?;
             Ok(Some(Natural::try_from(rational).map_err(|_| {
                 format!("\"{value}\" is not a natural integer")
             })?))

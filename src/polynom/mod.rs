@@ -650,6 +650,19 @@ impl<V: Monomial, T: Ring, U: Ring> MultivariatePolynomial<V, T, U> {
             .then_some(leading)
     }
 
+    /// Compute the LCM of self and other, `{$a b / gcd(a, b)$}` made monic, or 0 if one of them is 0. Returns `None`
+    /// when the division by the GCD isn't exact.
+    ///
+    /// # Panics
+    /// Panics if a leading coefficient is not invertible.
+    #[must_use]
+    pub fn lcm(&self, other: &Self) -> Option<Self> {
+        if self.is_zero() || other.is_zero() {
+            return Some(Self::zero(self.set, self.exponant_set));
+        }
+        Some((self.exact_div(&self.gcd(other))? * other.clone()).monic())
+    }
+
     /// Divide the polynomial by `divisor`, returning `None` if the division is not exact.
     #[must_use]
     pub fn exact_div(&self, divisor: &Self) -> Option<Self> {

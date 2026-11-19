@@ -1,7 +1,11 @@
 //! Most commons groups, rings and fields like [struct@R] or [struct@M].
 //! These are currently only implemented using malachite arbitrary precision numbers.
 
-use malachite::{base::num::basic::traits::Zero, rational::Rational};
+use malachite::{
+    Integer,
+    base::num::{basic::traits::Zero, conversion::traits::FromSciString},
+    rational::Rational,
+};
 use std::{
     error::Error,
     fmt::{self, Debug},
@@ -29,6 +33,18 @@ pub mod modular;
 pub mod natural;
 pub mod polynomial;
 pub mod real;
+
+/// Parse a number literal as a rational, `target` naming the malachite type in the error message.
+pub(crate) fn parse_rational_literal(value: &str, target: &str) -> Result<Rational, String> {
+    Rational::from_sci_string(value)
+        .ok_or_else(|| format!("Failed to parse \"{value}\" to malachite::{target}"))
+}
+
+/// Parse a number literal as an integer.
+pub(crate) fn parse_integer_literal(value: &str) -> Result<Integer, String> {
+    Integer::try_from(parse_rational_literal(value, "Integer")?)
+        .map_err(|_| format!("\"{value}\" is not an integer"))
+}
 
 /// Failed to convert a term into another term.
 #[derive(Debug, Clone, Copy)]

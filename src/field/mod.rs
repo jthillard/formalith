@@ -2,6 +2,8 @@
 
 use std::{cmp::Ordering, fmt, hash::Hash};
 
+use malachite::Integer;
+
 use crate::{
     context::Symbol,
     field::{cartesian::CartesianPower, matrix::M, polynomial::Poly},
@@ -231,6 +233,27 @@ pub trait Ring: Group {
     }
     /// Try computing the inverse element of a, returning `None` if it doesn't exist.
     fn try_inv(&self, a: &Self::Element) -> Option<Self::Element>;
+    /// Compute `{$"base"^"exponant"$}` by squaring, inverting `base` for negative exponants. Returns `None` when
+    /// `base` isn't invertible for a negative exponant, or when the exponant doesn't fit in a `u64`.
+    fn pow_integer(&self, base: &Self::Element, exponant: &Integer) -> Option<Self::Element> {
+        let mut square = if *exponant < 0 {
+            self.try_inv(base)?
+        } else {
+            base.clone()
+        };
+        let mut remaining = u64::try_from(exponant.unsigned_abs_ref()).ok()?;
+        let mut res = self.one();
+        while remaining != 0 {
+            if remaining & 1 == 1 {
+                res = self.mul(&res, &square);
+            }
+            remaining >>= 1;
+            if remaining != 0 {
+                square = self.mul(&square, &square);
+            }
+        }
+        Some(res)
+    }
 
     /// Return the expression as a rational expression, (numerator, denominator)
     fn as_fraction(&self, a: &Self::Element) -> (Self::Element, Self::Element) {

@@ -13,9 +13,10 @@ use malachite::{
             Pow, Reciprocal, Sign,
         },
         basic::traits::{NegativeOne, One, Zero},
-        conversion::traits::FromSciString,
     },
 };
+
+use super::parse_rational_literal;
 
 use crate::term::fun::{eval_calculus_builtin, eval_rewrite_builtin};
 use crate::{
@@ -737,14 +738,11 @@ impl R<Rational> {
             }
             (Context::GCD | Context::LCM, [a, b]) => {
                 let (a, b) = (a.to_polynomial(), b.to_polynomial());
-                let gcd = a.gcd(&b);
-                if ident == Context::GCD {
-                    Some(gcd.to_term())
-                } else if a.is_zero() || b.is_zero() {
-                    Some(Term::zero(self))
+                Some(if ident == Context::GCD {
+                    a.gcd(&b).to_term()
                 } else {
-                    Some((a.exact_div(&gcd)? * b).monic().to_term())
-                }
+                    a.lcm(&b)?.to_term()
+                })
             }
             _ => None,
         }
@@ -934,11 +932,7 @@ impl SetParseExpression for R<Rational> {
     }
 
     fn parse_literal(&self, parser: &mut Parser) -> Result<Option<Self::Element>, String> {
-        parser.is_literal_and(|value| {
-            Ok(Some(Rational::from_sci_string(value).ok_or_else(|| {
-                format!("Failed to parse \"{value}\" to malachite::Integer",)
-            })?))
-        })
+        parser.is_literal_and(|value| Ok(Some(parse_rational_literal(value, "Integer")?)))
     }
 }
 

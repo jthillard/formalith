@@ -4,12 +4,10 @@ use std::cmp::Ordering;
 
 use malachite::{
     Integer, Natural,
-    base::num::{
-        arithmetic::traits::{Mod, ModPow, UnsignedAbs},
-        conversion::traits::FromSciString,
-    },
-    rational::Rational,
+    base::num::arithmetic::traits::{Mod, ModPow, UnsignedAbs},
 };
+
+use super::parse_integer_literal;
 
 use crate::term::fun::eval_rewrite_builtin;
 use crate::{
@@ -286,12 +284,6 @@ impl SetParseExpression for Zn {
     }
 
     fn parse_literal(&self, parser: &mut Parser) -> Result<Option<Self::Element>, String> {
-        parser.is_literal_and(|value| {
-            let rational = Rational::from_sci_string(value)
-                .ok_or_else(|| format!("Failed to parse \"{value}\" to malachite::Integer"))?;
-            let integer = Integer::try_from(rational)
-                .map_err(|_| format!("\"{value}\" is not an integer"))?;
-            Ok(Some(self.reduce(&integer)))
-        })
+        parser.is_literal_and(|value| Ok(Some(self.reduce(&parse_integer_literal(value)?))))
     }
 }
