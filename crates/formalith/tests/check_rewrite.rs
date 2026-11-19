@@ -211,7 +211,6 @@ fn bug_zero_over_zero_panics() {
 }
 
 #[test]
-#[ignore = "bug: division by zero is unchecked: 0*(x/0) and x/0 - x/0 evaluate to 0 instead of undefined"]
 fn bug_zero_times_division_by_zero() {
     let mut env = env_with(&[]);
     for f in ["0*(x/0)", "x/0 - x/0"] {

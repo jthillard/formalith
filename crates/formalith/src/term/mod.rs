@@ -410,7 +410,7 @@ trait MergeFactors {
     fn merge_factors(&mut self, other: &Self) -> bool;
 }
 
-impl<T: Set> Term<T> {
+impl<T: Group> Term<T> {
     /// Mark a merged constant as approximate if one of the merged terms was (see [`flags::APPROXIMATE`]).
     fn propagate_approximation(&mut self, approximate: bool) {
         if approximate && matches!(self, Self::Value(_) | Self::Mul(_)) {
@@ -430,9 +430,22 @@ impl<T: Set> Term<T> {
             _ => false,
         }
     }
+    /// Whether the term is a power of zero surviving normalization, `{$1/0$}`, or a product with such a factor.
+    pub(crate) fn is_division_by_zero(&self) -> bool {
+        match self {
+            Self::Pow(pow) => pow.base.is_zero(),
+            Self::Mul(mul) => mul.iter().any(Self::is_division_by_zero),
+            _ => false,
+        }
+    }
     /// [`MergeTerms::merge_terms`], the result being approximate if `self` or `other` is.
     pub(crate) fn try_merge_terms(&mut self, other: &Self) -> bool {
-        if self.is_infinity_factor() || other.is_infinity_factor() {
+        // `{$x/0 - x/0$}` isn't 0
+        if self.is_infinity_factor()
+            || other.is_infinity_factor()
+            || self.is_division_by_zero()
+            || other.is_division_by_zero()
+        {
             return false;
         }
         let approximate = self.is_approximate() || other.is_approximate();
@@ -1216,7 +1229,10 @@ impl<T: Ring> Term<T> {
 impl<T: Ring> Term<T> {
     /// The product of zero with `factors`: zero, or `undefined` when a factor is infinite, `{$0 oo$}`.
     fn zero_times<'a>(set: T, mut factors: impl Iterator<Item = &'a Self>) -> Self {
-        if factors.any(|f| f.normalize().is_infinity_factor()) {
+        if factors.any(|f| {
+            let f = f.normalize();
+            f.is_infinity_factor() || f.is_division_by_zero()
+        }) {
             Self::Symbol(symbol::SymbolTerm::new(Context::UNDEFINED, set))
         } else {
             Self::zero(set)
@@ -1268,7 +1284,7 @@ impl<T: Ring<ExponantSet: Ring, ProductCoefficientSet = T>> Normalize for Term<T
             if coefficient_set.is_zero(&new_coeff)
                 && mul.factors.iter().any(|f| {
                     let f = f.normalize();
-                    matches!(&f, Self::Pow(p) if p.base.is_zero()) || f.is_infinity_factor()
+                    f.is_division_by_zero() || f.is_infinity_factor()
                 })
             {
                 return Self::Symbol(symbol::SymbolTerm::new(
