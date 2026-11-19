@@ -626,6 +626,8 @@ impl<T: Ring> Term<T> {
                         other.get_set().get_exponant_set(),
                     ));
                     **p1.exponant = (**p1.exponant).normalize();
+                    // `{$x^2 x^-2 = x^0 = 1$}`
+                    *self = self.normalize();
                     return true;
                 }
                 return false;
@@ -1149,7 +1151,8 @@ impl<T: Ring> Term<T> {
                     if mul.set.get_coefficient_set().is_one(&coeff) {
                         return Self::one(self.get_set());
                     }
-                    return Self::zero(self.get_set());
+                    // Only the coefficient is left, `{$2 x x^-1$}`, which the set may fold into a value
+                    res.push(Self::one(self.get_set()));
                 }
                 res.sort_by(Self::cmp_factors);
                 res.reverse();
@@ -1168,6 +1171,13 @@ impl<T: Ring> Term<T> {
                     }
                 }
                 factors.push(current_merge);
+                // Factors merged into one, `{$x^2 x^-2$}`, keeping one when nothing else is left
+                if factors.len() > 1 {
+                    factors.retain(|factor| !factor.is_one());
+                    if factors.is_empty() {
+                        factors.push(Self::one(self.get_set()));
+                    }
+                }
 
                 if mul.set.get_coefficient_set().is_zero(&coeff) {
                     Self::zero(self.get_set())

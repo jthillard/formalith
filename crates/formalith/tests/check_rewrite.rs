@@ -188,7 +188,6 @@ fn regression(input: &str, check: fn(&str) -> Verdict) {
 }
 
 #[test]
-#[ignore = "bug: 2*x^2*x^(-2) evaluates to 0 (a coefficient times powers cancelling to 1)"]
 fn bug_coefficient_times_cancelling_powers_is_zero() {
     let mut env = env_with(&[]);
     // `2*x*x^(-1)` is right, but not other exponents; also `(1/2)*sqrt(pi)/sqrt(pi)` and `pi^(-1/2)*gamma(3/2)`
@@ -219,7 +218,6 @@ fn bug_zero_times_division_by_zero() {
 }
 
 #[test]
-#[ignore = "bug: simplify((2 + 1/x)^2) is 1/x^2 + 4/x, without the 4 (expand is right)"]
 fn bug_simplify_square_drops_constant() {
     // Likely `bug_coefficient_times_cancelling_powers_is_zero` on the `4*x^2*x^-2` of the common denominator
     regression("simplify; (2 + 1/x)^2", rewrite);

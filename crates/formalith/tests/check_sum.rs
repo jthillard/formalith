@@ -275,7 +275,6 @@ fn regression(input: &str, check: fn(&str) -> Verdict) {
 }
 
 #[test]
-#[ignore = "bug: closed forms of products with a factor 2k + 1 evaluate to 0 at integers (see bug_coefficient_times_cancelling_powers_is_zero)"]
 fn bug_product_of_odd_factors_at_integer() {
     // `S(n) = gamma(n + 3/2) 2^(n + 1)/sqrt(pi)` is right, but `S(0) = 2 gamma(3/2)/sqrt(pi)` normalizes to 0
     regression("2*k + 1; 0", product_check);
