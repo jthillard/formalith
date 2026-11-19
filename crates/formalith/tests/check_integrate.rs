@@ -188,7 +188,6 @@ fn bug_integrate_sin_of_reciprocal_ln() {
 }
 
 #[test]
-#[ignore = "bug: integrate(sqrt(x)/(2*x - 1), x) panics on a debug assertion (needs_normalization)"]
 fn bug_integrate_sqrt_over_linear_panics() {
     regression("sqrt(x)/(2*x - 1)", antiderivative);
 }
