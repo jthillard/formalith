@@ -10,7 +10,7 @@ use malachite::{
     },
 };
 
-use crate::term::fun::{eval_calculus_builtin, eval_rewrite_builtin};
+use crate::term::fun::{eval_calculus_builtin, eval_matrix_builtin, eval_rewrite_builtin};
 use crate::{
     context::{Context, Symbol},
     field::{
@@ -395,8 +395,13 @@ impl Ring for C<R<Rational>> {
                         return arg.factor();
                     }
                 }
-                Context::DIFF | Context::DET => {
+                Context::DIFF => {
                     if let Some(res) = eval_calculus_builtin(&**fun) {
+                        return res;
+                    }
+                }
+                Context::DET | Context::TRACE | Context::RANK | Context::CHARPOLY => {
+                    if let Some(res) = eval_matrix_builtin(&**fun) {
                         return res;
                     }
                 }

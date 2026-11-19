@@ -9,7 +9,7 @@ use crate::{
     term::{Mul, Normalize, SymbolTerm, Term},
 };
 
-use super::{Solution, SolveError, plain, polynomial::values};
+use super::{Solution, SolveError, lattice::IntegerSystem, plain, polynomial::values};
 
 /// Solve the linear system `expression = 0` for each expanded expression, in `unknowns`.
 ///
@@ -39,13 +39,17 @@ pub(super) fn solve<T: Ring>(
     }
 
     if let Some(values) = values(&data) {
-        return solve_matrix(
-            Matrix::new(size, values, set),
-            set,
-            unknowns,
-            set,
-            |value| Term::constant(value.clone(), set),
-        );
+        let matrix = Matrix::new(size, values, set);
+        return match solve_matrix(matrix.clone(), set, unknowns, set, |value| {
+            Term::constant(value.clone(), set)
+        }) {
+            // Over rings like `{$ZZ$}`, pivots may not be invertible
+            Err(SolveError::NotInvertible) => {
+                let symbols = expressions.iter().flat_map(Term::symbols).collect();
+                set.solve_lattice(&matrix, unknowns, &symbols)
+            }
+            res => res,
+        };
     }
     let term_set = set.get_term_set();
     let solution = solve_matrix(
@@ -76,11 +80,22 @@ fn solve_matrix<T: Ring, K: Ring>(
     set: T,
     to_term: impl Fn(&K::Element) -> Term<T>,
 ) -> Result<Solution<T>, SolveError> {
-    let count = unknowns.len();
     matrix
-        .row_reduce_left(count)
+        .row_reduce_left(unknowns.len())
         .map_err(|_| SolveError::NotInvertible)?;
+    assignments(&matrix, coefficient_set, unknowns, set, to_term)
+}
 
+/// The solution of a system of augmented matrix `matrix` in row reduced echelon form, with pivots equal to one
+/// in the coefficient columns.
+pub(super) fn assignments<T: Ring, K: Ring>(
+    matrix: &Matrix<K>,
+    coefficient_set: K,
+    unknowns: &[Symbol],
+    set: T,
+    to_term: impl Fn(&K::Element) -> Term<T>,
+) -> Result<Solution<T>, SolveError> {
+    let count = unknowns.len();
     // Pivots, as (row, column)
     let mut pivots = vec![];
     for row in 0..matrix.height() {

@@ -68,16 +68,6 @@ fn errors() {
             .contains("can't solve")
     );
     assert!(
-        solve_in("Z/6", "2*x = 1")
-            .unwrap_err()
-            .contains("not invertible")
-    );
-    assert!(
-        solve_in("Z", "2*x = 4")
-            .unwrap_err()
-            .contains("not invertible")
-    );
-    assert!(
         solve_in("N", "x = 1")
             .unwrap_err()
             .contains("can't be solved")
@@ -391,15 +381,48 @@ fn integer_and_modular_roots() {
         solve_in("Z/6", "x^2 = x"),
         ok("x = 0 \\ x = 1 \\ x = 3 \\ x = 4")
     );
-    assert!(solve_in("Z/6", "2*x = 1").is_err());
+    assert_eq!(solve_in("Z/6", "2*x = 1"), ok("\"no solution\""));
 }
 
 #[test]
-#[ignore = "future: linear systems over Z and Z/n with non-invertible pivots (Hermite / Smith normal form)"]
 fn linear_systems_with_non_invertible_pivots() {
     assert_eq!(solve_in("Z", "2*x = 4"), ok("x = 2"));
     assert_eq!(solve_in("Z", "x + y = 3, x - y = 1"), ok("x = 2, y = 1"));
     assert_eq!(solve_in("Z/6", "2*x = 4"), ok("x = 2 \\ x = 5"));
+    assert_eq!(solve_in("Z", "2*x = 3"), ok("\"no solution\""));
+    assert_eq!(solve_in("Z", "3*x = 6, 2*x = 4"), ok("x = 2"));
+    // Unknowns without pivot stay free when the pivots divide their rows
+    assert_eq!(solve_in("Z", "2*x + 4*y = 6"), ok("x = -2 y+3"));
+    assert_eq!(
+        solve_in("Z", "6*x + 4*y + 2*z = 2, x - z = 1"),
+        ok("x = z+1, y = -2 z-1")
+    );
+    assert_eq!(solve_in("Z", "2*x + 4*y = 3"), ok("\"no solution\""));
+}
+
+#[test]
+fn linear_systems_with_new_parameters() {
+    assert_eq!(
+        solve_in("Z", "2*x + 3*y = 1"),
+        ok("x = 3 t_1-1, y = -2 t_1+1")
+    );
+    // `t_1` is taken
+    assert_eq!(
+        solve_in("Z", "2*x + 3*t_1 = 1"),
+        ok("t_1 = -2 t_2+1, x = 3 t_2-1")
+    );
+    assert_eq!(
+        solve_in("Z/6", "2*x + 2*y = 2"),
+        ok("x = t_1, y = -t_1+1 \\ x = t_1, y = -t_1+4")
+    );
+    assert_eq!(
+        solve_in("Z/12", "4*x + 6*y = 2, x + y = 1"),
+        ok("x = 2, y = 11 \\ x = 8, y = 5")
+    );
+    assert_eq!(
+        solve_in("Z/8", "4*x = 0"),
+        ok("x = 0 \\ x = 2 \\ x = 4 \\ x = 6")
+    );
 }
 
 #[test]

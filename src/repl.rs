@@ -10,6 +10,7 @@ use crate::{
     },
     parser::environment::{Environment, Statement, head},
     printer::{Print, PrintOptions},
+    term::TermSet,
 };
 
 /// The sets expressions can be evaluated in.
@@ -25,6 +26,10 @@ pub enum SetChoice {
     C,
     /// Matrices with rational coefficients.
     M,
+    /// Matrices with integer coefficients.
+    MZ,
+    /// Matrices with coefficients modulo `n`.
+    MZn(u64),
     /// Integers modulo `n`.
     Zn(u64),
     /// Polynomials in a variable, with coefficients in a set.
@@ -44,7 +49,7 @@ pub enum Coefficients {
 
 impl SetChoice {
     /// Every set which isn't parameterized.
-    pub const ALL: [Self; 5] = [Self::N, Self::Z, Self::R, Self::C, Self::M];
+    pub const ALL: [Self; 6] = [Self::N, Self::Z, Self::R, Self::C, Self::M, Self::MZ];
 
     /// The name used to select the set, like `Z/7` or `R[x]`.
     #[must_use]
@@ -61,6 +66,8 @@ impl SetChoice {
             Self::R => "rationals",
             Self::C => "complex numbers, `i` is the imaginary unit",
             Self::M => "matrices with rational coefficients, like [[1, 2], [3, 4]]",
+            Self::MZ => "matrices with integer coefficients, with hermite and smith normal forms",
+            Self::MZn(_) => "matrices with coefficients modulo n, like M(Z/6)",
             Self::Zn(_) => "integers modulo n, a field when n is prime, like Z/7",
             Self::Poly(..) => {
                 "polynomials in x with coefficients in K = R, C or Z/n, like R[x] or Z/2[t]"
@@ -85,6 +92,8 @@ impl SetChoice {
             Self::R => eval_in(input, R, typst, env),
             Self::C => eval_in(input, C, typst, env),
             Self::M => eval_in(input, M, typst, env),
+            Self::MZ => eval_in(input, M::new(TermSet::new(Z)), typst, env),
+            Self::MZn(n) => eval_in(input, M::new(TermSet::new(Zn::new(n))), typst, env),
             Self::Zn(n) => eval_in(input, Zn::new(n), typst, env),
             Self::Poly(Coefficients::R, x) => eval_in(input, R.get_polynomial_ring(x), typst, env),
             Self::Poly(Coefficients::C, x) => eval_in(input, C.get_polynomial_ring(x), typst, env),
@@ -103,6 +112,8 @@ impl fmt::Display for SetChoice {
             Self::R => f.write_str("R"),
             Self::C => f.write_str("C"),
             Self::M => f.write_str("M"),
+            Self::MZ => f.write_str("M(Z)"),
+            Self::MZn(n) => write!(f, "M(Z/{n})"),
             Self::Zn(n) => write!(f, "Z/{n}"),
             Self::Poly(coefficients, x) => {
                 let coefficients = match coefficients {
@@ -129,6 +140,20 @@ impl FromStr for SetChoice {
     /// Parse a set name, like `R`, `Z/7` (or `Z/7Z`) or `Z/2[x]`, ignoring the case of set letters.
     fn from_str(name: &str) -> Result<Self, Self::Err> {
         let name = name.trim();
+        if let Some(entries) = name
+            .strip_prefix(['M', 'm'])
+            .and_then(|n| n.trim_start().strip_prefix('('))
+            .and_then(|n| n.strip_suffix(')'))
+        {
+            return match entries.parse()? {
+                Self::R => Ok(Self::M),
+                Self::Z => Ok(Self::MZ),
+                Self::Zn(n) => Ok(Self::MZn(n)),
+                entries => Err(format!(
+                    "matrices with coefficients in {entries} are not supported, use R, Z or Z/n"
+                )),
+            };
+        }
         if let Some((base, variable)) = name.strip_suffix(']').and_then(|n| n.split_once('[')) {
             let variable = variable.trim();
             let coefficients = match base.trim().parse()? {
@@ -186,10 +211,11 @@ pub fn sets_help() -> String {
         .map(|set| (set.name(), set))
         .chain([
             ("Z/n".to_owned(), SetChoice::Zn(2)),
+            ("M(Z/n)".to_owned(), SetChoice::MZn(2)),
             ("K[x]".to_owned(), SetChoice::Poly(Coefficients::R, x)),
         ])
     {
-        help.push_str(&format!("\n  {name:<5} {}", set.description()));
+        help.push_str(&format!("\n  {name:<6} {}", set.description()));
     }
     help
 }

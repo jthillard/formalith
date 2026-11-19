@@ -238,16 +238,35 @@ impl Context {
     pub const PRODUCT: Symbol = Symbol(59);
     /// Solve an ordinary differential equation, like `dsolve(y' = y)`, only allowed as a whole statement
     pub const DSOLVE: Symbol = Symbol(60);
+    /// Transpose of a matrix
+    pub const TRANSPOSE: Symbol = Symbol(61);
+    /// Trace of a square matrix, the sum of its diagonal
+    pub const TRACE: Symbol = Symbol(62);
+    /// Rank of a matrix
+    pub const RANK: Symbol = Symbol(63);
+    /// Kernel of a matrix, a matrix whose columns are a basis of it
+    pub const KERNEL: Symbol = Symbol(64);
+    /// Characteristic polynomial `charpoly(A, x)` of a square matrix, `{$det(x I - A)$}`, in `x` by default
+    pub const CHARPOLY: Symbol = Symbol(65);
+    /// Eigenvalues of a square matrix, as a column vector repeating them by algebraic multiplicity
+    pub const EIGENVALUES: Symbol = Symbol(66);
+    /// Eigenvectors of a square matrix, as a matrix whose columns are bases of the eigenspaces, ordered like `eigenvalues`
+    pub const EIGENVECTORS: Symbol = Symbol(67);
+    /// Hermite normal form of a matrix over `{$ZZ$}` or `{$ZZ\/n ZZ$}`
+    pub const HERMITE: Symbol = Symbol(68);
+    /// Smith normal form of a matrix over `{$ZZ$}` or `{$ZZ\/n ZZ$}`
+    pub const SMITH: Symbol = Symbol(69);
 
     #[rustfmt::skip]
-    const BUILTIN_NAMES: [&'static str; 61] = [
+    const BUILTIN_NAMES: [&'static str; 70] = [
         "abs", "det", "expand", "factor", "simplify", "re", "im", "conj", "sqrt", "root", "sign",
         "floor", "ceil", "min", "max", "gcd", "lcm", "quo", "rem", "diff", "solve", "approx",
         "exp", "ln", "sin", "cos", "tan", "pi", "e", "lim", "oo", "undefined",
         "series", "asin", "acos", "atan", "sinh", "cosh", "tanh", "asinh", "acosh", "atanh", "cot",
         "sec", "csc", "log", "factorial", "binomial", "integrate", "erf", "erfi", "assume",
         "gamma", "beta", "digamma", "polygamma", "zeta", "euler_gamma", "sum", "product",
-        "dsolve",
+        "dsolve", "transpose", "trace", "rank", "kernel", "charpoly", "eigenvalues", "eigenvectors",
+        "hermite", "smith",
     ];
 
     /// Return `true` if `symbol` is a builtin constant, like `{$pi$}`, which is not a function.
@@ -275,7 +294,7 @@ impl Context {
             Self::MIN | Self::MAX | Self::SOLVE | Self::ASSUME | Self::DSOLVE => {
                 Some((1, usize::MAX))
             }
-            Self::APPROX | Self::LOG => Some((1, 2)),
+            Self::APPROX | Self::LOG | Self::CHARPOLY => Some((1, 2)),
             Self::LIM => Some((3, 4)),
             Self::SERIES => Some((3, 5)),
             Self::INTEGRATE => Some((2, 4)),

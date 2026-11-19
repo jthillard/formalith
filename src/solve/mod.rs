@@ -21,6 +21,7 @@
 //! );
 //! ```
 
+mod lattice;
 mod linear;
 pub(crate) mod polynomial;
 

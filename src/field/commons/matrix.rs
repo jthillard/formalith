@@ -1,17 +1,21 @@
 //! The matrix ring `{$M$}`.
 
-use malachite::rational::Rational;
+use malachite::{Integer, rational::Rational};
 use std::{
     cmp::Ordering,
     fmt::{self, Debug, Display},
 };
 
 use crate::{
-    field::{Group, PartiallyOrderedSet, Ring, Set, SetParseExpression, real::R},
+    context::{Context, Symbol},
+    field::{
+        EuclideanRing, Group, PartiallyOrderedSet, Ring, Set, SetParseExpression, integer::Z,
+        modular::Zn, real::R,
+    },
     matrix::{Matrix, MatrixResult},
     parser::{Parser, ParserError, lexer::TokenKind},
     printer::{PrettyPrint, PrettyPrinter, Print, PrintOptions},
-    term::{self, Term, TermSet, Value},
+    term::{self, Expand, Function, Term, TermSet, Value},
 };
 
 /// An enum representing elements inside a vector space.
@@ -210,6 +214,260 @@ impl<T: Ring> M<T> {
         };
         Term::Value(Value::new(element, *self))
     }
+
+    /// Evaluate the matrix builtins (`det`, `transpose`, `trace`, `rank`, `kernel`, `charpoly`, `eigenvalues`,
+    /// `eigenvectors`, `hermite` and `smith`) of a matrix value. Returns `None` for other functions, or when
+    /// they can't be evaluated, like the trace of a non-square matrix.
+    fn eval_builtin(&self, fun: &dyn Function<Self>) -> Option<VectorSpaceElement<T, Matrix<T>>> {
+        let args = fun.get_args::<Self>()?;
+        let scalars = self.scalar_sub_set;
+        let scalar = |element| VectorSpaceElement::Scalar(element, scalars);
+        let matrix = match args.first()? {
+            Term::Value(Value {
+                value: VectorSpaceElement::Vector(matrix),
+                ..
+            }) => matrix,
+            Term::Value(Value {
+                value: value @ VectorSpaceElement::Scalar(..),
+                ..
+            }) if fun.get_ident() == Context::DET => return Some(value.clone()),
+            _ => return None,
+        };
+        let eigenspaces = || <T as MatrixEntries>::eigenspaces(matrix);
+        Some(match fun.get_ident() {
+            Context::DET => scalar(matrix.det().ok()?),
+            Context::TRANSPOSE => VectorSpaceElement::Vector(matrix.transpose()),
+            Context::TRACE => scalar(matrix.trace().ok()?),
+            Context::RANK => scalar(scalars.nth(<T as MatrixEntries>::rank(matrix)? as i64)),
+            Context::KERNEL => VectorSpaceElement::Vector(<T as MatrixEntries>::kernel(matrix)?),
+            Context::CHARPOLY => {
+                let x = match args.get(1) {
+                    None => Symbol::new("x"),
+                    Some(Term::Symbol(x)) => x.symbol,
+                    Some(Term::Value(Value {
+                        value: VectorSpaceElement::Scalar(x, _),
+                        ..
+                    })) => <T as MatrixEntries>::as_symbol(x)?,
+                    Some(_) => return None,
+                };
+                scalar(<T as MatrixEntries>::charpoly(matrix, x)?)
+            }
+            Context::HERMITE => VectorSpaceElement::Vector(<T as MatrixEntries>::hermite(matrix)?),
+            Context::SMITH => VectorSpaceElement::Vector(<T as MatrixEntries>::smith(matrix)?),
+            Context::EIGENVALUES => {
+                let values: Vec<_> = eigenspaces()?
+                    .into_iter()
+                    .flat_map(|(value, multiplicity, _)| std::iter::repeat_n(value, multiplicity))
+                    .collect();
+                VectorSpaceElement::Vector(Matrix::new((values.len(), 1), values, scalars))
+            }
+            Context::EIGENVECTORS => VectorSpaceElement::Vector(
+                eigenspaces()?
+                    .into_iter()
+                    .map(|(_, _, basis)| basis)
+                    .reduce(|vectors, basis| vectors.concat_columns(&basis))?,
+            ),
+            _ => return None,
+        })
+    }
+}
+
+/// Matrix operations depending on the set of the entries, specialized for the sets where they can be evaluated:
+/// normal forms over `{$ZZ$}` and `{$ZZ\/n ZZ$}`, eigenvalues over `{$RR$}`. Every method returns `None` when the
+/// operation can't be evaluated.
+pub trait MatrixEntries: Ring {
+    /// The rank of `matrix`.
+    fn rank(matrix: &Matrix<Self>) -> Option<usize>;
+    /// A basis of the kernel of `matrix`, see [`Matrix::kernel`].
+    fn kernel(matrix: &Matrix<Self>) -> Option<Matrix<Self>>;
+    /// The characteristic polynomial of `matrix` in `x`.
+    fn charpoly(matrix: &Matrix<Self>, x: Symbol) -> Option<Self::Element>;
+    /// The Hermite normal form of `matrix`, see [`Matrix::hermite`].
+    fn hermite(matrix: &Matrix<Self>) -> Option<Matrix<Self>>;
+    /// The Smith normal form of `matrix`, see [`Matrix::smith`].
+    fn smith(matrix: &Matrix<Self>) -> Option<Matrix<Self>>;
+    /// The eigenvalues of `matrix`, with their algebraic multiplicity and a basis of their eigenspace.
+    fn eigenspaces(matrix: &Matrix<Self>) -> Option<Vec<(Self::Element, usize, Matrix<Self>)>>;
+    /// The symbol `element` is, if it is one.
+    fn as_symbol(element: &Self::Element) -> Option<Symbol>;
+}
+
+impl<T: Ring> MatrixEntries for T {
+    default fn rank(matrix: &Matrix<Self>) -> Option<usize> {
+        matrix.rank().ok()
+    }
+    default fn kernel(matrix: &Matrix<Self>) -> Option<Matrix<Self>> {
+        matrix.kernel().ok()
+    }
+    default fn charpoly(_: &Matrix<Self>, _: Symbol) -> Option<Self::Element> {
+        None
+    }
+    default fn hermite(_: &Matrix<Self>) -> Option<Matrix<Self>> {
+        None
+    }
+    default fn smith(_: &Matrix<Self>) -> Option<Matrix<Self>> {
+        None
+    }
+    default fn eigenspaces(_: &Matrix<Self>) -> Option<Vec<(Self::Element, usize, Matrix<Self>)>> {
+        None
+    }
+    default fn as_symbol(_: &Self::Element) -> Option<Symbol> {
+        None
+    }
+}
+
+impl<T: Ring> MatrixEntries for TermSet<T> {
+    default fn rank(matrix: &Matrix<Self>) -> Option<usize> {
+        matrix.rank().ok()
+    }
+    default fn kernel(matrix: &Matrix<Self>) -> Option<Matrix<Self>> {
+        matrix.kernel().ok()
+    }
+    default fn charpoly(matrix: &Matrix<Self>, x: Symbol) -> Option<Self::Element> {
+        matrix.charpoly(x).ok().map(|charpoly| charpoly.expand())
+    }
+    default fn hermite(_: &Matrix<Self>) -> Option<Matrix<Self>> {
+        None
+    }
+    default fn smith(_: &Matrix<Self>) -> Option<Matrix<Self>> {
+        None
+    }
+    default fn eigenspaces(_: &Matrix<Self>) -> Option<Vec<(Self::Element, usize, Matrix<Self>)>> {
+        None
+    }
+    default fn as_symbol(element: &Self::Element) -> Option<Symbol> {
+        match element {
+            Term::Symbol(symbol) => Some(symbol.symbol),
+            _ => None,
+        }
+    }
+}
+
+/// The entries of `matrix`, if they are all values.
+fn values<T: Ring>(matrix: &Matrix<TermSet<T>>) -> Option<Matrix<T>> {
+    let data = matrix
+        .data
+        .iter()
+        .map(|entry| match entry {
+            Term::Value(value) => Some(value.value.clone()),
+            _ => None,
+        })
+        .collect::<Option<_>>()?;
+    Some(Matrix::new(
+        (matrix.height(), matrix.width()),
+        data,
+        *matrix.set.get_set(),
+    ))
+}
+
+/// `matrix` with its entries as constant expressions.
+fn constants<T: Ring>(matrix: Matrix<T>) -> Matrix<TermSet<T>> {
+    let set = matrix.set;
+    Matrix::new(
+        (matrix.height(), matrix.width()),
+        matrix
+            .data
+            .into_iter()
+            .map(|value| Term::constant(value, set))
+            .collect(),
+        set.get_term_set(),
+    )
+}
+
+/// The entries of `matrix` lifted to `{$ZZ$}`, if they are all values.
+fn lift(matrix: &Matrix<TermSet<Zn>>) -> Option<Matrix<Z<Integer>>> {
+    let values = values(matrix)?;
+    Some(Matrix::new(
+        (values.height(), values.width()),
+        values.data.into_iter().map(Integer::from).collect(),
+        Z,
+    ))
+}
+
+impl MatrixEntries for TermSet<Z<Integer>> {
+    /// The rank over `{$QQ$}`, the number of pivots of the Hermite normal form.
+    fn rank(matrix: &Matrix<Self>) -> Option<usize> {
+        Some(values(matrix)?.hermite_decomposition().2)
+    }
+    /// A basis of the lattice of integer vectors of the kernel: the last rows of `U` in the Hermite
+    /// decomposition `{$U A^T = H$}`, whose rows of `H` are zero.
+    fn kernel(matrix: &Matrix<Self>) -> Option<Matrix<Self>> {
+        let matrix = values(matrix)?;
+        let (transform, _, rank) = matrix.transpose().hermite_decomposition();
+        Some(constants(if rank == matrix.width() {
+            Matrix::zero((matrix.width(), 1), Z)
+        } else {
+            transform
+                .submatrix(rank..matrix.width(), 0..matrix.width())
+                .transpose()
+        }))
+    }
+    fn hermite(matrix: &Matrix<Self>) -> Option<Matrix<Self>> {
+        Some(constants(values(matrix)?.hermite()))
+    }
+    fn smith(matrix: &Matrix<Self>) -> Option<Matrix<Self>> {
+        Some(constants(values(matrix)?.smith()))
+    }
+}
+
+impl MatrixEntries for TermSet<Zn> {
+    /// The rank, only when the pivots of the row reduction are invertible.
+    fn rank(matrix: &Matrix<Self>) -> Option<usize> {
+        let mut matrix = values(matrix)?;
+        let width = matrix.width();
+        matrix.row_reduce_left(width).ok()
+    }
+    fn kernel(matrix: &Matrix<Self>) -> Option<Matrix<Self>> {
+        Some(constants(values(matrix)?.kernel().ok()?))
+    }
+    /// The Hermite normal form of the rows of `A` and `{$n I$}` over `{$ZZ$}`, which generate the same module as
+    /// `A` modulo `n`, reduced modulo `n` without its zero rows.
+    fn hermite(matrix: &Matrix<Self>) -> Option<Matrix<Self>> {
+        let set = *matrix.set.get_set();
+        let lifted = lift(matrix)?;
+        let width = lifted.width();
+        let mut modulus = Matrix::identity(width, Z);
+        modulus.external_product(&Integer::from(set.modulus()));
+        let mut data = lifted.data;
+        data.extend(modulus.data);
+        let hermite = Matrix::new((data.len() / width, width), data, Z).hermite();
+        let rows: Vec<Vec<u64>> = (0..hermite.height())
+            .map(|i| (0..width).map(|j| set.reduce(&hermite[(i, j)])).collect())
+            .filter(|row: &Vec<u64>| row.iter().any(|&x| x != 0))
+            .collect();
+        let height = rows.len().max(1);
+        let mut data: Vec<u64> = rows.into_iter().flatten().collect();
+        data.resize(height * width, 0);
+        Some(constants(Matrix::new((height, width), data, set)))
+    }
+    /// The Smith normal form over `{$ZZ$}`, whose diagonal entries `d` are replaced by `{$gcd(d, n)$}` (reduced
+    /// modulo `n`), the other ones being units modulo `n`.
+    fn smith(matrix: &Matrix<Self>) -> Option<Matrix<Self>> {
+        let set = *matrix.set.get_set();
+        let smith = lift(matrix)?.smith();
+        let modulus = Integer::from(set.modulus());
+        Some(constants(Matrix::new(
+            (smith.height(), smith.width()),
+            smith
+                .data
+                .iter()
+                .map(|d| set.reduce(&Z.gcd(d, &modulus)))
+                .collect(),
+            set,
+        )))
+    }
+}
+
+impl MatrixEntries for TermSet<R<Rational>> {
+    fn eigenspaces(matrix: &Matrix<Self>) -> Option<Vec<(Self::Element, usize, Matrix<Self>)>> {
+        Some(
+            matrix
+                .eigenspaces()?
+                .into_iter()
+                .map(|space| (space.value, space.multiplicity, space.basis))
+                .collect(),
+        )
+    }
 }
 
 impl<T: Ring> Ring for M<T> {
@@ -308,6 +566,11 @@ impl<T: Ring> Ring for M<T> {
         } else {
             a
         };
+        if let Term::Fun(fun) = &a
+            && let Some(res) = self.eval_builtin(&**fun)
+        {
+            return self.normalize(Term::Value(Value::new(res, *self)));
+        }
         match &a {
             Term::Value(value) => {
                 let scalars = self.scalar_sub_set;
@@ -418,6 +681,20 @@ impl<T: SetParseExpression> SetParseExpression for M<T> {
     }
 
     fn parse_literal(&self, parser: &mut Parser) -> Result<Option<Self::Element>, String> {
+        // Builtins returning matrices are functions of this set, not scalars like other functions
+        if let TokenKind::Ident(name) = &parser.token.kind
+            && matches!(
+                Symbol::new(name.as_str()),
+                Context::TRANSPOSE
+                    | Context::KERNEL
+                    | Context::EIGENVALUES
+                    | Context::EIGENVECTORS
+                    | Context::HERMITE
+                    | Context::SMITH
+            )
+        {
+            return Ok(None);
+        }
         Ok(self
             .scalar_sub_set
             .parse_literal(parser)?

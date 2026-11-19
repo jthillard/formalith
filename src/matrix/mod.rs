@@ -5,6 +5,12 @@ use std::{
     ops::{Index, IndexMut},
 };
 
+mod eigen;
+mod linalg;
+mod normal_form;
+
+pub use eigen::Eigenspace;
+
 use crate::{
     field::{Group, Ring, Set},
     printer::{PrettyPrint, PrettyPrinter, Print, PrintOptions},
@@ -15,7 +21,7 @@ use crate::{
 pub struct Matrix<T: Set> {
     size: (usize, usize),
     pub(crate) data: Vec<T::Element>,
-    set: T,
+    pub(crate) set: T,
 }
 
 /// An error thrown by a matrix method.

@@ -1,10 +1,12 @@
 //! Generic matrices and the matrix set `M`.
 use formalith::{
-    field::{matrix::M, real::R},
+    field::{integer::Z, matrix::M, modular::Zn, real::R},
     matrix::{Matrix, MatrixError},
-    parse, try_parse,
+    parse,
+    term::TermSet,
+    try_parse,
 };
-use malachite::Rational;
+use malachite::{Integer, Rational};
 
 mod common;
 use common::{line, pretty};
@@ -412,5 +414,227 @@ fn symbolic_matrices_are_simplified() {
     assert_eq!(
         line(&parse!("[[a, b], [c, d]]*[[a, b], [c, d]]^-1", M)),
         "[[1,0],[0,1]]"
+    );
+}
+
+// Linear algebra
+
+fn integers(height: usize, width: usize, data: &[i64]) -> Matrix<Z<Integer>> {
+    assert_eq!(data.len(), height * width);
+    Matrix::new(
+        (height, width),
+        data.iter().map(|&x| Integer::from(x)).collect(),
+        Z,
+    )
+}
+
+/// Whether the integer matrix `m` is invertible over `{$ZZ$}`, its determinant (computed over ℚ) being `±1`.
+fn unimodular(m: &Matrix<Z<Integer>>) -> bool {
+    let rational = Matrix::new(
+        (m.height(), m.width()),
+        (0..m.height())
+            .flat_map(|i| (0..m.width()).map(move |j| (i, j)))
+            .map(|index| Rational::from(&m[index]))
+            .collect(),
+        R,
+    );
+    let det = rational.det().unwrap();
+    det == 1 || det == -1
+}
+
+#[test]
+fn transpose_trace_rank() {
+    let m = matrix(2, 3, &[1, 2, 3, 4, 5, 6]);
+    assert_eq!(m.transpose(), matrix(3, 2, &[1, 4, 2, 5, 3, 6]));
+    assert_eq!(m.transpose().transpose(), m);
+    assert!(matches!(m.trace(), Err(MatrixError::NotSquare)));
+    assert_eq!(matrix(2, 2, &[1, 2, 3, 4]).trace().unwrap(), 5);
+    assert_eq!(m.rank().unwrap(), 2);
+    assert_eq!(matrix(2, 3, &[1, 2, 3, 2, 4, 6]).rank().unwrap(), 1);
+}
+
+#[test]
+fn kernel() {
+    let m = matrix(2, 3, &[1, 2, 3, 4, 5, 6]);
+    let kernel = m.kernel().unwrap();
+    assert_eq!(kernel, matrix(3, 1, &[1, -2, 1]));
+    assert_eq!(&m * &kernel, Matrix::zero((2, 1), R));
+    let kernel = matrix(1, 3, &[1, 1, 1]).kernel().unwrap();
+    assert_eq!(kernel, matrix(3, 2, &[-1, -1, 1, 0, 0, 1]));
+    // Trivial kernel, as a zero column
+    assert_eq!(
+        matrix(2, 2, &[1, 2, 3, 4]).kernel().unwrap(),
+        Matrix::zero((2, 1), R)
+    );
+}
+
+#[test]
+fn characteristic_polynomial() {
+    let coefficients = |m: Matrix<R<Rational>>| m.charpoly_coefficients().unwrap();
+    assert_eq!(
+        coefficients(matrix(2, 2, &[1, 2, 3, 4])),
+        vec![q(1, 1), q(-5, 1), q(-2, 1)]
+    );
+    // `{$det(x I - A) = x^3 - 2 x^2 - 5 x + 6$}`, the constant being `{$-det(A)$}`
+    let m = matrix(3, 3, &[1, 2, 0, 2, 1, 0, 0, 0, 0]);
+    assert_eq!(coefficients(m), vec![q(1, 1), q(-2, 1), q(-3, 1), q(0, 1)]);
+    let m = matrix(3, 3, &[2, 0, 1, 1, 3, 2, 1, 1, 2]);
+    let c = coefficients(m.clone());
+    assert_eq!(c[1], -m.trace().unwrap());
+    assert_eq!(c[3], -m.det().unwrap());
+    // Without divisions, over `{$ZZ$}`
+    assert_eq!(
+        integers(2, 2, &[0, 1, 1, 0])
+            .charpoly_coefficients()
+            .unwrap(),
+        vec![Integer::from(1), Integer::from(0), Integer::from(-1)]
+    );
+    assert_eq!(
+        line(&parse!("charpoly([[1,2],[3,4]], t)", R)),
+        line(&parse!("t^2 - 5t - 2", R))
+    );
+    assert_eq!(
+        parse!("charpoly([[1,2],[3,4]])", R),
+        parse!("x^2 - 5x - 2", R)
+    );
+}
+
+#[test]
+fn hermite_normal_form() {
+    let a = integers(3, 4, &[2, 3, 6, 2, 5, 6, 1, 6, 8, 3, 1, 1]);
+    let (u, h, rank) = a.hermite_decomposition();
+    assert_eq!(
+        h,
+        integers(3, 4, &[1, 0, 50, -11, 0, 3, 28, -2, 0, 0, 61, -13])
+    );
+    assert_eq!(rank, 3);
+    assert_eq!(&u * &a, h);
+    assert!(unimodular(&u));
+    // Rank deficient
+    let a = integers(3, 2, &[2, 4, 3, 6, 1, 2]);
+    let (u, h, rank) = a.hermite_decomposition();
+    assert_eq!((h, rank), (integers(3, 2, &[1, 2, 0, 0, 0, 0]), 1));
+    assert_eq!(&u * &a, integers(3, 2, &[1, 2, 0, 0, 0, 0]));
+}
+
+#[test]
+fn smith_normal_form() {
+    let a = integers(3, 3, &[2, 4, 4, -6, 6, 12, 10, -4, -16]);
+    let (u, d, v) = a.smith_decomposition();
+    assert_eq!(d, integers(3, 3, &[2, 0, 0, 0, 6, 0, 0, 0, 12]));
+    assert_eq!(&(&u * &a) * &v, d);
+    assert!(unimodular(&u) && unimodular(&v));
+    // Divisibility chain, which needs combining rows: `diag(2, 3)` becomes `diag(1, 6)`
+    assert_eq!(
+        integers(2, 2, &[2, 0, 0, 3]).smith(),
+        integers(2, 2, &[1, 0, 0, 6])
+    );
+    assert_eq!(
+        integers(2, 3, &[0, 0, 0, 0, 0, 0]).smith(),
+        integers(2, 3, &[0; 6])
+    );
+    assert_eq!(
+        integers(2, 3, &[1, 2, 3, 4, 5, 6]).smith(),
+        integers(2, 3, &[1, 0, 0, 0, 3, 0])
+    );
+}
+
+#[test]
+fn matrix_builtins() {
+    assert_eq!(
+        line(&parse!("transpose([[1,2,3],[4,5,6]])", M)),
+        "[[1,4],[2,5],[3,6]]"
+    );
+    assert_eq!(
+        line(&parse!("transpose([[1,2],[3,4]])*[[1],[1]]", M)),
+        "[[4],[6]]"
+    );
+    assert_eq!(line(&parse!("trace([[1,2],[3,4]])", M)), "5");
+    assert_eq!(line(&parse!("rank([[1,2],[2,4]])", M)), "1");
+    assert_eq!(line(&parse!("det([[1,2],[3,4]])", M)), "-2");
+    assert_eq!(line(&parse!("kernel([[1,2],[2,4]])", M)), "[[-2],[1]]");
+    assert_eq!(
+        line(&parse!("kernel([[a,b],[2a,2b]])", M)),
+        "[[-(a^-1)*b],[1]]"
+    );
+    // Scalar builtins in scalar sets
+    assert_eq!(parse!("trace([[1,2],[3,4]])", R), 5.into());
+    assert_eq!(parse!("rank([[1,2],[3,4]])", R), 2.into());
+    assert_eq!(parse!("trace([[x,1],[1,y]])", R), parse!("x+y", R));
+    // Unevaluated
+    assert_eq!(
+        line(&parse!("trace([[1,2,3],[4,5,6]])", M)),
+        "trace([[1,2,3],[4,5,6]])"
+    );
+}
+
+#[test]
+fn eigenvalues_and_eigenvectors() {
+    assert_eq!(line(&parse!("eigenvalues([[2,1],[1,2]])", M)), "[[1],[3]]");
+    assert_eq!(
+        line(&parse!("eigenvectors([[2,1],[1,2]])", M)),
+        "[[-1,1],[1,1]]"
+    );
+    // Repeated eigenvalue with a single eigenvector
+    assert_eq!(line(&parse!("eigenvalues([[2,1],[0,2]])", M)), "[[2],[2]]");
+    assert_eq!(line(&parse!("eigenvectors([[2,1],[0,2]])", M)), "[[1],[0]]");
+    assert_eq!(
+        line(&parse!("eigenvectors([[1,0],[0,1]])", M)),
+        "[[1,0],[0,1]]"
+    );
+    assert_eq!(
+        line(&parse!("eigenvalues([[2,0,0],[0,3,4],[0,4,9]])", M)),
+        "[[1],[2],[11]]"
+    );
+    // Radical eigenvalues: `{$A v = lambda v$}`
+    let values = parse!("eigenvalues([[1,2],[3,4]])", M);
+    assert_eq!(
+        line(&values),
+        "[[-1/2*(33^(1/2))+5/2],[1/2*(33^(1/2))+5/2]]"
+    );
+    let a = Matrix::new(
+        (2, 2),
+        [1, 2, 3, 4].map(|x| parse!(&x.to_string(), R)).to_vec(),
+        TermSet::new(R),
+    );
+    let spaces = a.eigenspaces().unwrap();
+    assert_eq!(spaces.len(), 2);
+    for space in spaces {
+        assert_eq!((space.multiplicity, space.basis.width()), (1, 1));
+        let av = &a * &space.basis;
+        for i in 0..2 {
+            let difference = av[(i, 0)].clone() - space.value.clone() * space.basis[(i, 0)].clone();
+            assert!(difference.simplify().is_zero(), "{difference}");
+        }
+    }
+    // Complex eigenvalues aren't real, so they stay unevaluated in `M`
+    assert_eq!(
+        line(&parse!("eigenvalues([[0,-1],[1,0]])", M)),
+        "eigenvalues([[0,-1],[1,0]])"
+    );
+}
+
+#[test]
+fn integer_and_modular_matrices() {
+    let mz = M::new(TermSet::new(Z));
+    let m6 = M::new(TermSet::new(Zn::new(6)));
+    assert_eq!(
+        line(&parse!("hermite([[2,3,6,2],[5,6,1,6],[8,3,1,1]])", mz)),
+        "[[1,0,50,-11],[0,3,28,-2],[0,0,61,-13]]"
+    );
+    assert_eq!(
+        line(&parse!("smith([[2,4,4],[-6,6,12],[10,-4,-16]])", mz)),
+        "[[2,0,0],[0,6,0],[0,0,12]]"
+    );
+    // A lattice basis of the kernel
+    assert_eq!(line(&parse!("kernel([[2,3]])", mz)), "[[3],[-2]]");
+    assert_eq!(line(&parse!("rank([[2,4],[1,2]])", mz)), "1");
+    assert_eq!(line(&parse!("smith([[2,4],[6,8]])", m6)), "[[2,0],[0,2]]");
+    assert_eq!(line(&parse!("hermite([[2,4],[3,1]])", m6)), "[[1,1],[0,2]]");
+    assert_eq!(line(&parse!("kernel([[1,1]])", m6)), "[[5],[1]]");
+    // The pivot 4 isn't invertible
+    assert_eq!(
+        line(&parse!("rank([[1,2],[3,4]])", m6)),
+        "rank([[1,2],[3,4]])"
     );
 }

@@ -440,7 +440,16 @@ where
                     self.next_token();
                     let ident = symbol.symbol;
                     let (fun, args_count): (Term<E>, _) = match ident {
-                        Context::DET => {
+                        Context::DET
+                        | Context::TRANSPOSE
+                        | Context::TRACE
+                        | Context::RANK
+                        | Context::KERNEL
+                        | Context::CHARPOLY
+                        | Context::EIGENVALUES
+                        | Context::EIGENVECTORS
+                        | Context::HERMITE
+                        | Context::SMITH => {
                             let args = self.parse_args(set.get_matrix_argument_set())?;
                             let count = args.len();
                             (Term::Fun(Box::new(Fun::new(ident, args, set))), count)

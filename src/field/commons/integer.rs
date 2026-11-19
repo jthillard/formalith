@@ -5,8 +5,10 @@ use std::{cmp::Ordering, marker::PhantomData};
 use malachite::{
     Integer, Natural,
     base::num::{
-        arithmetic::traits::{Abs, DivisibleBy, Factorial, Gcd, Lcm, Mod, Pow, Sign, UnsignedAbs},
-        basic::traits::{One, Zero},
+        arithmetic::traits::{
+            Abs, DivMod, DivisibleBy, Factorial, Gcd, Lcm, Mod, Pow, Sign, UnsignedAbs,
+        },
+        basic::traits::{NegativeOne, One, Zero},
     },
 };
 
@@ -15,11 +17,12 @@ use super::parse_integer_literal;
 use crate::{
     context::Context,
     field::{
-        Group, PartiallyOrderedSet, Ring, Set, SetParseExpression, matrix::M, real::MAX_FACTORIAL,
+        EuclideanRing, Group, PartiallyOrderedSet, Ring, Set, SetParseExpression, matrix::M,
+        real::MAX_FACTORIAL,
     },
     parser::Parser,
     printer::PrettyPrinter,
-    term::{self, Fun, Term, TermSet, Value},
+    term::{self, Fun, Term, TermSet, Value, fun::eval_matrix_builtin},
 };
 
 /// The integer ring `{$ZZ$}`
@@ -146,6 +149,13 @@ impl Ring for Z<Integer> {
                 }
             }
             Term::Fun(fun) => {
+                if matches!(
+                    fun.get_ident(),
+                    Context::DET | Context::TRACE | Context::RANK | Context::CHARPOLY
+                ) && let Some(res) = eval_matrix_builtin(&**fun)
+                {
+                    return res;
+                }
                 if fun.get_ident() == Context::ABS
                     && let Some(fun) = fun.as_any().downcast_ref::<Fun<Self>>()
                     && let Some(Term::Value(value)) = fun.args.first()
@@ -199,6 +209,30 @@ impl Ring for Z<Integer> {
         a
     }
 }
+impl EuclideanRing for Z<Integer> {
+    fn rem(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
+        self.quot_rem(a, b).1
+    }
+
+    /// Floor division, the remainder having the sign of `b`, so it is in `{$[0, b)$}` for `{$b > 0$}`.
+    fn quot_rem(&self, a: &Self::Element, b: &Self::Element) -> (Self::Element, Self::Element) {
+        a.div_mod(b)
+    }
+
+    /// Non-negative greatest common divisor.
+    fn gcd(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
+        Integer::from(a.unsigned_abs().gcd(b.unsigned_abs()))
+    }
+
+    fn normal_unit(&self, a: &Self::Element) -> Self::Element {
+        if *a < 0 {
+            Integer::NEGATIVE_ONE
+        } else {
+            Integer::ONE
+        }
+    }
+}
+
 impl SetParseExpression for Z<Integer> {
     type MatrixArgumentSet = M<TermSet<Self>>;
 

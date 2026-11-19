@@ -401,6 +401,11 @@ pub trait EuclideanRing: Ring {
     fn quot_rem(&self, a: &Self::Element, b: &Self::Element) -> (Self::Element, Self::Element);
     /// Compute the greatest common divisor of a and b.
     fn gcd(&self, a: &Self::Element, b: &Self::Element) -> Self::Element;
+    /// A unit `u` such that `u a` is the normal representative of the elements associated to `a`, like `-1` for
+    /// negative integers. Used to normalize pivots of normal forms.
+    fn normal_unit(&self, _a: &Self::Element) -> Self::Element {
+        self.one()
+    }
 }
 
 /// A field is a [Ring] where every non-zero element is invertible.

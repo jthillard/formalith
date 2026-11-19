@@ -9,13 +9,16 @@ use owo_colors::colors::Cyan;
 
 use crate::{
     context::{Context, Symbol},
-    field::{Derivable, Group, Ring, Set, matrix::M},
+    field::{
+        Derivable, Group, Ring, Set,
+        matrix::{M, MatrixEntries, VectorSpaceElement},
+    },
     iter,
     printer::{PrettyPrint, PrettyPrinter, Print, PrintOptions},
     term::{Expand, Normalize, TermSet},
 };
 
-use super::{Flags, Term};
+use super::{Flags, Term, Value};
 
 /// To allow function from any set to the set `T`, a dynamic dispatch is used with this trait, implementing needed methods.
 ///
@@ -259,6 +262,8 @@ impl<From: Set, T: Set> Print for Fun<From, T> {
                 Context::ASIN => f.write_str("arcsin")?,
                 Context::ACOS => f.write_str("arccos")?,
                 Context::ATAN => f.write_str("arctan")?,
+                Context::TRACE => f.write_str("tr")?,
+                Context::KERNEL => f.write_str("ker")?,
                 Context::ABS
                 | Context::DET
                 | Context::SQRT
@@ -359,7 +364,7 @@ pub(crate) fn eval_rewrite_builtin<T: Ring>(fun: &dyn Function<T>) -> Option<Ter
     }
 }
 
-/// Evaluate the builtins `diff(f, x)` and `det(m)` in a field of scalars. Returns `None` for other functions,
+/// Evaluate the builtin `diff(f, x)` in a field of scalars. Returns `None` for other functions,
 /// or when they can't be evaluated.
 pub(crate) fn eval_calculus_builtin<T>(fun: &dyn Function<T>) -> Option<Term<T>>
 where
@@ -376,10 +381,41 @@ where
                 if inner.get_ident() == Context::DIFF && inner.get_arg::<T>() == Some(f));
             (!unevaluated).then_some(res)
         }
-        Context::DET => match fun.get_arg::<M<TermSet<T>>>() {
-            Some(Term::Value(matrix)) => matrix.value.det().ok(),
-            _ => None,
-        },
+        _ => None,
+    }
+}
+
+/// Evaluate the builtins `det(m)`, `trace(m)`, `rank(m)` and `charpoly(m, x)`, whose argument is a matrix with
+/// entries in `T`. Returns `None` for other functions, or when they can't be evaluated.
+pub(crate) fn eval_matrix_builtin<T: Ring>(fun: &dyn Function<T>) -> Option<Term<T>> {
+    let set = fun.get_set();
+    let args = fun.get_args::<M<TermSet<T>>>()?;
+    let value = match args.first()? {
+        Term::Value(value) => &value.value,
+        _ => return None,
+    };
+    let VectorSpaceElement::Vector(matrix) = value else {
+        return (fun.get_ident() == Context::DET).then(|| value.det().ok())?;
+    };
+    match fun.get_ident() {
+        Context::DET => matrix.det().ok(),
+        Context::TRACE => matrix.trace().ok(),
+        Context::RANK => {
+            let rank = <TermSet<T> as MatrixEntries>::rank(matrix)?;
+            Some(Term::constant(set.nth(rank as i64), set))
+        }
+        Context::CHARPOLY => {
+            let x = match args.get(1) {
+                None => Symbol::new("x"),
+                Some(Term::Symbol(x)) => x.symbol,
+                Some(Term::Value(Value {
+                    value: VectorSpaceElement::Scalar(Term::Symbol(x), _),
+                    ..
+                })) => x.symbol,
+                Some(_) => return None,
+            };
+            <TermSet<T> as MatrixEntries>::charpoly(matrix, x)
+        }
         _ => None,
     }
 }

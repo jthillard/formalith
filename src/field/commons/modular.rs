@@ -9,7 +9,7 @@ use malachite::{
 
 use super::parse_integer_literal;
 
-use crate::term::fun::eval_rewrite_builtin;
+use crate::term::fun::{eval_matrix_builtin, eval_rewrite_builtin};
 use crate::{
     context::{Context, Symbol},
     field::{Group, PartiallyOrderedSet, Ring, Set, SetParseExpression, integer::Z, matrix::M},
@@ -254,6 +254,11 @@ impl Ring for Zn {
                 }
                 Context::FACTOR => {
                     if let Some(res) = fun.get_arg::<Self>().and_then(|arg| self.factor(arg)) {
+                        return res;
+                    }
+                }
+                Context::DET | Context::TRACE | Context::RANK | Context::CHARPOLY => {
+                    if let Some(res) = eval_matrix_builtin(&**fun) {
                         return res;
                     }
                 }
