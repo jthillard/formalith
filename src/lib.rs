@@ -36,5 +36,6 @@ pub mod polynom;
 pub mod printer;
 pub mod repl;
 pub mod solve;
+pub mod sum;
 pub mod term;
 pub mod traits;

@@ -271,6 +271,12 @@ impl Assumptions {
         self.0.iter().map(|(symbol, assumption)| (*symbol, *assumption))
     }
 
+    /// The assumptions currently in use on this thread, see [`Assumptions::enter`].
+    #[must_use]
+    pub fn current() -> Self {
+        CURRENT.with_borrow(Clone::clone)
+    }
+
     /// Use these assumptions on this thread until the returned guard is dropped, which restores the previous ones.
     pub fn enter(&self) -> AssumptionsGuard {
         let previous = CURRENT.with_borrow_mut(|current| std::mem::replace(current, self.clone()));

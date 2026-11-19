@@ -12,7 +12,8 @@ use super::{
     Kind, Risch, RischError, RischResult,
     field::{EPoly, Elem},
     rational_roots,
-    tower::{integer, sample_points},
+    field::sample_points,
+    tower::integer,
 };
 use crate::polynom::dense::{Coefficient, Poly};
 

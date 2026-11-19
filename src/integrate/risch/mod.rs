@@ -15,7 +15,6 @@
 //! of the differential equation) make it fail with [`RischError::Unsupported`], so
 //! [`RischError::NonElementary`] is a proof.
 
-mod field;
 mod rde;
 mod tower;
 
@@ -33,7 +32,9 @@ use super::{
     rational, trig,
 };
 
-use field::{EPoly, Elem};
+use crate::polynom::fraction as field;
+use field::{EPoly, Elem, interpolate};
+use rational::rational_roots;
 use tower::{Kind, Tower};
 
 /// Maximum degree of the denominators whose residues are computed.
@@ -321,40 +322,3 @@ fn from_rational_poly(p: &Poly) -> EPoly {
     p.map(|c| Elem::rational(c.clone()))
 }
 
-/// The polynomial taking the given values at the given distinct points (Lagrange interpolation).
-fn interpolate(points: &[Rational], values: &[Elem]) -> EPoly {
-    let mut res = EPoly::zero();
-    for (j, (zj, vj)) in points.iter().zip(values).enumerate() {
-        if vj.is_zero() {
-            continue;
-        }
-        let mut basis = Poly::<Rational>::one();
-        for (k, zk) in points.iter().enumerate() {
-            if k != j {
-                let factor = Poly::new(vec![-zk.clone(), Rational::from(1)]);
-                basis = basis.mul(&factor).scale(&(Rational::from(1) / (zj - zk)));
-            }
-        }
-        res = res.add(&from_rational_poly(&basis).scale(vj));
-    }
-    res
-}
-
-/// The distinct rational roots of a non-zero polynomial, and whether it is a product of linear factors.
-fn rational_roots(p: &Poly, x: Symbol) -> (Vec<Rational>, bool) {
-    let mut roots = vec![];
-    let mut split = true;
-    for factor in p.square_free() {
-        if factor.degree() == 0 {
-            continue;
-        }
-        for q in rational::factor(&factor, x) {
-            if q.degree() == 1 {
-                roots.push(-q.coefficient(0) / q.coefficient(1));
-            } else {
-                split = false;
-            }
-        }
-    }
-    (roots, split)
-}

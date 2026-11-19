@@ -232,15 +232,19 @@ impl Context {
     pub const ZETA: Symbol = Symbol(56);
     /// The Euler-Mascheroni constant `{$gamma = -psi(1)$}`
     pub const EULER_GAMMA: Symbol = Symbol(57);
+    /// Sum `sum(f, k, a, b)` of `f` for the integers `k` from `a` to `b`, which may be infinite
+    pub const SUM: Symbol = Symbol(58);
+    /// Product `product(f, k, a, b)` of `f` for the integers `k` from `a` to `b`, which may be infinite
+    pub const PRODUCT: Symbol = Symbol(59);
 
     #[rustfmt::skip]
-    const BUILTIN_NAMES: [&'static str; 58] = [
+    const BUILTIN_NAMES: [&'static str; 60] = [
         "abs", "det", "expand", "factor", "simplify", "re", "im", "conj", "sqrt", "root", "sign",
         "floor", "ceil", "min", "max", "gcd", "lcm", "quo", "rem", "diff", "solve", "approx",
         "exp", "ln", "sin", "cos", "tan", "pi", "e", "lim", "oo", "undefined",
         "series", "asin", "acos", "atan", "sinh", "cosh", "tanh", "asinh", "acosh", "atanh", "cot",
         "sec", "csc", "log", "factorial", "binomial", "integrate", "erf", "erfi", "assume",
-        "gamma", "beta", "digamma", "polygamma", "zeta", "euler_gamma",
+        "gamma", "beta", "digamma", "polygamma", "zeta", "euler_gamma", "sum", "product",
     ];
 
     /// Return `true` if `symbol` is a builtin constant, like `{$pi$}`, which is not a function.
@@ -270,6 +274,7 @@ impl Context {
             Self::LIM => Some((3, 4)),
             Self::SERIES => Some((3, 5)),
             Self::INTEGRATE => Some((2, 4)),
+            Self::SUM | Self::PRODUCT => Some((4, 4)),
             Self::PI | Self::E | Self::OO | Self::UNDEFINED | Self::EULER_GAMMA => Some((0, 0)),
             Symbol(id) if id < Self::BUILTIN_NAMES.len() => Some((1, 1)),
             _ => None,

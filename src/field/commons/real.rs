@@ -32,6 +32,7 @@ use crate::{
         Derivable, Field, Group, PartiallyOrderedSet, Ring, Set, SetParseExpression, matrix::M,
     },
     integrate::IntegrateError,
+    sum::SumError,
     limit::{Direction, LimitError},
     parser::Parser,
     polynom::ToTerm,
@@ -458,6 +459,26 @@ impl Ring for R<Rational> {
                             return Term::Symbol(SymbolTerm::new(Context::UNDEFINED, *self));
                         }
                         Err(IntegrateError::Unsupported | IntegrateError::NonElementary) => {}
+                    }
+                }
+                Context::SUM | Context::PRODUCT => {
+                    if let Some([f, Term::Symbol(k), a, b]) = fun.get_args::<Self>().map(Vec::as_slice) {
+                        let res = if fun.get_ident() == Context::SUM {
+                            f.sum(k.symbol, a, b)
+                        } else {
+                            f.product(k.symbol, a, b)
+                        };
+                        match res {
+                            Ok(res) => return res,
+                            Err(SumError::Divergent(sign)) => {
+                                let oo = Term::Symbol(SymbolTerm::new(Context::OO, *self));
+                                return if sign == Ordering::Less { -oo } else { oo };
+                            }
+                            Err(SumError::Undefined) => {
+                                return Term::Symbol(SymbolTerm::new(Context::UNDEFINED, *self));
+                            }
+                            Err(SumError::Unsupported) => {}
+                        }
                     }
                 }
                 Context::APPROX => {

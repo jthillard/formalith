@@ -12,7 +12,7 @@ use malachite::{
     Rational,
     base::num::{
         arithmetic::traits::Lcm,
-        basic::traits::{One, Zero},
+        basic::traits::One,
     },
 };
 
@@ -26,7 +26,7 @@ use crate::{
 
 use super::{
     RischError, RischResult,
-    field::{EPoly, Elem},
+    field::{EPoly, Elem, sample_points, solve_linear},
 };
 
 /// Maximum number of monomials of a tower.
@@ -404,56 +404,6 @@ impl Tower {
 /// The integer `r`, if it is one.
 pub(super) fn integer(r: &Rational) -> Option<i64> {
     i64::try_from(r).ok()
-}
-
-/// Points of `{$QQ^n$}` to evaluate elements at, distinct from simple values like 0, 1 or -1.
-pub(super) fn sample_points(n: usize) -> impl Iterator<Item = Vec<Rational>> {
-    const PRIMES: [i64; 12] = [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37];
-    (0..).map(move |i: usize| {
-        (0..n)
-            .map(|j| {
-                let p = PRIMES[(i + 3 * j) % PRIMES.len()];
-                let q = PRIMES[(2 * i + j + 5) % PRIMES.len()];
-                Rational::from_signeds(p * i64::try_from(i + j + 1).unwrap_or(1) + 1, q)
-            })
-            .collect()
-    })
-}
-
-/// A solution `r` of the linear system whose rows are `{$(a_1, ..., a_n, b)$}` with `{$sum a_i r_i = b$}`, the
-/// free unknowns being 0, or `None` if it is inconsistent.
-fn solve_linear(mut rows: Vec<Vec<Rational>>, n: usize) -> Option<Vec<Rational>> {
-    let mut pivots = vec![];
-    let mut row = 0;
-    for column in 0..n {
-        let Some(pivot) = (row..rows.len()).find(|&i| rows[i][column] != 0) else {
-            continue;
-        };
-        rows.swap(row, pivot);
-        let inverse = Rational::ONE / &rows[row][column];
-        for value in &mut rows[row] {
-            *value *= &inverse;
-        }
-        for i in 0..rows.len() {
-            if i != row && rows[i][column] != 0 {
-                let factor = rows[i][column].clone();
-                for j in 0..=n {
-                    let delta = &factor * &rows[row][j];
-                    rows[i][j] -= delta;
-                }
-            }
-        }
-        pivots.push(column);
-        row += 1;
-    }
-    if rows[row..].iter().any(|r| r[n] != 0) {
-        return None;
-    }
-    let mut res = vec![Rational::ZERO; n];
-    for (i, column) in pivots.into_iter().enumerate() {
-        res[column] = rows[i][n].clone();
-    }
-    Some(res)
 }
 
 #[cfg(test)]

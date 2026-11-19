@@ -79,7 +79,7 @@ fn hermite_reduce(mut a: Poly, d: &Poly, x: Symbol) -> (Expr, Poly, Poly) {
 }
 
 /// The monic irreducible factors over `{$QQ$}` of a square-free polynomial.
-pub(super) fn factor(d: &Poly, x: Symbol) -> Vec<Poly> {
+pub(crate) fn factor(d: &Poly, x: Symbol) -> Vec<Poly> {
     if d.degree() <= 1 {
         return vec![d.monic()];
     }
@@ -138,6 +138,25 @@ fn split(t: &Term<Complex>) -> Option<(Expr, Expr)> {
     };
     let (re, im) = split_complex(t)?;
     Some((real(re)?, real(im)?))
+}
+
+/// The distinct rational roots of a non-zero polynomial, and whether it is a product of linear factors.
+pub(crate) fn rational_roots(p: &Poly, x: Symbol) -> (Vec<Rational>, bool) {
+    let mut roots = vec![];
+    let mut split = true;
+    for square_free in p.square_free() {
+        if square_free.degree() == 0 {
+            continue;
+        }
+        for q in factor(&square_free, x) {
+            if q.degree() == 1 {
+                roots.push(-q.coefficient(0) / q.coefficient(1));
+            } else {
+                split = false;
+            }
+        }
+    }
+    (roots, split)
 }
 
 #[cfg(test)]

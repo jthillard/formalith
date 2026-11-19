@@ -1,6 +1,7 @@
 //! Polynom implementation
 
 pub(crate) mod dense;
+pub(crate) mod fraction;
 pub mod factor;
 
 use std::{

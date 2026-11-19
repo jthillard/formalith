@@ -193,6 +193,24 @@ impl<From: Set, T: Set> Print for Fun<From, T> {
                 u.print(options, f)?;
                 return f.write_str(")");
             }
+            if matches!(self.ident, Context::SUM | Context::PRODUCT)
+                && let [fun, k, a, b] = args.as_slice()
+            {
+                // `{$sum_(k = a)^b f$}`
+                write!(f, "{}_(", if self.ident == Context::SUM { "sum" } else { "product" })?;
+                k.print(options, f)?;
+                f.write_str(" = ")?;
+                a.print(options, f)?;
+                f.write_str(")^(")?;
+                b.print(options, f)?;
+                f.write_str(") ")?;
+                if matches!(fun, Term::Add(_)) {
+                    f.write_str("(")?;
+                    fun.print(options, f)?;
+                    return f.write_str(")");
+                }
+                return fun.print(options, f);
+            }
             if self.ident == Context::INTEGRATE
                 && let [fun, x, bounds @ ..] = args.as_slice()
                 && matches!(bounds.len(), 0 | 2)
@@ -285,6 +303,19 @@ impl<From: Set, T: Set> PrettyPrint for Fun<From, T> {
                 [lower, upper] => Some((lower, upper)),
                 _ => None,
             });
+            return res;
+        }
+        if matches!(self.ident, Context::SUM | Context::PRODUCT)
+            && let [fun, k, a, b] = self.args.as_slice()
+        {
+            let mut res = fun.pretty_print(options);
+            if matches!(fun, Term::Add(_)) {
+                res.paren();
+            }
+            let mut lower = k.pretty_print(options);
+            lower.concat("=", false, &a.pretty_print(options));
+            let sign = if self.ident == Context::SUM { '∑' } else { '∏' };
+            res.big_operator(sign, &lower, &b.pretty_print(options));
             return res;
         }
         let mut args = self.args.iter().map(|x| x.pretty_print(options));

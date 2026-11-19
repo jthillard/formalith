@@ -193,6 +193,18 @@ pub(crate) fn try_map_operands<E>(
     })
 }
 
+/// Replace the symbol `x` by `value` everywhere in `term`, also in exponents, normalizing the result.
+pub(crate) fn subs(term: &Expr, x: Symbol, value: &Expr) -> Expr {
+    match term {
+        _ if !depends(term, x) => term.clone(),
+        Term::Symbol(_) => value.clone(),
+        _ => {
+            let Ok(res) = try_map_operands::<Infallible>(term, |operand| Ok(subs(operand, x, value)));
+            res
+        }
+    }
+}
+
 /// Rewrite `term` from the top: subterms for which `rewrite` gives a result are replaced, the others are rebuilt
 /// from their rewritten parts.
 pub(crate) fn map_tree(term: &Expr, rewrite: &impl Fn(&Expr) -> Option<Expr>) -> Expr {

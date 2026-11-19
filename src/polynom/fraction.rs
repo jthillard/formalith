@@ -1,4 +1,5 @@
-//! Elements of a tower of transcendental extensions `{$K_n = QQ(t_1, ..., t_n)$}` with `{$t_1 = x$}`.
+//! Elements of a tower of transcendental extensions `{$K_n = QQ(t_1, ..., t_n)$}`: the differential field of the
+//! Risch algorithm (`{$t_1 = x$}`), or the parameters of the coefficients of sums.
 //!
 //! An element of level `{$k >= 1$}` is a reduced fraction of polynomials in `{$t_k$}` with coefficients in
 //! `{$K_(k - 1)$}`, its denominator monic, and it is always represented at its lowest level, so equal elements
@@ -15,7 +16,7 @@ use crate::polynom::dense::{Coefficient, Poly};
 
 /// An element of `{$K_n$}`.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(super) enum Elem {
+pub(crate) enum Elem {
     /// An element of `{$QQ$}`, the level 0.
     Rational(Rational),
     /// A fraction of a level at least 1.
@@ -25,31 +26,31 @@ pub(super) enum Elem {
 /// `{$p(t_k) / q(t_k)$}` with `p` and `q` coprime, `q` monic, coefficients of lower levels, and `p` or `q` not
 /// constant.
 #[derive(Debug, PartialEq, Eq)]
-pub(super) struct Fraction {
+pub(crate) struct Fraction {
     level: usize,
     num: Poly<Elem>,
     den: Poly<Elem>,
 }
 
 /// A polynomial in some `{$t_k$}` with coefficients in `{$K_(k - 1)$}`.
-pub(super) type EPoly = Poly<Elem>;
+pub(crate) type EPoly = Poly<Elem>;
 
 impl Elem {
     /// The generator `{$t_k$}` of level `{$k >= 1$}`.
-    pub(super) fn generator(level: usize) -> Self {
+    pub(crate) fn generator(level: usize) -> Self {
         Self::from_reduced(level, EPoly::x(), EPoly::one())
     }
 
-    pub(super) fn rational(r: Rational) -> Self {
+    pub(crate) fn rational(r: Rational) -> Self {
         Self::Rational(r)
     }
 
-    pub(super) fn integer(n: i64) -> Self {
+    pub(crate) fn integer(n: i64) -> Self {
         Self::Rational(Rational::from(n))
     }
 
     /// The level of the element, the least `k` with the element in `{$K_k$}`.
-    pub(super) fn level(&self) -> usize {
+    pub(crate) fn level(&self) -> usize {
         match self {
             Self::Rational(_) => 0,
             Self::Fraction(f) => f.level,
@@ -57,7 +58,7 @@ impl Elem {
     }
 
     /// The rational number, if the element is one.
-    pub(super) const fn as_rational(&self) -> Option<&Rational> {
+    pub(crate) const fn as_rational(&self) -> Option<&Rational> {
         match self {
             Self::Rational(r) => Some(r),
             Self::Fraction(_) => None,
@@ -65,7 +66,7 @@ impl Elem {
     }
 
     /// The element as a fraction `{$p(t_k) / q(t_k)$}` of level `{$k >= 1$}`, with `q` monic.
-    pub(super) fn fraction(&self, level: usize) -> (EPoly, EPoly) {
+    pub(crate) fn fraction(&self, level: usize) -> (EPoly, EPoly) {
         match self {
             Self::Fraction(f) if f.level == level => (f.num.clone(), f.den.clone()),
             _ => {
@@ -87,7 +88,7 @@ impl Elem {
     }
 
     /// The element `{$p / q$}` of level `level`.
-    pub(super) fn from_fraction(level: usize, num: &EPoly, den: &EPoly) -> Self {
+    pub(crate) fn from_fraction(level: usize, num: &EPoly, den: &EPoly) -> Self {
         let g = num.gcd(den);
         if g.degree() == 0 {
             return Self::from_reduced(level, num.clone(), den.clone());
@@ -96,18 +97,18 @@ impl Elem {
     }
 
     /// The polynomial `p` of level `level` as an element.
-    pub(super) fn from_poly(level: usize, p: EPoly) -> Self {
+    pub(crate) fn from_poly(level: usize, p: EPoly) -> Self {
         Self::from_reduced(level, p, EPoly::one())
     }
 
     /// `{$e^n$}` for an integer `n`.
-    pub(super) fn pow(&self, n: i64) -> Self {
+    pub(crate) fn pow(&self, n: i64) -> Self {
         let base = if n < 0 { self.inverse() } else { self.clone() };
         (0..n.unsigned_abs()).fold(Self::one(), |res, _| res.times(&base))
     }
 
     /// The value at the point giving the values of `{$t_1, t_2, ...$}`, `None` when a denominator vanishes.
-    pub(super) fn eval(&self, point: &[Rational]) -> Option<Rational> {
+    pub(crate) fn eval(&self, point: &[Rational]) -> Option<Rational> {
         match self {
             Self::Rational(r) => Some(r.clone()),
             Self::Fraction(f) => {
@@ -201,6 +202,75 @@ impl Coefficient for Elem {
             Self::Fraction(f) => Self::from_reduced(f.level, f.den.clone(), f.num.clone()),
         }
     }
+}
+
+/// The polynomial taking the given values at the given distinct points (Lagrange interpolation).
+pub(crate) fn interpolate(points: &[Rational], values: &[Elem]) -> EPoly {
+    let mut res = EPoly::zero();
+    for (j, (zj, vj)) in points.iter().zip(values).enumerate() {
+        if vj.is_zero() {
+            continue;
+        }
+        let mut basis = Poly::<Rational>::one();
+        for (k, zk) in points.iter().enumerate() {
+            if k != j {
+                let factor = Poly::new(vec![-zk.clone(), Rational::from(1)]);
+                basis = basis.mul(&factor).scale(&(Rational::from(1) / (zj - zk)));
+            }
+        }
+        res = res.add(&basis.map(|c| Elem::rational(c.clone())).scale(vj));
+    }
+    res
+}
+
+/// Points of `{$QQ^n$}` to evaluate elements at, distinct from simple values like 0, 1 or -1.
+pub(crate) fn sample_points(n: usize) -> impl Iterator<Item = Vec<Rational>> {
+    const PRIMES: [i64; 12] = [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37];
+    (0..).map(move |i: usize| {
+        (0..n)
+            .map(|j| {
+                let p = PRIMES[(i + 3 * j) % PRIMES.len()];
+                let q = PRIMES[(2 * i + j + 5) % PRIMES.len()];
+                Rational::from_signeds(p * i64::try_from(i + j + 1).unwrap_or(1) + 1, q)
+            })
+            .collect()
+    })
+}
+
+/// A solution `r` of the linear system whose rows are `{$(a_1, ..., a_n, b)$}` with `{$sum a_i r_i = b$}`, the
+/// free unknowns being 0, or `None` if it is inconsistent.
+pub(crate) fn solve_linear<F: Coefficient>(mut rows: Vec<Vec<F>>, n: usize) -> Option<Vec<F>> {
+    let mut pivots = vec![];
+    let mut row = 0;
+    for column in 0..n {
+        let Some(pivot) = (row..rows.len()).find(|&i| !rows[i][column].is_zero()) else {
+            continue;
+        };
+        rows.swap(row, pivot);
+        let inverse = rows[row][column].inverse();
+        for value in &mut rows[row] {
+            *value = value.times(&inverse);
+        }
+        for i in 0..rows.len() {
+            if i != row && !rows[i][column].is_zero() {
+                let factor = rows[i][column].clone();
+                for j in 0..=n {
+                    let delta = factor.times(&rows[row][j]);
+                    rows[i][j] = rows[i][j].minus(&delta);
+                }
+            }
+        }
+        pivots.push(column);
+        row += 1;
+    }
+    if rows[row..].iter().any(|r| !r[n].is_zero()) {
+        return None;
+    }
+    let mut res = vec![F::zero(); n];
+    for (i, column) in pivots.into_iter().enumerate() {
+        res[column] = rows[i][n].clone();
+    }
+    Some(res)
 }
 
 #[cfg(test)]

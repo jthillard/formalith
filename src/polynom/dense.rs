@@ -203,6 +203,14 @@ impl<F: Coefficient> Poly<F> {
             .fold(F::zero(), |res, c| res.times(x).plus(c))
     }
 
+    /// The polynomial `{$p(x + c)$}`.
+    pub(crate) fn shift(&self, c: &F) -> Self {
+        let linear = Self::new(vec![c.clone(), F::one()]);
+        self.0.iter().rev().fold(Self::zero(), |res, coefficient| {
+            res.mul(&linear).add(&Self::constant(coefficient.clone()))
+        })
+    }
+
     /// Quotient and remainder of the euclidean division by a non-zero `divisor`.
     pub(crate) fn div_rem(&self, divisor: &Self) -> (Self, Self) {
         assert!(!divisor.is_zero(), "Division by the zero polynomial");

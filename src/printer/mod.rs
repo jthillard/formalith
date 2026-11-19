@@ -566,6 +566,28 @@ impl PrettyPrinter {
         column.concat(" ", false, self);
         *self = column;
     }
+    /// Put self after a big operator `sign`, like `∑`, with its `lower` and `upper` bounds.
+    ///
+    /// ```text
+    ///   n
+    ///   ∑  f(k)
+    /// k=1
+    /// ```
+    pub fn big_operator(&mut self, sign: char, lower: &Self, upper: &Self) {
+        let width = lower.width().max(upper.width()).max(1);
+        let center = |part: &Self| {
+            let mut part = part.clone();
+            let (height, baseline) = (part.height(), part.baseline);
+            part.center(height, width, baseline);
+            part
+        };
+        let mut column = center(upper);
+        column.stack(&center(&Self::from(sign.to_string())));
+        column.stack(&center(lower));
+        column.baseline = upper.height();
+        column.concat(" ", false, self);
+        *self = column;
+    }
     /// Add `sym` at the left of self, converting it to unicode drawings chars.
     pub fn left(&mut self, sym: char) {
         let or = (sym, sym, sym);
