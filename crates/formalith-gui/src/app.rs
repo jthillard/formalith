@@ -323,38 +323,41 @@ impl App {
                         ui.checkbox(&mut line.visible, "")
                             .on_hover_text("Show the graph");
                     }
-                    let width = ui.available_width() - 30.;
-                    let edit = TextEdit::singleline(&mut line.text)
-                        .font(TextStyle::Monospace)
-                        .desired_width(width)
-                        .hint_text("y = sin(x), f(x) := x^2, x^2 + y^2 < 1…")
-                        .id_salt(("line", id));
-                    let response = ui.add(edit);
-                    if self.focus == Some(id) {
-                        response.request_focus();
-                        self.focus = None;
-                    }
-                    if response.changed() {
-                        self.edited = Some(now);
-                    }
-                    if response.gained_focus() || response.clicked() {
-                        self.selected = Some(id);
-                    }
-                    if response.lost_focus()
-                        && ui.input(|input| input.key_pressed(egui::Key::Enter))
-                    {
-                        insert = Some(index + 1);
-                    }
-                    if ui
-                        .small_button("x")
-                        .on_hover_text("Remove the line")
-                        .clicked()
-                    {
-                        remove = Some(index);
-                    }
+                    // Right to left, so that the line takes exactly the remaining width: a wider one would widen
+                    // the panel, then the line again at the next frame.
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui
+                            .small_button("x")
+                            .on_hover_text("Remove the line")
+                            .clicked()
+                        {
+                            remove = Some(index);
+                        }
+                        let edit = TextEdit::singleline(&mut line.text)
+                            .font(TextStyle::Monospace)
+                            .desired_width(ui.available_width())
+                            .hint_text("y = sin(x), f(x) := x^2, x^2 + y^2 < 1…")
+                            .id_salt(("line", id));
+                        let response = ui.add(edit);
+                        if self.focus == Some(id) {
+                            response.request_focus();
+                            self.focus = None;
+                        }
+                        if response.changed() {
+                            self.edited = Some(now);
+                        }
+                        if response.gained_focus() || response.clicked() {
+                            self.selected = Some(id);
+                        }
+                        if response.lost_focus()
+                            && ui.input(|input| input.key_pressed(egui::Key::Enter))
+                        {
+                            insert = Some(index + 1);
+                        }
+                    });
                 });
                 if let Some(result) = result {
-                    result_label(ui, result, pending);
+                    result_label(ui, id, result, pending);
                 } else if !line.text.trim().is_empty() {
                     ui.horizontal(|ui| {
                         ui.spinner();
@@ -454,7 +457,7 @@ impl App {
 }
 
 /// Show the result of a line, faded while a newer one is computed.
-fn result_label(ui: &mut egui::Ui, result: &LineResult, pending: bool) {
+fn result_label(ui: &mut egui::Ui, id: u64, result: &LineResult, pending: bool) {
     let mut text = RichText::new(&result.text).monospace();
     text = match result.kind {
         ResultKind::None => return,
@@ -462,15 +465,22 @@ fn result_label(ui: &mut egui::Ui, result: &LineResult, pending: bool) {
         ResultKind::Message => text.weak(),
         ResultKind::Result => text,
     };
-    ui.horizontal(|ui| {
-        if pending {
-            ui.spinner();
-        }
-        ui.add_enabled(
-            !pending,
-            egui::Label::new(text).wrap_mode(egui::TextWrapMode::Extend),
-        );
-    });
+    // Scrolled rather than wrapped, which would break pretty printed results, or extended, which would widen the
+    // panel.
+    egui::ScrollArea::horizontal()
+        .id_salt(("result", id))
+        .auto_shrink([false, true])
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                if pending {
+                    ui.spinner();
+                }
+                ui.add_enabled(
+                    !pending,
+                    egui::Label::new(text).wrap_mode(egui::TextWrapMode::Extend),
+                );
+            });
+        });
     if let Some(name) = result.graph.as_ref().and_then(|graph| graph.unsupported()) {
         ui.colored_label(
             ui.visuals().warn_fg_color,
