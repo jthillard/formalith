@@ -101,9 +101,7 @@ impl Gruntz {
             Term::Fun(_) if unary(f).is_some() => {
                 let (ident, arg) = unary(f).ok_or(LimitError::Unsupported)?;
                 let arg = self.remove_oscillations(arg)?;
-                if matches!(ident, Context::SIN | Context::COS)
-                    && is_infinite(&self.limit_infinity(&arg)?)
-                {
+                if matches!(ident, Context::SIN | Context::COS) && self.tends_to_infinity(&arg)? {
                     let angle = self.angle(&arg);
                     fun(ident, angle)
                 } else {
@@ -112,6 +110,16 @@ impl Gruntz {
             }
             _ => try_map_operands(f, |operand| self.remove_oscillations(operand))?,
         })
+    }
+
+    /// Whether `{$|g| -> oo$}`. Unlike the limit of `g`, it doesn't need the sign of its leading coefficient, so
+    /// `{$t x$}` tends to infinity for a parameter `t`.
+    fn tends_to_infinity(&mut self, g: &Expr) -> LimitResult<bool> {
+        if !self.depends(g) {
+            return Ok(false);
+        }
+        let (_, e0) = self.leadterm(g)?;
+        Ok(const_sign(&e0)? == Ordering::Less)
     }
 
     /// The angle replacing `g`, `{$k t + d$}` if `{$g ~ k g_t + d$}` for the argument `{$g_t$}` of an angle `t`

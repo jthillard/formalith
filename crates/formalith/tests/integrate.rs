@@ -346,6 +346,15 @@ fn definite_integrals() {
         integrate("tan(1) - 1")
     );
     assert_eq!(integrate("integrate(x*exp(-x^2), x, -oo, oo)"), "0");
+    // Oscillations whose frequency has an unknown sign
+    assert_eq!(
+        integrate("integrate(exp(-x)*cos(2*pi*x*t), x, 0, oo)"),
+        integrate("1/(4*pi^2*t^2 + 1)")
+    );
+    assert_eq!(
+        integrate("integrate(exp(-x)*sin(2*pi*x*t), x, 0, oo)"),
+        integrate("2*pi*t/(4*pi^2*t^2 + 1)")
+    );
 }
 
 #[test]

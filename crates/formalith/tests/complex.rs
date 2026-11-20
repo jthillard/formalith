@@ -1,5 +1,10 @@
 //! Expressions over the complex numbers.
-use formalith::{field::complex::C, parse, term::Expand};
+use formalith::{
+    field::{complex::C, real::R},
+    parse,
+    parser::environment::Environment,
+    term::Expand,
+};
 
 mod common;
 use common::{line, pretty};
@@ -140,4 +145,44 @@ fn complex_factors_are_printed_with_their_sign() {
 fn euler_identity_and_involutions() {
     assert_eq!(parse!("exp(i*pi)", C), (-1).into());
     assert_eq!(parse!("conj(conj(x))", C), parse!("x", C));
+}
+
+#[test]
+fn integrals_of_real_and_imaginary_parts() {
+    assert_eq!(
+        eval("integrate(exp(-x)*exp(-2*i*pi*x*t), x, 0, oo)"),
+        eval("1/(1 + 2*i*pi*t)")
+    );
+    assert_eq!(eval("integrate(exp(i*x), x, 0, pi)"), "2*i");
+    assert_eq!(eval("integrate(x*e^(i*x), x, 0, 2*pi)"), eval("-2*i*pi"));
+    assert_eq!(
+        eval("integrate(1/(x+i), x)"),
+        eval("ln(x^2+1)/2 - i*atan(x)")
+    );
+    assert_eq!(eval("integrate(exp(i*x), x)"), eval("sin(x) - i*cos(x)"));
+    // No limit at infinity
+    assert_eq!(eval("integrate(exp(i*x), x, 0, oo)"), "undefined");
+    // Real integrands keep their infinite values
+    assert_eq!(eval("integrate(1, x, 0, oo)"), "oo");
+    let mut env = Environment::new();
+    env.eval("assume(a > 0)", R).unwrap();
+    assert_eq!(
+        line(&parse!("integrate(exp(-a*x)*exp(i*x), x, 0, oo)", C, &env)),
+        eval("1/(a - i)")
+    );
+}
+
+#[test]
+fn limits_and_series_of_real_and_imaginary_parts() {
+    assert_eq!(eval("lim((exp(i*x)-1)/x, x, 0)"), "i");
+    assert_eq!(eval("lim(exp(i*x), x, oo)"), "undefined");
+    assert_eq!(eval("series(exp(i*x), x, 0, 3)"), eval("1 + i*x - x^2/2"));
+    // Non-real points are unsupported
+    assert_eq!(eval("lim(x, x, i)"), "lim(x, x, i)");
+}
+
+#[test]
+fn sums_print_negative_imaginary_terms_with_a_minus_sign() {
+    assert_eq!(pretty(&parse!("x - i", C)), "x - i");
+    assert_eq!(pretty(&parse!("x - 2*i*y", C)), "x - 2⋅i⋅y");
 }

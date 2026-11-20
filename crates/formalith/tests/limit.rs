@@ -334,3 +334,10 @@ fn limits_of_step_functions() {
 fn limits_with_parameter_exponents() {
     assert_eq!(lim("lim(x^2*exp(-a^2*x), x, oo)"), "0");
 }
+
+#[test]
+fn oscillations_with_a_parametric_frequency() {
+    assert_eq!(lim("lim(cos(t*x)/x, x, oo)"), "0");
+    assert_eq!(lim("lim(exp(-x)*sin(t*x), x, oo)"), "0");
+    assert_eq!(lim("lim(cos(t*x), x, oo)"), "undefined");
+}

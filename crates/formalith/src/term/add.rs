@@ -90,6 +90,23 @@ impl<'a, T: Set> IntoIterator for &'a Add<T> {
     }
 }
 
+/// Whether the element `a` of `set` prints as a minus sign followed by its opposite in a sum: negative elements,
+/// and elements of unordered sets printed with a single leading sign, like `{$-i$}` (`{$x - i$}`, not
+/// `{$x + -i$}`).
+fn prints_negative<S: Group>(set: S, a: &S::Element, options: &PrintOptions) -> bool {
+    struct Printed<'a, S: Set>(S, &'a S::Element, &'a PrintOptions);
+    impl<S: Set> Display for Printed<'_, S> {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            self.0.print(self.1, self.2, f)
+        }
+    }
+    set.is_strictly_negative(a)
+        || Printed(set, a, options)
+            .to_string()
+            .strip_prefix('-')
+            .is_some_and(|rest| !rest.contains(['+', '-']))
+}
+
 impl<T: Set> Add<T> {
     fn print_default<
         F: FnMut(&Term<T>, &mut std::fmt::Formatter<'_>) -> Result<bool, std::fmt::Error>,
@@ -103,11 +120,11 @@ impl<T: Set> Add<T> {
             if !special_cases(term, f)? {
                 match term {
                     Term::Mul(mul)
-                        if mul
-                            .set
-                            .get_coefficient_set()
-                            .is_strictly_negative(&mul.get_coeff())
-                            && i != 0 =>
+                        if prints_negative(
+                            mul.set.get_coefficient_set(),
+                            &mul.get_coeff(),
+                            options,
+                        ) && i != 0 =>
                     {
                         let mut mul = mul.clone();
                         let coeff = &mut mul.coefficient;
@@ -144,34 +161,14 @@ impl<T: Group> Print for Add<T> {
         options: &crate::printer::PrintOptions,
         f: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result {
-        let mut index = 0;
         self.print_default(
             |term, f| {
-                index += 1;
                 Ok(
                     if let Term::Value(Value { value, set, .. }) = term
-                        && term.is_strictly_negative()
+                        && prints_negative(*set, value, options)
                     {
                         Self::operator("-", options, f)?;
                         Print::print(&Value::new(set.neg(value), *set), options, f)?;
-                        true
-                    } else if index > 1
-                        && let Term::Value(value) = term
-                        && let printed = {
-                            struct Printed<'a, V>(&'a V, &'a PrintOptions);
-                            impl<V: Print> std::fmt::Display for Printed<'_, V> {
-                                fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                                    self.0.print(self.1, f)
-                                }
-                            }
-                            Printed(value, options).to_string()
-                        }
-                        && let Some(rest) = printed.strip_prefix('-')
-                        && !rest.contains(['+', '-'])
-                    {
-                        // Values of unordered sets (`{$x - i$}`) are not negative, but print with a sign
-                        Self::operator("-", options, f)?;
-                        f.write_str(rest)?;
                         true
                     } else {
                         false
@@ -195,11 +192,11 @@ impl<T: Set> Add<T> {
             if !special_cases(term, &mut res) {
                 match term {
                     Term::Mul(mul)
-                        if mul
-                            .set
-                            .get_coefficient_set()
-                            .is_strictly_negative(&mul.get_coeff())
-                            && res.is_some() =>
+                        if prints_negative(
+                            mul.set.get_coefficient_set(),
+                            &mul.get_coeff(),
+                            options,
+                        ) && res.is_some() =>
                     {
                         let mut mul = mul.clone();
                         let coeff = &mut mul.coefficient;
@@ -233,15 +230,12 @@ impl<T: Group> PrettyPrint for Add<T> {
         self.pretty_print_default(
             |term, res| {
                 if let Term::Value(Value { value, set, .. }) = term
-                    && term.is_strictly_negative()
+                    && let Some(res) = res
+                    && prints_negative(*set, value, options)
                 {
                     let elem =
                         PrettyPrint::pretty_print(&Value::new(set.neg(value), *set), options);
-                    if let Some(res) = res {
-                        res.concat("-", true, &elem);
-                    } else {
-                        *res = Some(elem);
-                    }
+                    res.concat("-", true, &elem);
                     true
                 } else {
                     false

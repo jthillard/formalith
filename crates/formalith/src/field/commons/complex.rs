@@ -1,5 +1,7 @@
 //! The complex field `{$CC$}`.
 
+mod parts;
+
 use std::cmp::Ordering;
 
 use malachite::{
@@ -15,11 +17,19 @@ use crate::{
     context::{Context, Symbol},
     field::{
         Derivable, Field, Group, PartiallyOrderedSet, Ring, Set, SetParseExpression,
-        TryElementFrom, TryExprFrom, cartesian::CartesianPower, matrix::M, real::R,
+        TryElementFrom, TryExprFrom,
+        cartesian::CartesianPower,
+        matrix::M,
+        real::{
+            R,
+            expr::{Expr, variable},
+        },
     },
+    integrate::IntegrateError,
+    limit::{Direction, LimitError},
     parser::{Parser, lexer::TokenKind},
     printer::{PrettyPrinter, PrintOptions},
-    term::{self, Fun, Mul, Normalize, Term, TermSet, Value},
+    term::{self, Fun, Mul, Normalize, SymbolTerm, Term, TermSet, Value},
 };
 
 /// The complex field `{$CC$}`, defined as the plane `{$RR^2$}` with the complex multiplication.
@@ -120,6 +130,88 @@ impl C<R<Rational>> {
                 }))
             }
             _ => None,
+        }
+    }
+
+    /// The symbol `ident` as a term.
+    const fn symbol(self, ident: Symbol) -> Term<Self> {
+        Term::Symbol(SymbolTerm::new(ident, self))
+    }
+
+    /// Evaluate `integrate`, `lim` or `series` in `{$RR$}` on the real and imaginary parts of the function,
+    /// every symbol being assumed real. The other arguments (bounds, point, order) must be real.
+    fn eval_calculus(self, ident: Symbol, args: &[Term<Self>]) -> Option<Term<Self>> {
+        let [f, Term::Symbol(x), rest @ ..] = args else {
+            return None;
+        };
+        let x = x.symbol;
+        let rest = rest.iter().map(parts::real).collect::<Option<Vec<_>>>()?;
+        let (u, v) = parts::split(f)?;
+        // Each part is `Ok(Some(res))`, `Ok(None)` if unevaluated, or `Err(())` if it doesn't exist
+        let eval = |part: &Expr| -> Result<Option<Expr>, ()> {
+            match ident {
+                Context::INTEGRATE => {
+                    let res = match rest.as_slice() {
+                        [] => part.integrate(x),
+                        [a, b] => part.integrate_definite(x, a, b),
+                        _ => return Ok(None),
+                    };
+                    match res {
+                        Ok(res) => Ok(Some(res)),
+                        Err(IntegrateError::Divergent(sign)) if v.is_zero() => {
+                            let oo = variable(Context::OO);
+                            Ok(Some(if sign == Ordering::Less { -oo } else { oo }))
+                        }
+                        Err(IntegrateError::Divergent(_) | IntegrateError::Undefined) => Err(()),
+                        Err(IntegrateError::Unsupported | IntegrateError::NonElementary) => {
+                            Ok(None)
+                        }
+                    }
+                }
+                Context::LIM => {
+                    let [point, direction @ ..] = rest.as_slice() else {
+                        return Ok(None);
+                    };
+                    let Some(direction) = Direction::from_args(direction) else {
+                        return Ok(None);
+                    };
+                    match part.limit(x, point, direction) {
+                        // An infinite part only makes sense for real limits
+                        Ok(res) if v.is_zero() || !res.symbols().contains(&Context::OO) => {
+                            Ok(Some(res))
+                        }
+                        Err(LimitError::Undefined) => Err(()),
+                        _ => Ok(None),
+                    }
+                }
+                _ => {
+                    let (point, order, direction) = match rest.as_slice() {
+                        [point] => (point, Rational::from(6), Some(Direction::Both)),
+                        [point, Term::Value(order), direction @ ..] => {
+                            (point, order.value.clone(), Direction::from_args(direction))
+                        }
+                        _ => return Ok(None),
+                    };
+                    let Some(direction) = direction else {
+                        return Ok(None);
+                    };
+                    Ok(part.series(x, point, &order, direction).ok())
+                }
+            }
+        };
+        let res = (|| {
+            let re = eval(&u)?;
+            let im = if v.is_zero() {
+                Some(v.clone())
+            } else {
+                eval(&v)?
+            };
+            Ok(re.zip(im))
+        })();
+        match res {
+            Ok(Some((re, im))) => parts::join(&re, &im),
+            Ok(None) => None,
+            Err(()) => Some(self.symbol(Context::UNDEFINED)),
         }
     }
 
@@ -407,6 +499,14 @@ impl Ring for C<R<Rational>> {
                 }
                 Context::DET | Context::TRACE | Context::RANK | Context::CHARPOLY => {
                     if let Some(res) = eval_matrix_builtin(&**fun) {
+                        return res;
+                    }
+                }
+                Context::INTEGRATE | Context::LIM | Context::SERIES => {
+                    if let Some(res) = fun
+                        .get_args::<Self>()
+                        .and_then(|args| self.eval_calculus(fun.get_ident(), args))
+                    {
                         return res;
                     }
                 }
