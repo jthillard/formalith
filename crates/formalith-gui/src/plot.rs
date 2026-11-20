@@ -1,16 +1,29 @@
-//! Drawing of the graphs of the lines in an interactive plot, with cached geometry.
+//! Drawing of the graphs of the lines in an interactive plot, on the GPU: each graph is a plot item running its
+//! shader over the plot ([`crate::gpu`]), and the remarkable points of the selected curve are searched in compute
+//! shaders when the GPU has them ([`crate::gpu::analysis`]).
 
-use std::{cell::RefCell, collections::HashMap};
+use std::{collections::HashMap, ops::RangeInclusive, sync::Arc};
 
-use eframe::egui::{self, Color32, ColorImage, TextureHandle, TextureOptions, Vec2b};
-use egui_plot::{
-    HoverPosition, Line, LineStyle, MarkerShape, Plot, PlotBounds, PlotImage, PlotPoint, Points,
+use eframe::{
+    egui::{self, Color32, Vec2b},
+    egui_wgpu,
 };
-use formalith_session::graph::{Comparison, Graph, GraphKind};
+use egui_plot::{
+    HoverPosition, MarkerShape, Plot, PlotBounds, PlotGeometry, PlotItem, PlotItemBase, PlotPoint,
+    PlotTransform, Points,
+};
+use formalith_session::{
+    formalith::field::real::numeric::Numeric,
+    graph::{Comparison, Graph, GraphKind},
+};
 
 use crate::{
-    analysis::{self, Kind},
-    geometry::{Grid, Polyline, View, sample_function},
+    geometry::View,
+    gpu::{
+        self, GraphCallback, Shader, UNIFORMS,
+        analysis::{Analyzer, Kind, Point, Request},
+    },
+    shader::{self, AnalysisCurves, MAX_PARAMS},
 };
 
 /// A graph to draw.
@@ -37,81 +50,87 @@ const DEFAULT_VIEW: View = View {
     y_max: 6.,
 };
 
-/// What is drawn for a graph in a view.
-enum Geometry {
-    Curves(Vec<Polyline>),
-    Region {
-        boundary: Vec<Polyline>,
-        texture: TextureHandle,
-        strict: bool,
-    },
-    Point([f64; 2]),
-}
+/// The width of lines, in points.
+const LINE_WIDTH: f32 = 2.5;
 
-/// The parameters geometry is computed with: it is computed again when they change.
-#[derive(PartialEq)]
-struct Key {
-    revision: u64,
-    view: [u64; 4],
-    pixels: [usize; 2],
-    params: Vec<u64>,
-}
+/// The period of dashes of strict boundaries, in points.
+const DASH_PERIOD: f32 = 10.;
 
-impl Key {
-    fn new(drawable: &Drawable<'_>, view: &View, pixels: [usize; 2]) -> Self {
-        Self {
-            revision: drawable.revision,
-            view: [view.x_min, view.x_max, view.y_min, view.y_max].map(f64::to_bits),
-            pixels,
-            params: drawable
-                .params
-                .iter()
-                .map(|value| value.to_bits())
-                .collect(),
-        }
-    }
-}
+/// Distance in points from a graph under which it is hovered.
+const HOVER_DISTANCE: f64 = 6.;
+
+/// What the remarkable points of the selected curve depend on, besides the view: its line, revision and
+/// parameters, and those of the other curves.
+type Content = Vec<u64>;
+
+/// The range and number of samples of a search of remarkable points.
+type Range = [u64; 3];
 
 /// The interactive plot.
 #[derive(Default)]
 pub struct Plotter {
-    cache: HashMap<u64, (Key, Geometry)>,
-    remarkable: Option<(Key, Vec<u64>, Vec<analysis::Point>)>,
+    /// Whether the GPU is set up, and colors are given in linear space.
+    gpu: Option<bool>,
+    /// The shader of each line, with the revision it was made for.
+    shaders: HashMap<u64, (u64, Arc<Shader>)>,
+    analyzer: Option<Analyzer>,
+    /// The last points found.
+    remarkable: Option<(Content, Range, Vec<Point>)>,
+    /// The running search.
+    searching: Option<(Content, Range)>,
+    frame: u64,
     reset: bool,
 }
 
 /// The values `[x, y, params...]` of an evaluation.
-fn values(params: &[f64]) -> RefCell<Vec<f64>> {
-    RefCell::new(
-        [f64::NAN, f64::NAN]
-            .into_iter()
-            .chain(params.iter().copied())
-            .collect(),
-    )
-}
-
-/// The function `x -> f(x)` of a [`GraphKind::Function`].
-fn function<'a>(
-    expr: &'a formalith_session::formalith::field::real::numeric::Numeric,
-    params: &[f64],
-) -> impl Fn(f64) -> f64 + 'a {
-    let values = values(params);
-    move |x| {
-        let mut values = values.borrow_mut();
-        values[Graph::X] = x;
-        expr.eval(&values)
-    }
+fn values(params: &[f64]) -> Vec<f64> {
+    [f64::NAN, f64::NAN]
+        .into_iter()
+        .chain(params.iter().copied())
+        .collect()
 }
 
 impl Plotter {
+    /// The plot, drawing with the GPU of `cc`.
+    #[must_use]
+    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
+        let Some(render_state) = &cc.wgpu_render_state else {
+            return Self::default();
+        };
+        let ctx = cc.egui_ctx.clone();
+        Self {
+            gpu: Some(gpu::install(render_state)),
+            analyzer: Analyzer::new(
+                &render_state.adapter,
+                render_state.device.clone(),
+                render_state.queue.clone(),
+                Arc::new(move || ctx.request_repaint()),
+            ),
+            ..Self::default()
+        }
+    }
+
     /// Go back to the default view.
     pub const fn reset_view(&mut self) {
         self.reset = true;
     }
 
-    /// Forget the geometry of the lines which aren't in `ids`.
+    /// Forget the shaders of the lines which aren't in `ids`.
     pub fn retain(&mut self, ids: &[u64]) {
-        self.cache.retain(|id, _| ids.contains(id));
+        self.shaders.retain(|id, _| ids.contains(id));
+    }
+
+    /// The shader of `drawable`.
+    fn shader(&mut self, drawable: &Drawable<'_>, expr: &Numeric) -> Arc<Shader> {
+        match self.shaders.get(&drawable.id) {
+            Some((revision, shader)) if *revision == drawable.revision => shader.clone(),
+            _ => {
+                let shader = Shader::new(shader::render(expr));
+                self.shaders
+                    .insert(drawable.id, (drawable.revision, shader.clone()));
+                shader
+            }
+        }
     }
 
     /// Show the plot of `drawables`, with the remarkable points of the curve of the line `selected` (roots, extrema,
@@ -123,7 +142,7 @@ impl Plotter {
         selected: Option<u64>,
         equal_aspect: bool,
     ) {
-        let ctx = ui.ctx().clone();
+        self.frame += 1;
         let mut plot = Plot::new("plot")
             .default_x_bounds(DEFAULT_VIEW.x_min, DEFAULT_VIEW.x_max)
             .default_y_bounds(DEFAULT_VIEW.y_min, DEFAULT_VIEW.y_max)
@@ -134,18 +153,14 @@ impl Plotter {
                     plot_name,
                     position,
                     ..
-                } => Some(format!(
-                    "{plot_name}\n({}, {})",
-                    format_number(position.x),
-                    format_number(position.y)
-                )),
+                } => Some(label(plot_name, position.x, position.y)),
                 HoverPosition::Elsewhere { .. } => None,
             });
         if equal_aspect {
             plot = plot.data_aspect(1.);
         }
         let reset = std::mem::take(&mut self.reset);
-        plot.show(ui, |plot_ui| {
+        let response = plot.show(ui, |plot_ui| {
             if reset {
                 plot_ui.set_plot_bounds(PlotBounds::from_min_max(
                     [DEFAULT_VIEW.x_min, DEFAULT_VIEW.y_min],
@@ -153,43 +168,105 @@ impl Plotter {
                 ));
             }
             let bounds = plot_ui.plot_bounds();
-            let view = View {
-                x_min: bounds.min()[0],
-                x_max: bounds.max()[0],
-                y_min: bounds.min()[1],
-                y_max: bounds.max()[1],
-            };
-            if !(view.width() > 0. && view.height() > 0.) {
+            if !(bounds.width() > 0. && bounds.height() > 0.) {
+                return None;
+            }
+            for drawable in drawables {
+                self.draw(plot_ui, drawable);
+            }
+            let pixels =
+                (plot_ui.transform().frame().width() * plot_ui.ctx().pixels_per_point()) as usize;
+            self.draw_remarkable(plot_ui, drawables, selected, &bounds, pixels);
+            let hovered = plot_ui
+                .response()
+                .hovered()
+                .then(|| plot_ui.pointer_coordinate())
+                .flatten()
+                .and_then(|pointer| hover(drawables, pointer, plot_ui.transform()));
+            if let Some((_, point)) = &hovered {
+                plot_ui.points(
+                    Points::new("", vec![*point])
+                        .shape(MarkerShape::Circle)
+                        .radius(3.5)
+                        .filled(true)
+                        .allow_hover(false)
+                        .color(Color32::from_gray(110)),
+                );
+            }
+            hovered
+        });
+        if let Some((name, [x, y])) = response.inner {
+            response
+                .response
+                .on_hover_text_at_pointer(label(&name, x, y));
+        }
+    }
+
+    /// Draw `drawable`.
+    fn draw(&mut self, plot_ui: &mut egui_plot::PlotUi<'_>, drawable: &Drawable<'_>) {
+        let (kind, expr, relation) = match &drawable.graph.kind {
+            GraphKind::Function { expr, .. } => (0., expr, Comparison::Equal),
+            GraphKind::InverseFunction { expr } => (1., expr, Comparison::Equal),
+            GraphKind::Implicit { expr, relation } => (2., expr, *relation),
+            GraphKind::Point { x, y } => {
+                let values = values(&drawable.params);
+                let (x, y) = (x.eval(&values), y.eval(&values));
+                if x.is_finite() && y.is_finite() {
+                    plot_ui.points(
+                        Points::new(drawable.name.clone(), vec![[x, y]])
+                            .id(drawable.id)
+                            .shape(MarkerShape::Circle)
+                            .radius(5.)
+                            .filled(true)
+                            .color(drawable.color),
+                    );
+                }
                 return;
             }
-            let frame = plot_ui.transform().frame();
-            let pixels = [frame.width() as usize, frame.height() as usize];
-            for drawable in drawables {
-                let key = Key::new(drawable, &view, pixels);
-                if self
-                    .cache
-                    .get(&drawable.id)
-                    .is_none_or(|(cached, _)| *cached != key)
-                {
-                    let geometry = compute(&ctx, drawable, &view, pixels);
-                    self.cache.insert(drawable.id, (key, geometry));
-                }
-                let (_, geometry) = &self.cache[&drawable.id];
-                draw(plot_ui, drawable, geometry);
-            }
-            self.draw_remarkable(plot_ui, drawables, selected, &view, pixels);
+        };
+        let Some(linear) = self.gpu else {
+            return;
+        };
+        if drawable.params.len() > MAX_PARAMS {
+            return;
+        }
+        let shader = self.shader(drawable, expr);
+        #[allow(clippy::cast_possible_truncation)]
+        let params = drawable.params.iter().map(|value| *value as f32).collect();
+        plot_ui.add(GpuGraph {
+            base: PlotItemBase::new(drawable.name.clone()),
+            id: drawable.id,
+            frame: self.frame,
+            shader,
+            color: color(drawable.color, linear),
+            fill: color(drawable.color.gamma_multiply(0.25), linear),
+            flags: [
+                kind,
+                relation_code(relation),
+                f32::from(u8::from(relation.is_strict())),
+            ],
+            params,
+            drawable_color: drawable.color,
         });
     }
 
-    /// Draw the remarkable points of the curve `selected`.
+    /// Draw the remarkable points of the curve `selected`, searching them again when it or the view changed.
     fn draw_remarkable(
         &mut self,
         plot_ui: &mut egui_plot::PlotUi<'_>,
         drawables: &[Drawable<'_>],
         selected: Option<u64>,
-        view: &View,
-        pixels: [usize; 2],
+        bounds: &PlotBounds,
+        pixels: usize,
     ) {
+        let Some(analyzer) = &mut self.analyzer else {
+            return;
+        };
+        if let Some(points) = analyzer.poll() {
+            if let Some((content, range)) = self.searching.take() {
+                self.remarkable = Some((content, range, points));
+            }
+        }
         let Some(drawable) = drawables
             .iter()
             .find(|drawable| Some(drawable.id) == selected)
@@ -205,41 +282,60 @@ impl Plotter {
                 other.id != drawable.id && matches!(other.graph.kind, GraphKind::Function { .. })
             })
             .collect();
-        let key = Key::new(drawable, view, pixels);
-        // The points change with the other curves too
-        let mut other_keys: Vec<u64> = vec![];
-        for other in &others {
-            other_keys.push(other.id);
-            other_keys.push(other.revision);
-            other_keys.extend(other.params.iter().map(|value| value.to_bits()));
+        let mut content: Content = vec![];
+        for curve in std::iter::once(drawable).chain(others.iter().copied()) {
+            content.push(curve.id);
+            content.push(curve.revision);
+            content.extend(curve.params.iter().map(|value| value.to_bits()));
         }
-        if self
+        let samples = (pixels / 2).clamp(50, 1000);
+        let range = [
+            bounds.min()[0].to_bits(),
+            bounds.max()[0].to_bits(),
+            samples as u64,
+        ];
+        let current = self
             .remarkable
             .as_ref()
-            .is_none_or(|(cached, cached_others, _)| *cached != key || *cached_others != other_keys)
-        {
-            let samples = (pixels[0] / 2).clamp(50, 1000);
-            let f = function(expr, &drawable.params);
-            let derivative = derivative
-                .as_ref()
-                .map(|derivative| function(derivative, &drawable.params));
-            let derivative = derivative
-                .as_ref()
-                .map(|derivative| derivative as &dyn Fn(f64) -> f64);
-            let mut points =
-                analysis::remarkable_points(&f, derivative, view.x_min, view.x_max, samples);
-            for other in others {
-                if let GraphKind::Function { expr, .. } = &other.graph.kind {
-                    let g = function(expr, &other.params);
-                    points.extend(analysis::intersections(
-                        &f, &g, view.x_min, view.x_max, samples,
-                    ));
-                }
+            .is_some_and(|(cached, cached_range, _)| *cached == content && *cached_range == range);
+        if !current && !analyzer.is_busy() {
+            let curves = AnalysisCurves {
+                f: (expr, drawable.params.len()),
+                derivative: derivative.as_ref(),
+                others: others
+                    .iter()
+                    .filter_map(|other| match &other.graph.kind {
+                        GraphKind::Function { expr, .. } => Some((expr, other.params.len())),
+                        _ => None,
+                    })
+                    .collect(),
+            };
+            #[allow(clippy::cast_possible_truncation)]
+            let params = std::iter::once(drawable)
+                .chain(others.iter().copied())
+                .flat_map(|curve| curve.params.iter().map(|value| *value as f32))
+                .collect();
+            let request = Request {
+                curves,
+                params,
+                a: bounds.min()[0],
+                b: bounds.max()[0],
+                samples,
+            };
+            if analyzer.start(&request) {
+                self.searching = Some((content.clone(), range));
             }
-            points.retain(|point| point.y.is_finite());
-            self.remarkable = Some((key, other_keys, points));
         }
-        let Some((_, _, points)) = &self.remarkable else {
+        if analyzer.is_busy() {
+            // Natively, the readback progresses when polled
+            plot_ui.ctx().request_repaint();
+        }
+        // Points found in another view are still right
+        let Some((_, _, points)) = self
+            .remarkable
+            .as_ref()
+            .filter(|(cached, _, _)| *cached == content)
+        else {
             return;
         };
         for kind in [Kind::Root, Kind::Minimum, Kind::Maximum, Kind::Intersection] {
@@ -261,6 +357,31 @@ impl Plotter {
     }
 }
 
+/// The number of a comparison in [`crate::shader::RENDER`].
+const fn relation_code(relation: Comparison) -> f32 {
+    match relation {
+        Comparison::Equal => 0.,
+        Comparison::Less => 1.,
+        Comparison::LessEqual => 2.,
+        Comparison::Greater => 3.,
+        Comparison::GreaterEqual => 4.,
+    }
+}
+
+/// The premultiplied components of `color`, in linear space or not.
+fn color(color: Color32, linear: bool) -> [f32; 4] {
+    if linear {
+        egui::Rgba::from(color).to_array()
+    } else {
+        color.to_normalized_gamma_f32()
+    }
+}
+
+/// The label of a point of a graph.
+fn label(name: &str, x: f64, y: f64) -> String {
+    format!("{name}\n({}, {})", format_number(x), format_number(y))
+}
+
 /// Format a coordinate with at most 6 decimals.
 fn format_number(value: f64) -> String {
     let rounded = format!("{value:.6}");
@@ -272,128 +393,376 @@ fn format_number(value: f64) -> String {
     }
 }
 
-/// Compute what to draw for `drawable` in `view`.
-fn compute(
-    ctx: &egui::Context,
-    drawable: &Drawable<'_>,
-    view: &View,
-    pixels: [usize; 2],
-) -> Geometry {
-    let values = values(&drawable.params);
-    match &drawable.graph.kind {
-        GraphKind::Function { expr, .. } => Geometry::Curves(sample_function(
-            function(expr, &drawable.params),
-            view,
-            pixels[0],
-        )),
-        GraphKind::InverseFunction { expr } => {
-            let g = |y: f64| {
-                let mut values = values.borrow_mut();
-                values[Graph::Y] = y;
-                expr.eval(&values)
-            };
-            let curves = sample_function(g, &view.transposed(), pixels[1]);
-            Geometry::Curves(
-                curves
-                    .into_iter()
-                    .map(|curve| curve.into_iter().map(|[y, x]| [x, y]).collect())
-                    .collect(),
-            )
-        }
-        GraphKind::Implicit { expr, relation } => {
-            let f = |x: f64, y: f64| {
-                let mut values = values.borrow_mut();
-                values[Graph::X] = x;
-                values[Graph::Y] = y;
-                expr.eval(&values)
-            };
-            // About 3 pixels per cell
-            let nx = (pixels[0] / 3).clamp(20, 400);
-            let ny = (pixels[1] / 3).clamp(20, 400);
-            let grid = Grid::new(f, view, nx, ny);
-            let boundary = grid.contour(f);
-            if *relation == Comparison::Equal {
-                return Geometry::Curves(boundary);
+/// The graph closest to `pointer`, if any is close enough, with the point of the graph there.
+fn hover(
+    drawables: &[Drawable<'_>],
+    pointer: PlotPoint,
+    transform: &PlotTransform,
+) -> Option<(String, [f64; 2])> {
+    // Points per unit
+    let kx = transform.dpos_dvalue_x().abs();
+    let ky = transform.dpos_dvalue_y().abs();
+    let (px, py) = (pointer.x, pointer.y);
+    let mut best: Option<(f64, &str, [f64; 2])> = None;
+    for drawable in drawables {
+        let values = values(&drawable.params);
+        let eval = |expr: &Numeric, x: f64, y: f64| {
+            let mut values = values.clone();
+            values[Graph::X] = x;
+            values[Graph::Y] = y;
+            expr.eval(&values)
+        };
+        let hit = match &drawable.graph.kind {
+            GraphKind::Function { expr, derivative } => {
+                let y = eval(expr, px, f64::NAN);
+                let slope = derivative.as_ref().map_or_else(
+                    || {
+                        (eval(expr, px + 1. / kx, f64::NAN) - eval(expr, px - 1. / kx, f64::NAN))
+                            * kx
+                            / 2.
+                    },
+                    |derivative| eval(derivative, px, f64::NAN),
+                );
+                let distance = (y - py).abs() * ky / (slope * ky / kx).hypot(1.);
+                (distance, [px, y])
             }
-            let mask = grid.mask(f, |value| relation.holds(value));
-            let fill = drawable.color.gamma_multiply(0.25);
-            let pixels: Vec<Color32> = mask
-                .into_iter()
-                .map(|inside| if inside { fill } else { Color32::TRANSPARENT })
-                .collect();
-            let image = ColorImage {
-                size: [grid.nx, grid.ny],
-                source_size: egui::vec2(grid.nx as f32, grid.ny as f32),
-                pixels,
-            };
-            let texture = ctx.load_texture(
-                format!("region-{}", drawable.id),
-                image,
-                TextureOptions::LINEAR,
-            );
-            Geometry::Region {
-                boundary,
-                texture,
-                strict: relation.is_strict(),
+            GraphKind::InverseFunction { expr } => {
+                let x = eval(expr, f64::NAN, py);
+                let slope =
+                    (eval(expr, f64::NAN, py + 1. / ky) - eval(expr, f64::NAN, py - 1. / ky)) * ky
+                        / 2.;
+                let distance = (x - px).abs() * kx / (slope * kx / ky).hypot(1.);
+                (distance, [x, py])
             }
+            GraphKind::Implicit { expr, .. } => {
+                let value = eval(expr, px, py);
+                let dx = (eval(expr, px + 1. / kx, py) - eval(expr, px - 1. / kx, py)) * kx / 2.;
+                let dy = (eval(expr, px, py + 1. / ky) - eval(expr, px, py - 1. / ky)) * ky / 2.;
+                let distance = value.abs() / (dx / kx).hypot(dy / ky);
+                // A Newton step towards `F = 0`
+                let norm = dx.mul_add(dx, dy * dy);
+                (distance, [px - value * dx / norm, py - value * dy / norm])
+            }
+            GraphKind::Point { .. } => continue,
+        };
+        let (distance, point) = hit;
+        if distance < HOVER_DISTANCE
+            && point.iter().all(|value| value.is_finite())
+            && best.is_none_or(|(closest, ..)| distance < closest)
+        {
+            best = Some((distance, &drawable.name, point));
         }
-        GraphKind::Point { x, y } => {
-            let values = values.borrow();
-            Geometry::Point([x.eval(&values), y.eval(&values)])
-        }
+    }
+    best.map(|(_, name, point)| (name.to_owned(), point))
+}
+
+/// A graph drawn by its shader.
+struct GpuGraph {
+    base: PlotItemBase,
+    id: u64,
+    frame: u64,
+    shader: Arc<Shader>,
+    color: [f32; 4],
+    fill: [f32; 4],
+    /// The kind of graph, its comparison and whether its boundary is dashed.
+    flags: [f32; 3],
+    params: Vec<f32>,
+    drawable_color: Color32,
+}
+
+impl GpuGraph {
+    /// The uniforms of the shader in the view of `transform`.
+    #[allow(clippy::cast_possible_truncation)]
+    fn uniforms(&self, transform: &PlotTransform, pixels_per_point: f32) -> Box<[f32; UNIFORMS]> {
+        let bounds = transform.bounds();
+        let frame = transform.frame();
+        uniforms(
+            &View {
+                x_min: bounds.min()[0],
+                x_max: bounds.max()[0],
+                y_min: bounds.min()[1],
+                y_max: bounds.max()[1],
+            },
+            [frame.width(), frame.height()],
+            pixels_per_point,
+            self,
+        )
     }
 }
 
-/// Draw the geometry of `drawable`.
-fn draw(plot_ui: &mut egui_plot::PlotUi<'_>, drawable: &Drawable<'_>, geometry: &Geometry) {
-    let curves = |plot_ui: &mut egui_plot::PlotUi<'_>, curves: &[Polyline], style: LineStyle| {
-        for (k, curve) in curves.iter().enumerate() {
-            plot_ui.line(
-                Line::new(drawable.name.clone(), curve.clone())
-                    .id((drawable.id, k))
-                    .color(drawable.color)
-                    .width(2.5)
-                    .style(style),
-            );
-        }
+/// The uniforms of the shader of `graph` drawn in `view` on `size` points, see [`crate::shader::RENDER`].
+#[allow(clippy::cast_possible_truncation)]
+fn uniforms(
+    view: &View,
+    size: [f32; 2],
+    pixels_per_point: f32,
+    graph: &GpuGraph,
+) -> Box<[f32; UNIFORMS]> {
+    let mut uniforms = Box::new([0.; UNIFORMS]);
+    uniforms[..20].copy_from_slice(&[
+        view.x_min as f32,
+        view.x_max as f32,
+        view.y_min as f32,
+        view.y_max as f32,
+        size[0] * pixels_per_point,
+        size[1] * pixels_per_point,
+        LINE_WIDTH / 2. * pixels_per_point,
+        graph.flags[0],
+        graph.color[0],
+        graph.color[1],
+        graph.color[2],
+        graph.color[3],
+        graph.fill[0],
+        graph.fill[1],
+        graph.fill[2],
+        graph.fill[3],
+        graph.flags[1],
+        graph.flags[2],
+        DASH_PERIOD * pixels_per_point,
+        0.,
+    ]);
+    uniforms[20..20 + graph.params.len()].copy_from_slice(&graph.params);
+    uniforms
+}
+
+impl PlotItem for GpuGraph {
+    fn shapes(&self, ui: &egui::Ui, transform: &PlotTransform, shapes: &mut Vec<egui::Shape>) {
+        let callback = GraphCallback {
+            id: self.id,
+            frame: self.frame,
+            shader: self.shader.clone(),
+            uniforms: self.uniforms(transform, ui.ctx().pixels_per_point()),
+        };
+        shapes.push(egui::Shape::Callback(
+            egui_wgpu::Callback::new_paint_callback(*transform.frame(), callback),
+        ));
+    }
+
+    fn initialize(&mut self, _x_range: RangeInclusive<f64>) {}
+
+    fn color(&self) -> Color32 {
+        self.drawable_color
+    }
+
+    fn allow_hover(&self) -> bool {
+        false
+    }
+
+    fn geometry(&self) -> PlotGeometry<'_> {
+        PlotGeometry::None
+    }
+
+    fn bounds(&self) -> PlotBounds {
+        PlotBounds::NOTHING
+    }
+
+    fn base(&self) -> &PlotItemBase {
+        &self.base
+    }
+
+    fn base_mut(&mut self) -> &mut PlotItemBase {
+        &mut self.base
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use eframe::egui_wgpu::{CallbackTrait as _, wgpu};
+
+    use super::*;
+    use crate::{
+        gpu::{Resources, tests::device},
+        shader::tests::compile,
     };
-    match geometry {
-        Geometry::Curves(lines) => curves(plot_ui, lines, LineStyle::Solid),
-        Geometry::Region {
-            boundary,
-            texture,
-            strict,
-        } => {
-            let bounds = plot_ui.plot_bounds();
-            let center = bounds.center();
-            let size = egui::vec2(bounds.width() as f32, bounds.height() as f32);
-            plot_ui.image(
-                PlotImage::new(
-                    drawable.name.clone(),
-                    texture.id(),
-                    PlotPoint::new(center.x, center.y),
-                    size,
-                )
-                .allow_hover(false),
+
+    const WIDTH: u32 = 384;
+    const HEIGHT: u32 = 256;
+
+    const VIEW: View = View {
+        x_min: -10.,
+        x_max: 10.,
+        y_min: -6.,
+        y_max: 6.,
+    };
+
+    /// The opacity of the pixels of a graph drawn in white in [`VIEW`].
+    struct Image(Vec<u8>);
+
+    impl Image {
+        /// The opacity at the point `(x, y)`.
+        fn at(&self, x: f64, y: f64) -> f32 {
+            let column = ((x - VIEW.x_min) / VIEW.width() * f64::from(WIDTH)) as usize;
+            let row = ((VIEW.y_max - y) / VIEW.height() * f64::from(HEIGHT)) as usize;
+            f32::from(self.0[(row * WIDTH as usize + column) * 4 + 3]) / 255.
+        }
+
+        /// The largest opacity in the column of `x`.
+        fn column(&self, x: f64) -> f32 {
+            (0..HEIGHT)
+                .map(|row| {
+                    let y = VIEW.y_max - (f64::from(row) + 0.5) / f64::from(HEIGHT) * VIEW.height();
+                    self.at(x, y)
+                })
+                .fold(0., f32::max)
+        }
+    }
+
+    /// Draw the graph of `input` of the kind `kind`, with the comparison `relation`, offscreen.
+    fn draw(
+        (_, device, queue): &(wgpu::Adapter, wgpu::Device, wgpu::Queue),
+        input: &str,
+        kind: f32,
+        relation: Comparison,
+    ) -> Image {
+        let format = wgpu::TextureFormat::Rgba8Unorm;
+        let graph = GpuGraph {
+            base: PlotItemBase::new(input.to_owned()),
+            id: 0,
+            frame: 1,
+            shader: Shader::new(shader::render(&compile(input))),
+            color: color(Color32::WHITE, false),
+            fill: color(Color32::WHITE.gamma_multiply(0.25), false),
+            flags: [
+                kind,
+                relation_code(relation),
+                f32::from(u8::from(relation.is_strict())),
+            ],
+            params: vec![2., -3.],
+            drawable_color: Color32::WHITE,
+        };
+        let callback = GraphCallback {
+            id: 0,
+            frame: 1,
+            shader: graph.shader.clone(),
+            uniforms: uniforms(&VIEW, [WIDTH as f32, HEIGHT as f32], 1., &graph),
+        };
+        let mut resources = egui_wgpu::CallbackResources::default();
+        resources.insert(Resources::new(device, format));
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: None,
+            size: wgpu::Extent3d {
+                width: WIDTH,
+                height: HEIGHT,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
+        let screen = egui_wgpu::ScreenDescriptor {
+            size_in_pixels: [WIDTH, HEIGHT],
+            pixels_per_point: 1.,
+        };
+        callback.prepare(device, queue, &screen, &mut encoder, &mut resources);
+        {
+            let pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: None,
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            let rect = egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(WIDTH as f32, HEIGHT as f32),
             );
-            let style = if *strict {
-                LineStyle::dashed_loose()
-            } else {
-                LineStyle::Solid
+            let info = egui::PaintCallbackInfo {
+                viewport: rect,
+                clip_rect: rect,
+                pixels_per_point: 1.,
+                screen_size_px: [WIDTH, HEIGHT],
             };
-            curves(plot_ui, boundary, style);
+            callback.paint(info, &mut pass.forget_lifetime(), &resources);
         }
-        Geometry::Point([x, y]) => {
-            if x.is_finite() && y.is_finite() {
-                plot_ui.points(
-                    Points::new(drawable.name.clone(), vec![[*x, *y]])
-                        .id(drawable.id)
-                        .shape(MarkerShape::Circle)
-                        .radius(5.)
-                        .filled(true)
-                        .color(drawable.color),
-                );
-            }
-        }
+        let size = u64::from(WIDTH * HEIGHT * 4);
+        let staging = device.create_buffer(&wgpu::BufferDescriptor {
+            label: None,
+            size,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        encoder.copy_texture_to_buffer(
+            texture.as_image_copy(),
+            wgpu::TexelCopyBufferInfo {
+                buffer: &staging,
+                layout: wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(WIDTH * 4),
+                    rows_per_image: None,
+                },
+            },
+            texture.size(),
+        );
+        queue.submit([encoder.finish()]);
+        staging.map_async(wgpu::MapMode::Read, .., |result| result.expect("Mapped"));
+        let _ = device.poll(wgpu::PollType::wait_indefinitely());
+        let data = staging.get_mapped_range(..).expect("Mapped").to_vec();
+        Image(data)
+    }
+
+    #[test]
+    fn test_render() {
+        let Some(device) = device() else {
+            eprintln!("No GPU, skipped");
+            return;
+        };
+        let curve = |input| draw(&device, input, 0., Comparison::Equal);
+        let image = curve("x^2");
+        assert!(image.at(1., 1.) > 0.5);
+        assert!(image.at(1., 3.) == 0.);
+        assert!(image.at(0., -3.) == 0.);
+        assert!(image.at(2.4, 2.4_f64.powi(2)) > 0.5);
+        // No vertical lines at poles and steps
+        let image = curve("1/x");
+        assert!(image.at(2., 0.5) > 0.5);
+        assert!(image.at(0., 3.) == 0. && image.at(0., -3.) == 0.);
+        let image = curve("tan(x)");
+        assert!(image.at(0., 0.) > 0.5);
+        let pole = std::f64::consts::FRAC_PI_2;
+        assert!(image.at(pole, 0.) == 0. && image.at(-pole, 2.) == 0.);
+        let image = curve("floor(x)");
+        assert!(image.at(0.5, 0.) > 0.5);
+        assert!(image.at(1., 0.5) == 0.);
+        // The domain of `sqrt` starts at 0
+        let image = curve("sqrt(x)");
+        assert!(image.at(-1., 0.) == 0.);
+        assert!(image.column(0.03) > 0.5);
+        assert!(image.at(4., 2.) > 0.5);
+        // Parameters `a = 2`, `b = -3`
+        let image = curve("a*x + b");
+        assert!(image.at(3., 3.) > 0.5);
+        let image = draw(&device, "y^2", 1., Comparison::Equal);
+        assert!(image.at(1., 1.) > 0.5 && image.at(4., -2.) > 0.5);
+        assert!(image.at(1., 3.) == 0.);
+        let implicit = |input, relation| draw(&device, input, 2., relation);
+        let image = implicit("x^2 + y^2 - 4", Comparison::Equal);
+        assert!(image.at(2., 0.) > 0.5 && image.at(0., -2.) > 0.5);
+        assert!(image.at(0., 0.) == 0. && image.at(5., 0.) == 0.);
+        let image = implicit("x^2 + y^2 - 4", Comparison::Less);
+        assert!((image.at(0., 0.) - 0.25).abs() < 0.02);
+        assert!(image.at(5., 0.) == 0.);
+        let image = implicit("y - sin(x)", Comparison::GreaterEqual);
+        assert!((image.at(0., 3.) - 0.25).abs() < 0.02 && image.at(0., -3.) == 0.);
+        assert!(image.at(std::f64::consts::FRAC_PI_2, 1.) > 0.5);
+        let image = implicit("x^2/25 + y^2/9 - 1", Comparison::Greater);
+        assert!(image.at(0., 0.) == 0. && (image.at(9., 5.) - 0.25).abs() < 0.02);
+        // No contour at the poles of `y - tan(3 x)`
+        let image = implicit("y - tan(3*x)", Comparison::Equal);
+        assert!(image.at(0., 0.) > 0.5);
+        assert!(image.at(std::f64::consts::FRAC_PI_6, 3.) == 0.);
     }
 }

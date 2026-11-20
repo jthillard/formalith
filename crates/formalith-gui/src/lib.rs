@@ -3,14 +3,17 @@
 //! their parameters and the remarkable points of the selected curve.
 //!
 //! Lines are evaluated off the interface thread ([`evaluator`]) and come back with their graphs compiled to
-//! numerical expressions ([`formalith_session::graph`]), drawn without the CAS ([`plot`]).
+//! numerical expressions ([`formalith_session::graph`]), drawn without the CAS ([`plot`]): they are compiled to WGSL
+//! ([`shader`]) and drawn per pixel on the GPU ([`gpu`]), which also searches remarkable points when it has compute
+//! shaders.
 
-pub mod analysis;
 pub mod app;
 pub mod evaluator;
 pub mod geometry;
+pub mod gpu;
 pub mod plot;
 pub mod protocol;
+pub mod shader;
 
 pub use app::App;
 

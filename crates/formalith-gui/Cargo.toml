@@ -35,6 +35,8 @@ wgpu = { version = "30", default-features = false, features = ["webgl", "webgpu"
 
 [dev-dependencies]
 serde_json = "1"
+naga = { version = "30", features = ["wgsl-in"] }
+pollster = "1"
 
 # `wasm-opt` (binaryen) is not required to build
 [package.metadata.wasm-pack.profile.release]

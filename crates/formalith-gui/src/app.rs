@@ -157,7 +157,7 @@ impl App {
             generation: 0,
             edited: Some(f64::NEG_INFINITY),
             results: HashMap::new(),
-            plotter: Plotter::default(),
+            plotter: Plotter::new(cc),
             selected: None,
             focus: None,
         }

@@ -369,6 +369,10 @@ fn zeta(s: f64) -> f64 {
     if s == 1. || s.is_nan() {
         return f64::NAN;
     }
+    if s == 0. {
+        // The functional equation would need `zeta(1)`
+        return -0.5;
+    }
     if s < 0.5 {
         if s < 0. && (s / 2.).fract() == 0. {
             return 0.;
@@ -512,6 +516,7 @@ mod tests {
         assert_close(eval("polygamma(2, x)", 1.), -2.404_113_806_319_188_5);
         assert_close(eval("zeta(x)", 3.), 1.202_056_903_159_594_3);
         assert_close(eval("zeta(x)", -1.), -1. / 12.);
+        assert_close(eval("zeta(x)", 0.), -0.5);
         assert_close(eval("zeta(x)", 0.5), -1.460_354_508_809_586_8);
         assert_close(eval("lambertw(x)", 1.), 0.567_143_290_409_783_8);
         assert_close(eval("lambertw(x)", -0.2), -0.259_171_101_819_073_7);
