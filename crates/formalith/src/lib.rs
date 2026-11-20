@@ -24,6 +24,16 @@
 #![allow(incomplete_features)]
 #![feature(specialization)]
 
+/// A profiling scope named `$name`, optionally with dynamic `$data`, lasting until the end of the enclosing block.
+/// Nothing without the feature `profile`; recorded by the backend of the `profiling` crate enabled by the
+/// application.
+macro_rules! profile_scope {
+    ($name:expr $(, $data:expr)?) => {
+        #[cfg(feature = "profile")]
+        profiling::scope!($name $(, $data)?);
+    };
+}
+
 pub mod combinatorics;
 pub mod context;
 pub mod dynamic;

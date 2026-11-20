@@ -96,6 +96,9 @@ struct Pending {
     /// The offset of points in `staging`.
     offset: usize,
     step: f64,
+    /// The offset of the timestamps of the passes in `staging` and the CPU time they were submitted at, if timed.
+    #[cfg(feature = "profile")]
+    timing: Option<(usize, i64)>,
 }
 
 /// Searches remarkable points on a GPU with compute shaders.
@@ -108,7 +111,15 @@ pub struct Analyzer {
     pipelines: HashMap<u64, (wgpu::ComputePipeline, wgpu::ComputePipeline)>,
     pending: Option<Pending>,
     repaint: Arc<dyn Fn() + Send + Sync>,
+    /// The timestamps of the passes, the buffer they are resolved to and the period of ticks, when the GPU has
+    /// them, for the profiler.
+    #[cfg(feature = "profile")]
+    timestamps: Option<(wgpu::QuerySet, wgpu::Buffer, f32)>,
 }
+
+/// The names of the timed passes.
+#[cfg(feature = "profile")]
+const PASSES: [(&str, &str); 2] = [("sample", ""), ("refine", "")];
 
 /// A layout entry of a buffer of a compute shader.
 const fn entry(binding: u32, ty: wgpu::BufferBindingType) -> wgpu::BindGroupLayoutEntry {
@@ -159,14 +170,44 @@ impl Analyzer {
             immediate_size: 0,
         });
         Some(Self {
-            device,
-            queue,
             layout,
             pipeline_layout,
             pipelines: HashMap::new(),
             pending: None,
             repaint,
+            #[cfg(feature = "profile")]
+            timestamps: device
+                .features()
+                .contains(wgpu::Features::TIMESTAMP_QUERY)
+                .then(|| {
+                    let query_set = device.create_query_set(&wgpu::QuerySetDescriptor {
+                        label: Some("analysis timestamps"),
+                        ty: wgpu::QueryType::Timestamp,
+                        count: 4,
+                    });
+                    let resolve = device.create_buffer(&wgpu::BufferDescriptor {
+                        label: Some("analysis timestamps"),
+                        size: 32,
+                        usage: wgpu::BufferUsages::QUERY_RESOLVE | wgpu::BufferUsages::COPY_SRC,
+                        mapped_at_creation: false,
+                    });
+                    (query_set, resolve, queue.get_timestamp_period())
+                }),
+            device,
+            queue,
         })
+    }
+
+    /// The timestamps of the passes, if the profiler records and the GPU has them.
+    fn timestamps(&self) -> Option<&wgpu::QuerySet> {
+        #[cfg(feature = "profile")]
+        return self
+            .timestamps
+            .as_ref()
+            .filter(|_| crate::profiler::is_recording())
+            .map(|(query_set, ..)| query_set);
+        #[cfg(not(feature = "profile"))]
+        None
     }
 
     /// Check if a search is running.
@@ -206,6 +247,7 @@ impl Analyzer {
 
     /// Start the search of `request`, unless one is running. Returns whether it started.
     pub fn start(&mut self, request: &Request<'_>) -> bool {
+        profile_scope!("Analyzer::start");
         if self.pending.is_some() || request.samples == 0 || !(request.b > request.a) {
             return false;
         }
@@ -252,9 +294,12 @@ impl Analyzer {
         let counters_size = (1 + modes) * 4;
         let counters = storage("counters", counters_size, wgpu::BufferUsages::COPY_SRC);
         let offset = counters_size.next_multiple_of(16);
+        let timestamps = self.timestamps();
+        // The timestamps of the passes after the points
+        let timestamps_offset = offset + capacity * 16;
         let staging = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("staging"),
-            size: (offset + capacity * 16) as u64,
+            size: (timestamps_offset + if timestamps.is_some() { 32 } else { 0 }) as u64,
             usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -273,22 +318,46 @@ impl Analyzer {
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("analysis"),
         });
-        {
+        #[allow(clippy::cast_possible_truncation)]
+        let (n, modes) = (n as u32, modes as u32);
+        // A pass each, so that each can be timed
+        let passes = [
+            (&sample, (n + 1).div_ceil(WORKGROUP)),
+            (&refine, n.div_ceil(WORKGROUP)),
+        ];
+        for ((pipeline, groups), index) in passes.into_iter().zip(0..) {
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("analysis"),
-                timestamp_writes: None,
+                timestamp_writes: timestamps.map(|query_set| wgpu::ComputePassTimestampWrites {
+                    query_set,
+                    beginning_of_pass_write_index: Some(2 * index),
+                    end_of_pass_write_index: Some(2 * index + 1),
+                }),
             });
             pass.set_bind_group(0, &bind_group, &[]);
-            #[allow(clippy::cast_possible_truncation)]
-            let (n, modes) = (n as u32, modes as u32);
-            pass.set_pipeline(&sample);
-            pass.dispatch_workgroups((n + 1).div_ceil(WORKGROUP), modes, 1);
-            pass.set_pipeline(&refine);
-            pass.dispatch_workgroups(n.div_ceil(WORKGROUP), modes, 1);
+            pass.set_pipeline(pipeline);
+            pass.dispatch_workgroups(groups, modes, 1);
         }
         encoder.copy_buffer_to_buffer(&counters, 0, &staging, 0, counters_size as u64);
         encoder.copy_buffer_to_buffer(&points, 0, &staging, offset as u64, (capacity * 16) as u64);
+        #[cfg(feature = "profile")]
+        let timing =
+            self.timestamps
+                .as_ref()
+                .zip(timestamps)
+                .map(|((query_set, resolve, _), _)| {
+                    encoder.resolve_query_set(query_set, 0..4, resolve, 0);
+                    encoder.copy_buffer_to_buffer(
+                        resolve,
+                        0,
+                        &staging,
+                        timestamps_offset as u64,
+                        32,
+                    );
+                    (timestamps_offset, puffin::now_ns())
+                });
         self.queue.submit([encoder.finish()]);
+        let modes = modes as usize;
         let status = Arc::new(AtomicU8::new(0));
         let mapped = status.clone();
         let repaint = self.repaint.clone();
@@ -303,12 +372,15 @@ impl Analyzer {
             capacity,
             offset,
             step,
+            #[cfg(feature = "profile")]
+            timing,
         });
         true
     }
 
     /// The points found by the running search, once it is done.
     pub fn poll(&mut self) -> Option<Vec<Point>> {
+        profile_scope!("Analyzer::poll");
         let pending = self.pending.as_ref()?;
         if pending.status.load(Ordering::Acquire) == 0 {
             // Natively, callbacks are only called when polling
@@ -326,6 +398,18 @@ impl Analyzer {
             let Ok(data) = pending.staging.get_mapped_range(..) else {
                 return Some(vec![]);
             };
+            #[cfg(feature = "profile")]
+            if let (Some((offset, anchor_ns)), Some((.., period))) =
+                (pending.timing, &self.timestamps)
+            {
+                super::timer::report(
+                    super::timer::ANALYSIS,
+                    &PASSES,
+                    &data[offset..offset + 32],
+                    anchor_ns,
+                    *period,
+                );
+            }
             read_points(&data, &pending)
         };
         pending.staging.unmap();
@@ -593,6 +677,45 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {{
         };
         assert!(analyzer.start(&request));
         analyzer.wait()
+    }
+
+    #[cfg(feature = "profile")]
+    #[test]
+    fn test_timestamps() {
+        let Some((adapter, ..)) = device() else {
+            eprintln!("No GPU, skipped");
+            return;
+        };
+        let features = adapter.features() & wgpu::Features::TIMESTAMP_QUERY;
+        if features.is_empty() {
+            eprintln!("No timestamps, skipped");
+            return;
+        }
+        let descriptor = wgpu::DeviceDescriptor {
+            required_features: features,
+            ..Default::default()
+        };
+        let (device, queue) = pollster::block_on(adapter.request_device(&descriptor)).unwrap();
+        let mut analyzer = Analyzer::new(&adapter, device, queue, Arc::new(|| {})).unwrap();
+        let _recording = crate::profiler::tests::RECORDING
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        crate::profiler::start();
+        search(&mut analyzer, "x^2 - 1", Some("2*x"), &[], -3., 3.);
+        let lanes = crate::profiler::stop(false);
+        let lane = lanes
+            .iter()
+            .find(|lane| lane.name == super::super::timer::ANALYSIS)
+            .expect("The passes are timed");
+        let names: Vec<&str> = lane
+            .frames
+            .iter()
+            .map(|frame| frame.name.as_str())
+            .collect();
+        assert_eq!(names, ["sample", "refine"]);
+        assert!(lane.frames[0].start_ns <= lane.frames[0].end_ns);
+        assert!(lane.frames[0].end_ns <= lane.frames[1].start_ns);
+        assert!(lane.frames[1].start_ns <= lane.frames[1].end_ns);
     }
 
     #[test]

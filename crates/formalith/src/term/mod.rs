@@ -894,6 +894,7 @@ impl<T: Ring<ExponantSet: Ring, ProductCoefficientSet = T>> Term<T> {
         Self: TryFrom<Term<T::ExponantSet>>,
         <Self as TryFrom<Term<T::ExponantSet>>>::Error: Debug,
     {
+        profile_scope!("factor");
         let poly = self.to_polynomial();
         let factors = poly.factor();
         let mut res = Self::one(self.get_set());
@@ -1407,6 +1408,7 @@ impl<T: Ring> Term<T> {
     /// Simplify the expression by applying other simplification functions ([`Self::unify`], [`Self::expand`])
     #[must_use]
     pub fn simplify(&self) -> Self {
+        profile_scope!("Term::simplify");
         debug_assert!(!self.needs_normalization());
         let mut res = self.get_set().simplify(self.clone());
         let (num, den) = res.as_fraction(true);

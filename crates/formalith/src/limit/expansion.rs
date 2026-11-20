@@ -40,6 +40,7 @@ impl Term<Real> {
         order: &Rational,
         direction: Direction,
     ) -> LimitResult<Self> {
+        profile_scope!("series");
         let (f, infinite) = prepare(self, x, point, direction)?;
         if let Some(sign) = infinite {
             // `{$x = s/w$}`, so `{$w = s/x$}` and `{$ln w = -ln(s x)$}`

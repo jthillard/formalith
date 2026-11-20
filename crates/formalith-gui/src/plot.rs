@@ -122,6 +122,7 @@ impl Plotter {
 
     /// The shader of `drawable`.
     fn shader(&mut self, drawable: &Drawable<'_>, expr: &Numeric) -> Arc<Shader> {
+        profile_scope!("Plotter::shader");
         match self.shaders.get(&drawable.id) {
             Some((revision, shader)) if *revision == drawable.revision => shader.clone(),
             _ => {
@@ -142,6 +143,7 @@ impl Plotter {
         selected: Option<u64>,
         equal_aspect: bool,
     ) {
+        profile_scope!("Plotter::show");
         self.frame += 1;
         let mut plot = Plot::new("plot")
             .default_x_bounds(DEFAULT_VIEW.x_min, DEFAULT_VIEW.x_max)
@@ -204,6 +206,7 @@ impl Plotter {
 
     /// Draw `drawable`.
     fn draw(&mut self, plot_ui: &mut egui_plot::PlotUi<'_>, drawable: &Drawable<'_>) {
+        profile_scope!("Plotter::draw", &drawable.name);
         let (kind, expr, relation) = match &drawable.graph.kind {
             GraphKind::Function { expr, .. } => (0., expr, Comparison::Equal),
             GraphKind::InverseFunction { expr } => (1., expr, Comparison::Equal),
@@ -259,6 +262,7 @@ impl Plotter {
         bounds: &PlotBounds,
         pixels: usize,
     ) {
+        profile_scope!("Plotter::draw_remarkable");
         let Some(analyzer) = &mut self.analyzer else {
             return;
         };
@@ -399,6 +403,7 @@ fn hover(
     pointer: PlotPoint,
     transform: &PlotTransform,
 ) -> Option<(String, [f64; 2])> {
+    profile_scope!("hover");
     // Points per unit
     let kx = transform.dpos_dvalue_x().abs();
     let ky = transform.dpos_dvalue_y().abs();
@@ -532,6 +537,8 @@ impl PlotItem for GpuGraph {
             frame: self.frame,
             shader: self.shader.clone(),
             uniforms: self.uniforms(transform, ui.ctx().pixels_per_point()),
+            #[cfg(feature = "profile")]
+            label: self.name().to_owned(),
         };
         shapes.push(egui::Shape::Callback(
             egui_wgpu::Callback::new_paint_callback(*transform.frame(), callback),
@@ -635,6 +642,8 @@ mod tests {
             frame: 1,
             shader: graph.shader.clone(),
             uniforms: uniforms(&VIEW, [WIDTH as f32, HEIGHT as f32], 1., &graph),
+            #[cfg(feature = "profile")]
+            label: String::new(),
         };
         let mut resources = egui_wgpu::CallbackResources::default();
         resources.insert(Resources::new(device, format));

@@ -100,6 +100,7 @@ impl Term<Real> {
     /// );
     /// ```
     pub fn sum(&self, k: Symbol, a: &Self, b: &Self) -> SumResult<Self> {
+        profile_scope!("sum");
         check_bounds(self, k, a, b)?;
         if let Some(count) = count(a, b) {
             if count == 0 {
@@ -151,6 +152,7 @@ impl Term<Real> {
     /// assert_eq!(product, Ok(parse!("n + 1", R)));
     /// ```
     pub fn product(&self, k: Symbol, a: &Self, b: &Self) -> SumResult<Self> {
+        profile_scope!("product");
         check_bounds(self, k, a, b)?;
         if let Some(count) = count(a, b) {
             if count == 0 {

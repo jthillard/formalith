@@ -24,6 +24,7 @@ pub(super) fn expand(u: &Expr) -> Expr {
 /// logarithms, hyperbolic functions as exponentials, trigonometric functions of sums and multiple angles, and
 /// even powers of `sin` with `cos`, whichever is smaller.
 pub(super) fn simplify(u: &Expr) -> Expr {
+    profile_scope!("simplify");
     let simplified = u.simplify();
     let candidate = exp_of_ln(u);
     let candidate = logarithm_quotients(&candidate);

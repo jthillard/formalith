@@ -19,6 +19,13 @@ formalith-session = { workspace = true, features = ["serde"] }
 eframe = { version = "0.37", default-features = false, features = ["wgpu", "default_fonts", "persistence"] }
 egui_plot = "0.38"
 serde = { version = "1", features = ["derive"] }
+profiling = { version = "1.0.18", optional = true, default-features = false }
+puffin = { version = "0.20", optional = true }
+
+[features]
+# The profiler window: records the interface, the evaluation (down to the CAS) and the GPU with puffin, which also
+# records egui, eframe and wgpu through their `profiling` scopes
+profile = ["dep:profiling", "dep:puffin", "profiling/profile-with-puffin", "formalith-session/profile"]
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 eframe = { version = "0.37", default-features = false, features = ["wayland", "x11"] }
@@ -30,6 +37,8 @@ wasm-bindgen-futures = "0.4"
 js-sys = "0.3"
 web-sys = { version = "0.3", features = ["Window", "Document", "HtmlCanvasElement", "Worker", "WorkerOptions", "WorkerType", "MessageEvent", "ErrorEvent", "Performance"] }
 console_error_panic_hook = "0.1"
+# The clock of puffin in the browser
+puffin = { version = "0.20", optional = true, features = ["web"] }
 # WebGL2 when the browser has no WebGPU
 wgpu = { version = "30", default-features = false, features = ["webgl", "webgpu"] }
 

@@ -6,12 +6,25 @@
 //! numerical expressions ([`formalith_session::graph`]), drawn without the CAS ([`plot`]): they are compiled to WGSL
 //! ([`shader`]) and drawn per pixel on the GPU ([`gpu`]), which also searches remarkable points when it has compute
 //! shaders.
+//!
+//! With the feature `profile`, a profiler window ([`profiler`]) records all of it, down to the CAS and the GPU.
+
+/// A profiling scope named `$name`, optionally with dynamic `$data`, lasting until the end of the enclosing block.
+/// Nothing without the feature `profile`.
+macro_rules! profile_scope {
+    ($name:expr $(, $data:expr)?) => {
+        #[cfg(feature = "profile")]
+        profiling::scope!($name $(, $data)?);
+    };
+}
 
 pub mod app;
 pub mod evaluator;
 pub mod geometry;
 pub mod gpu;
 pub mod plot;
+#[cfg(feature = "profile")]
+pub mod profiler;
 pub mod protocol;
 pub mod shader;
 
@@ -46,10 +59,14 @@ mod web {
             .and_then(|document| document.get_element_by_id(&canvas_id))
             .ok_or_else(|| JsValue::from_str(&format!("no element `{canvas_id}`")))?
             .dyn_into::<web_sys::HtmlCanvasElement>()?;
+        #[allow(unused_mut)]
+        let mut options = eframe::WebOptions::default();
+        #[cfg(feature = "profile")]
+        crate::profiler::request_timestamps(&mut options.wgpu_options);
         eframe::WebRunner::new()
             .start(
                 canvas,
-                eframe::WebOptions::default(),
+                options,
                 Box::new(|cc| {
                     let ctx = cc.egui_ctx.clone();
                     let backends = Box::new(move || {

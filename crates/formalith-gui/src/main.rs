@@ -11,7 +11,8 @@ fn main() -> eframe::Result {
         evaluator::{Backend, NativeBackend},
     };
 
-    let options = eframe::NativeOptions {
+    #[allow(unused_mut)]
+    let mut options = eframe::NativeOptions {
         renderer: eframe::Renderer::Wgpu,
         viewport: egui::ViewportBuilder::default()
             .with_title("Formalith")
@@ -19,6 +20,8 @@ fn main() -> eframe::Result {
             .with_min_inner_size([400., 300.]),
         ..Default::default()
     };
+    #[cfg(feature = "profile")]
+    formalith_gui::profiler::request_timestamps(&mut options.wgpu_options);
     eframe::run_native(
         "Formalith",
         options,

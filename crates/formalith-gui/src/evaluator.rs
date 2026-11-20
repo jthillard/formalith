@@ -375,6 +375,7 @@ mod tests {
                 set: "R".to_owned(),
                 lines,
                 skip: vec![],
+                profile: false,
             },
             0.,
         );

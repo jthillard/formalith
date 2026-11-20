@@ -20,6 +20,15 @@
     clippy::nursery
 )]
 
+/// A profiling scope named `$name`, optionally with dynamic `$data`, lasting until the end of the enclosing block.
+/// Nothing without the feature `profile`.
+macro_rules! profile_scope {
+    ($name:expr $(, $data:expr)?) => {
+        #[cfg(feature = "profile")]
+        profiling::scope!($name $(, $data)?);
+    };
+}
+
 pub mod graph;
 
 use std::{
@@ -124,6 +133,7 @@ impl Session {
     /// Operations unsupported by the set panic. The panic is caught (unless panics abort, as in wasm) and
     /// reported as an error.
     pub fn run(&mut self, line: &str) -> Response {
+        profile_scope!("Session::run");
         let line = line.trim();
         let (output, changes_state) = match line {
             "" => (Output::None, false),
@@ -189,6 +199,7 @@ impl Session {
     /// Relations in `y`, like `y = x^2` or `x^2 + y^2 < 1`, and points `(a, b)` are kept as they are rather than
     /// solved.
     pub fn graph(&mut self, line: &str) -> (Response, Option<Graph>) {
+        profile_scope!("Session::graph");
         let line = line.trim();
         if self.set != SetChoice::R || line.is_empty() || line.starts_with(':') || line == "help" {
             return (self.run(line), None);
@@ -279,6 +290,7 @@ impl Output {
     /// Print with `options` if it is a result, otherwise print the message.
     #[must_use]
     pub fn print(&self, options: PrintOptions) -> String {
+        profile_scope!("print");
         match self {
             Self::None => String::new(),
             Self::Result { result, .. } => result.print(options),

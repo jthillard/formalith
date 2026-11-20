@@ -11,7 +11,10 @@ categories = ["mathematics", "science"]
 [dependencies]
 formalith.workspace = true
 serde = { version = "1", features = ["derive"], optional = true }
+profiling = { version = "1.0.18", optional = true, default-features = false }
 
 [features]
 # `Serialize` and `Deserialize` for graphs
 serde = ["dep:serde", "formalith/serde"]
+# Profiling scopes in sessions and the CAS, through the `profiling` crate
+profile = ["dep:profiling", "formalith/profile"]

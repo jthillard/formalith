@@ -17,6 +17,8 @@ dyn-hash = "1"
 malachite = { version = "0.9", default-features = false, features = ["naturals_and_integers", "rationals"] }
 libm = "0.2"
 owo-colors = "4"
+# Scopes of the `profile` feature, recorded by the backend a dependent crate enables
+profiling = { version = "1.0.18", optional = true, default-features = false }
 serde = { version = "1", features = ["derive"], optional = true }
 supports-color = "3"
 
@@ -24,3 +26,5 @@ supports-color = "3"
 concise-debug = []
 # `Serialize` and `Deserialize` for numerical expressions (`field::real::numeric`)
 serde = ["dep:serde"]
+# Profiling scopes in the expensive operations (integrals, limits, solving...), through the `profiling` crate
+profile = ["dep:profiling"]

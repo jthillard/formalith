@@ -28,6 +28,10 @@ pub struct Request {
     pub lines: Vec<RequestLine>,
     /// Inputs which crashed the worker, not evaluated again.
     pub skip: Vec<String>,
+    /// Whether to record a profile of the evaluation, sent back in a [`Reply::Profile`] by a worker in the
+    /// browser (feature `profile`). Natively, the worker thread is recorded with the interface.
+    #[serde(default)]
+    pub profile: bool,
 }
 
 /// The kind of result of a line.
@@ -78,6 +82,13 @@ pub enum Reply {
         /// Its result.
         result: LineResult,
     },
+    /// The profile of the evaluation, recorded by a worker in the browser when the request asked for it, just
+    /// before [`Reply::Done`].
+    #[cfg(feature = "profile")]
+    Profile {
+        /// The lanes recorded.
+        lanes: Vec<crate::profiler::Lane>,
+    },
     /// Every line of the request was evaluated.
     Done {
         /// The generation of the request.
@@ -121,6 +132,32 @@ impl Worker {
     /// Evaluate `request`, giving each reply to `emit` as soon as it is known. Stops early when `emit` returns
     /// `false`, if the interface doesn't wait for the replies anymore.
     pub fn evaluate(&mut self, request: &Request, mut emit: impl FnMut(Reply) -> bool) {
+        #[cfg(all(feature = "profile", target_arch = "wasm32"))]
+        if request.profile {
+            crate::profiler::start();
+        }
+        if !self.evaluate_lines(request, &mut emit) {
+            return;
+        }
+        #[cfg(all(feature = "profile", target_arch = "wasm32"))]
+        if request.profile {
+            // The worker's only thread, which another instance calls `main` too
+            let mut lanes = crate::profiler::stop(true);
+            for lane in &mut lanes {
+                lane.name = "worker".to_owned();
+            }
+            if !emit(Reply::Profile { lanes }) {
+                return;
+            }
+        }
+        emit(Reply::Done {
+            generation: request.generation,
+        });
+    }
+
+    /// Evaluate the lines of `request`, returning `false` if [`Self::evaluate`] must stop.
+    fn evaluate_lines(&mut self, request: &Request, emit: &mut impl FnMut(Reply) -> bool) -> bool {
+        profile_scope!("evaluate request");
         let mut session = Session::new();
         let set_result = session.run(&format!(":set {}", request.set));
         if let Output::Error(error) = set_result.output {
@@ -130,13 +167,10 @@ impl Worker {
                     id: line.id,
                     result: LineResult::error(error.clone()),
                 }) {
-                    return;
+                    return false;
                 }
             }
-            emit(Reply::Done {
-                generation: request.generation,
-            });
-            return;
+            return true;
         }
         if self.set != request.set {
             self.cache.clear();
@@ -173,17 +207,16 @@ impl Worker {
                 id: line.id,
                 result,
             }) {
-                return;
+                return false;
             }
         }
-        emit(Reply::Done {
-            generation: request.generation,
-        });
+        true
     }
 }
 
 /// Evaluate a line in `session`, with whether it changed the state of the session.
 fn evaluate_line(session: &mut Session, text: &str, skip: &[String]) -> (LineResult, bool) {
+    profile_scope!("line", text);
     if skip.iter().any(|skipped| skipped == text) {
         return (LineResult::error(CRASHED), false);
     }
@@ -219,6 +252,7 @@ mod tests {
                 })
                 .collect(),
             skip: vec![],
+            profile: false,
         }
     }
 

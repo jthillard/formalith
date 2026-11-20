@@ -128,6 +128,7 @@ impl Term<Real> {
     /// assert_eq!(f.limit(symbol!("x"), &parse!("0", R), Direction::Both), Err(LimitError::Undefined));
     /// ```
     pub fn limit(&self, x: Symbol, point: &Self, direction: Direction) -> LimitResult<Self> {
+        profile_scope!("limit");
         if depends(point, x) {
             return Err(LimitError::Unsupported);
         }

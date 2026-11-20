@@ -141,6 +141,8 @@ pub struct App {
     selected: Option<u64>,
     /// The line to give the keyboard focus.
     focus: Option<u64>,
+    #[cfg(feature = "profile")]
+    profiler: crate::profiler::ProfilerWindow,
 }
 
 impl App {
@@ -160,7 +162,18 @@ impl App {
             plotter: Plotter::new(cc),
             selected: None,
             focus: None,
+            #[cfg(feature = "profile")]
+            profiler: crate::profiler::ProfilerWindow::default(),
         }
+    }
+
+    /// Check if the profiler is recording, so that requests are recorded too.
+    #[allow(clippy::unused_self)]
+    const fn is_profiling(&self) -> bool {
+        #[cfg(feature = "profile")]
+        return self.profiler.is_recording();
+        #[cfg(not(feature = "profile"))]
+        false
     }
 
     /// Mark the lines as edited, to evaluate them soon.
@@ -170,19 +183,24 @@ impl App {
 
     /// Receive results, and send the lines to evaluate once editing pauses.
     fn evaluate(&mut self, ctx: &egui::Context, now: f64) {
+        profile_scope!("App::evaluate");
         for reply in self.evaluator.poll(now) {
-            if let Reply::Line {
-                generation,
-                id,
-                result,
-            } = reply
-            {
-                if let Some(graph) = &result.graph {
-                    for param in &graph.params {
-                        self.state.params.entry(param.clone()).or_default();
+            match reply {
+                Reply::Line {
+                    generation,
+                    id,
+                    result,
+                } => {
+                    if let Some(graph) = &result.graph {
+                        for param in &graph.params {
+                            self.state.params.entry(param.clone()).or_default();
+                        }
                     }
+                    self.results.insert(id, Evaluated { generation, result });
                 }
-                self.results.insert(id, Evaluated { generation, result });
+                #[cfg(feature = "profile")]
+                Reply::Profile { lanes } => self.profiler.add_lanes(lanes),
+                Reply::Done { .. } => {}
             }
         }
         if let Some(edited) = self.edited {
@@ -202,6 +220,7 @@ impl App {
                         })
                         .collect(),
                     skip: vec![],
+                    profile: self.is_profiling(),
                 };
                 self.evaluator.send(request, now);
             } else {
@@ -252,6 +271,7 @@ impl App {
 
     /// The panel of lines, parameters and options.
     fn lines_panel(&mut self, ui: &mut egui::Ui, now: f64) {
+        profile_scope!("App::lines_panel");
         ui.horizontal(|ui| {
             ui.heading("Formalith");
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -279,6 +299,10 @@ impl App {
                     ui.checkbox(&mut self.state.equal_aspect, "Same scale on both axes");
                     if ui.button("Reset the view").clicked() {
                         self.plotter.reset_view();
+                    }
+                    #[cfg(feature = "profile")]
+                    if ui.button("Profiler (F12)").clicked() {
+                        self.profiler.open = !self.profiler.open;
                     }
                 });
                 ui.collapsing("Examples", |ui| {
@@ -491,6 +515,7 @@ fn result_label(ui: &mut egui::Ui, id: u64, result: &LineResult, pending: bool) 
 
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        profile_scope!("App::ui");
         let ctx = ui.ctx().clone();
         let now = ctx.input(|input| input.time);
         self.evaluate(&ctx, now);
@@ -514,6 +539,15 @@ impl eframe::App for App {
             drop(drawables);
             self.plotter = plotter;
         });
+        #[cfg(feature = "profile")]
+        {
+            self.profiler.show(&ctx, now);
+            // Natively, eframe ends the frames of puffin
+            #[cfg(target_arch = "wasm32")]
+            if self.profiler.is_recording() {
+                profiling::finish_frame!();
+            }
+        }
     }
 
     fn save(&mut self, storage: &mut dyn eframe::Storage) {

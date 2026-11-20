@@ -160,6 +160,7 @@ fn compile<const N: usize>(
     var: Symbol,
     kind: impl FnOnce([Numeric; N]) -> GraphKind,
 ) -> Graph {
+    profile_scope!("compile graph");
     let (x, y) = xy();
     let params = params(parts, &[var, x, y]);
     let vars: Vec<Symbol> = [var, y].into_iter().chain(params.iter().copied()).collect();

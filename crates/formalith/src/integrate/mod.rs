@@ -120,6 +120,7 @@ impl Term<Real> {
     /// assert_eq!(parse!("exp(x)/x", R).integrate(x), Err(IntegrateError::NonElementary));
     /// ```
     pub fn integrate(&self, x: Symbol) -> IntegrateResult<Self> {
+        profile_scope!("integrate");
         if has_special_constant(self) {
             return Err(IntegrateError::Unsupported);
         }
@@ -155,6 +156,7 @@ impl Term<Real> {
     /// assert_eq!(integral("1/x", "-1", "1"), Err(IntegrateError::Undefined));
     /// ```
     pub fn integrate_definite(&self, x: Symbol, a: &Self, b: &Self) -> IntegrateResult<Self> {
+        profile_scope!("integrate_definite");
         definite::integrate(self, x, a, b)
     }
 }
@@ -237,6 +239,7 @@ impl Integrator {
 
     /// The Risch algorithm on `f`, cached.
     fn risch(&mut self, f: &Expr, x: Symbol) -> risch::RischResult<Expr> {
+        profile_scope!("risch");
         let key = (x, f.clone());
         if let Some(res) = self.risch_cache.get(&key) {
             return res.clone();

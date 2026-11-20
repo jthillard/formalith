@@ -2,6 +2,8 @@
 //! whole plot, with its view, colors and parameters as uniforms.
 
 pub mod analysis;
+#[cfg(feature = "profile")]
+pub mod timer;
 
 use std::{
     collections::HashMap,
@@ -57,16 +59,25 @@ pub(crate) struct Resources {
     /// Uniform buffers by graph, with the frame they were last used in.
     graphs: HashMap<u64, (wgpu::Buffer, wgpu::BindGroup, u64)>,
     frame: u64,
+    /// Times the graphs while the profiler records, when the GPU can.
+    #[cfg(feature = "profile")]
+    timer: Option<timer::RenderTimer>,
 }
 
 /// Prepare the renderer of `render_state` to draw graphs, returning whether colors must be given in linear space.
 pub fn install(render_state: &egui_wgpu::RenderState) -> bool {
     let format = render_state.target_format;
+    #[allow(unused_mut)]
+    let mut resources = Resources::new(&render_state.device, format);
+    #[cfg(feature = "profile")]
+    {
+        resources.timer = timer::RenderTimer::new(&render_state.device, &render_state.queue);
+    }
     render_state
         .renderer
         .write()
         .callback_resources
-        .insert(Resources::new(&render_state.device, format));
+        .insert(resources);
     format.is_srgb()
 }
 
@@ -80,6 +91,9 @@ pub struct GraphCallback {
     pub shader: Arc<Shader>,
     /// The uniforms of the shader.
     pub uniforms: Box<[f32; UNIFORMS]>,
+    /// The name of the graph, shown by the profiler.
+    #[cfg(feature = "profile")]
+    pub label: String,
 }
 
 impl Resources {
@@ -109,6 +123,8 @@ impl Resources {
             pipelines: HashMap::new(),
             graphs: HashMap::new(),
             frame: 0,
+            #[cfg(feature = "profile")]
+            timer: None,
         }
     }
 
@@ -151,9 +167,10 @@ impl egui_wgpu::CallbackTrait for GraphCallback {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         _screen_descriptor: &egui_wgpu::ScreenDescriptor,
-        _egui_encoder: &mut wgpu::CommandEncoder,
+        egui_encoder: &mut wgpu::CommandEncoder,
         callback_resources: &mut egui_wgpu::CallbackResources,
     ) -> Vec<wgpu::CommandBuffer> {
+        profile_scope!("GraphCallback::prepare");
         let Some(resources) = callback_resources.get_mut::<Resources>() else {
             return vec![];
         };
@@ -163,8 +180,19 @@ impl egui_wgpu::CallbackTrait for GraphCallback {
             let used = |last: u64| last + UNUSED_FRAMES >= frame;
             resources.pipelines.retain(|_, (_, last)| used(*last));
             resources.graphs.retain(|_, (_, _, last)| used(*last));
+            #[cfg(feature = "profile")]
+            if let Some(timer) = &mut resources.timer {
+                timer.new_frame(egui_encoder);
+            }
         }
+        #[cfg(feature = "profile")]
+        if let Some(timer) = &mut resources.timer {
+            timer.time(self.id, &self.label);
+        }
+        #[cfg(not(feature = "profile"))]
+        let _ = egui_encoder;
         if !resources.pipelines.contains_key(&self.shader.hash) {
+            profile_scope!("create graph pipeline");
             let pipeline = resources.pipeline(device, &self.shader);
             resources
                 .pipelines
@@ -211,9 +239,22 @@ impl egui_wgpu::CallbackTrait for GraphCallback {
         ) else {
             return;
         };
+        #[cfg(feature = "profile")]
+        let queries = resources
+            .timer
+            .as_ref()
+            .and_then(|timer| timer.queries(self.id));
+        #[cfg(feature = "profile")]
+        if let Some((query_set, index)) = queries {
+            render_pass.write_timestamp(query_set, index);
+        }
         render_pass.set_pipeline(pipeline);
         render_pass.set_bind_group(0, bind_group, &[]);
         render_pass.draw(0..3, 0..1);
+        #[cfg(feature = "profile")]
+        if let Some((query_set, index)) = queries {
+            render_pass.write_timestamp(query_set, index + 1);
+        }
     }
 }
 

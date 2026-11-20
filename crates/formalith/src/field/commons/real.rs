@@ -850,6 +850,7 @@ impl R<Rational> {
     /// Evaluate the builtin function `ident` on `args`, returning `None` if it can't be evaluated.
     /// Evaluate `approx(x)` or `approx(x, digits)`, returning `None` if `digits` isn't a valid number of digits.
     fn eval_approx(args: &[Term<Self>]) -> Option<Term<Self>> {
+        profile_scope!("approx");
         let (x, digits) = match args {
             [x] => (x, approx::DEFAULT_DIGITS),
             [x, Term::Value(digits)] => (x, u64::try_from(&digits.value).ok()?),

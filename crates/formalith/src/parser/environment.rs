@@ -346,6 +346,7 @@ impl<'a> Parser<'a> {
         &mut self,
         set: E,
     ) -> Result<Statement<E>, ParserError> {
+        profile_scope!("parse_statement");
         let _assumptions = self.env.map(|env| env.assumptions().enter());
         let Some((name, params, body_start)) = self.clone().definition_head() else {
             return self.parse_equations(set);
@@ -422,7 +423,10 @@ impl<'a> Parser<'a> {
                 Self::equation(lhs, relation, rhs)
             })
             .collect::<Result<Vec<_>, _>>()?;
-        let solution = set.solve(&equations)?;
+        let solution = {
+            profile_scope!("solve");
+            set.solve(&equations)?
+        };
         let integers = integer_parameters(&equations, &solution);
         Ok(Statement::System {
             equations,
@@ -589,10 +593,13 @@ impl<'a> Parser<'a> {
                 Self::equation(lhs, relation, rhs)
             })
             .collect::<Result<Vec<_>, _>>()?;
-        let solution = if unknowns.is_empty() {
-            set.solve(&equations)?
-        } else {
-            set.solve_for(&equations, &unknowns)?
+        let solution = {
+            profile_scope!("solve");
+            if unknowns.is_empty() {
+                set.solve(&equations)?
+            } else {
+                set.solve_for(&equations, &unknowns)?
+            }
         };
         let integers = integer_parameters(&equations, &solution);
         Ok(Statement::System {
@@ -668,7 +675,10 @@ impl<'a> Parser<'a> {
             equation = Some(Equation::new(lhs, rhs));
         }
         let equation = equation.ok_or_else(|| ParserError::new("dsolve expects an equation"))?;
-        let solution = set.dsolve(&equation, &conditions, function, x)?;
+        let solution = {
+            profile_scope!("dsolve");
+            set.dsolve(&equation, &conditions, function, x)?
+        };
         Ok(Statement::Ode { equation, solution })
     }
 
