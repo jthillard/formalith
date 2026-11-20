@@ -10,3 +10,8 @@ categories = ["mathematics", "science"]
 
 [dependencies]
 formalith.workspace = true
+serde = { version = "1", features = ["derive"], optional = true }
+
+[features]
+# `Serialize` and `Deserialize` for graphs
+serde = ["dep:serde", "formalith/serde"]

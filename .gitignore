@@ -1,3 +1,5 @@
 /target
 *.mm_profdata
 /crates/formalith-web/www/pkg
+/crates/formalith-gui/www/pkg
+/crates/formalith-gui/LICENSE

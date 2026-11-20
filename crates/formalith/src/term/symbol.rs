@@ -35,6 +35,10 @@ impl<T> SymbolTerm<T> {
             set,
         }
     }
+    /// The symbol.
+    pub const fn symbol(&self) -> Symbol {
+        self.symbol
+    }
 }
 impl<T: Debug> Print for SymbolTerm<T> {
     fn print(&self, options: &PrintOptions, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

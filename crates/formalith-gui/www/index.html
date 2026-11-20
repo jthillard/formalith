@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Formalith</title>
+  <meta name="description" content="Formalith computer algebra system and graphing calculator, running in the browser">
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #1b1b1b; }
+    canvas { display: block; width: 100%; height: 100%; }
+    #loading { position: absolute; inset: 0; display: grid; place-items: center; color: #aaa; font: 16px sans-serif; }
+  </style>
+</head>
+<body>
+  <canvas id="formalith"></canvas>
+  <div id="loading">Loading Formalith…</div>
+  <script type="module">
+    import init, { start } from './pkg/formalith_gui.js';
+
+    const loading = document.getElementById('loading');
+    try {
+      await init();
+      await start('formalith');
+      loading.remove();
+    } catch (err) {
+      console.error(err);
+      loading.textContent = `Formalith failed to start: ${err}`;
+    }
+  </script>
+</body>
+</html>

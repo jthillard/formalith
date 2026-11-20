@@ -2,6 +2,7 @@
 
 pub(crate) mod approx;
 pub(crate) mod expr;
+pub mod numeric;
 mod rewrite;
 pub(crate) mod sign;
 pub(crate) mod special;
@@ -44,6 +45,9 @@ use crate::{
 pub(crate) const MAX_FACTORIAL: u64 = 100_000;
 /// Maximum exponent tried when evaluating `{$log_b(x)$}` as an integer.
 const MAX_LOG_ITERATIONS: i64 = 4096;
+
+/// The real field `{$RR$}` with rational values, the type of [`R`].
+pub type Real = R<Rational>;
 
 /// The real field `{$RR$}`.
 #[derive(Clone, PartialEq, Eq, Hash)]

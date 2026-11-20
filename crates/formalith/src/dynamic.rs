@@ -9,8 +9,9 @@ use crate::{
         real::R,
     },
     parser::environment::{Environment, Statement, head, integers_line},
-    printer::{Print, PrintOptions},
-    term::TermSet,
+    printer::{PrettyPrint, PrettyPrinter, Print, PrintOptions},
+    solve::inequality::Inequality,
+    term::{Term, TermSet, relation::Relation},
 };
 
 /// The sets expressions can be evaluated in.
@@ -142,6 +143,43 @@ pub struct Evaluated {
 }
 
 impl Evaluated {
+    /// An evaluated statement, see [`Environment::eval`].
+    #[must_use]
+    pub fn new<E: SetParseExpression>(statement: Statement<E>) -> Self {
+        let kind = match statement {
+            Statement::Expression(_) => StatementKind::Expression,
+            Statement::Definition { .. } => StatementKind::Definition,
+            Statement::Assume(_) => StatementKind::Assumption,
+            Statement::System { .. } | Statement::Inequalities { .. } | Statement::Ode { .. } => {
+                StatementKind::Solution
+            }
+        };
+        Self {
+            kind,
+            print: Box::new(move |options| print_statement(&statement, options)),
+        }
+    }
+
+    /// The relation `lhs op rhs`, left unsolved, like the equation of a curve.
+    #[must_use]
+    pub fn relation<E: SetParseExpression>(lhs: Term<E>, relation: Relation, rhs: Term<E>) -> Self {
+        let inequality = Inequality::new(lhs, relation, rhs);
+        Self {
+            kind: StatementKind::Expression,
+            print: Box::new(move |options| print_with(&inequality, options)),
+        }
+    }
+
+    /// The point `(x, y)`.
+    #[must_use]
+    pub fn point<E: SetParseExpression>(x: Term<E>, y: Term<E>) -> Self {
+        let point = Point(x, y);
+        Self {
+            kind: StatementKind::Expression,
+            print: Box::new(move |options| print_with(&point, options)),
+        }
+    }
+
     /// The kind of the evaluated statement.
     #[must_use]
     pub const fn kind(&self) -> StatementKind {
@@ -292,18 +330,70 @@ fn eval_in<E: SetParseExpression>(
     env: &mut Environment,
 ) -> Result<Evaluated, String> {
     let statement = env.eval(input, set).map_err(|err| err.to_string())?;
-    let kind = match statement {
-        Statement::Expression(_) => StatementKind::Expression,
-        Statement::Definition { .. } => StatementKind::Definition,
-        Statement::Assume(_) => StatementKind::Assumption,
-        Statement::System { .. } | Statement::Inequalities { .. } | Statement::Ode { .. } => {
-            StatementKind::Solution
-        }
-    };
-    Ok(Evaluated {
-        kind,
-        print: Box::new(move |options| print_statement(&statement, options)),
-    })
+    Ok(Evaluated::new(statement))
+}
+
+/// Print `value` with `options`, or with its `Display` implementation.
+fn print_with<P: PrettyPrint + fmt::Display>(value: &P, options: Option<PrintOptions>) -> String {
+    options.map_or_else(
+        || value.to_string(),
+        |options| value.with_options(options).to_string(),
+    )
+}
+
+/// A definition `name(params) := body`, the body laid out with the head when pretty printed.
+struct DefinitionPrinter<'a, E: Set> {
+    head: String,
+    body: &'a Term<E>,
+}
+
+impl<E: Set> Print for DefinitionPrinter<'_, E> {
+    fn print(&self, options: &PrintOptions, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} := ", self.head)?;
+        self.body.print(options, f)
+    }
+}
+
+impl<E: Set> PrettyPrint for DefinitionPrinter<'_, E> {
+    fn pretty_print(&self, options: &PrintOptions) -> PrettyPrinter {
+        let mut res = PrettyPrinter::from(self.head.clone());
+        res.concat(":=", true, &self.body.pretty_print(options));
+        res
+    }
+}
+
+impl<E: Set> fmt::Display for DefinitionPrinter<'_, E> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        PrettyPrint::fmt(self, &PrintOptions::default(), f)
+    }
+}
+
+/// A point `(x, y)`.
+struct Point<E: Set>(Term<E>, Term<E>);
+
+impl<E: Set> Print for Point<E> {
+    fn print(&self, options: &PrintOptions, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("(")?;
+        self.0.print(options, f)?;
+        f.write_str(", ")?;
+        self.1.print(options, f)?;
+        f.write_str(")")
+    }
+}
+
+impl<E: Set> PrettyPrint for Point<E> {
+    fn pretty_print(&self, options: &PrintOptions) -> PrettyPrinter {
+        let mut res = self.0.pretty_print(options);
+        res.concat(", ", false, &self.1.pretty_print(options));
+        res.paren();
+        res
+    }
+}
+
+impl<E: Set> fmt::Display for Point<E> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        PrettyPrint::fmt(self, &PrintOptions::default(), f)
+    }
 }
 
 /// Print an evaluated statement with `options`, or with the `Display` implementations of its parts.
@@ -322,13 +412,12 @@ fn print_statement<E: SetParseExpression>(
         ),
         Statement::Definition {
             name, params, body, ..
-        } => format!(
-            "{} := {}",
-            head(*name, params),
-            print(
-                &|options| body.with_options(options).to_string(),
-                body.to_string()
-            )
+        } => print_with(
+            &DefinitionPrinter {
+                head: head(*name, params),
+                body,
+            },
+            options,
         ),
         Statement::System {
             solution, integers, ..

@@ -24,6 +24,7 @@ factorization, solving systems of polynomial equations and ordinary differential
 - `crates/formalith-session`: interactive sessions (commands, definitions, results), shared by the interfaces
 - `crates/formalith-cli`: the command line interface (binary `formalith`)
 - `crates/formalith-web`: the browser interface (WebAssembly)
+- `crates/formalith-gui`: a graphing calculator (egui), natively and in the browser
 
 ## Library
 
@@ -54,6 +55,14 @@ Assumptions on symbols are declared with `assume(a > 0, b != 0, n integer)`, giv
 ## Web
 
 `make web` builds the WebAssembly package (needs `wasm-pack`), `make web-serve` serves the page on port 8000.
+
+## Graphing calculator
+
+`make gui` runs the graphical interface (`cargo run -p formalith-gui`): a list of lines with their results, next
+to a plot of curves (`y = sin(x)`, `f(x) := x^3 - x`, `x = y^2`), implicit curves and regions (`x^2 + y^2 = 1`,
+`y < exp(-x^2)`) and points (`(1, f(1))`), with sliders for parameters (`y = a*sin(b*x)`) and the roots, extrema
+and intersections of the selected curve. `make gui-web` builds it for the browser (WebGPU, or WebGL2 without it),
+`make gui-web-serve` serves it on port 8001.
 
 ## Tests
 

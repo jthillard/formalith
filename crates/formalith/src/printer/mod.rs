@@ -10,7 +10,7 @@ use owo_colors::{
 use crate::{field::Set, term::Term};
 
 /// Rendering options are stored here. It can be created from some presets or completly custom.
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct PrintOptions {
     /// Set color rendering. Enabled by default if stdout support colors.
     pub colors: bool,

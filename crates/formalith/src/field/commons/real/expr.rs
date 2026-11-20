@@ -16,8 +16,7 @@ use crate::{
     term::{Fun, Normalize, SymbolTerm, Term, Value},
 };
 
-/// The field of real numbers, with rational values.
-pub(crate) type Real = R<Rational>;
+pub(crate) use super::Real;
 /// A real expression.
 pub(crate) type Expr = Term<Real>;
 

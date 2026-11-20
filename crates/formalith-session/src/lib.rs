@@ -20,6 +20,8 @@
     clippy::nursery
 )]
 
+pub mod graph;
+
 use std::{
     fmt,
     panic::{self, AssertUnwindSafe},
@@ -27,11 +29,12 @@ use std::{
 
 pub use formalith;
 pub use formalith::dynamic::{Coefficients, SetChoice, sets_help};
+pub use formalith::parser::environment::Environment;
 use formalith::{
     dynamic::{self, Evaluated, StatementKind},
-    parser::environment::Environment,
     printer::PrintOptions,
 };
+use graph::Graph;
 
 /// The commands of a session, with their description.
 pub const COMMANDS: [(&str, &str); 6] = [
@@ -181,12 +184,43 @@ impl Session {
         }
     }
 
+    /// Run a line like [`Session::run`], with its graph when the set is `R`, see [`graph`].
+    ///
+    /// Relations in `y`, like `y = x^2` or `x^2 + y^2 < 1`, and points `(a, b)` are kept as they are rather than
+    /// solved.
+    pub fn graph(&mut self, line: &str) -> (Response, Option<Graph>) {
+        let line = line.trim();
+        if self.set != SetChoice::R || line.is_empty() || line.starts_with(':') || line == "help" {
+            return (self.run(line), None);
+        }
+        let env = &mut self.env;
+        let result = panic::catch_unwind(AssertUnwindSafe(|| graph::evaluate(line, env)));
+        let (output, changes_state, graph) = self.respond(result);
+        let response = Response {
+            output,
+            replay: changes_state,
+        };
+        (response, graph.flatten())
+    }
+
     /// Evaluate `input` in the current set, catching panics.
     fn evaluate(&mut self, input: &str) -> (Output, bool) {
         let set = self.set;
         let env = &mut self.env;
-        match panic::catch_unwind(AssertUnwindSafe(|| set.evaluate(input, env))) {
-            Ok(Ok(result)) => {
+        let result = panic::catch_unwind(AssertUnwindSafe(|| {
+            set.evaluate(input, env).map(|result| (result, ()))
+        }));
+        let (output, changes_state, _) = self.respond(result);
+        (output, changes_state)
+    }
+
+    /// The output of an evaluation, whether it changed the state of the session, and its extra result.
+    fn respond<T>(
+        &self,
+        result: std::thread::Result<Result<(Evaluated, T), String>>,
+    ) -> (Output, bool, Option<T>) {
+        match result {
+            Ok(Ok((result, extra))) => {
                 let changes_state = matches!(
                     result.kind(),
                     StatementKind::Definition | StatementKind::Assumption
@@ -195,12 +229,13 @@ impl Session {
                     result,
                     typst: self.typst,
                 };
-                (output, changes_state)
+                (output, changes_state, Some(extra))
             }
-            Ok(Err(err)) => (Output::Error(err), false),
+            Ok(Err(err)) => (Output::Error(err), false, None),
             Err(_) => (
-                Output::Error(format!("this operation is not supported in {set}")),
+                Output::Error(format!("this operation is not supported in {}", self.set)),
                 false,
+                None,
             ),
         }
     }

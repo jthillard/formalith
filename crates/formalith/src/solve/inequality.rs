@@ -56,6 +56,34 @@ impl<T: Set> Inequality<T> {
     }
 }
 
+impl<T: Set> Print for Inequality<T> {
+    fn print(&self, options: &PrintOptions, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.lhs.print(options, f)?;
+        f.write_str(" ")?;
+        Self::operator(self.relation.operator(), options, f)?;
+        f.write_str(" ")?;
+        self.rhs.print(options, f)
+    }
+}
+
+impl<T: Set> PrettyPrint for Inequality<T> {
+    fn pretty_print(&self, options: &PrintOptions) -> PrettyPrinter {
+        let mut res = self.lhs.pretty_print(options);
+        res.concat(
+            self.relation.pretty_operator(),
+            true,
+            &self.rhs.pretty_print(options),
+        );
+        res
+    }
+}
+
+impl<T: Set> fmt::Display for Inequality<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        PrettyPrint::fmt(self, &PrintOptions::default(), f)
+    }
+}
+
 /// An interval of the real line, with bounds `None` at infinity.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Interval<T: Set> {
