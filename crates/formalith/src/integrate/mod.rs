@@ -37,6 +37,7 @@
 //! assert_eq!(parse!("integrate(exp(-x), x, 0, oo)", R), parse!("1", R));
 //! ```
 
+mod abs;
 mod apart;
 mod definite;
 mod parts;
@@ -124,6 +125,9 @@ impl Term<Real> {
         }
         let mut integrator = Integrator::default();
         if let Some(res) = integrator.integrate(self, x) {
+            return Ok(res);
+        }
+        if let Ok(res) = abs::integrate(self, x) {
             return Ok(res);
         }
         match integrator.risch(self, x) {

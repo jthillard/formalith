@@ -637,3 +637,39 @@ fn improper_integral_with_parameter() {
     // Without assumption, the sign of `a` is unknown
     assert!(integrate("integrate(exp(-a*x), x, 0, oo)").contains("integrate"));
 }
+
+#[test]
+fn absolute_values() {
+    // One zero: joined with `sign`, or with `|u|` when the pieces agree
+    assert_eq!(
+        integrate("integrate(exp(-abs(x)), x)"),
+        integrate("sign(x)*(1 - exp(-abs(x)))")
+    );
+    assert_eq!(integrate("integrate(x*abs(x), x)"), integrate("abs(x)^3/3"));
+    assert_eq!(
+        integrate("integrate(sign(x)*cos(x), x)"),
+        integrate("sin(abs(x))")
+    );
+    assert_eq!(
+        integrate("integrate(1/(1+abs(x)), x)"),
+        integrate("sign(x)*ln(abs(x) + 1)")
+    );
+    assert_eq!(
+        integrate("integrate(abs(x^3), x)"),
+        integrate("sign(x)*x^4/4")
+    );
+    assert_eq!(
+        integrate("integrate(abs(1-x)*x, x)"),
+        integrate("sign(1-x)*(x^2/2 - x^3/3 - 1/6)")
+    );
+    // Several zeros: a continuous `piecewise`
+    assert_eq!(
+        integrate("integrate(abs(x^2-1), x)"),
+        integrate("piecewise(x < -1, x^3/3 - x, x < 1, x - x^3/3 + 4/3, x^3/3 - x + 8/3)")
+    );
+    // Infinitely many zeros
+    assert_eq!(
+        integrate("integrate(abs(sin(x)), x)"),
+        "integrate(abs(sin(x)), x)"
+    );
+}

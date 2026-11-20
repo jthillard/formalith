@@ -37,7 +37,9 @@ use crate::{
 };
 
 use super::{
-    IntegrateError, IntegrateResult, factors, linear,
+    IntegrateError, IntegrateResult,
+    abs::{abs_arguments, without_abs},
+    factors, linear,
     poly::{Poly, rational_function},
     risch,
 };
@@ -146,63 +148,6 @@ fn split_abs(
         }
     }
     Some(infinite.map_or(Ok(finite), |sign| Err(IntegrateError::Divergent(sign))))
-}
-
-/// Add to `arguments` the arguments of `abs` and `sign` depending on `x` in `term`.
-fn abs_arguments(term: &Expr, x: Symbol, arguments: &mut Vec<Expr>) {
-    if !depends(term, x) {
-        return;
-    }
-    match term {
-        Term::Value(_) | Term::Symbol(_) => {}
-        Term::Add(add) => add.iter().for_each(|t| abs_arguments(t, x, arguments)),
-        Term::Mul(mul) => mul.iter().for_each(|t| abs_arguments(t, x, arguments)),
-        Term::Pow(pow) => {
-            abs_arguments(&pow.base, x, arguments);
-            abs_arguments(&pow.exponant, x, arguments);
-        }
-        Term::Fun(fun) => {
-            if let Some((Context::ABS | Context::SIGN, u)) = unary(term)
-                && !arguments.contains(u)
-            {
-                arguments.push(u.clone());
-            }
-            for arg in fun.get_args::<Real>().into_iter().flatten() {
-                abs_arguments(arg, x, arguments);
-            }
-        }
-    }
-}
-
-/// `term` with `{$|u|$}` written `{$plus.minus u$}` and `{$sign u$}` written `{$plus.minus 1$}`, by the sign of `u`
-/// at the point `sample`. `None` if a sign is unknown.
-fn without_abs(term: &Expr, x: Symbol, sample: &Expr) -> Option<Expr> {
-    let failed = std::cell::Cell::new(false);
-    let res = map_tree(term, &|t| {
-        let (ident @ (Context::ABS | Context::SIGN), u) = unary(t)? else {
-            return None;
-        };
-        if !depends(u, x) {
-            return None;
-        }
-        let u = without_abs(u, x, sample).or_else(|| {
-            failed.set(true);
-            None
-        })?;
-        let sign = match u.substitute(x, sample).as_ref().and_then(constant_sign) {
-            Some(sign @ (Ordering::Less | Ordering::Greater)) => value(Rational::from(sign as i8)),
-            _ => {
-                failed.set(true);
-                return None;
-            }
-        };
-        Some(if ident == Context::ABS {
-            sign * u
-        } else {
-            sign
-        })
-    });
-    (!failed.get()).then_some(res)
 }
 
 /// `{$integral_0^oo x^(s - 1) g(x) dif x$}` for a constant `{$s > 0$}` and `{$c > 0$}`:
@@ -442,7 +387,7 @@ fn singular_points(
 }
 
 /// Add to `points` the zeros of `term` in the closed interval.
-fn zeros(
+pub(super) fn zeros(
     term: &Expr,
     x: Symbol,
     interval: (f64, f64),
@@ -591,7 +536,7 @@ fn interior(p: f64, interval: (f64, f64)) -> bool {
 }
 
 /// A simple rational point strictly inside the interval, 0 when possible.
-fn interior_point(interval: (f64, f64)) -> Option<Rational> {
+pub(super) fn interior_point(interval: (f64, f64)) -> Option<Rational> {
     Some(match (interval.0.is_finite(), interval.1.is_finite()) {
         (true, true) => Rational::simplest_rational_in_open_interval(
             &Rational::try_from(interval.0).ok()?,
