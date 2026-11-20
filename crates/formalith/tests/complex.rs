@@ -153,6 +153,10 @@ fn integrals_of_real_and_imaginary_parts() {
         eval("integrate(exp(-x)*exp(-2*i*pi*x*t), x, 0, oo)"),
         eval("1/(1 + 2*i*pi*t)")
     );
+    assert_eq!(
+        eval("integrate(exp(-abs(x))*exp(-2*i*pi*x*t), x, -oo, oo)"),
+        eval("2/(4*pi^2*t^2 + 1)")
+    );
     assert_eq!(eval("integrate(exp(i*x), x, 0, pi)"), "2*i");
     assert_eq!(eval("integrate(x*e^(i*x), x, 0, 2*pi)"), eval("-2*i*pi"));
     assert_eq!(

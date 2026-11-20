@@ -12,7 +12,7 @@
 use crate::field::real::expr::sqrt;
 use crate::field::real::expr::{
     DIGITS, Expr, Real, constant_sign, depends, fun, half, has_special_constant, infinity_sign,
-    is_infinite, one, unary, value, variable, zero,
+    is_infinite, map_tree, one, unary, value, variable, zero,
 };
 use std::cmp::Ordering;
 
@@ -37,7 +37,7 @@ use crate::{
 };
 
 use super::{
-    IntegrateError, IntegrateResult, factors, linear, map_tree,
+    IntegrateError, IntegrateResult, factors, linear,
     poly::{Poly, rational_function},
     risch,
 };
@@ -79,6 +79,9 @@ pub(super) fn integrate(f: &Expr, x: Symbol, a: &Expr, b: &Expr) -> IntegrateRes
     }
     let interval = (a_value, b_value);
     let f = &constant_parts(f, x, interval);
+    if let Some(res) = split_abs(f, x, a, b, interval) {
+        return res;
+    }
     if let Some(res) = symmetric(f, x, a, b, interval) {
         return res;
     }
@@ -99,6 +102,107 @@ pub(super) fn integrate(f: &Expr, x: Symbol, a: &Expr, b: &Expr) -> IntegrateRes
         .map(|(_, point)| (point.clone(), false));
     bounds.splice(1..1, inner);
     evaluate(&antiderivative, x, &bounds)
+}
+
+/// `{$integral_a^b f$}` as a sum of integrals on the pieces of the interval where the arguments of `abs` and `sign`
+/// depending on `x` keep their sign, `{$|u|$}` being `{$plus.minus u$}` there (`{$e^(-|x|) = e^x$}` on
+/// `{$(-oo, 0)$}`). `None` when `f` has no such function, or when their zeros or signs aren't found.
+fn split_abs(
+    f: &Expr,
+    x: Symbol,
+    a: &Expr,
+    b: &Expr,
+    interval: (f64, f64),
+) -> Option<IntegrateResult<Expr>> {
+    let mut arguments = vec![];
+    abs_arguments(f, x, &mut arguments);
+    if arguments.is_empty() {
+        return None;
+    }
+    let mut points = vec![];
+    for u in &arguments {
+        zeros(u, x, interval, &mut points).ok()?;
+    }
+    points.retain(|(p, _)| interior(*p, interval));
+    points.sort_by(|(p, _), (q, _)| p.partial_cmp(q).unwrap_or(Ordering::Equal));
+    points.dedup_by(|(p, _), (q, _)| (*p - *q).abs() < 1e-12);
+    let mut bounds = vec![(interval.0, a.clone())];
+    bounds.extend(points);
+    bounds.push((interval.1, b.clone()));
+    let mut finite = zero();
+    let mut infinite: Option<Ordering> = None;
+    for pair in bounds.windows(2) {
+        let ((p, lower), (q, upper)) = (&pair[0], &pair[1]);
+        let sample = value(interior_point((*p, *q))?);
+        let piece = without_abs(f, x, &sample)?;
+        match integrate(&piece, x, lower, upper) {
+            Ok(res) => finite += res,
+            Err(IntegrateError::Divergent(sign)) => match infinite {
+                Some(previous) if previous != sign => return Some(Err(IntegrateError::Undefined)),
+                _ => infinite = Some(sign),
+            },
+            Err(IntegrateError::Undefined) => return Some(Err(IntegrateError::Undefined)),
+            Err(_) => return None,
+        }
+    }
+    Some(infinite.map_or(Ok(finite), |sign| Err(IntegrateError::Divergent(sign))))
+}
+
+/// Add to `arguments` the arguments of `abs` and `sign` depending on `x` in `term`.
+fn abs_arguments(term: &Expr, x: Symbol, arguments: &mut Vec<Expr>) {
+    if !depends(term, x) {
+        return;
+    }
+    match term {
+        Term::Value(_) | Term::Symbol(_) => {}
+        Term::Add(add) => add.iter().for_each(|t| abs_arguments(t, x, arguments)),
+        Term::Mul(mul) => mul.iter().for_each(|t| abs_arguments(t, x, arguments)),
+        Term::Pow(pow) => {
+            abs_arguments(&pow.base, x, arguments);
+            abs_arguments(&pow.exponant, x, arguments);
+        }
+        Term::Fun(fun) => {
+            if let Some((Context::ABS | Context::SIGN, u)) = unary(term)
+                && !arguments.contains(u)
+            {
+                arguments.push(u.clone());
+            }
+            for arg in fun.get_args::<Real>().into_iter().flatten() {
+                abs_arguments(arg, x, arguments);
+            }
+        }
+    }
+}
+
+/// `term` with `{$|u|$}` written `{$plus.minus u$}` and `{$sign u$}` written `{$plus.minus 1$}`, by the sign of `u`
+/// at the point `sample`. `None` if a sign is unknown.
+fn without_abs(term: &Expr, x: Symbol, sample: &Expr) -> Option<Expr> {
+    let failed = std::cell::Cell::new(false);
+    let res = map_tree(term, &|t| {
+        let (ident @ (Context::ABS | Context::SIGN), u) = unary(t)? else {
+            return None;
+        };
+        if !depends(u, x) {
+            return None;
+        }
+        let u = without_abs(u, x, sample).or_else(|| {
+            failed.set(true);
+            None
+        })?;
+        let sign = match u.substitute(x, sample).as_ref().and_then(constant_sign) {
+            Some(sign @ (Ordering::Less | Ordering::Greater)) => value(Rational::from(sign as i8)),
+            _ => {
+                failed.set(true);
+                return None;
+            }
+        };
+        Some(if ident == Context::ABS {
+            sign * u
+        } else {
+            sign
+        })
+    });
+    (!failed.get()).then_some(res)
 }
 
 /// `{$integral_0^oo x^(s - 1) g(x) dif x$}` for a constant `{$s > 0$}` and `{$c > 0$}`:

@@ -355,6 +355,17 @@ fn definite_integrals() {
         integrate("integrate(exp(-x)*sin(2*pi*x*t), x, 0, oo)"),
         integrate("2*pi*t/(4*pi^2*t^2 + 1)")
     );
+    // Pieces where the arguments of `abs` and `sign` keep their sign
+    assert_eq!(integrate("integrate(exp(-abs(x)), x, -oo, oo)"), "2");
+    assert_eq!(integrate("integrate(exp(-abs(x-1)), x, -oo, oo)"), "2");
+    assert_eq!(integrate("integrate(abs(x^2-1), x, -2, 2)"), "4");
+    assert_eq!(integrate("integrate(sign(x), x, -1, 2)"), "1");
+    assert_eq!(integrate("integrate(x*exp(-abs(x)), x, -oo, oo)"), "0");
+    assert_eq!(integrate("integrate(abs(x), x, -oo, 1)"), "oo");
+    assert_eq!(
+        integrate("integrate(exp(-abs(x))*cos(2*pi*x*t), x, -oo, oo)"),
+        integrate("2/(4*pi^2*t^2 + 1)")
+    );
 }
 
 #[test]
