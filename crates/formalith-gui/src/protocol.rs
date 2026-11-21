@@ -5,6 +5,11 @@
 //! before the lines using them. The worker answers with a [`Reply::Line`] per line, as soon as it is evaluated,
 //! then [`Reply::Done`]: after a crash, the first line without an answer is the one which crashed.
 
+use std::{
+    collections::HashMap,
+    hash::{DefaultHasher, Hash, Hasher},
+};
+
 use formalith_session::{Output, Session, formalith::printer::PrintOptions, graph::Graph};
 use serde::{Deserialize, Serialize};
 
@@ -109,18 +114,20 @@ const PRINT_OPTIONS: PrintOptions = PrintOptions {
 
 /// A line evaluated by an earlier request.
 struct Cached {
-    text: String,
     result: LineResult,
     /// Whether the line changed the state of its session, so it must run again to evaluate the next lines.
     replay: bool,
 }
 
-/// The state of a worker: the results of the last request, reused for the lines of the next one which follow
-/// the same lines.
+/// The state of a worker: the results of the last request, reused for the lines of the next one evaluated in
+/// the same state, by their text and a key of the state-changing lines before them.
 #[derive(Default)]
 pub struct Worker {
     set: String,
-    cache: Vec<Cached>,
+    cache: HashMap<(u64, String), Cached>,
+    /// The number of lines evaluated, not reused.
+    #[cfg(test)]
+    evaluations: usize,
 }
 
 impl Worker {
@@ -177,35 +184,50 @@ impl Worker {
             self.cache.clear();
             self.set.clone_from(&request.set);
         }
-        // Lines after the first one which changed can't reuse their results, none can when profiling
-        let same = if request.profile {
-            0
-        } else {
-            self.cache
-                .iter()
-                .zip(&request.lines)
-                .take_while(|(cached, line)| {
-                    cached.text == line.text && !request.skip.contains(&line.text)
-                })
-                .count()
-        };
-        self.cache.truncate(same);
-        for (index, line) in request.lines.iter().enumerate() {
-            let result = if index < same {
-                let cached = &self.cache[index];
+        // A line's result only depends on its text and on the state of the session, which only lines with
+        // `replay` change: `state` identifies the sequence of those before the current line. None is reused when
+        // profiling.
+        let mut previous = std::mem::take(&mut self.cache);
+        if request.profile {
+            previous.clear();
+        }
+        let mut state = 0;
+        for line in &request.lines {
+            let key = (state, line.text.clone());
+            let reused = if request.skip.contains(&line.text) {
+                None
+            } else if let Some(cached) = self.cache.get(&key) {
+                Some(cached)
+            } else if let Some(cached) = previous.remove(&key) {
+                Some(&*self.cache.entry(key.clone()).or_insert(cached))
+            } else {
+                None
+            };
+            let (result, replay) = if let Some(cached) = reused {
                 if cached.replay {
                     session.graph(&line.text);
                 }
-                cached.result.clone()
+                (cached.result.clone(), cached.replay)
             } else {
+                #[cfg(test)]
+                {
+                    self.evaluations += 1;
+                }
                 let (result, replay) = evaluate_line(&mut session, &line.text, &request.skip);
-                self.cache.push(Cached {
-                    text: line.text.clone(),
-                    result: result.clone(),
-                    replay,
-                });
-                result
+                self.cache.insert(
+                    key,
+                    Cached {
+                        result: result.clone(),
+                        replay,
+                    },
+                );
+                (result, replay)
             };
+            if replay {
+                let mut hasher = DefaultHasher::new();
+                (state, &line.text).hash(&mut hasher);
+                state = hasher.finish();
+            }
             if !emit(Reply::Line {
                 generation: request.generation,
                 id: line.id,
@@ -306,6 +328,40 @@ mod tests {
             panic!("not a line");
         };
         assert_eq!(result.text, CRASHED);
+    }
+
+    fn texts(replies: &[Reply]) -> Vec<&str> {
+        replies
+            .iter()
+            .filter_map(|reply| match reply {
+                Reply::Line { result, .. } => Some(result.text.as_str()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_reuse() {
+        let mut worker = Worker::new();
+        let replies = run(&mut worker, &request(1, &["a := 2", "1 + 1", "a + 1"]));
+        assert_eq!(texts(&replies)[2], "3");
+        assert_eq!(worker.evaluations, 3);
+
+        // Editing a line which changes no state evaluates only this line
+        let replies = run(&mut worker, &request(2, &["a := 2", "1 + 2", "a + 1"]));
+        assert_eq!(texts(&replies)[1..], ["3", "3"]);
+        assert_eq!(worker.evaluations, 4);
+
+        // Editing a definition evaluates the lines after it again
+        let replies = run(&mut worker, &request(3, &["a := 5", "1 + 2", "a + 1"]));
+        assert_eq!(texts(&replies)[2], "6");
+        assert_eq!(worker.evaluations, 7);
+
+        // Profiling evaluates every line
+        let mut profiled = request(4, &["a := 5", "1 + 2", "a + 1"]);
+        profiled.profile = true;
+        run(&mut worker, &profiled);
+        assert_eq!(worker.evaluations, 10);
     }
 
     #[test]
