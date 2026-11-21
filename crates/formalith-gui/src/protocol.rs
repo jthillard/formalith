@@ -65,6 +65,9 @@ pub struct LineResult {
     pub text: String,
     /// What to draw.
     pub graph: Option<Graph>,
+    /// The result printed as Typst math, for results, typeset by the interface.
+    #[serde(default)]
+    pub typst: Option<String>,
 }
 
 impl LineResult {
@@ -75,6 +78,7 @@ impl LineResult {
             kind: ResultKind::Error,
             text: message.into(),
             graph: None,
+            typst: None,
         }
     }
 }
@@ -256,10 +260,12 @@ fn evaluate_line(session: &mut Session, text: &str, skip: &[String]) -> (LineRes
         Output::Message(_) => ResultKind::Message,
         Output::Error(_) => ResultKind::Error,
     };
+    let typst = (kind == ResultKind::Result).then(|| response.output.print(PrintOptions::typst()));
     let result = LineResult {
         kind,
         text: response.output.print(PRINT_OPTIONS),
         graph,
+        typst,
     };
     (result, response.replay)
 }
@@ -306,6 +312,7 @@ mod tests {
             panic!("not a line");
         };
         assert_eq!(result.text, "9");
+        assert_eq!(result.typst.as_deref(), Some("9"));
         let Reply::Line { result, .. } = &replies[2] else {
             panic!("not a line");
         };
@@ -314,6 +321,7 @@ mod tests {
             panic!("not a line");
         };
         assert_eq!(result.kind, ResultKind::Error);
+        assert!(result.typst.is_none());
         assert_eq!(replies[4], Reply::Done { generation: 1 });
 
         // Cached lines replay definitions, so a changed later line sees them

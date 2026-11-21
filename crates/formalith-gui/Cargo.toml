@@ -22,17 +22,23 @@ egui_plot = { version = "0.38", optional = true }
 serde = { version = "1", features = ["derive"] }
 profiling = { version = "1.0.18", optional = true, default-features = false }
 puffin = { version = "0.20", optional = true }
+# Rasterization of the typeset results, in the interface
+egui_extras = { version = "0.37", default-features = false, features = ["svg"], optional = true }
 
 [features]
 default = ["ui"]
 # The interface; without it, only the evaluation of lines (`protocol`), for the Web Worker `formalith-gui-worker`
-ui = ["dep:eframe", "dep:egui_plot", "dep:wgpu", "dep:wasm-bindgen-futures", "dep:web-sys"]
+ui = ["dep:eframe", "dep:egui_plot", "dep:egui_extras", "dep:typst", "dep:typst-layout", "dep:typst-svg", "dep:wgpu", "dep:wasm-bindgen-futures", "dep:web-sys"]
 # The profiler window: records the interface, the evaluation (down to the CAS) and the GPU with puffin, which also
 # records egui, eframe and wgpu through their `profiling` scopes
 profile = ["dep:profiling", "dep:puffin", "profiling/profile-with-puffin", "formalith-session/profile"]
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 eframe = { version = "0.37", default-features = false, features = ["wayland", "x11"], optional = true }
+# Typesetting of the results natively, with the math font in `fonts/` (in the browser: typst.ts, see `www/index.html`)
+typst = { version = "0.15.1", optional = true }
+typst-layout = { version = "0.15.1", optional = true }
+typst-svg = { version = "0.15.1", optional = true }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "=0.2.128"

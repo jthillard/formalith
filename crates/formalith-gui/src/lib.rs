@@ -34,6 +34,8 @@ pub mod profiler;
 pub mod protocol;
 #[cfg(feature = "ui")]
 pub mod shader;
+#[cfg(feature = "ui")]
+pub mod typeset;
 
 #[cfg(feature = "ui")]
 pub use app::App;

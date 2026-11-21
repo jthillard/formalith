@@ -10,6 +10,51 @@
     canvas { display: block; width: 100%; height: 100%; }
     #loading { position: absolute; inset: 0; display: grid; place-items: center; color: #aaa; font: 16px sans-serif; }
   </style>
+  <!-- Typst compiler and renderer, typesetting results as math (natively, the typst crates do it) -->
+  <script type="module"
+    src="https://cdn.jsdelivr.net/npm/@myriaddreamin/typst.ts@v0.7.0-rc1/dist/esm/contrib/all-in-one-lite.bundle.js"></script>
+  <script type="module">
+    // Typesets Typst math markup as an SVG image, white on a transparent background, for `typeset.rs`, like
+    // `typeset/native.rs` natively. Rejects when typst.ts didn't load: results then stay text.
+    let typstReady = false;
+    // Renders are chained so the compiler is never used concurrently.
+    let queue = Promise.resolve();
+    globalThis.formalithTypeset = (source) => {
+      if (!globalThis.$typst) {
+        return Promise.reject(new Error('typst.ts is not loaded'));
+      }
+      if (!typstReady) {
+        $typst.setCompilerInitOptions({
+          getModule: () =>
+            'https://cdn.jsdelivr.net/npm/@myriaddreamin/typst-ts-web-compiler@v0.7.0-rc1/pkg/typst_ts_web_compiler_bg.wasm',
+        });
+        $typst.setRendererInitOptions({
+          getModule: () =>
+            'https://cdn.jsdelivr.net/npm/@myriaddreamin/typst-ts-renderer@v0.7.0-rc1/pkg/typst_ts_renderer_bg.wasm',
+        });
+        typstReady = true;
+      }
+      // Same document as natively, `typeset::SIZE` (13pt) scaled by 4/3: typst.ts writes sizes in points without
+      // unit, read as pixels, where typst-svg writes `pt`
+      const mainContent =
+        '#set page(width: auto, height: auto, margin: (x: 0pt, y: 0.3em), fill: none)\n' +
+        '#show math.equation: set align(left)\n' +
+        `#set text(size: ${(13 * 4) / 3}pt, fill: white)\n` +
+        `$ ${source} $`;
+      const svg = queue.then(() => $typst.svg({ mainContent }));
+      queue = svg.catch(() => {});
+      return svg.then((svg) => {
+        if (typeof svg !== 'string' || !svg.includes('<svg')) {
+          throw new Error('typst rendering failed');
+        }
+        // The selectable text layer (`foreignObject`) and the scripts (not even valid XML) are for pages, not for
+        // the rasterizer (resvg)
+        return svg
+          .replace(/<script[\s\S]*?<\/script>/g, '')
+          .replace(/<foreignObject[\s\S]*?<\/foreignObject>/g, '');
+      });
+    };
+  </script>
 </head>
 <body>
   <canvas id="formalith"></canvas>

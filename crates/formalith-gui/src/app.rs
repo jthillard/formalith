@@ -9,6 +9,7 @@ use crate::{
     evaluator::{BackendFactory, Evaluator},
     plot::{Drawable, Plotter},
     protocol::{LineResult, Reply, Request, RequestLine, ResultKind},
+    typeset::Typesetter,
 };
 
 /// Colors given to new lines, in turn.
@@ -84,6 +85,8 @@ struct State {
     params: BTreeMap<String, Slider>,
     set: String,
     equal_aspect: bool,
+    /// Whether results are typeset with Typst.
+    typst: bool,
 }
 
 impl Default for State {
@@ -94,6 +97,7 @@ impl Default for State {
             params: BTreeMap::new(),
             set: "R".to_owned(),
             equal_aspect: true,
+            typst: true,
         };
         for text in ["y = a*sin(x)", "x^2 + y^2 < 9"] {
             state.add_line(state.lines.len(), text.to_owned());
@@ -136,6 +140,8 @@ pub struct App {
     /// When the lines were last edited, if they weren't evaluated since.
     edited: Option<f64>,
     results: HashMap<u64, Evaluated>,
+    /// The images of the results.
+    typesetter: Typesetter,
     plotter: Plotter,
     /// The line whose curve shows its remarkable points.
     selected: Option<u64>,
@@ -149,6 +155,7 @@ impl App {
     /// The application, restoring the saved lines, evaluating them with backends from `backends`.
     #[must_use]
     pub fn new(cc: &eframe::CreationContext<'_>, backends: BackendFactory) -> Self {
+        egui_extras::install_image_loaders(&cc.egui_ctx);
         let state = cc
             .storage
             .and_then(|storage| eframe::get_value(storage, STORAGE_KEY))
@@ -159,6 +166,7 @@ impl App {
             generation: 0,
             edited: Some(f64::NEG_INFINITY),
             results: HashMap::new(),
+            typesetter: Typesetter::default(),
             plotter: Plotter::new(cc),
             selected: None,
             focus: None,
@@ -302,6 +310,7 @@ impl App {
                 ui.add_space(8.);
                 ui.collapsing("Options", |ui| {
                     ui.checkbox(&mut self.state.equal_aspect, "Same scale on both axes");
+                    ui.checkbox(&mut self.state.typst, "Typeset results with Typst");
                     if ui.button("Reset the view").clicked() {
                         self.plotter.reset_view();
                     }
@@ -328,13 +337,14 @@ impl App {
 
     /// The lines, with their results.
     fn lines_list(&mut self, ui: &mut egui::Ui, now: f64) {
+        let typst = self.state.typst;
         let mut remove = None;
         let mut insert = None;
         for index in 0..self.state.lines.len() {
             let id = self.state.lines[index].id;
             let pending = self.is_pending(id);
-            let result = self.results.get(&id).map(|evaluated| &evaluated.result);
-            let has_graph = result.is_some_and(|result| result.graph.is_some());
+            let evaluated = self.results.get(&id);
+            let has_graph = evaluated.is_some_and(|evaluated| evaluated.result.graph.is_some());
             let line = &mut self.state.lines[index];
             let selected = self.selected == Some(id);
             let frame = egui::Frame::group(ui.style()).fill(if selected {
@@ -385,8 +395,14 @@ impl App {
                         }
                     });
                 });
-                if let Some(result) = result {
-                    result_label(ui, id, result, pending);
+                if let Some(evaluated) = evaluated {
+                    let result = &evaluated.result;
+                    let image = result
+                        .typst
+                        .as_deref()
+                        .filter(|_| typst)
+                        .and_then(|source| self.typesetter.get(ui.ctx(), source));
+                    result_label(ui, id, result, image, pending);
                 } else if !line.text.trim().is_empty() {
                     ui.horizontal(|ui| {
                         ui.spinner();
@@ -400,6 +416,12 @@ impl App {
             self.results.remove(&line.id);
             self.edit(now);
         }
+        self.typesetter.retain(
+            ui.ctx(),
+            self.results
+                .values()
+                .filter_map(|evaluated| evaluated.result.typst.as_deref()),
+        );
         if let Some(index) = insert {
             let id = self.state.add_line(index, String::new());
             self.focus = Some(id);
@@ -485,8 +507,14 @@ impl App {
     }
 }
 
-/// Show the result of a line, faded while a newer one is computed.
-fn result_label(ui: &mut egui::Ui, id: u64, result: &LineResult, pending: bool) {
+/// Show the result of a line, as its typeset `image` (URI and bytes) if given, faded while a newer one is computed.
+fn result_label(
+    ui: &mut egui::Ui,
+    id: u64,
+    result: &LineResult,
+    image: Option<(String, egui::load::Bytes)>,
+    pending: bool,
+) {
     let mut text = RichText::new(&result.text).monospace();
     text = match result.kind {
         ResultKind::None => return,
@@ -504,10 +532,18 @@ fn result_label(ui: &mut egui::Ui, id: u64, result: &LineResult, pending: bool) 
                 if pending {
                     ui.spinner();
                 }
-                ui.add_enabled(
-                    !pending,
-                    egui::Label::new(text).wrap_mode(egui::TextWrapMode::Extend),
-                );
+                if let Some((uri, bytes)) = image {
+                    // White glyphs, tinted like the text
+                    let image = egui::Image::from_bytes(uri, bytes)
+                        .fit_to_original_size(1.)
+                        .tint(ui.visuals().text_color());
+                    ui.add_enabled(!pending, image);
+                } else {
+                    ui.add_enabled(
+                        !pending,
+                        egui::Label::new(text).wrap_mode(egui::TextWrapMode::Extend),
+                    );
+                }
             });
         });
     if let Some(name) = result.graph.as_ref().and_then(|graph| graph.unsupported()) {
