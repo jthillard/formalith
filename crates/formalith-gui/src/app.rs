@@ -38,9 +38,6 @@ const EXAMPLES: [&str; 12] = [
     "diff(x^x, x)",
 ];
 
-/// Seconds without editing before lines are evaluated.
-const DEBOUNCE: f64 = 0.25;
-
 /// The key of the state saved between sessions.
 const STORAGE_KEY: &str = "formalith";
 
@@ -137,8 +134,8 @@ pub struct App {
     evaluator: Evaluator,
     /// The generation of the last request.
     generation: u64,
-    /// When the lines were last edited, if they weren't evaluated since.
-    edited: Option<f64>,
+    /// Whether the lines were edited since they were last evaluated.
+    edited: bool,
     results: HashMap<u64, Evaluated>,
     /// The images of the results.
     typesetter: Typesetter,
@@ -164,7 +161,7 @@ impl App {
             state,
             evaluator: Evaluator::new(backends),
             generation: 0,
-            edited: Some(f64::NEG_INFINITY),
+            edited: true,
             results: HashMap::new(),
             typesetter: Typesetter::default(),
             plotter: Plotter::new(cc),
@@ -184,12 +181,12 @@ impl App {
         false
     }
 
-    /// Mark the lines as edited, to evaluate them soon.
-    const fn edit(&mut self, now: f64) {
-        self.edited = Some(now);
+    /// Mark the lines as edited, to evaluate them at the next frame.
+    const fn edit(&mut self) {
+        self.edited = true;
     }
 
-    /// Receive results, and send the lines to evaluate once editing pauses.
+    /// Receive results, and send the lines to evaluate after an edit.
     fn evaluate(&mut self, ctx: &egui::Context, now: f64) {
         profile_scope!("App::evaluate");
         for reply in self.evaluator.poll(now) {
@@ -214,31 +211,27 @@ impl App {
                 Reply::Done { .. } => {}
             }
         }
-        if let Some(edited) = self.edited {
-            if now - edited >= DEBOUNCE {
-                self.edited = None;
-                self.generation += 1;
-                let request = Request {
-                    generation: self.generation,
-                    set: self.state.set.trim().to_owned(),
-                    lines: self
-                        .state
-                        .lines
-                        .iter()
-                        .map(|line| RequestLine {
-                            id: line.id,
-                            text: line.text.clone(),
-                        })
-                        .collect(),
-                    skip: vec![],
-                    profile: self.is_profiling(),
-                };
-                self.evaluator.send(request, now);
-                #[cfg(feature = "profile")]
-                self.profiler.request_sent(self.generation);
-            } else {
-                ctx.request_repaint_after(std::time::Duration::from_secs_f64(DEBOUNCE));
-            }
+        if self.edited {
+            self.edited = false;
+            self.generation += 1;
+            let request = Request {
+                generation: self.generation,
+                set: self.state.set.trim().to_owned(),
+                lines: self
+                    .state
+                    .lines
+                    .iter()
+                    .map(|line| RequestLine {
+                        id: line.id,
+                        text: line.text.clone(),
+                    })
+                    .collect(),
+                skip: vec![],
+                profile: self.is_profiling(),
+            };
+            self.evaluator.send(request, now);
+            #[cfg(feature = "profile")]
+            self.profiler.request_sent(self.generation);
         }
         if self.evaluator.is_busy() {
             // Check for stuck requests even without replies
@@ -248,7 +241,7 @@ impl App {
 
     /// Check if the result of the line `id` is outdated.
     fn is_pending(&self, id: u64) -> bool {
-        self.edited.is_some()
+        self.edited
             || self
                 .results
                 .get(&id)
@@ -283,14 +276,14 @@ impl App {
     }
 
     /// The panel of lines, parameters and options.
-    fn lines_panel(&mut self, ui: &mut egui::Ui, now: f64) {
+    fn lines_panel(&mut self, ui: &mut egui::Ui) {
         profile_scope!("App::lines_panel");
         ui.horizontal(|ui| {
             ui.heading("Formalith");
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 let response = ui.add(TextEdit::singleline(&mut self.state.set).desired_width(70.).hint_text("R"));
                 if response.changed() {
-                    self.edit(now);
+                    self.edit();
                 }
                 ui.label("set").on_hover_text(
                     "The set expressions are evaluated in, like R, C, Z/7 or M(Z). Graphs are drawn in R.",
@@ -301,7 +294,7 @@ impl App {
         egui::ScrollArea::vertical()
             .auto_shrink([false, false])
             .show(ui, |ui| {
-                self.lines_list(ui, now);
+                self.lines_list(ui);
                 if ui.button("+ Add a line").clicked() {
                     let id = self.state.add_line(self.state.lines.len(), String::new());
                     self.focus = Some(id);
@@ -327,7 +320,7 @@ impl App {
                                 .state
                                 .add_line(self.state.lines.len(), example.to_owned());
                             self.selected = Some(id);
-                            self.edit(now);
+                            self.edit();
                         }
                     }
                     ui.label("Products need `*`: `a*x`, not `a x` (`2x` is fine).");
@@ -336,7 +329,7 @@ impl App {
     }
 
     /// The lines, with their results.
-    fn lines_list(&mut self, ui: &mut egui::Ui, now: f64) {
+    fn lines_list(&mut self, ui: &mut egui::Ui) {
         let typst = self.state.typst;
         let mut remove = None;
         let mut insert = None;
@@ -383,7 +376,7 @@ impl App {
                             self.focus = None;
                         }
                         if response.changed() {
-                            self.edited = Some(now);
+                            self.edited = true;
                         }
                         if response.gained_focus() || response.clicked() {
                             self.selected = Some(id);
@@ -414,7 +407,7 @@ impl App {
         if let Some(index) = remove {
             let line = self.state.lines.remove(index);
             self.results.remove(&line.id);
-            self.edit(now);
+            self.edit();
         }
         self.typesetter.retain(
             ui.ctx(),
@@ -570,9 +563,7 @@ impl eframe::App for App {
         } else {
             egui::Panel::left("lines").default_size(380.)
         };
-        panel
-            .resizable(true)
-            .show(ui, |ui| self.lines_panel(ui, now));
+        panel.resizable(true).show(ui, |ui| self.lines_panel(ui));
         egui::CentralPanel::default().show(ui, |ui| {
             let mut plotter = std::mem::take(&mut self.plotter);
             let drawables = self.drawables();
@@ -584,7 +575,7 @@ impl eframe::App for App {
         {
             self.profiler.show(&ctx, now);
             if self.profiler.take_evaluate() {
-                self.edited = Some(f64::NEG_INFINITY);
+                self.edited = true;
             }
             // Natively, eframe ends the frames of puffin
             #[cfg(target_arch = "wasm32")]
