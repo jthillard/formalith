@@ -3,12 +3,16 @@
 
 const PI: f32 = 3.14159265358979;
 
+// The bits go through a variable: a constant NaN or infinity is a shader creation error (WGSL constant expressions
+// must be finite), which Chrome reports.
 fn nf_nan() -> f32 {
-    return bitcast<f32>(0x7fc00000u);
+    var bits = 0x7fc00000u;
+    return bitcast<f32>(bits);
 }
 
 fn nf_inf() -> f32 {
-    return bitcast<f32>(0x7f800000u);
+    var bits = 0x7f800000u;
+    return bitcast<f32>(bits);
 }
 
 // Whether `v` is NaN.
