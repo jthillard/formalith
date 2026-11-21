@@ -51,7 +51,9 @@
         // the rasterizer (resvg)
         return svg
           .replace(/<script[\s\S]*?<\/script>/g, '')
-          .replace(/<foreignObject[\s\S]*?<\/foreignObject>/g, '');
+          .replace(/<foreignObject[\s\S]*?<\/foreignObject>/g, '')
+          .replace(/(fill|stroke)=(["'])(#000000?|#000000ff|black)\2/gi, '$1=$2#ffffff$2')
+          .replace(/(fill|stroke):\s*(#000000?|black)/gi, '$1:#ffffff');
       });
     };
   </script>
