@@ -200,6 +200,9 @@ impl App {
                 }
                 #[cfg(feature = "profile")]
                 Reply::Profile { lanes } => self.profiler.add_lanes(lanes),
+                #[cfg(feature = "profile")]
+                Reply::Done { generation } => self.profiler.request_done(generation),
+                #[cfg(not(feature = "profile"))]
                 Reply::Done { .. } => {}
             }
         }
@@ -223,6 +226,8 @@ impl App {
                     profile: self.is_profiling(),
                 };
                 self.evaluator.send(request, now);
+                #[cfg(feature = "profile")]
+                self.profiler.request_sent(self.generation);
             } else {
                 ctx.request_repaint_after(std::time::Duration::from_secs_f64(DEBOUNCE));
             }
@@ -542,9 +547,12 @@ impl eframe::App for App {
         #[cfg(feature = "profile")]
         {
             self.profiler.show(&ctx, now);
+            if self.profiler.take_evaluate() {
+                self.edited = Some(f64::NEG_INFINITY);
+            }
             // Natively, eframe ends the frames of puffin
             #[cfg(target_arch = "wasm32")]
-            if self.profiler.is_recording() {
+            if crate::profiler::is_recording() {
                 profiling::finish_frame!();
             }
         }

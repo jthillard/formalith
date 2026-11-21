@@ -28,6 +28,9 @@ pub trait Backend {
 /// Creates backends, a new one after a crash.
 pub type BackendFactory = Box<dyn Fn() -> Box<dyn Backend>>;
 
+/// The name of the thread evaluating requests natively.
+pub const WORKER_THREAD: &str = "formalith-worker";
+
 /// Seconds an outdated request may run while a newer one waits.
 const PATIENCE: f64 = 1.5;
 
@@ -179,7 +182,7 @@ mod native {
             let (requests, receiver) = mpsc::channel::<Request>();
             let (sender, replies) = mpsc::channel();
             thread::Builder::new()
-                .name("formalith-worker".to_owned())
+                .name(super::WORKER_THREAD.to_owned())
                 .spawn(move || {
                     let mut worker = Worker::new();
                     while let Ok(mut request) = receiver.recv() {

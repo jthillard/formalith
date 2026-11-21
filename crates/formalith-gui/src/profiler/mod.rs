@@ -25,6 +25,9 @@ pub struct Frame {
     pub name: String,
     /// Its dynamic data, like the line evaluated.
     pub data: String,
+    /// The file of the scope, starting with its crate like `formalith/src/limit/mod.rs`, empty for GPU spans.
+    #[serde(default)]
+    pub file: String,
     /// Its start, in nanoseconds since the Unix epoch.
     pub start_ns: i64,
     /// Its end, in nanoseconds since the Unix epoch.
@@ -155,6 +158,7 @@ pub fn report_gpu(lane: &'static str, name: &str, data: String, start_ns: i64, e
             Frame {
                 name: name.to_owned(),
                 data,
+                file: String::new(),
                 start_ns,
                 end_ns,
                 children: vec![],
@@ -207,12 +211,13 @@ fn read_scopes(
         return;
     };
     for scope in top {
-        let name = scopes
-            .fetch_by_id(&scope.id)
-            .map_or_else(|| "?".to_owned(), |details| details.name().to_string());
+        let details = scopes.fetch_by_id(&scope.id);
         let frame = Frame {
-            name,
+            name: details.map_or_else(|| "?".to_owned(), |details| details.name().to_string()),
             data: scope.record.data.to_owned(),
+            file: details
+                .map(|details| details.file_path.to_string())
+                .unwrap_or_default(),
             start_ns: scope.record.start_ns,
             end_ns: scope.record.stop_ns(),
             children: vec![],

@@ -29,7 +29,8 @@ pub struct Request {
     /// Inputs which crashed the worker, not evaluated again.
     pub skip: Vec<String>,
     /// Whether to record a profile of the evaluation, sent back in a [`Reply::Profile`] by a worker in the
-    /// browser (feature `profile`). Natively, the worker thread is recorded with the interface.
+    /// browser (feature `profile`). Natively, the worker thread is recorded with the interface. Lines are then all
+    /// evaluated again, without reusing the results of the last request.
     #[serde(default)]
     pub profile: bool,
 }
@@ -144,7 +145,7 @@ impl Worker {
             // The worker's only thread, which another instance calls `main` too
             let mut lanes = crate::profiler::stop(true);
             for lane in &mut lanes {
-                lane.name = "worker".to_owned();
+                crate::evaluator::WORKER_THREAD.clone_into(&mut lane.name);
             }
             if !emit(Reply::Profile { lanes }) {
                 return;
@@ -176,15 +177,18 @@ impl Worker {
             self.cache.clear();
             self.set.clone_from(&request.set);
         }
-        // Lines after the first one which changed can't reuse their results
-        let same = self
-            .cache
-            .iter()
-            .zip(&request.lines)
-            .take_while(|(cached, line)| {
-                cached.text == line.text && !request.skip.contains(&line.text)
-            })
-            .count();
+        // Lines after the first one which changed can't reuse their results, none can when profiling
+        let same = if request.profile {
+            0
+        } else {
+            self.cache
+                .iter()
+                .zip(&request.lines)
+                .take_while(|(cached, line)| {
+                    cached.text == line.text && !request.skip.contains(&line.text)
+                })
+                .count()
+        };
         self.cache.truncate(same);
         for (index, line) in request.lines.iter().enumerate() {
             let result = if index < same {
