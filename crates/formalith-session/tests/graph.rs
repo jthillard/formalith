@@ -1,7 +1,7 @@
 use formalith_session::{
     Output, Session,
     formalith::printer::PrintOptions,
-    graph::{Comparison, Graph, GraphKind},
+    graph::{Comparison, Graph, GraphKind, ImplicitRelation},
 };
 
 /// The text and graph of `line` in `session`.
@@ -73,19 +73,25 @@ fn test_relations() {
     assert_eq!(text, "x^2+y^2 = r^2");
     let graph = graph.unwrap();
     assert_eq!(graph.params, ["r"]);
-    let GraphKind::Implicit { expr, relation } = graph.kind else {
+    let GraphKind::Implicit { relations } = graph.kind else {
         panic!("not implicit");
     };
-    assert_eq!(relation, Comparison::Equal);
+    let [ImplicitRelation { expr, relation }] = relations.as_slice() else {
+        panic!("not a single relation");
+    };
+    assert_eq!(*relation, Comparison::Equal);
     assert_close(expr.eval(&[3., 4., 5.]), 0.);
 
     let (_, graph) = draw(&mut session, "y < sin(x)");
-    let GraphKind::Implicit { expr, relation } = graph.unwrap().kind else {
+    let GraphKind::Implicit { relations } = graph.unwrap().kind else {
         panic!("not implicit");
     };
-    assert_eq!(relation, Comparison::Less);
-    assert!(relation.holds(expr.eval(&[1., 0.])));
-    assert!(!relation.holds(expr.eval(&[1., 1.])));
+    let [relation] = relations.as_slice() else {
+        panic!("not a single relation");
+    };
+    assert_eq!(relation.relation, Comparison::Less);
+    assert!(relation.holds(&[1., 0.]));
+    assert!(!relation.holds(&[1., 1.]));
 
     // Relations without `y` are solved, and drawn as vertical lines or bands
     let (text, graph) = draw(&mut session, "x^2 = 4");
@@ -96,6 +102,46 @@ fn test_relations() {
     assert!(matches!(graph.unwrap().kind, GraphKind::Implicit { .. }));
     // Systems are only solved
     assert_eq!(draw(&mut session, "x + y = 3, x - y = 1").1, None);
+}
+
+/// The relations of the region drawn for `line`, with its text.
+fn region(session: &mut Session, line: &str) -> (String, Vec<ImplicitRelation>) {
+    let (text, graph) = draw(session, line);
+    let Some(GraphKind::Implicit { relations }) = graph.map(|graph| graph.kind) else {
+        panic!("{line} is not a region");
+    };
+    (text, relations)
+}
+
+#[test]
+fn test_regions() {
+    let mut session = Session::new();
+    let inside = |relations: &[ImplicitRelation], x: f64, y: f64| {
+        relations.iter().all(|relation| relation.holds(&[x, y]))
+    };
+    // Solved when possible, drawn as the intersection
+    let (text, relations) = region(&mut session, "x > 0, y > 0");
+    assert_eq!(text, "x ∈ (0, oo), y ∈ (0, oo)");
+    assert_eq!(relations.len(), 2);
+    assert!(inside(&relations, 1., 1.));
+    assert!(!inside(&relations, 1., -1.));
+    assert!(!inside(&relations, -1., 1.));
+    let (text, relations) = region(&mut session, "x^2 + y^2 < 4, y > 0");
+    assert_eq!(text, "x ∈ (-2, 2), y ∈ (0, (-(x^2)+4)^(1/2))");
+    assert!(inside(&relations, 0., 1.));
+    assert!(!inside(&relations, 0., -1.));
+    let (text, relations) = region(&mut session, "x > 1, x < 3");
+    assert_eq!(text, "x ∈ (1, 3)");
+    assert_eq!(relations.len(), 2);
+    // Kept as they are when they can't be solved
+    let (text, relations) = region(&mut session, "y > sin(x), y < 1");
+    assert_eq!(text, "y > sin(x), y < 1");
+    assert!(inside(&relations, 0., 0.5));
+    assert!(!inside(&relations, 0., -0.5));
+    // `!=` doesn't change the drawn region
+    let (_, relations) = region(&mut session, "x^2 + y^2 <= 1, x != 0");
+    assert_eq!(relations.len(), 1);
+    assert_eq!(draw(&mut session, "x != 0, y != 0").1, None);
 }
 
 #[test]

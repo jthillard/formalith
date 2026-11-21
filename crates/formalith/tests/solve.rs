@@ -534,15 +534,57 @@ fn systems_of_inequalities() {
 }
 
 #[test]
+fn inequalities_in_several_unknowns() {
+    assert_eq!(solve("x > 0, y > 0"), ok("x in (0, oo), y in (0, oo)"));
+    assert_eq!(
+        solve("x^2 + y^2 < 1"),
+        ok("x in (-1, 1), y in (-sqrt(-x^2+1), sqrt(-x^2+1))")
+    );
+    // Points where the bounds meet are merged
+    assert_eq!(
+        solve("x^2 + y^2 <= 1"),
+        ok("x in [-1, 1], y in [-sqrt(-x^2+1), sqrt(-x^2+1)]")
+    );
+    assert_eq!(solve("y > x^2, y < 1"), ok("x in (-1, 1), y in (x^2, 1)"));
+    assert_eq!(
+        solve("x*y > 0"),
+        ok("x in (-oo, 0), y in (-oo, 0) \\ x in (0, oo), y in (0, oo)")
+    );
+    assert_eq!(
+        solve("y^2 > x"),
+        ok("x in (-oo, 0), y in RR \\ x in [0, oo), y in (-oo, -sqrt(x)) union (sqrt(x), oo)")
+    );
+    assert_eq!(
+        solve("a*x > 1"),
+        ok("a in (-oo, 0), x in (-oo, frac(1, a)) \\ a in (0, oo), x in (frac(1, a), oo)")
+    );
+    assert_eq!(
+        solve("x + y = 1, x != y"),
+        ok("x in (-oo, frac(1, 2)), y = -x+1 \\ x in (frac(1, 2), oo), y = -x+1")
+    );
+    // The unknowns in the given order
+    assert_eq!(solve("solve(x > 0, x, y)"), ok("x in (0, oo), y in RR"));
+    assert_eq!(
+        solve("solve(x^2 + y^2 < 1, y, x)"),
+        ok("y in (-1, 1), x in (-sqrt(-y^2+1), sqrt(-y^2+1))")
+    );
+    assert_eq!(
+        solve("x^2 + y^2 + z^2 < 1"),
+        ok(
+            "x in (-1, 1), y in (-sqrt(-x^2+1), sqrt(-x^2+1)), z in (-sqrt(-x^2-y^2+1), sqrt(-x^2-y^2+1))"
+        )
+    );
+}
+
+#[test]
 fn unsupported_inequalities() {
     assert!(solve("sin(x) > 0").unwrap_err().contains("not polynomial"));
-    assert!(solve("a*x > 1").unwrap_err().contains("single unknown"));
-    assert!(solve_in("Z", "x > 1").is_err());
     assert!(
-        solve("x + y = 1, x != y")
+        solve("solve(x > a, x)")
             .unwrap_err()
-            .contains("single unknown")
+            .contains("without parameters")
     );
+    assert!(solve_in("Z", "x > 1").is_err());
 }
 
 #[test]

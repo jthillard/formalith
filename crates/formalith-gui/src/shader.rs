@@ -8,7 +8,7 @@ use std::fmt::Write as _;
 
 use formalith_session::{
     formalith::field::real::numeric::{NumFn, Numeric},
-    graph::Graph,
+    graph::{Comparison, Graph},
 };
 
 /// The functions used by emitted expressions.
@@ -194,10 +194,43 @@ pub fn function(expr: &Numeric, name: &str, param_offset: usize) -> String {
     out
 }
 
-/// The shader drawing the graph of `expr`, see [`RENDER`].
+/// The number of a comparison in [`RENDER`].
 #[must_use]
-pub fn render(expr: &Numeric) -> String {
-    format!("{PRELUDE}\n{RENDER}\n{}", function(expr, "F", 0))
+pub const fn relation_code(relation: Comparison) -> f32 {
+    match relation {
+        Comparison::Equal => 0.,
+        Comparison::Less => 1.,
+        Comparison::LessEqual => 2.,
+        Comparison::Greater => 3.,
+        Comparison::GreaterEqual => 4.,
+    }
+}
+
+/// The shader drawing the graph of the relations `F_i(x, y) op 0` (a single one, compared with `=`, for curves),
+/// see [`RENDER`]: `F_i` are `F_at(i, x, y)`, their comparisons `relation_of(i)`, and `F` is `F_0`.
+#[must_use]
+pub fn render(relations: &[(&Numeric, Comparison)]) -> String {
+    let mut out = format!("{PRELUDE}\n{RENDER}\n");
+    for (i, (expr, _)) in relations.iter().enumerate() {
+        out.push_str(&function(expr, &format!("F_{i}"), 0));
+    }
+    let _ = writeln!(out, "const COUNT: u32 = {}u;", relations.len());
+    out.push_str("fn F(x: f32, y: f32) -> f32 {\n    return F_0(x, y);\n}\n");
+    out.push_str("fn F_at(i: u32, x: f32, y: f32) -> f32 {\n    switch i {\n");
+    for i in 0..relations.len() {
+        let _ = writeln!(out, "        case {i}u: {{ return F_{i}(x, y); }}");
+    }
+    out.push_str("        default: { return nf_nan(); }\n    }\n}\n");
+    out.push_str("fn relation_of(i: u32) -> f32 {\n    switch i {\n");
+    for (i, (_, relation)) in relations.iter().enumerate() {
+        let _ = writeln!(
+            out,
+            "        case {i}u: {{ return {}; }}",
+            literal(f64::from(relation_code(*relation)))
+        );
+    }
+    out.push_str("        default: { return 0.0; }\n    }\n}\n");
+    out
 }
 
 /// The curves of a search of remarkable points.
@@ -310,8 +343,13 @@ pub(crate) mod tests {
     #[test]
     fn test_render() {
         for input in EXPRESSIONS {
-            validate(&render(&compile(input)));
+            validate(&render(&[(&compile(input), Comparison::Equal)]));
         }
+        let (f, g) = (compile("x^2 + y^2 - a"), compile("y - b"));
+        validate(&render(&[
+            (&f, Comparison::Less),
+            (&g, Comparison::GreaterEqual),
+        ]));
     }
 
     #[test]

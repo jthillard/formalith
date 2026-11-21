@@ -163,10 +163,21 @@ impl Evaluated {
     /// The relation `lhs op rhs`, left unsolved, like the equation of a curve.
     #[must_use]
     pub fn relation<E: SetParseExpression>(lhs: Term<E>, relation: Relation, rhs: Term<E>) -> Self {
-        let inequality = Inequality::new(lhs, relation, rhs);
+        Self::relations(vec![(lhs, relation, rhs)])
+    }
+
+    /// The relations `lhs op rhs`, all holding, left unsolved, like the inequalities of a region.
+    #[must_use]
+    pub fn relations<E: SetParseExpression>(relations: Vec<(Term<E>, Relation, Term<E>)>) -> Self {
+        let relations = Relations(
+            relations
+                .into_iter()
+                .map(|(lhs, relation, rhs)| Inequality::new(lhs, relation, rhs))
+                .collect(),
+        );
         Self {
             kind: StatementKind::Expression,
-            print: Box::new(move |options| print_with(&inequality, options)),
+            print: Box::new(move |options| print_with(&relations, options)),
         }
     }
 
@@ -391,6 +402,37 @@ impl<E: Set> PrettyPrint for Point<E> {
 }
 
 impl<E: Set> fmt::Display for Point<E> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        PrettyPrint::fmt(self, &PrintOptions::default(), f)
+    }
+}
+
+/// Relations separated by commas.
+struct Relations<E: Set>(Vec<Inequality<E>>);
+
+impl<E: Set> Print for Relations<E> {
+    fn print(&self, options: &PrintOptions, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for (i, relation) in self.0.iter().enumerate() {
+            if i != 0 {
+                f.write_str(", ")?;
+            }
+            relation.print(options, f)?;
+        }
+        Ok(())
+    }
+}
+
+impl<E: Set> PrettyPrint for Relations<E> {
+    fn pretty_print(&self, options: &PrintOptions) -> PrettyPrinter {
+        let mut res = PrettyPrinter::empty();
+        for relation in &self.0 {
+            res.concat(", ", false, &relation.pretty_print(options));
+        }
+        res
+    }
+}
+
+impl<E: Set> fmt::Display for Relations<E> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         PrettyPrint::fmt(self, &PrintOptions::default(), f)
     }

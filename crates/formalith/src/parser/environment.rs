@@ -20,7 +20,7 @@ use crate::{
     ode::{Condition, Dsolve, OdeSolution},
     solve::{
         Equation, Solution, Solve,
-        inequality::{Inequality, Intervals, SolveInequality},
+        inequality::{Inequality, Region, SolveInequality},
         is_integer_parameter, plain,
     },
     term::{Normalize, Term, relation::Relation},
@@ -272,12 +272,12 @@ pub enum Statement<E: Set> {
     },
     /// Assumptions `assume(a > 0, n integer)`, with every assumption on the listed symbols, the new and previous ones.
     Assume(Assumptions),
-    /// Inequalities in one unknown, like `x^2 < 4` or `x > 0, x^2 < 4`, solved.
+    /// Inequalities, like `x^2 < 4`, `x > 0, x^2 < 4` or `x^2 + y^2 < 1, y > 0`, solved.
     Inequalities {
         /// The relations, which may contain equations.
         inequalities: Vec<Inequality<E>>,
-        /// The values of the unknown satisfying every relation.
-        solution: Intervals<E>,
+        /// The values of the unknowns satisfying every relation.
+        solution: Region<E>,
     },
 }
 
@@ -412,7 +412,7 @@ impl<'a> Parser<'a> {
             let (term, _) = items.pop().expect("There is one item");
             return Ok(Statement::Expression(term));
         }
-        if let Some(statement) = Self::inequalities(&items, None, set)? {
+        if let Some(statement) = Self::inequalities(&items, &[], set)? {
             return Ok(statement);
         }
         let equations = items
@@ -578,12 +578,7 @@ impl<'a> Parser<'a> {
         if relations.is_empty() {
             return Err(ParserError::new("solve expects at least one equation"));
         }
-        if let Some(statement) = Self::inequalities(&relations, unknowns.first().copied(), set)? {
-            if unknowns.len() > 1 {
-                return Err(ParserError::new(
-                    "inequalities are solved for a single unknown",
-                ));
-            }
+        if let Some(statement) = Self::inequalities(&relations, &unknowns, set)? {
             return Ok(statement);
         }
         let equations = relations
@@ -780,10 +775,10 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Solve `items` as inequalities if one of them is an inequality, for `unknown` or their only symbol.
+    /// Solve `items` as inequalities if one of them is an inequality, for `unknowns` or all their symbols.
     fn inequalities<E: Set>(
         items: &[Item<E>],
-        unknown: Option<Symbol>,
+        unknowns: &[Symbol],
         set: E,
     ) -> Result<Option<Statement<E>>, ParserError> {
         let is_inequality = |item: &Item<E>| matches!(item, (_, Some((relation, _))) if *relation != Relation::Equal);
@@ -800,7 +795,7 @@ impl<'a> Parser<'a> {
                 ))),
             })
             .collect::<Result<Vec<_>, _>>()?;
-        let solution = set.solve_inequalities(&inequalities, unknown)?;
+        let solution = set.solve_inequalities(&inequalities, unknowns)?;
         Ok(Some(Statement::Inequalities {
             inequalities,
             solution,

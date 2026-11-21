@@ -1,6 +1,7 @@
-// Draws the graph of `F` (emitted after this template) in the whole plot, each fragment evaluating `F` around
-// itself: curves `y = F(x)` and `x = F(y)` from a few samples per pixel, `F(x, y) = 0` from the sign of `F` around
-// the pixel, regions from its sign at the pixel.
+// Draws the graph of `F` (emitted after this template, with `F_at`, `relation_of` and `COUNT`) in the whole plot,
+// each fragment evaluating `F` around itself: curves `y = F(x)` and `x = F(y)` from a few samples per pixel. For
+// the relations `F_at(i, x, y) op 0` holding together, curves `F_i(x, y) = 0` from the sign of `F_i` around the
+// pixel, regions from their signs at the pixel.
 
 struct Uniforms {
     // `x_min`, `x_max`, `y_min`, `y_max`
@@ -11,8 +12,7 @@ struct Uniforms {
     // Premultiplied colors
     color: vec4<f32>,
     fill: vec4<f32>,
-    // The comparison (0: `=`, 1: `<`, 2: `<=`, 3: `>`, 4: `>=`), 1 if the boundary is dashed, the period of dashes in
-    // pixels
+    // Unused, unused, the period of dashes of strict boundaries in pixels
     flags: vec4<f32>,
     params: array<vec4<f32>, 16>,
 }
@@ -150,9 +150,9 @@ fn curve_distance(a: f32, c: f32, extent: f32) -> f32 {
     return best;
 }
 
-// Whether the comparison of the graph holds for `value`.
-fn holds(value: f32) -> bool {
-    let relation = u.flags.x;
+// Whether the comparison of the relation `i` (0: `=`, 1: `<`, 2: `<=`, 3: `>`, 4: `>=`) holds for `value`.
+fn holds(i: u32, value: f32) -> bool {
+    let relation = relation_of(i);
     if relation == 1.0 {
         return value < 0.0;
     }
@@ -168,17 +168,27 @@ fn holds(value: f32) -> bool {
     return false;
 }
 
-// The coverage of the curve `F(x, y) = 0` at the pixel `p` (from the bottom left), from `F` at the center `value`
-// and at the corners of a box around it.
-fn contour_coverage(p: vec2<f32>, x: f32, y: f32, value: f32) -> f32 {
+// Whether every relation which isn't an equation holds at `(x, y)`, except `skip`.
+fn others_hold(skip: u32, x: f32, y: f32) -> bool {
+    for (var j = 0u; j < COUNT; j++) {
+        if j != skip && relation_of(j) != 0.0 && !holds(j, F_at(j, x, y)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// The coverage of the curve `F_i(x, y) = 0` at the pixel `p` (from the bottom left), from `F_i` at the center
+// `value` and at the corners of a box around it.
+fn contour_coverage(i: u32, p: vec2<f32>, x: f32, y: f32, value: f32) -> f32 {
     let w = u.frame.z;
     let h = w + 0.5;
     let sx = (u.view.y - u.view.x) / u.frame.x;
     let sy = (u.view.w - u.view.z) / u.frame.y;
-    let f_pp = F(x + h * sx, y + h * sy);
-    let f_pm = F(x + h * sx, y - h * sy);
-    let f_mp = F(x - h * sx, y + h * sy);
-    let f_mm = F(x - h * sx, y - h * sy);
+    let f_pp = F_at(i, x + h * sx, y + h * sy);
+    let f_pm = F_at(i, x + h * sx, y - h * sy);
+    let f_mp = F_at(i, x - h * sx, y + h * sy);
+    let f_mm = F_at(i, x - h * sx, y - h * sy);
     if !(nf_finite(value) && nf_finite(f_pp) && nf_finite(f_pm) && nf_finite(f_mp) && nf_finite(f_mm)) {
         return 0.0;
     }
@@ -199,7 +209,8 @@ fn contour_coverage(p: vec2<f32>, x: f32, y: f32, value: f32) -> f32 {
     }
     let distance = abs(value) / norm;
     var coverage = clamp(w + 0.5 - distance, 0.0, 1.0);
-    if u.flags.y != 0.0 {
+    let relation = relation_of(i);
+    if relation == 1.0 || relation == 3.0 {
         // Dashes by the coordinate along the axis closest to the tangent `(-gradient.y, gradient.x)`, which
         // changes at the same rate everywhere on the curve, unlike a projection on the tangent
         let along = select(p.y, p.x, abs(gradient.y) > abs(gradient.x));
@@ -225,11 +236,29 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     }
     let x = u.view.x + p.x * (u.view.y - u.view.x) / u.frame.x;
     let y = u.view.z + p.y * (u.view.w - u.view.z) / u.frame.y;
-    let value = F(x, y);
+    let inside = others_hold(COUNT, x, y);
+    // With equations, their common points where the other relations hold
+    var equations = false;
+    var on_curves = 1.0;
+    for (var i = 0u; i < COUNT; i++) {
+        if relation_of(i) == 0.0 {
+            equations = true;
+            on_curves = min(on_curves, contour_coverage(i, p, x, y, F_at(i, x, y)));
+        }
+    }
+    if equations {
+        return u.color * select(0.0, on_curves, inside);
+    }
+    // Else a region, bounded by the boundary of each relation where the other ones hold
     var background = vec4<f32>(0.0);
-    if u.flags.x != 0.0 && holds(value) {
+    if inside {
         background = u.fill;
     }
-    let coverage = contour_coverage(p, x, y, value);
+    var coverage = 0.0;
+    for (var i = 0u; i < COUNT; i++) {
+        if others_hold(i, x, y) {
+            coverage = max(coverage, contour_coverage(i, p, x, y, F_at(i, x, y)));
+        }
+    }
     return u.color * coverage + background * (1.0 - coverage);
 }

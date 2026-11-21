@@ -59,7 +59,7 @@ const MAX_RESIDUES: u64 = 1 << 16;
 const MAX_DIVISORS: Natural = Natural::const_from(1 << 20);
 
 /// Maximum size of a Sylvester matrix, its determinant being computed in `{$O(n 2^n)$}` products.
-const MAX_SYLVESTER_SIZE: usize = 12;
+pub(super) const MAX_SYLVESTER_SIZE: usize = 12;
 
 /// Solve the polynomial system `expression = 0` for each expanded expression, in `unknowns`.
 ///
@@ -1166,7 +1166,7 @@ pub(super) fn polynomial_form<T: Ring>(
 ///
 /// It is computed by expanding along rows, with the minors memoized by the set of used columns, so that it doesn't
 /// need divisions.
-fn sylvester_determinant<T: Ring>(p: &[Term<T>], q: &[Term<T>]) -> Term<T> {
+pub(super) fn sylvester_determinant<T: Ring>(p: &[Term<T>], q: &[Term<T>]) -> Term<T> {
     let set = p[0].get_set();
     let (m, n) = (p.len() - 1, q.len() - 1);
     let size = m + n;

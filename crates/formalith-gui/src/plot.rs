@@ -121,12 +121,16 @@ impl Plotter {
     }
 
     /// The shader of `drawable`.
-    fn shader(&mut self, drawable: &Drawable<'_>, expr: &Numeric) -> Arc<Shader> {
+    fn shader(
+        &mut self,
+        drawable: &Drawable<'_>,
+        relations: &[(&Numeric, Comparison)],
+    ) -> Arc<Shader> {
         profile_scope!("Plotter::shader");
         match self.shaders.get(&drawable.id) {
             Some((revision, shader)) if *revision == drawable.revision => shader.clone(),
             _ => {
-                let shader = Shader::new(shader::render(expr));
+                let shader = Shader::new(shader::render(relations));
                 self.shaders
                     .insert(drawable.id, (drawable.revision, shader.clone()));
                 shader
@@ -207,10 +211,16 @@ impl Plotter {
     /// Draw `drawable`.
     fn draw(&mut self, plot_ui: &mut egui_plot::PlotUi<'_>, drawable: &Drawable<'_>) {
         profile_scope!("Plotter::draw", &drawable.name);
-        let (kind, expr, relation) = match &drawable.graph.kind {
-            GraphKind::Function { expr, .. } => (0., expr, Comparison::Equal),
-            GraphKind::InverseFunction { expr } => (1., expr, Comparison::Equal),
-            GraphKind::Implicit { expr, relation } => (2., expr, *relation),
+        let (kind, relations) = match &drawable.graph.kind {
+            GraphKind::Function { expr, .. } => (0., vec![(expr, Comparison::Equal)]),
+            GraphKind::InverseFunction { expr } => (1., vec![(expr, Comparison::Equal)]),
+            GraphKind::Implicit { relations } => (
+                2.,
+                relations
+                    .iter()
+                    .map(|relation| (&relation.expr, relation.relation))
+                    .collect(),
+            ),
             GraphKind::Point { x, y } => {
                 let values = values(&drawable.params);
                 let (x, y) = (x.eval(&values), y.eval(&values));
@@ -233,7 +243,7 @@ impl Plotter {
         if drawable.params.len() > MAX_PARAMS {
             return;
         }
-        let shader = self.shader(drawable, expr);
+        let shader = self.shader(drawable, &relations);
         #[allow(clippy::cast_possible_truncation)]
         let params = drawable.params.iter().map(|value| *value as f32).collect();
         plot_ui.add(GpuGraph {
@@ -243,11 +253,7 @@ impl Plotter {
             shader,
             color: color(drawable.color, linear),
             fill: color(drawable.color.gamma_multiply(0.25), linear),
-            flags: [
-                kind,
-                relation_code(relation),
-                f32::from(u8::from(relation.is_strict())),
-            ],
+            kind,
             params,
             drawable_color: drawable.color,
         });
@@ -361,17 +367,6 @@ impl Plotter {
     }
 }
 
-/// The number of a comparison in [`crate::shader::RENDER`].
-const fn relation_code(relation: Comparison) -> f32 {
-    match relation {
-        Comparison::Equal => 0.,
-        Comparison::Less => 1.,
-        Comparison::LessEqual => 2.,
-        Comparison::Greater => 3.,
-        Comparison::GreaterEqual => 4.,
-    }
-}
-
 /// The premultiplied components of `color`, in linear space or not.
 fn color(color: Color32, linear: bool) -> [f32; 4] {
     if linear {
@@ -439,14 +434,28 @@ fn hover(
                 let distance = (x - px).abs() * kx / (slope * kx / ky).hypot(1.);
                 (distance, [x, py])
             }
-            GraphKind::Implicit { expr, .. } => {
-                let value = eval(expr, px, py);
-                let dx = (eval(expr, px + 1. / kx, py) - eval(expr, px - 1. / kx, py)) * kx / 2.;
-                let dy = (eval(expr, px, py + 1. / ky) - eval(expr, px, py - 1. / ky)) * ky / 2.;
-                let distance = value.abs() / (dx / kx).hypot(dy / ky);
-                // A Newton step towards `F = 0`
-                let norm = dx.mul_add(dx, dy * dy);
-                (distance, [px - value * dx / norm, py - value * dy / norm])
+            GraphKind::Implicit { relations } => {
+                // The closest boundary, where the other relations hold
+                let hits = relations.iter().enumerate().filter_map(|(i, relation)| {
+                    let expr = &relation.expr;
+                    let value = eval(expr, px, py);
+                    let dx =
+                        (eval(expr, px + 1. / kx, py) - eval(expr, px - 1. / kx, py)) * kx / 2.;
+                    let dy =
+                        (eval(expr, px, py + 1. / ky) - eval(expr, px, py - 1. / ky)) * ky / 2.;
+                    let distance = value.abs() / (dx / kx).hypot(dy / ky);
+                    // A Newton step towards `F = 0`
+                    let norm = dx.mul_add(dx, dy * dy);
+                    let point = [px - value * dx / norm, py - value * dy / norm];
+                    let others_hold = relations.iter().enumerate().all(|(j, other)| {
+                        j == i || other.relation.holds(eval(&other.expr, point[0], point[1]))
+                    });
+                    others_hold.then_some((distance, point))
+                });
+                match hits.min_by(|(a, _), (b, _)| a.total_cmp(b)) {
+                    Some(hit) => hit,
+                    None => continue,
+                }
             }
             GraphKind::Point { .. } => continue,
         };
@@ -469,8 +478,8 @@ struct GpuGraph {
     shader: Arc<Shader>,
     color: [f32; 4],
     fill: [f32; 4],
-    /// The kind of graph, its comparison and whether its boundary is dashed.
-    flags: [f32; 3],
+    /// The kind of graph, see [`crate::shader::RENDER`].
+    kind: f32,
     params: Vec<f32>,
     drawable_color: Color32,
 }
@@ -512,7 +521,7 @@ fn uniforms(
         size[0] * pixels_per_point,
         size[1] * pixels_per_point,
         LINE_WIDTH / 2. * pixels_per_point,
-        graph.flags[0],
+        graph.kind,
         graph.color[0],
         graph.color[1],
         graph.color[2],
@@ -521,8 +530,8 @@ fn uniforms(
         graph.fill[1],
         graph.fill[2],
         graph.fill[3],
-        graph.flags[1],
-        graph.flags[2],
+        0.,
+        0.,
         DASH_PERIOD * pixels_per_point,
         0.,
     ]);
@@ -614,26 +623,29 @@ mod tests {
         }
     }
 
-    /// Draw the graph of `input` of the kind `kind`, with the comparison `relation`, offscreen.
+    /// Draw the graph of the relations `inputs` of the kind `kind`, offscreen.
     fn draw(
         (_, device, queue): &(wgpu::Adapter, wgpu::Device, wgpu::Queue),
-        input: &str,
+        inputs: &[(&str, Comparison)],
         kind: f32,
-        relation: Comparison,
     ) -> Image {
+        let compiled: Vec<(Numeric, Comparison)> = inputs
+            .iter()
+            .map(|(input, relation)| (compile(input), *relation))
+            .collect();
+        let relations: Vec<(&Numeric, Comparison)> = compiled
+            .iter()
+            .map(|(expr, relation)| (expr, *relation))
+            .collect();
         let format = wgpu::TextureFormat::Rgba8Unorm;
         let graph = GpuGraph {
-            base: PlotItemBase::new(input.to_owned()),
+            base: PlotItemBase::new(String::new()),
             id: 0,
             frame: 1,
-            shader: Shader::new(shader::render(&compile(input))),
+            shader: Shader::new(shader::render(&relations)),
             color: color(Color32::WHITE, false),
             fill: color(Color32::WHITE.gamma_multiply(0.25), false),
-            flags: [
-                kind,
-                relation_code(relation),
-                f32::from(u8::from(relation.is_strict())),
-            ],
+            kind,
             params: vec![2., -3.],
             drawable_color: Color32::WHITE,
         };
@@ -729,7 +741,7 @@ mod tests {
             eprintln!("No GPU, skipped");
             return;
         };
-        let curve = |input| draw(&device, input, 0., Comparison::Equal);
+        let curve = |input| draw(&device, &[(input, Comparison::Equal)], 0.);
         let image = curve("x^2");
         assert!(image.at(1., 1.) > 0.5);
         assert!(image.at(1., 3.) == 0.);
@@ -754,10 +766,10 @@ mod tests {
         // Parameters `a = 2`, `b = -3`
         let image = curve("a*x + b");
         assert!(image.at(3., 3.) > 0.5);
-        let image = draw(&device, "y^2", 1., Comparison::Equal);
+        let image = draw(&device, &[("y^2", Comparison::Equal)], 1.);
         assert!(image.at(1., 1.) > 0.5 && image.at(4., -2.) > 0.5);
         assert!(image.at(1., 3.) == 0.);
-        let implicit = |input, relation| draw(&device, input, 2., relation);
+        let implicit = |input, relation| draw(&device, &[(input, relation)], 2.);
         let image = implicit("x^2 + y^2 - 4", Comparison::Equal);
         assert!(image.at(2., 0.) > 0.5 && image.at(0., -2.) > 0.5);
         assert!(image.at(0., 0.) == 0. && image.at(5., 0.) == 0.);
@@ -773,5 +785,25 @@ mod tests {
         let image = implicit("y - tan(3*x)", Comparison::Equal);
         assert!(image.at(0., 0.) > 0.5);
         assert!(image.at(std::f64::consts::FRAC_PI_6, 3.) == 0.);
+        // Intersections: the upper half disk, bounded by the arc and the segment, then only the arc
+        let half_disk = [
+            ("x^2 + y^2 - 4", Comparison::Less),
+            ("y", Comparison::GreaterEqual),
+        ];
+        let image = draw(&device, &half_disk, 2.);
+        assert!((image.at(0., 1.) - 0.25).abs() < 0.02);
+        assert!(image.at(0., -1.) == 0. && image.at(0., 3.) == 0.);
+        assert!(image.at(1., 0.) > 0.5);
+        assert!(image.at(3., 0.) == 0. && image.at(0., -2.) == 0.);
+        let image = draw(
+            &device,
+            &[
+                ("x^2 + y^2 - 4", Comparison::Equal),
+                ("y", Comparison::Greater),
+            ],
+            2.,
+        );
+        assert!(image.at(0., 2.) > 0.5);
+        assert!(image.at(0., -2.) == 0. && image.at(0., 1.) == 0. && image.at(1., 0.) == 0.);
     }
 }

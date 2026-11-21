@@ -1,5 +1,5 @@
 //! Graphs of the lines of a session, for graphical interfaces: curves `y = f(x)`, `x = g(y)`, implicit curves and
-//! regions in `x` and `y`, and points.
+//! regions in `x` and `y` (also intersections of several relations, like `x^2 + y^2 < 1, y > 0`), and points.
 //!
 //! Graphs are compiled to [`Numeric`] expressions, evaluated with the values `[x, y, params...]`: `x` at index
 //! [`Graph::X`], `y` at index [`Graph::Y`] and the parameters of [`Graph::params`] after them.
@@ -54,12 +54,11 @@ pub enum GraphKind {
         /// `g(y)`.
         expr: Numeric,
     },
-    /// The curve `F(x, y) = 0`, or the region where `F(x, y)` compares with 0 like `relation`.
+    /// The points where every relation `F_i(x, y) op 0` holds: a curve `F(x, y) = 0`, a region, or their
+    /// intersections.
     Implicit {
-        /// `F(x, y)`, the difference of the sides of the relation.
-        expr: Numeric,
-        /// The comparison of `F(x, y)` with 0.
-        relation: Comparison,
+        /// The relations, at least one.
+        relations: Vec<ImplicitRelation>,
     },
     /// A point.
     Point {
@@ -68,6 +67,24 @@ pub enum GraphKind {
         /// Its ordinate.
         y: Numeric,
     },
+}
+
+/// A relation `F(x, y) op 0` of a [`GraphKind::Implicit`] graph.
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct ImplicitRelation {
+    /// `F(x, y)`, the difference of the sides of the relation.
+    pub expr: Numeric,
+    /// The comparison of `F(x, y)` with 0.
+    pub relation: Comparison,
+}
+
+impl ImplicitRelation {
+    /// Check if the relation holds at the values `values` (see [`Numeric::eval`]).
+    #[must_use]
+    pub fn holds(&self, values: &[f64]) -> bool {
+        self.relation.holds(self.expr.eval(values))
+    }
 }
 
 /// The comparisons drawn by [`GraphKind::Implicit`].
@@ -128,9 +145,12 @@ impl Graph {
     #[must_use]
     pub fn unsupported(&self) -> Option<&str> {
         match &self.kind {
-            GraphKind::Function { expr, .. }
-            | GraphKind::InverseFunction { expr }
-            | GraphKind::Implicit { expr, .. } => expr.unsupported(),
+            GraphKind::Function { expr, .. } | GraphKind::InverseFunction { expr } => {
+                expr.unsupported()
+            }
+            GraphKind::Implicit { relations } => relations
+                .iter()
+                .find_map(|relation| relation.expr.unsupported()),
             GraphKind::Point { x, y } => x.unsupported().or_else(|| y.unsupported()),
         }
     }
@@ -155,19 +175,35 @@ fn params<'a>(terms: impl IntoIterator<Item = &'a Term<Real>>, excluded: &[Symbo
 }
 
 /// Compile `parts` with the variables `[x, y, params...]`, `x` being `var` in place of the symbol `x`.
+fn compile_all(
+    parts: &[&Term<Real>],
+    var: Symbol,
+    kind: impl FnOnce(Vec<Numeric>) -> GraphKind,
+) -> Graph {
+    profile_scope!("compile graph");
+    let (x, y) = xy();
+    let params = params(parts.iter().copied(), &[var, x, y]);
+    let vars: Vec<Symbol> = [var, y].into_iter().chain(params.iter().copied()).collect();
+    Graph {
+        kind: kind(
+            parts
+                .iter()
+                .map(|part| Numeric::compile(part, &vars))
+                .collect(),
+        ),
+        params: params.iter().map(|param| param.name().to_owned()).collect(),
+    }
+}
+
+/// Compile `parts` with the variables `[x, y, params...]`, `x` being `var` in place of the symbol `x`.
 fn compile<const N: usize>(
     parts: [&Term<Real>; N],
     var: Symbol,
     kind: impl FnOnce([Numeric; N]) -> GraphKind,
 ) -> Graph {
-    profile_scope!("compile graph");
-    let (x, y) = xy();
-    let params = params(parts, &[var, x, y]);
-    let vars: Vec<Symbol> = [var, y].into_iter().chain(params.iter().copied()).collect();
-    Graph {
-        kind: kind(parts.map(|part| Numeric::compile(part, &vars))),
-        params: params.iter().map(|param| param.name().to_owned()).collect(),
-    }
+    compile_all(&parts, var, |compiled| {
+        kind(compiled.try_into().expect("One expression per part"))
+    })
 }
 
 /// The graph of `y = f(x)`, `x` being `var`.
@@ -208,13 +244,31 @@ fn relation_graph(lhs: &Term<Real>, relation: Relation, rhs: &Term<Real>) -> Opt
                 }
             }
         }
-        let difference = lhs - rhs;
-        return Some(compile([&difference], x, |[expr]| GraphKind::Implicit {
-            expr,
-            relation: comparison,
-        }));
+        return region_graph(&[(lhs, relation, rhs)]);
     }
     None
+}
+
+/// The graph of the region where every relation `lhs op rhs` holds, `!=` relations being left out, if there are
+/// other ones.
+fn region_graph(relations: &[(&Term<Real>, Relation, &Term<Real>)]) -> Option<Graph> {
+    let (comparisons, differences): (Vec<Comparison>, Vec<Term<Real>>) = relations
+        .iter()
+        .filter_map(|(lhs, relation, rhs)| Some((Comparison::new(*relation)?, *lhs - *rhs)))
+        .unzip();
+    if comparisons.is_empty() {
+        return None;
+    }
+    let differences: Vec<&Term<Real>> = differences.iter().collect();
+    Some(compile_all(&differences, xy().0, |exprs| {
+        GraphKind::Implicit {
+            relations: exprs
+                .into_iter()
+                .zip(comparisons)
+                .map(|(expr, relation)| ImplicitRelation { expr, relation })
+                .collect(),
+        }
+    }))
 }
 
 /// The index of the closing bracket matching the opening one at the start of `text`.
@@ -297,6 +351,20 @@ fn split_relation(line: &str) -> Option<(&str, Relation, &str)> {
     found
 }
 
+/// The relations of a line of comma-separated relations, outside of brackets, `None` if a part isn't a single
+/// relation.
+fn split_relations(line: &str) -> Option<Vec<(&str, Relation, &str)>> {
+    let mut parts = vec![];
+    let mut start = 0;
+    for (i, c) in top_level(line).chain([(line.len(), ',')]) {
+        if c == ',' {
+            parts.push(split_relation(&line[start..i])?);
+            start = i + 1;
+        }
+    }
+    Some(parts)
+}
+
 /// Parse an expression in `R` with the definitions of `env`.
 fn parse(input: &str, env: &Environment) -> Result<Term<Real>, String> {
     Parser::new(input)
@@ -307,7 +375,9 @@ fn parse(input: &str, env: &Environment) -> Result<Term<Real>, String> {
 
 /// Evaluate a line in `R`, which isn't a command, with its graph.
 ///
-/// Relations in `y` are kept as they are rather than solved; others are solved, and drawn like relations.
+/// Relations in `y` are kept as they are rather than solved; others are solved, and drawn like relations. Several
+/// relations, one of them an inequality, are drawn as the region where they all hold, and solved if possible,
+/// else kept as they are.
 ///
 /// # Errors
 /// Returns the parsing error message if `line` is not a valid statement.
@@ -332,6 +402,27 @@ pub(crate) fn evaluate(
         }
         let statement = env.eval(line, R).map_err(|err| err.to_string())?;
         return Ok((Evaluated::new(statement), graph));
+    }
+    if let Some(relations) = split_relations(line)
+        && relations
+            .iter()
+            .any(|(_, relation, _)| *relation != Relation::Equal)
+    {
+        let relations = relations
+            .into_iter()
+            .map(|(lhs, relation, rhs)| Ok((parse(lhs, env)?, relation, parse(rhs, env)?)))
+            .collect::<Result<Vec<_>, String>>()?;
+        let graph = region_graph(
+            &relations
+                .iter()
+                .map(|(lhs, relation, rhs)| (lhs, *relation, rhs))
+                .collect::<Vec<_>>(),
+        );
+        let evaluated = match env.eval(line, R) {
+            Ok(statement) => Evaluated::new(statement),
+            Err(_) => Evaluated::relations(relations),
+        };
+        return Ok((evaluated, graph));
     }
     let statement = env.eval(line, R).map_err(|err| err.to_string())?;
     let graph = match &statement {
@@ -373,5 +464,14 @@ mod tests {
         assert_eq!(split_relation("x + y = 1, x = 2"), None);
         assert_eq!(split_relation("0 < x < 1"), None);
         assert_eq!(split_relation("piecewise(x < 0, 1, 2)"), None);
+        assert_eq!(
+            split_relations("x > 0, f(x, y) < 1"),
+            Some(vec![
+                ("x ", Relation::Greater, " 0"),
+                (" f(x, y) ", Relation::Less, " 1")
+            ])
+        );
+        assert_eq!(split_relations("x > 0, y"), None);
+        assert_eq!(split_relations("a := 1, x > 0"), None);
     }
 }
