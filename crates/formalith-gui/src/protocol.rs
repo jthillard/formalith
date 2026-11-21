@@ -13,6 +13,9 @@ use std::{
 use formalith_session::{Output, Session, formalith::printer::PrintOptions, graph::Graph};
 use serde::{Deserialize, Serialize};
 
+/// The name of the thread evaluating requests natively, also given to the lane of a Web Worker's profile.
+pub const WORKER_THREAD: &str = "formalith-worker";
+
 /// A line to evaluate, with an identifier to match its result.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RequestLine {
@@ -152,7 +155,7 @@ impl Worker {
             // The worker's only thread, which another instance calls `main` too
             let mut lanes = crate::profiler::stop(true);
             for lane in &mut lanes {
-                crate::evaluator::WORKER_THREAD.clone_into(&mut lane.name);
+                WORKER_THREAD.clone_into(&mut lane.name);
             }
             if !emit(Reply::Profile { lanes }) {
                 return;

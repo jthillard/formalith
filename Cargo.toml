@@ -12,3 +12,12 @@ license-file = "LICENSE"
 [workspace.dependencies]
 formalith = { path = "crates/formalith" }
 formalith-session = { path = "crates/formalith-session" }
+
+# The wasm builds (`make web`, `make gui-web`): small binaries, native builds keep `release`
+[profile.wasm-release]
+inherits = "release"
+opt-level = "s"
+lto = "fat"
+codegen-units = 1
+strip = true
+panic = "abort"

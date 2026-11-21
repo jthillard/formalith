@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use eframe::egui::{self, RichText};
 
 use super::{Frame, Lane, flamegraph};
-use crate::evaluator::WORKER_THREAD;
+use crate::protocol::WORKER_THREAD;
 
 /// Seconds after which a recording of everything stops on its own.
 const MAX_RECORDING: f64 = 30.;

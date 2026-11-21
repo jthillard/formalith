@@ -1,6 +1,6 @@
 // Evaluates lines off the main thread. Unsupported operations panic, which aborts the wasm instance: the main
 // thread is then told the worker crashed, and replaces it.
-import init, { worker_evaluate } from './pkg/formalith_gui.js';
+import init, { worker_evaluate } from './worker-pkg/formalith_gui_worker.js';
 
 const ready = init();
 

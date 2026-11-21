@@ -7,15 +7,19 @@
 //! timestamps ([`crate::gpu::timer`]) are reported with [`report_gpu`], aligned on the CPU time their work was
 //! submitted at.
 
+#[cfg(feature = "ui")]
 pub mod flamegraph;
+#[cfg(feature = "ui")]
 mod window;
 
 use std::sync::{Arc, LazyLock, Mutex, Once};
 
+#[cfg(feature = "ui")]
 use eframe::egui_wgpu::{self, wgpu};
 use puffin::{FrameData, GlobalProfiler, Reader, ScopeCollection, Stream};
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "ui")]
 pub use window::ProfilerWindow;
 
 /// A recorded scope.
@@ -235,6 +239,7 @@ fn read_scopes(
 
 /// Request the GPU timestamps of [`crate::gpu::timer`] when creating the device of `options`, as far as the
 /// adapter has them.
+#[cfg(feature = "ui")]
 pub fn request_timestamps(options: &mut egui_wgpu::WgpuConfiguration) {
     if let egui_wgpu::WgpuSetup::CreateNew(setup) = &mut options.wgpu_setup {
         let base = setup.device_descriptor.clone();

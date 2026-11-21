@@ -5,7 +5,8 @@
 //! Lines are evaluated off the interface thread ([`evaluator`]) and come back with their graphs compiled to
 //! numerical expressions ([`formalith_session::graph`]), drawn without the CAS ([`plot`]): they are compiled to WGSL
 //! ([`shader`]) and drawn per pixel on the GPU ([`gpu`]), which also searches remarkable points when it has compute
-//! shaders.
+//! shaders. In the browser, the worker is a separate wasm module (`formalith-gui-worker`), so this one doesn't
+//! hold the CAS.
 //!
 //! With the feature `profile`, a profiler window ([`profiler`]) records all of it, down to the CAS and the GPU.
 
@@ -18,34 +19,33 @@ macro_rules! profile_scope {
     };
 }
 
+#[cfg(feature = "ui")]
 pub mod app;
+#[cfg(feature = "ui")]
 pub mod evaluator;
+#[cfg(feature = "ui")]
 pub mod geometry;
+#[cfg(feature = "ui")]
 pub mod gpu;
+#[cfg(feature = "ui")]
 pub mod plot;
 #[cfg(feature = "profile")]
 pub mod profiler;
 pub mod protocol;
+#[cfg(feature = "ui")]
 pub mod shader;
 
+#[cfg(feature = "ui")]
 pub use app::App;
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(target_arch = "wasm32", feature = "ui"))]
 mod web {
-    use std::cell::RefCell;
-
     use wasm_bindgen::{JsCast, prelude::*};
 
     use crate::{
         App,
         evaluator::{Backend, WebBackend},
-        protocol::{Request, Worker},
     };
-
-    thread_local! {
-        /// The state of the worker, when this instance runs in a Web Worker.
-        static WORKER: RefCell<Worker> = RefCell::new(Worker::new());
-    }
 
     /// Start the application in the canvas with the identifier `canvas_id`.
     ///
@@ -77,24 +77,5 @@ mod web {
                 }),
             )
             .await
-    }
-
-    /// Evaluate a JSON [`Request`] in a Web Worker, calling `reply` with each JSON [`crate::protocol::Reply`].
-    ///
-    /// A panic aborts the instance: the interface replaces the worker.
-    #[wasm_bindgen]
-    pub fn worker_evaluate(request: &str, reply: &js_sys::Function) {
-        console_error_panic_hook::set_once();
-        let Ok(request) = serde_json::from_str::<Request>(request) else {
-            return;
-        };
-        WORKER.with_borrow_mut(|worker| {
-            worker.evaluate(&request, |answer| {
-                let json = serde_json::to_string(&answer).expect("Replies are serializable");
-                reply
-                    .call1(&JsValue::NULL, &JsValue::from_str(&json))
-                    .is_ok()
-            });
-        });
     }
 }

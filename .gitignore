@@ -3,3 +3,5 @@
 /crates/formalith-web/www/pkg
 /crates/formalith-gui/www/pkg
 /crates/formalith-gui/LICENSE
+/crates/formalith-gui/www/worker-pkg
+/crates/formalith-gui-worker/LICENSE
