@@ -3,6 +3,7 @@
 use malachite::{Integer, rational::Rational};
 use std::{
     cmp::Ordering,
+    collections::BTreeSet,
     fmt::{self, Debug, Display},
 };
 
@@ -216,10 +217,18 @@ impl<T: Ring> M<T> {
     }
 
     /// Evaluate the matrix builtins (`det`, `transpose`, `trace`, `rank`, `kernel`, `charpoly`, `eigenvalues`,
-    /// `eigenvectors`, `hermite` and `smith`) of a matrix value. Returns `None` for other functions, or when
-    /// they can't be evaluated, like the trace of a non-square matrix.
+    /// `eigenvectors`, `hermite` and `smith`) of a matrix value, and `gradient`, `jacobian` and `hessian`. Returns
+    /// `None` for other functions, or when they can't be evaluated, like the trace of a non-square matrix.
     fn eval_builtin(&self, fun: &dyn Function<Self>) -> Option<VectorSpaceElement<T, Matrix<T>>> {
         let args = fun.get_args::<Self>()?;
+        if matches!(
+            fun.get_ident(),
+            Context::GRADIENT | Context::JACOBIAN | Context::HESSIAN
+        ) {
+            return self
+                .eval_derivatives(fun.get_ident(), args)
+                .map(VectorSpaceElement::Vector);
+        }
         let scalars = self.scalar_sub_set;
         let scalar = |element| VectorSpaceElement::Scalar(element, scalars);
         let matrix = match args.first()? {
@@ -272,6 +281,92 @@ impl<T: Ring> M<T> {
     }
 }
 
+impl<T: Ring> M<T> {
+    /// The entries of a scalar (one entry) or of a row or column vector.
+    fn vector_entries(term: &Term<Self>) -> Option<Vec<T::Element>> {
+        match term {
+            Term::Value(Value {
+                value: VectorSpaceElement::Scalar(x, _),
+                ..
+            }) => Some(vec![x.clone()]),
+            Term::Value(Value {
+                value: VectorSpaceElement::Vector(matrix),
+                ..
+            }) if matrix.height() == 1 || matrix.width() == 1 => Some(matrix.data.clone()),
+            _ => None,
+        }
+    }
+
+    /// `gradient(f, x_1, ..., x_n)` (a column), `jacobian(F, x_1, ..., x_n)` (one row per function of the row or
+    /// column `F`) and `hessian(f, x_1, ..., x_n)`. The variables are symbols or rows or columns of symbols, every
+    /// symbol of the functions sorted by name when there are none.
+    fn eval_derivatives(&self, ident: Symbol, args: &[Term<Self>]) -> Option<Matrix<T>> {
+        let (functions, variables) = args.split_first()?;
+        let functions = Self::vector_entries(functions)?;
+        if ident != Context::JACOBIAN && functions.len() != 1 {
+            return None;
+        }
+        let mut symbols = vec![];
+        for variable in variables {
+            match variable {
+                Term::Symbol(x) => symbols.push(x.symbol),
+                _ => {
+                    for x in Self::vector_entries(variable)? {
+                        symbols.push(<T as MatrixEntries>::as_symbol(&x)?);
+                    }
+                }
+            }
+        }
+        if variables.is_empty() {
+            let mut all = BTreeSet::new();
+            for f in &functions {
+                all.extend(<T as MatrixEntries>::symbols(f)?);
+            }
+            symbols = all
+                .into_iter()
+                .filter(|x| !Context::is_builtin_constant(*x))
+                .collect();
+            symbols.sort_by_key(|x| x.name());
+        }
+        if symbols.is_empty() {
+            return None;
+        }
+        let derivative = <T as MatrixEntries>::derivative;
+        let n = symbols.len();
+        let (size, data) = match ident {
+            Context::GRADIENT => (
+                (n, 1),
+                symbols
+                    .iter()
+                    .map(|x| derivative(&functions[0], *x))
+                    .collect::<Option<_>>()?,
+            ),
+            Context::JACOBIAN => (
+                (functions.len(), n),
+                functions
+                    .iter()
+                    .flat_map(|f| symbols.iter().map(move |x| derivative(f, *x)))
+                    .collect::<Option<_>>()?,
+            ),
+            Context::HESSIAN => {
+                let gradient = symbols
+                    .iter()
+                    .map(|x| derivative(&functions[0], *x))
+                    .collect::<Option<Vec<_>>>()?;
+                (
+                    (n, n),
+                    gradient
+                        .iter()
+                        .flat_map(|g| symbols.iter().map(move |x| derivative(g, *x)))
+                        .collect::<Option<_>>()?,
+                )
+            }
+            _ => return None,
+        };
+        Some(Matrix::new(size, data, self.scalar_sub_set))
+    }
+}
+
 /// Matrix operations depending on the set of the entries, specialized for the sets where they can be evaluated:
 /// normal forms over `{$ZZ$}` and `{$ZZ\/n ZZ$}`, eigenvalues over `{$RR$}`. Every method returns `None` when the
 /// operation can't be evaluated.
@@ -290,6 +385,10 @@ pub trait MatrixEntries: Ring {
     fn eigenspaces(matrix: &Matrix<Self>) -> Option<Vec<(Self::Element, usize, Matrix<Self>)>>;
     /// The symbol `element` is, if it is one.
     fn as_symbol(element: &Self::Element) -> Option<Symbol>;
+    /// The symbols of `element`.
+    fn symbols(element: &Self::Element) -> Option<BTreeSet<Symbol>>;
+    /// The derivative of `element` with respect to `x`.
+    fn derivative(element: &Self::Element, x: Symbol) -> Option<Self::Element>;
 }
 
 impl<T: Ring> MatrixEntries for T {
@@ -312,6 +411,12 @@ impl<T: Ring> MatrixEntries for T {
         None
     }
     default fn as_symbol(_: &Self::Element) -> Option<Symbol> {
+        None
+    }
+    default fn symbols(_: &Self::Element) -> Option<BTreeSet<Symbol>> {
+        None
+    }
+    default fn derivative(_: &Self::Element, _: Symbol) -> Option<Self::Element> {
         None
     }
 }
@@ -340,6 +445,12 @@ impl<T: Ring> MatrixEntries for TermSet<T> {
             Term::Symbol(symbol) => Some(symbol.symbol),
             _ => None,
         }
+    }
+    default fn symbols(element: &Self::Element) -> Option<BTreeSet<Symbol>> {
+        Some(element.symbols())
+    }
+    default fn derivative(_: &Self::Element, _: Symbol) -> Option<Self::Element> {
+        None
     }
 }
 
@@ -459,6 +570,9 @@ impl MatrixEntries for TermSet<Zn> {
 }
 
 impl MatrixEntries for TermSet<R<Rational>> {
+    fn derivative(element: &Self::Element, x: Symbol) -> Option<Self::Element> {
+        Some(element.derivative(x))
+    }
     fn eigenspaces(matrix: &Matrix<Self>) -> Option<Vec<(Self::Element, usize, Matrix<Self>)>> {
         Some(
             matrix
@@ -691,6 +805,9 @@ impl<T: SetParseExpression> SetParseExpression for M<T> {
                     | Context::EIGENVECTORS
                     | Context::HERMITE
                     | Context::SMITH
+                    | Context::GRADIENT
+                    | Context::JACOBIAN
+                    | Context::HESSIAN
             )
         {
             return Ok(None);

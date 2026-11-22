@@ -638,3 +638,41 @@ fn integer_and_modular_matrices() {
         "rank([[1,2],[3,4]])"
     );
 }
+
+#[test]
+fn gradient_jacobian_hessian() {
+    assert_eq!(line(&parse!("gradient(x^2*y, x, y)", M)), "[[2*x*y],[x^2]]");
+    // Every symbol sorted by name by default, without constants
+    assert_eq!(
+        line(&parse!("gradient(x^2*y + pi*sin(z))", M)),
+        line(&parse!("[[2*x*y],[x^2],[pi*cos(z)]]", M))
+    );
+    assert_eq!(
+        line(&parse!("jacobian([[x*y],[x+y]], x, y)", M)),
+        "[[y,x],[1,1]]"
+    );
+    // Rows of functions and variables, and a scalar function
+    assert_eq!(
+        line(&parse!("jacobian([[x*y, x+y]], [[x, y]])", M)),
+        "[[y,x],[1,1]]"
+    );
+    assert_eq!(line(&parse!("jacobian(x*y)", M)), "[[y,x]]");
+    assert_eq!(
+        line(&parse!("hessian(x^3*y, x, y)", M)),
+        line(&parse!("[[6*x*y, 3*x^2], [3*x^2, 0]]", M))
+    );
+    // Polar coordinates
+    assert_eq!(
+        line(&parse!(
+            "simplify(det(jacobian([[r*cos(t)],[r*sin(t)]], r, t)))",
+            M
+        )),
+        "r"
+    );
+    // A constant has no variable, and a matrix isn't a scalar function
+    assert_eq!(line(&parse!("gradient(5)", M)), "gradient(5)");
+    assert_eq!(
+        line(&parse!("gradient([[x, y]], x)", M)),
+        "gradient([[x,y]], x)"
+    );
+}

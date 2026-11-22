@@ -62,8 +62,8 @@ use crate::{
     field::real::{
         R,
         expr::{
-            Expr, Real, constant_sign, depends, fun, has_special_constant, map_tree, one, unary,
-            value, variable, zero,
+            Expr, Real, constant_sign, depends, fun, has_special_constant, map_tree, one, size,
+            unary, value, variable, zero,
         },
         sign::{SignMode, sign_set},
     },
@@ -157,7 +157,15 @@ impl Term<Real> {
     /// ```
     pub fn integrate_definite(&self, x: Symbol, a: &Self, b: &Self) -> IntegrateResult<Self> {
         profile_scope!("integrate_definite");
-        definite::integrate(self, x, a, b)
+        // Antiderivatives evaluated at the bounds often give sums which cancel once expanded, like iterated integrals
+        definite::integrate(self, x, a, b).map(|res| {
+            let expanded = res.expand();
+            if size(&expanded) < size(&res) {
+                expanded
+            } else {
+                res
+            }
+        })
     }
 }
 
@@ -256,27 +264,32 @@ impl Integrator {
     }
 }
 
-/// `f` as `{$c g$}`, the factor `c` not depending on `x`.
+/// `f` as `{$c g$}`, the factor `c` not depending on `x`. Exponentials of sums are split, `{$e^(u + v) = e^u e^v$}`
+/// for `u` free of `x` (`{$e^(-x^2 - y^2)$}` in `y`).
 fn split_constant(f: &Expr, x: Symbol) -> (Expr, Expr) {
-    match f {
-        Term::Mul(mul) => {
-            let constant = mul
-                .iter()
-                .filter(|factor| !depends(factor, x))
-                .fold(value(mul.coefficient.clone()), |res, factor| res * factor);
-            let rest = Term::Mul(Mul::new(
-                Rational::from(1),
-                mul.iter()
-                    .filter(|factor| depends(factor, x))
-                    .cloned()
-                    .collect(),
-                R,
-            ))
-            .normalize();
-            (constant, rest)
+    let (mut constant, factors) = match f {
+        Term::Mul(mul) => (value(mul.coefficient.clone()), mul.iter().collect()),
+        _ => (one(), vec![f]),
+    };
+    let mut rest = vec![];
+    for factor in factors {
+        if !depends(factor, x) {
+            constant = constant * factor;
+        } else if let Some((Context::EXP, Term::Add(add))) = unary(factor)
+            && add.iter().any(|t| !depends(t, x))
+        {
+            let (free, dependent): (Vec<_>, Vec<_>) = add.iter().partition(|t| !depends(t, x));
+            constant = constant * fun(Context::EXP, free.into_iter().fold(zero(), |s, t| s + t));
+            rest.push(fun(
+                Context::EXP,
+                dependent.into_iter().fold(zero(), |s, t| s + t),
+            ));
+        } else {
+            rest.push(factor.clone());
         }
-        _ => (one(), f.clone()),
     }
+    let rest = Term::Mul(Mul::new(Rational::from(1), rest, R)).normalize();
+    (constant, rest)
 }
 
 /// `f` with its square roots depending on `x` merged, `{$sqrt(u) sqrt(v) = sqrt(u v)$}`, which holds where `f` is

@@ -262,9 +262,16 @@ impl Context {
     pub const LAMBERTW: Symbol = Symbol(71);
     /// Piecewise function `piecewise(c_1, v_1, c_2, v_2, ..., default)`, the value of the first true condition
     pub const PIECEWISE: Symbol = Symbol(72);
+    /// Gradient `gradient(f, x_1, ..., x_n)` of a scalar function, the column of its partial derivatives, in every
+    /// symbol of `f` sorted by name by default
+    pub const GRADIENT: Symbol = Symbol(73);
+    /// Jacobian matrix `jacobian(F, x_1, ..., x_n)` of a row or column of functions, `{$J_(i j) = diff F_i / diff x_j$}`
+    pub const JACOBIAN: Symbol = Symbol(74);
+    /// Hessian matrix `hessian(f, x_1, ..., x_n)` of a scalar function, `{$H_(i j) = diff^2 f / (diff x_i diff x_j)$}`
+    pub const HESSIAN: Symbol = Symbol(75);
 
     #[rustfmt::skip]
-    const BUILTIN_NAMES: [&'static str; 73] = [
+    const BUILTIN_NAMES: [&'static str; 76] = [
         "abs", "det", "expand", "factor", "simplify", "re", "im", "conj", "sqrt", "root", "sign",
         "floor", "ceil", "min", "max", "gcd", "lcm", "quo", "rem", "diff", "solve", "approx",
         "exp", "ln", "sin", "cos", "tan", "pi", "e", "lim", "oo", "undefined",
@@ -272,7 +279,7 @@ impl Context {
         "sec", "csc", "log", "factorial", "binomial", "integrate", "erf", "erfi", "assume",
         "gamma", "beta", "digamma", "polygamma", "zeta", "euler_gamma", "sum", "product",
         "dsolve", "transpose", "trace", "rank", "kernel", "charpoly", "eigenvalues", "eigenvectors",
-        "hermite", "smith", "apart", "lambertw", "piecewise",
+        "hermite", "smith", "apart", "lambertw", "piecewise", "gradient", "jacobian", "hessian",
     ];
 
     /// Return `true` if `symbol` is a builtin constant, like `{$pi$}`, which is not a function.
@@ -296,9 +303,14 @@ impl Context {
             | Self::BINOMIAL
             | Self::BETA
             | Self::POLYGAMMA => Some((2, 2)),
-            Self::MIN | Self::MAX | Self::SOLVE | Self::ASSUME | Self::DSOLVE => {
-                Some((1, usize::MAX))
-            }
+            Self::MIN
+            | Self::MAX
+            | Self::SOLVE
+            | Self::ASSUME
+            | Self::DSOLVE
+            | Self::GRADIENT
+            | Self::JACOBIAN
+            | Self::HESSIAN => Some((1, usize::MAX)),
             Self::APPROX | Self::LOG | Self::CHARPOLY => Some((1, 2)),
             Self::DIFF => Some((2, 3)),
             Self::APART => Some((1, 2)),

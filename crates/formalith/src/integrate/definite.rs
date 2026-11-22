@@ -8,13 +8,21 @@
 //! Before that, parts of the integrand made of inverse trigonometric functions which are constant on the interval
 //! are replaced by their value, and on symmetric intervals `{$[-b, b]$}`, `{$f(x) + f(-x)$}` is integrated on
 //! `{$[0, b]$}` when it simplifies to a rational function.
+//!
+//! Iterated integrals `{$integral_a^b integral_(c(x))^(d(x)) f dif y dif x$}`: the inner integral, left unevaluated
+//! when it needs to know where `x` is, is evaluated again knowing the sign of `x` on `{$(a, b)$}` (an assumption)
+//! and its range when `a` and `b` are numbers (see [`range_sign`]). With symbolic bounds, the integrand and the
+//! antiderivative may be singular where a factor vanishes, when its root is outside the interval or at a bound.
 
 use crate::field::real::expr::sqrt;
 use crate::field::real::expr::{
     DIGITS, Expr, Real, constant_sign, depends, fun, half, has_special_constant, infinity_sign,
     is_infinite, map_tree, one, unary, value, variable, zero,
 };
-use std::cmp::Ordering;
+use std::{
+    cell::{Cell, RefCell},
+    cmp::Ordering,
+};
 
 use malachite::{
     Rational,
@@ -29,8 +37,14 @@ use malachite::{
 };
 
 use crate::{
-    context::{Context, Symbol},
-    field::real::approx::{approximate, approximate_fixed},
+    context::{
+        Context, Symbol,
+        assumptions::{Assumption, Assumptions, AssumptionsGuard, SignSet},
+    },
+    field::real::{
+        approx::{approximate, approximate_fixed},
+        sign::{SignMode, sign_set},
+    },
     limit::{Direction, LimitError},
     solve::polynomial::PolynomialRoots,
     term::{Expand, Term},
@@ -51,6 +65,102 @@ const SAMPLES: i64 = 64;
 /// Maximum number of poles of `tan` or zeros of `sin` and `cos` in the interval.
 const MAX_PERIODS: i64 = 1000;
 
+thread_local! {
+    /// Numeric ranges of the variables of the iterated integrals being computed, innermost last.
+    static RANGES: RefCell<Vec<(Symbol, (f64, f64))>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Removes the innermost range of [`RANGES`] when dropped.
+struct RangeGuard;
+
+impl Drop for RangeGuard {
+    fn drop(&mut self) {
+        RANGES.with_borrow_mut(|ranges| ranges.pop());
+    }
+}
+
+/// Use `x` in `interval` in [`range_sign`] until the guard is dropped.
+fn enter_range(x: Symbol, interval: (f64, f64)) -> RangeGuard {
+    RANGES.with_borrow_mut(|ranges| ranges.push((x, interval)));
+    RangeGuard
+}
+
+/// The sign of `h`, from the sign engine, or when its only symbol is a variable of an outer integral with a
+/// numeric range, from its zeros there and its sign at a point of the range.
+fn range_sign(h: &Expr) -> Option<Ordering> {
+    if let Some(sign) = constant_sign(h) {
+        return Some(sign);
+    }
+    let symbols: Vec<_> = h
+        .symbols()
+        .into_iter()
+        .filter(|s| !Context::is_builtin_constant(*s))
+        .collect();
+    let [v] = symbols[..] else {
+        return None;
+    };
+    let interval = RANGES.with_borrow(|ranges| {
+        ranges
+            .iter()
+            .rev()
+            .find(|(s, _)| *s == v)
+            .map(|(_, interval)| *interval)
+    })?;
+    let mut points = vec![];
+    zeros(h, v, interval, &mut points).ok()?;
+    if points.iter().any(|(p, _)| interior(*p, interval)) {
+        return None;
+    }
+    constant_sign(&h.substitute(v, &value(interior_point(interval)?))?)
+}
+
+/// Assume that `x` has the sign it has strictly between `a` and `b` (in any order), when both have the same sign,
+/// until the guard is dropped.
+fn between(x: Symbol, a: &Expr, b: &Expr) -> Option<AssumptionsGuard> {
+    let signs = [a, b].map(|bound| sign_set(bound, SignMode::APPROXIMATE));
+    let sign = if signs.iter().all(|s| s.is_subset(SignSet::NONNEGATIVE)) {
+        SignSet::POSITIVE
+    } else if signs.iter().all(|s| s.is_subset(SignSet::NONPOSITIVE)) {
+        SignSet::NEGATIVE
+    } else {
+        return None;
+    };
+    let mut assumptions = Assumptions::current();
+    assumptions.assume(x, Assumption::sign(sign)).ok()?;
+    Some(assumptions.enter())
+}
+
+/// `f` with its unevaluated definite integrals depending on `x` evaluated again, knowing that `x` is between `a`
+/// and `b`, in `interval` when they are numbers. `None` when none of them is evaluated.
+fn inner_integrals(
+    f: &Expr,
+    x: Symbol,
+    a: &Expr,
+    b: &Expr,
+    interval: Option<(f64, f64)>,
+) -> Option<Expr> {
+    let changed = Cell::new(false);
+    let res = {
+        let _sign = between(x, a, b);
+        let _range = interval.map(|interval| enter_range(x, interval));
+        map_tree(f, &|t| {
+            let Term::Fun(fun) = t else {
+                return None;
+            };
+            if fun.get_ident() != Context::INTEGRATE || !depends(t, x) {
+                return None;
+            }
+            let Some([g, Term::Symbol(y), c, d]) = fun.get_args::<Real>().map(Vec::as_slice) else {
+                return None;
+            };
+            let res = integrate(g, y.symbol, c, d).ok();
+            changed.set(changed.get() || res.is_some());
+            Some(res.unwrap_or_else(|| t.clone()))
+        })
+    };
+    changed.get().then_some(res)
+}
+
 pub(super) fn integrate(f: &Expr, x: Symbol, a: &Expr, b: &Expr) -> IntegrateResult<Expr> {
     if depends(a, x) || depends(b, x) {
         return Err(IntegrateError::Unsupported);
@@ -58,20 +168,24 @@ pub(super) fn integrate(f: &Expr, x: Symbol, a: &Expr, b: &Expr) -> IntegrateRes
     if a == b {
         return Ok(zero());
     }
+    let numeric = |t: &Expr| is_infinite(t) || is_constant(t);
+    let interval = if numeric(a) && numeric(b) {
+        let (a, b) = (approximate_bound(a)?, approximate_bound(b)?);
+        Some((a.min(b), a.max(b)))
+    } else {
+        None
+    };
+    if let Some(g) = inner_integrals(f, x, a, b, interval) {
+        return integrate(&g, x, a, b);
+    }
     if a.is_zero()
         && infinity_sign(b) == Some(Ordering::Greater)
         && let Some(res) = mellin(f, x)
     {
         return Ok(res);
     }
-    let numeric = |t: &Expr| is_infinite(t) || is_constant(t);
-    if !(numeric(a) && numeric(b)) {
-        // Symbolic bounds: only without any possible singularity
-        let antiderivative = f.integrate(x)?;
-        if !regular(f, x) || !regular(&antiderivative, x) {
-            return Err(IntegrateError::Unsupported);
-        }
-        return evaluate(&antiderivative, x, &[(a.clone(), true), (b.clone(), true)]);
+    if interval.is_none() {
+        return symbolic(f, x, a, b);
     }
     let (a_value, b_value) = (approximate_bound(a)?, approximate_bound(b)?);
     match a_value.partial_cmp(&b_value) {
@@ -215,6 +329,107 @@ fn mellin(f: &Expr, x: Symbol) -> Option<Expr> {
     Some(constant * res)
 }
 
+/// `{$integral_a^b f$}` with symbolic bounds: the integrand and the antiderivative must be regular on the interval,
+/// each of their [`critical_factors`] keeping a strict sign there, or vanishing only at a bound when it is linear.
+fn symbolic(f: &Expr, x: Symbol, a: &Expr, b: &Expr) -> IntegrateResult<Expr> {
+    let antiderivative = f.integrate(x)?;
+    let mut critical = vec![];
+    if !critical_factors(f, x, &mut critical)
+        || !critical_factors(&antiderivative, x, &mut critical)
+    {
+        return Err(IntegrateError::Unsupported);
+    }
+    let (mut regular_a, mut regular_b) = (true, true);
+    for u in &critical {
+        for factor in factors(u) {
+            let factor = match (&factor, unary(&factor)) {
+                (Term::Pow(pow), _) if !depends(&pow.exponant, x) => (*pow.base).clone(),
+                (_, Some((Context::ABS, u))) => u.clone(),
+                _ => factor,
+            };
+            if !depends(&factor, x) {
+                continue;
+            }
+            if let Some(slope) = linear(&factor, x) {
+                // The root `p` must be outside of the interval, or at a bound
+                let p = -factor
+                    .substitute(x, &zero())
+                    .ok_or(IntegrateError::Unsupported)?
+                    / slope;
+                let (sign_a, sign_b) = (range_sign(&(&p - a)), range_sign(&(&p - b)));
+                match (sign_a, sign_b) {
+                    (Some(s), Some(t)) if s == t && s != Ordering::Equal => {}
+                    (Some(Ordering::Equal), Some(t)) if t != Ordering::Equal => regular_a = false,
+                    (Some(s), Some(Ordering::Equal)) if s != Ordering::Equal => regular_b = false,
+                    _ => return Err(IntegrateError::Unsupported),
+                }
+            } else {
+                let _sign = between(x, a, b);
+                if range_sign(&factor).is_none_or(|s| s == Ordering::Equal) {
+                    return Err(IntegrateError::Unsupported);
+                }
+            }
+        }
+    }
+    if regular_a && regular_b {
+        return evaluate(&antiderivative, x, &[(a.clone(), true), (b.clone(), true)]);
+    }
+    // One-sided limits at a singular bound, which need the bounds in increasing order
+    match range_sign(&(b - a)) {
+        Some(Ordering::Greater) => evaluate(
+            &antiderivative,
+            x,
+            &[(a.clone(), regular_a), (b.clone(), regular_b)],
+        ),
+        Some(Ordering::Less) => evaluate(
+            &antiderivative,
+            x,
+            &[(b.clone(), regular_b), (a.clone(), regular_a)],
+        )
+        .map(|res| -res),
+        _ => Err(IntegrateError::Unsupported),
+    }
+}
+
+/// Add to `critical` the factors where `term` may be singular: denominators, arguments of `ln` and bases of
+/// fractional powers depending on `x`. Returns `false` when `term` has other parts which may not be continuous.
+fn critical_factors(term: &Expr, x: Symbol, critical: &mut Vec<Expr>) -> bool {
+    const FUNCTIONS: [Symbol; 7] = [
+        Context::ERF,
+        Context::ERFI,
+        Context::EXP,
+        Context::SIN,
+        Context::COS,
+        Context::ATAN,
+        Context::ABS,
+    ];
+    if !depends(term, x) {
+        return true;
+    }
+    match term {
+        Term::Value(_) | Term::Symbol(_) => true,
+        Term::Add(add) => add.iter().all(|t| critical_factors(t, x, critical)),
+        Term::Mul(mul) => mul.iter().all(|t| critical_factors(t, x, critical)),
+        Term::Pow(pow) => {
+            if depends(&pow.exponant, x) {
+                return false;
+            }
+            if pow.exponant.to_i64().is_none_or(|n| n < 0) {
+                critical.push((*pow.base).clone());
+            }
+            critical_factors(&pow.base, x, critical)
+        }
+        Term::Fun(_) => match unary(term) {
+            Some((Context::LN, u)) => {
+                critical.push(u.clone());
+                critical_factors(u, x, critical)
+            }
+            Some((ident, u)) if FUNCTIONS.contains(&ident) => critical_factors(u, x, critical),
+            _ => false,
+        },
+    }
+}
+
 /// `{$sum_i F(p_(i+1)^-) - F(p_i^+)$}` for the increasing points `p_i`, with whether `F` is regular there.
 fn evaluate(antiderivative: &Expr, x: Symbol, points: &[(Expr, bool)]) -> IntegrateResult<Expr> {
     let limit = |(point, regular): &(Expr, bool), direction: Direction| {
@@ -298,20 +513,6 @@ fn approximate_bound(term: &Expr) -> IntegrateResult<f64> {
 
 fn to_f64(term: &Expr) -> Option<f64> {
     approximate(term, DIGITS).map(|v| f64::rounding_from(&v, RoundingMode::Nearest).0)
-}
-
-/// Whether `term` has no denominator, `tan`, `ln` or fractional power depending on `x`, so that it is continuous.
-fn regular(term: &Expr, x: Symbol) -> bool {
-    const FUNCTIONS: [Symbol; 7] = [
-        Context::ERF,
-        Context::ERFI,
-        Context::EXP,
-        Context::SIN,
-        Context::COS,
-        Context::ATAN,
-        Context::ABS,
-    ];
-    only_continuous_parts(term, x, false, &FUNCTIONS)
 }
 
 /// Whether the parts of `term` depending on `x` are sums, products, integer powers (non-negative unless
@@ -518,7 +719,7 @@ fn same_sign(term: &Expr, x: Symbol, interval: (f64, f64)) -> IntegrateResult<()
         let s = term
             .substitute(x, &value(point))
             .as_ref()
-            .and_then(constant_sign)
+            .and_then(range_sign)
             .ok_or(IntegrateError::Unsupported)?;
         match (sign, s) {
             (_, Ordering::Equal) => return Err(IntegrateError::Unsupported),

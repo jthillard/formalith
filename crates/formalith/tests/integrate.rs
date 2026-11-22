@@ -673,3 +673,68 @@ fn absolute_values() {
         "integrate(abs(sin(x)), x)"
     );
 }
+
+#[test]
+fn iterated_integrals() {
+    // Inner integrals not depending on where `x` is
+    assert_eq!(
+        integrate("integrate(integrate(x*y, y, 0, x), x, 0, 1)"),
+        "1/8"
+    );
+    assert_eq!(
+        integrate("integrate(integrate(1, y, 0, sqrt(1-x^2)), x, -1, 1)"),
+        integrate("pi/2")
+    );
+    assert_eq!(
+        integrate("integrate(integrate(integrate(1, z, 0, x+y), y, 0, x), x, 0, 1)"),
+        "1/2"
+    );
+    // Singular inner integrands, regular for `x` in the outer interval
+    assert_eq!(
+        integrate("integrate(integrate(1/(x+y), y, 1, 2), x, 1, 2)"),
+        integrate("2*ln(2) - 6*ln(3) + 4*ln(4)")
+    );
+    assert_eq!(
+        integrate("integrate(integrate(1/y, y, 1, x), x, 1, 2)"),
+        integrate("2*ln(2) - 1")
+    );
+    assert_eq!(
+        integrate("integrate(integrate(1/y, y, x, 1), x, 0, 1)"),
+        "1"
+    );
+    assert_eq!(
+        integrate("integrate(integrate(x/y, y, x, 2*x), x, 1, 2)"),
+        integrate("-5/2*ln(2) + 2*ln(4)")
+    );
+    // The root `3` is outside of `[0, x]` since `x < 2`, `x` in `[1, 2]` for the sign engine
+    assert_eq!(
+        integrate("integrate(integrate(1/(y-3), y, 0, x), x, 1, 2)"),
+        integrate("2*ln(2) - ln(3) - 1")
+    );
+    assert_eq!(
+        integrate("integrate(integrate(1/(y-x), y, 0, 1), x, 2, 3)"),
+        integrate("4*ln(2) - 3*ln(3)")
+    );
+    // A singular bound
+    assert_eq!(
+        integrate("integrate(integrate(1/sqrt(y), y, 0, x), x, 0, 1)"),
+        "4/3"
+    );
+    // `exp` of a sum with a part free of the variable
+    assert_eq!(
+        integrate("integrate(integrate(exp(-x^2-y^2), y, -oo, oo), x, -oo, oo)"),
+        integrate("pi")
+    );
+    assert_eq!(
+        integrate("integrate(integrate(x*exp(-x*y), y, 0, oo), x, 0, 1)"),
+        "1"
+    );
+    // Results tidied by expansion
+    assert_eq!(
+        integrate("integrate(integrate(exp(y^2), y, x, 1), x, 0, 1)"),
+        integrate("exp(1)/2 - 1/2")
+    );
+    // The inner integral diverges where `y = x/2`
+    let res = integrate("integrate(integrate(1/(y-x/2), y, 0, x), x, 0, 1)");
+    assert!(res.starts_with("integrate("), "{res}");
+}
