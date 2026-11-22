@@ -120,17 +120,13 @@ impl Plotter {
         self.shaders.retain(|id, _| ids.contains(id));
     }
 
-    /// The shader of `drawable`.
-    fn shader(
-        &mut self,
-        drawable: &Drawable<'_>,
-        relations: &[(&Numeric, Comparison)],
-    ) -> Arc<Shader> {
+    /// The shader of `drawable`, whose source is `source` when it changed.
+    fn shader(&mut self, drawable: &Drawable<'_>, source: impl FnOnce() -> String) -> Arc<Shader> {
         profile_scope!("Plotter::shader");
         match self.shaders.get(&drawable.id) {
             Some((revision, shader)) if *revision == drawable.revision => shader.clone(),
             _ => {
-                let shader = Shader::new(shader::render(relations));
+                let shader = Shader::new(source());
                 self.shaders
                     .insert(drawable.id, (drawable.revision, shader.clone()));
                 shader
@@ -258,6 +254,32 @@ impl Plotter {
                 }
                 return;
             }
+            GraphKind::ComplexMap { re, im } => {
+                let Some(linear) = self.gpu else {
+                    return;
+                };
+                if drawable.params.len() > MAX_PARAMS {
+                    return;
+                }
+                let shader = self.shader(drawable, || shader::grid(re, im));
+                #[allow(clippy::cast_possible_truncation)]
+                let params = drawable.params.iter().map(|value| *value as f32).collect();
+                plot_ui.add(GpuGraph {
+                    base: PlotItemBase::new(drawable.name.clone()),
+                    id: drawable.id,
+                    frame: self.frame,
+                    shader,
+                    color: color(drawable.color, linear),
+                    // The lines `Re z = k`, dimmer than the lines `Im z = k`
+                    fill: color(drawable.color.gamma_multiply(0.5), linear),
+                    kind: 4.,
+                    bounds,
+                    params,
+                    drawable_color: drawable.color,
+                    draw: (shader::GRID_VERTICES, shader::GRID_LINES),
+                });
+                return;
+            }
         };
         let Some(linear) = self.gpu else {
             return;
@@ -265,7 +287,7 @@ impl Plotter {
         if drawable.params.len() > MAX_PARAMS {
             return;
         }
-        let shader = self.shader(drawable, &relations);
+        let shader = self.shader(drawable, || shader::render(&relations));
         #[allow(clippy::cast_possible_truncation)]
         let params = drawable.params.iter().map(|value| *value as f32).collect();
         plot_ui.add(GpuGraph {
@@ -279,6 +301,7 @@ impl Plotter {
             bounds,
             params,
             drawable_color: drawable.color,
+            draw: (3, 1),
         });
     }
 
@@ -489,7 +512,7 @@ fn hover(
                     None => continue,
                 }
             }
-            GraphKind::Point { .. } => continue,
+            GraphKind::Point { .. } | GraphKind::ComplexMap { .. } => continue,
         };
         let (distance, point) = hit;
         if distance < HOVER_DISTANCE
@@ -516,6 +539,8 @@ struct GpuGraph {
     bounds: [f64; 2],
     params: Vec<f32>,
     drawable_color: Color32,
+    /// The numbers of vertices and instances drawn, see [`GraphCallback::draw`].
+    draw: (u32, u32),
 }
 
 impl GpuGraph {
@@ -581,6 +606,7 @@ impl PlotItem for GpuGraph {
             frame: self.frame,
             shader: self.shader.clone(),
             uniforms: self.uniforms(transform, ui.ctx().pixels_per_point()),
+            draw: self.draw,
             #[cfg(feature = "profile")]
             label: self.name().to_owned(),
         };
@@ -660,7 +686,7 @@ mod tests {
 
     /// Draw the graph of the relations `inputs` of the kind `kind`, offscreen.
     fn draw(
-        (_, device, queue): &(wgpu::Adapter, wgpu::Device, wgpu::Queue),
+        device: &(wgpu::Adapter, wgpu::Device, wgpu::Queue),
         inputs: &[(&str, Comparison)],
         kind: f32,
     ) -> Image {
@@ -672,24 +698,48 @@ mod tests {
             .iter()
             .map(|(expr, relation)| (expr, *relation))
             .collect();
+        draw_shader(device, shader::render(&relations), kind, (3, 1))
+    }
+
+    /// Draw the images of the grid under `re + i im`, offscreen.
+    fn draw_grid(device: &(wgpu::Adapter, wgpu::Device, wgpu::Queue), re: &str, im: &str) -> Image {
+        let source = shader::grid(&compile(re), &compile(im));
+        draw_shader(
+            device,
+            source,
+            4.,
+            (shader::GRID_VERTICES, shader::GRID_LINES),
+        )
+    }
+
+    /// Draw a graph with the shader `source` of the kind `kind`, offscreen, in white (the second color at a
+    /// quarter of its opacity), with `draw` vertices and instances.
+    fn draw_shader(
+        (_, device, queue): &(wgpu::Adapter, wgpu::Device, wgpu::Queue),
+        source: String,
+        kind: f32,
+        draw: (u32, u32),
+    ) -> Image {
         let format = wgpu::TextureFormat::Rgba8Unorm;
         let graph = GpuGraph {
             base: PlotItemBase::new(String::new()),
             id: 0,
             frame: 1,
-            shader: Shader::new(shader::render(&relations)),
+            shader: Shader::new(source),
             color: color(Color32::WHITE, false),
             fill: color(Color32::WHITE.gamma_multiply(0.25), false),
             kind,
             bounds: [-1., 2.],
             params: vec![2., -3.],
             drawable_color: Color32::WHITE,
+            draw,
         };
         let callback = GraphCallback {
             id: 0,
             frame: 1,
             shader: graph.shader.clone(),
             uniforms: uniforms(&VIEW, [WIDTH as f32, HEIGHT as f32], 1., &graph),
+            draw,
             #[cfg(feature = "profile")]
             label: String::new(),
         };
@@ -860,5 +910,32 @@ mod tests {
         assert!(image.at(0., 0.5) == 0. && image.at(1.5, 2.) == 0.);
         assert!(image.at(-2., -2.) == 0. && image.at(3., 2.) == 0.);
         assert!(image.at(2.5, 2.5_f64.powi(2) - 1.) > 0.5);
+    }
+
+    #[test]
+    fn test_grid() {
+        let Some(device) = device() else {
+            eprintln!("No GPU, skipped");
+            return;
+        };
+        // The identity: the lines `y = k` opaque, `x = k` at a quarter
+        let image = draw_grid(&device, "x", "y");
+        assert!(image.at(3.3, 2.) > 0.5 && image.at(-7.7, 0.) > 0.5);
+        assert!((image.at(3., 2.5) - 0.25).abs() < 0.02);
+        assert!(image.at(3.5, 2.5) == 0.);
+        // `z^2`: the image of the real axis is `[0, 100]` on the real axis, the lines `Im z = k` are parabolas
+        // `x = y^2 / (4 k^2) - k^2`, and the lines `Re z = k` the parabolas `x = k^2 - y^2 / (4 k^2)`
+        let image = draw_grid(&device, "x^2 - y^2", "2*x*y");
+        assert!(image.at(5.3, 0.) > 0.5);
+        assert!(image.at(1.5_f64.powi(2) / 4. - 1., 1.5) > 0.5);
+        // Drawn twice, for `k = 1` and `k = -1`
+        let dim = image.at(1. - 1.5_f64.powi(2) / 4., 1.5);
+        assert!(dim > 0.2 && dim < 0.5);
+        assert!(image.at(0.3, 0.7) == 0.);
+        // `1/z`: lines through the pole are cut, not joined across the plot
+        let image = draw_grid(&device, "x/(x^2 + y^2)", "-y/(x^2 + y^2)");
+        assert!(image.at(0.5, 0.) > 0.5);
+        // The image of `Im z = 1` is the circle of center `-i/2` and radius `1/2`
+        assert!(image.at(0., -1.) > 0.5);
     }
 }

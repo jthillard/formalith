@@ -638,5 +638,23 @@ impl TryElementFrom<C<R<Rational>>> for R<Rational> {
     }
 }
 
+/// The type of [`C`], the complex numbers with rational parts.
+pub type Complex = C<R<Rational>>;
+
 /// The complex field, using [`malachite::rational::Rational`] for the real and imaginary parts to get arbitrary precision numbers.
 pub const C: C<R<Rational>> = C::new(R);
+
+/// The real and imaginary parts `{$(u, v)$}` of `{$f(a + i b) = u + i v$}`, as functions of the real symbols `a`
+/// and `b`, the other symbols of `f` being assumed real. `None` when a part can't be written, like `{$ln(z)$}`.
+///
+/// ```
+/// use formalith::{field::{complex::{C, parts}, real::R}, parse, symbol};
+///
+/// let (u, v) = parts(&parse!("z^2", C), symbol!("z"), symbol!("x"), symbol!("y")).unwrap();
+/// assert_eq!(u, parse!("x^2 - y^2", R));
+/// assert_eq!(v, parse!("2*x*y", R));
+/// ```
+#[must_use]
+pub fn parts(f: &Term<Complex>, z: Symbol, a: Symbol, b: Symbol) -> Option<(Expr, Expr)> {
+    parts::split_with(f, Some((z, &(variable(a), variable(b)))))
+}

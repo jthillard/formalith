@@ -1,5 +1,5 @@
 //! Drawing of graphs on the GPU: a paint callback runs the shader of a graph ([`crate::shader::render`]) over the
-//! whole plot, with its view, colors and parameters as uniforms.
+//! whole plot, with its view, colors and parameters as uniforms, or draws the lines of [`crate::shader::grid`].
 
 pub mod analysis;
 #[cfg(feature = "profile")]
@@ -91,6 +91,8 @@ pub struct GraphCallback {
     pub shader: Arc<Shader>,
     /// The uniforms of the shader.
     pub uniforms: Box<[f32; UNIFORMS]>,
+    /// The numbers of vertices and instances drawn: `(3, 1)` for a triangle covering the plot.
+    pub draw: (u32, u32),
     /// The name of the graph, shown by the profiler.
     #[cfg(feature = "profile")]
     pub label: String,
@@ -250,7 +252,7 @@ impl egui_wgpu::CallbackTrait for GraphCallback {
         }
         render_pass.set_pipeline(pipeline);
         render_pass.set_bind_group(0, bind_group, &[]);
-        render_pass.draw(0..3, 0..1);
+        render_pass.draw(0..self.draw.0, 0..self.draw.1);
         #[cfg(feature = "profile")]
         if let Some((query_set, index)) = queries {
             render_pass.write_timestamp(query_set, index + 1);

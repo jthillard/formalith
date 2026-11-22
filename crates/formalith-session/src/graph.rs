@@ -1,6 +1,7 @@
 //! Graphs of the lines of a session, for graphical interfaces: curves `y = f(x)`, `x = g(y)`, implicit curves and
 //! regions in `x` and `y` (also intersections of several relations, like `x^2 + y^2 < 1, y > 0`), points, and the
-//! areas of definite integrals `integrate(f, x, a, b)`.
+//! areas of definite integrals `integrate(f, x, a, b)`. In `C`, functions `f(z)` are drawn as the images of the
+//! lines of a grid ([`GraphKind::ComplexMap`]).
 //!
 //! Graphs are compiled to [`Numeric`] expressions, evaluated with the values `[x, y, params...]`: `x` at index
 //! [`Graph::X`], `y` at index [`Graph::Y`] and the parameters of [`Graph::params`] after them.
@@ -22,7 +23,10 @@ use std::collections::BTreeSet;
 use formalith::{
     context::{Context, Symbol},
     dynamic::Evaluated,
-    field::real::{R, Real, numeric::Numeric},
+    field::{
+        complex::{C, Complex, parts},
+        real::{R, Real, numeric::Numeric},
+    },
     parser::{Parser, environment::Statement},
     term::{Term, relation::Relation},
 };
@@ -72,6 +76,15 @@ pub enum GraphKind {
         a: Numeric,
         /// The upper bound, which may depend on the parameters.
         b: Numeric,
+    },
+    /// The images under a complex function `f` of the lines of the grid `Re z = k` and `Im z = k` for integers
+    /// `k` between `-10` and `10`, in the plane `(Re f, Im f)`, from a function of `z` (or `x`) in `C`. Both parts
+    /// are evaluated with `x = Re z` and `y = Im z`.
+    ComplexMap {
+        /// `Re f(x + i y)`.
+        re: Numeric,
+        /// `Im f(x + i y)`.
+        im: Numeric,
     },
     /// A point.
     Point {
@@ -168,7 +181,9 @@ impl Graph {
                 .unsupported()
                 .or_else(|| a.unsupported())
                 .or_else(|| b.unsupported()),
-            GraphKind::Point { x, y } => x.unsupported().or_else(|| y.unsupported()),
+            GraphKind::Point { x, y } | GraphKind::ComplexMap { re: x, im: y } => {
+                x.unsupported().or_else(|| y.unsupported())
+            }
         }
     }
 }
@@ -518,8 +533,60 @@ pub(crate) fn evaluate(
     Ok((Evaluated::new(statement), graph))
 }
 
+/// The graph of a complex function `f` of `var`, see [`GraphKind::ComplexMap`].
+fn complex_map(f: &Term<Complex>, var: Symbol) -> Option<Graph> {
+    let (x, y) = xy();
+    let (re, im) = parts(f, var, x, y)?;
+    let params = params([&re, &im], &[x, y]);
+    let vars: Vec<Symbol> = [x, y].into_iter().chain(params.iter().copied()).collect();
+    Some(Graph {
+        kind: GraphKind::ComplexMap {
+            re: Numeric::compile(&re, &vars),
+            im: Numeric::compile(&im, &vars),
+        },
+        params: params.iter().map(|param| param.name().to_owned()).collect(),
+    })
+}
+
+/// Evaluate a line in `C`, which isn't a command, with its graph: the images of a grid under functions of `z` (else
+/// `x`), see [`GraphKind::ComplexMap`].
+///
+/// # Errors
+/// Returns the parsing error message if `line` is not a valid statement.
+///
+/// # Panics
+/// Panics if an operation is not supported.
+pub(crate) fn evaluate_complex(
+    line: &str,
+    env: &mut Environment,
+) -> Result<(Evaluated, Option<Graph>), String> {
+    let (x, y) = xy();
+    let z = Symbol::new("z");
+    let statement = env.eval(line, C).map_err(|err| err.to_string())?;
+    let variable = |term: &Term<Complex>| {
+        let symbols = term.symbols();
+        if symbols.contains(&z) {
+            (!symbols.contains(&x) && !symbols.contains(&y)).then_some(z)
+        } else {
+            (symbols.contains(&x) && !symbols.contains(&y)).then_some(x)
+        }
+    };
+    let graph = match &statement {
+        Statement::Expression(term) => variable(term).and_then(|var| complex_map(term, var)),
+        Statement::Definition { params, body, .. } => match params.as_slice() {
+            [param] => complex_map(body, *param),
+            [] => variable(body).and_then(|var| complex_map(body, var)),
+            _ => None,
+        },
+        _ => None,
+    };
+    Ok((Evaluated::new(statement), graph))
+}
+
 #[cfg(test)]
 mod tests {
+    use formalith::printer::PrintOptions;
+
     use super::*;
 
     #[test]
@@ -558,5 +625,28 @@ mod tests {
         );
         assert_eq!(split_relations("x > 0, y"), None);
         assert_eq!(split_relations("a := 1, x > 0"), None);
+    }
+
+    #[test]
+    fn test_complex_map() {
+        let mut env = Environment::new();
+        let (_, graph) = evaluate_complex("z^2", &mut env).unwrap();
+        let Some(GraphKind::ComplexMap { re, im }) = graph.map(|graph| graph.kind) else {
+            panic!("Expected a complex map");
+        };
+        assert_eq!(re.eval(&[1., 2.]), -3.);
+        assert_eq!(im.eval(&[1., 2.]), 4.);
+        let (_, graph) = evaluate_complex("f(w) := a/w", &mut env).unwrap();
+        assert_eq!(graph.unwrap().params, ["a"]);
+        assert!(evaluate_complex("x + y", &mut env).unwrap().1.is_none());
+        assert!(evaluate_complex("x + z", &mut env).unwrap().1.is_none());
+        let mut session = crate::Session::new();
+        session.run(":set C");
+        let (response, graph) = session.graph("(z + i)^2");
+        assert!(matches!(graph.unwrap().kind, GraphKind::ComplexMap { .. }));
+        assert_eq!(
+            response.output.print(PrintOptions::plain()),
+            session.run("(z + i)^2").output.print(PrintOptions::plain())
+        );
     }
 }

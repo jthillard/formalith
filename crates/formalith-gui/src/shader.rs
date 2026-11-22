@@ -17,6 +17,13 @@ pub const PRELUDE: &str = include_str!("shader/prelude.wgsl");
 pub const RENDER: &str = include_str!("shader/render.wgsl");
 /// The template of [`analysis`].
 pub const ANALYSIS: &str = include_str!("shader/analysis.wgsl");
+/// The template of [`grid`].
+pub const GRID: &str = include_str!("shader/grid.wgsl");
+
+/// The number of vertices of each line of [`GRID`]: 6 per segment.
+pub const GRID_VERTICES: u32 = 6 * 1024;
+/// The number of lines of [`GRID`], 21 per family.
+pub const GRID_LINES: u32 = 2 * 21;
 
 /// The largest number of parameters of a drawn graph, the size of the parameter array of [`RENDER`].
 pub const MAX_PARAMS: usize = 64;
@@ -236,6 +243,17 @@ pub fn render(relations: &[(&Numeric, Comparison)]) -> String {
     out
 }
 
+/// The shader drawing the images of the lines of a grid under the complex function `re + i im`, see [`GRID`]:
+/// `re` is `U(x, y)` and `im` is `V(x, y)`. It is drawn with [`GRID_VERTICES`] vertices and [`GRID_LINES`]
+/// instances.
+#[must_use]
+pub fn grid(re: &Numeric, im: &Numeric) -> String {
+    let mut out = format!("{PRELUDE}\n{GRID}\n");
+    out.push_str(&function(re, "U", 0));
+    out.push_str(&function(im, "V", 0));
+    out
+}
+
 /// The curves of a search of remarkable points.
 pub struct AnalysisCurves<'a> {
     /// The curve `y = f(x)` whose points are searched, with its parameters.
@@ -354,6 +372,13 @@ pub(crate) mod tests {
             (&f, Comparison::Less),
             (&g, Comparison::GreaterEqual),
         ]));
+    }
+
+    #[test]
+    fn test_grid() {
+        for input in EXPRESSIONS {
+            validate(&grid(&compile(input), &compile("x*y")));
+        }
     }
 
     #[test]

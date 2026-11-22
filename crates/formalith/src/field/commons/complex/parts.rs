@@ -30,24 +30,39 @@ const MAX_EXPONANT: u64 = 16;
 /// The parts `{$(u, v)$}` of `{$f = u + i v$}`, assuming every symbol is real. `None` when a part can't be
 /// written, like `{$ln(i x)$}`.
 pub(super) fn split(f: &Complex) -> Option<(Expr, Expr)> {
+    split_with(f, None)
+}
+
+/// The parts `{$(u, v)$}` of `{$f = u + i v$}` like [`split`], the symbol `z` of `var = (z, (a, b))` being
+/// `{$a + i b$}`.
+pub(super) fn split_with(
+    f: &Complex,
+    var: Option<(Symbol, &(Expr, Expr))>,
+) -> Option<(Expr, Expr)> {
     Some(match f {
         Term::Value(z) => (value(z.value[0].clone()), value(z.value[1].clone())),
-        Term::Symbol(s) => (variable(s.symbol), zero()),
+        Term::Symbol(s) => match var {
+            Some((z, parts)) if s.symbol == z => parts.clone(),
+            _ => (variable(s.symbol), zero()),
+        },
         Term::Add(add) => add.iter().try_fold((zero(), zero()), |(u, v), term| {
-            let (a, b) = split(term)?;
+            let (a, b) = split_with(term, var)?;
             Some((u + a, v + b))
         })?,
         Term::Mul(mul) => {
             let c = &mul.coefficient;
             mul.iter()
                 .try_fold((value(c[0].clone()), value(c[1].clone())), |z, factor| {
-                    Some(product(&z, &split(factor)?))
+                    Some(product(&z, &split_with(factor, var)?))
                 })?
         }
-        Term::Pow(pow) => split_pow(&pow.base, &pow.exponant)?,
+        Term::Pow(pow) => split_pow(&pow.base, &pow.exponant, var)?,
         Term::Fun(function) => {
             let args = function.get_args::<C<R<Rational>>>()?;
-            let parts = args.iter().map(split).collect::<Option<Vec<_>>>()?;
+            let parts = args
+                .iter()
+                .map(|arg| split_with(arg, var))
+                .collect::<Option<Vec<_>>>()?;
             split_fun(function.get_ident(), &parts)?
         }
     })
@@ -128,8 +143,12 @@ fn integer_pow((u, v): (Expr, Expr), n: &Integer) -> Option<(Expr, Expr)> {
 }
 
 /// The parts of `{$b^e$}`.
-fn split_pow(base: &Complex, exponant: &Complex) -> Option<(Expr, Expr)> {
-    let (u, v) = split(base)?;
+fn split_pow(
+    base: &Complex,
+    exponant: &Complex,
+    var: Option<(Symbol, &(Expr, Expr))>,
+) -> Option<(Expr, Expr)> {
+    let (u, v) = split_with(base, var)?;
     if let Term::Value(e) = exponant
         && e.value[1] == 0
         && let Ok(n) = Integer::try_from(&e.value[0])
@@ -139,7 +158,7 @@ fn split_pow(base: &Complex, exponant: &Complex) -> Option<(Expr, Expr)> {
     if !v.is_zero() {
         return None;
     }
-    let e = split(exponant)?;
+    let e = split_with(exponant, var)?;
     // `{$b^(a + i c) = e^((a + i c) ln b)$}` for `{$b > 0$}`
     let positive =
         u == variable(Context::E) || sign(&u, SignMode::APPROXIMATE) == Some(Ordering::Greater);

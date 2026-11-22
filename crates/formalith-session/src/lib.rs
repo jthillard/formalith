@@ -208,18 +208,23 @@ impl Session {
         }
     }
 
-    /// Run a line like [`Session::run`], with its graph when the set is `R`, see [`graph`].
+    /// Run a line like [`Session::run`], with its graph when the set is `R` or `C`, see [`graph`].
     ///
     /// Relations in `y`, like `y = x^2` or `x^2 + y^2 < 1`, and points `(a, b)` are kept as they are rather than
     /// solved.
     pub fn graph(&mut self, line: &str) -> (Response, Option<Graph>) {
         profile_scope!("Session::graph");
         let line = line.trim();
-        if self.set != SetChoice::R || line.is_empty() || line.starts_with(':') || line == "help" {
+        let evaluate = match self.set {
+            SetChoice::R => graph::evaluate,
+            SetChoice::C => graph::evaluate_complex,
+            _ => return (self.run(line), None),
+        };
+        if line.is_empty() || line.starts_with(':') || line == "help" {
             return (self.run(line), None);
         }
         let env = &mut self.env;
-        let result = panic::catch_unwind(AssertUnwindSafe(|| graph::evaluate(line, env)));
+        let result = panic::catch_unwind(AssertUnwindSafe(|| evaluate(line, env)));
         let (output, changes_state, graph) = self.respond(result);
         let response = Response {
             output,
