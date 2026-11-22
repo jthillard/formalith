@@ -394,6 +394,14 @@ impl Ring for R<Rational> {
                 }
             }
             Term::Fun(fun) => match fun.get_ident() {
+                Context::ARG => {
+                    if let Some(res) = fun
+                        .get_arg::<Self>()
+                        .and_then(|arg| expr::arg(arg, &expr::zero()))
+                    {
+                        return res;
+                    }
+                }
                 Context::ABS => {
                     if let Some(res) = fun.get_arg::<Self>().and_then(|arg| self.eval_abs(arg)) {
                         return res;

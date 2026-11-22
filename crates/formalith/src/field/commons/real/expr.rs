@@ -68,6 +68,33 @@ pub(crate) fn sqrt(u: Expr) -> Expr {
     u.pow(&half())
 }
 
+/// The argument of `{$u + i v$}` in `{$(-pi, pi]$}`, `{$"undefined"$}` at 0, by the signs of `u` and `v`. `None` when
+/// a sign is unknown.
+pub(crate) fn arg(u: &Expr, v: &Expr) -> Option<Expr> {
+    let sign_of = |t: &Expr| {
+        if t.is_zero() {
+            Some(Ordering::Equal)
+        } else {
+            sign(t, SignMode::APPROXIMATE)
+        }
+    };
+    let pi = variable(Context::PI);
+    let su = sign_of(u)?;
+    // `{$arg(u + i v) = atan(v/u)$}` for `{$u > 0$}`, whatever the sign of `v`
+    if su == Ordering::Greater && !v.is_zero() {
+        return Some(fun(Context::ATAN, v / u));
+    }
+    Some(match (su, sign_of(v)?) {
+        (Ordering::Equal, Ordering::Equal) => variable(Context::UNDEFINED),
+        (Ordering::Greater, _) => zero(),
+        (Ordering::Less, Ordering::Equal) => pi,
+        (Ordering::Equal, side) => ratio(if side == Ordering::Greater { 1 } else { -1 }, 2) * pi,
+        // Shifted by `{$plus.minus pi$}` for `{$u < 0$}`
+        (Ordering::Less, Ordering::Greater) => fun(Context::ATAN, v / u) + pi,
+        (Ordering::Less, Ordering::Less) => fun(Context::ATAN, v / u) - pi,
+    })
+}
+
 /// The identifier and argument of a builtin function with one real argument.
 pub(crate) fn unary(term: &Expr) -> Option<(Symbol, &Expr)> {
     match term {

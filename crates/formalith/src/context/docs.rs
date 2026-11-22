@@ -1133,6 +1133,19 @@ pub static BUILTIN_DOCS: [BuiltinDoc; Context::BUILTIN_NAMES.len()] = [
             ex("integrate(exp(-x)/x, x)", "op(\"Ei\")(-x)"),
         ],
     ),
+    doc(
+        Context::ARG,
+        Complex,
+        "arg(z)",
+        "Argument of a complex number.",
+        "The principal value, in (-pi, pi], from atan(im/re) and the signs of the parts; undefined at 0. Symbols \
+         are assumed real, and the argument stays unevaluated when a sign is unknown.",
+        &[
+            ex_in("C", "arg(1 + i)", "pi/4"),
+            ex_in("C", "arg(-1 - sqrt(3)*i)", "-(2 pi)/3"),
+            ex("arg(-2)", "pi"),
+        ],
+    ),
 ];
 
 #[cfg(test)]

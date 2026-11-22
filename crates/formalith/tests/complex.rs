@@ -234,3 +234,31 @@ fn sums_print_negative_imaginary_terms_with_a_minus_sign() {
     assert_eq!(pretty(&parse!("x - i", C)), "x - i");
     assert_eq!(pretty(&parse!("x - 2*i*y", C)), "x - 2⋅i⋅y");
 }
+
+#[test]
+fn argument() {
+    for (input, expected) in [
+        ("arg(1+i)", "1/4*pi"),
+        ("arg(-1+i)", "3/4*pi"),
+        ("arg(-1-i)", "-3/4*pi"),
+        ("arg(i)", "1/2*pi"),
+        ("arg(-i)", "-1/2*pi"),
+        ("arg(-3)", "pi"),
+        ("arg(2)", "0"),
+        ("arg(0)", "undefined"),
+        ("arg(1+3^(1/2)*i)", "1/3*pi"),
+        ("arg(-1-3^(1/2)*i)", "-2/3*pi"),
+        ("arg(x+i*y)", "arg(x+i*y)"),
+    ] {
+        assert_eq!(eval(input), expected, "{input}");
+    }
+    assert_eq!(line(&parse!("arg(-2)", R)), "pi");
+    assert_eq!(line(&parse!("arg(x)", R)), "arg(x)");
+    let mut env = Environment::new();
+    env.eval("assume(x > 0)", C).unwrap();
+    assert_eq!(
+        line(&parse!("arg(x+i*y)", C, &env)),
+        line(&parse!("atan(y/x)", C))
+    );
+    assert_eq!(line(&parse!("arg(-x)", R, &env)), "pi");
+}

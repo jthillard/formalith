@@ -25,7 +25,7 @@ use crate::{
         matrix::M,
         real::{
             R,
-            expr::{Expr, variable},
+            expr::{self, Expr, variable},
         },
     },
     integrate::{IntegrateError, apart_arguments},
@@ -474,6 +474,16 @@ impl Ring for C<R<Rational>> {
                 Context::ROOT => {
                     if let Some([arg, n]) = fun.get_args::<Self>().map(Vec::as_slice) {
                         return arg.pow(&n.inv());
+                    }
+                }
+                Context::ARG => {
+                    if let Some(res) = fun
+                        .get_arg::<Self>()
+                        .and_then(parts::split)
+                        .and_then(|(u, v)| expr::arg(&u, &v))
+                        .and_then(|res| parts::join(&res, &expr::zero()))
+                    {
+                        return res;
                     }
                 }
                 ident @ (Context::RE | Context::IM | Context::CONJ) => {

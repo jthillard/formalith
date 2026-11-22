@@ -319,9 +319,11 @@ impl Context {
     pub const CI: Symbol = Symbol(98);
     /// Exponential integral `{$"Ei"(x) = gamma + ln|x| + integral_0^x (e^t - 1)/t dif t$}`
     pub const EI: Symbol = Symbol(99);
+    /// Argument `{$arg(z)$}` of a complex number, in `{$(-pi, pi]$}`
+    pub const ARG: Symbol = Symbol(100);
 
     #[rustfmt::skip]
-    const BUILTIN_NAMES: [&'static str; 100] = [
+    const BUILTIN_NAMES: [&'static str; 101] = [
         "abs", "det", "expand", "factor", "simplify", "re", "im", "conj", "sqrt", "root", "sign",
         "floor", "ceil", "min", "max", "gcd", "lcm", "quo", "rem", "diff", "solve", "approx",
         "exp", "ln", "sin", "cos", "tan", "pi", "e", "lim", "oo", "undefined",
@@ -333,7 +335,7 @@ impl Context {
         "I", "degree", "argmin", "argmax", "localmin",
         "localmax", "extrema", "localextrema", "subs", "numer", "denom", "roots", "resultant",
         "discriminant", "erfc", "round", "trunc", "isprime", "factorint", "zeros", "diag", "Si", "Ci",
-        "Ei",
+        "Ei", "arg",
     ];
 
     /// Return `true` if `symbol` is a builtin constant, like `{$pi$}`, which is not a function.

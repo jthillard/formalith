@@ -292,6 +292,7 @@ impl<From: Set, T: Set> Print for Fun<From, T> {
                 Context::TRACE => f.write_str("tr")?,
                 Context::KERNEL => f.write_str("ker")?,
                 Context::ABS
+                | Context::ARG
                 | Context::DET
                 | Context::SQRT
                 | Context::FLOOR
