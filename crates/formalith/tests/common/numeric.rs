@@ -67,6 +67,14 @@ fn eval_plain<E: SetParseExpression>(
             }
             res
         }
+        Statement::Extrema { extrema, integers } => {
+            let mut res = extrema.with_options(plain).to_string();
+            if !integers.is_empty() {
+                res.push('\n');
+                res.push_str(&integers_line(&integers, false));
+            }
+            res
+        }
         Statement::Inequalities { solution, .. } => solution.with_options(plain).to_string(),
         Statement::Ode { solution, .. } => solution.with_options(plain).to_string(),
         Statement::Assume(assumptions) => assumptions.describe(false),

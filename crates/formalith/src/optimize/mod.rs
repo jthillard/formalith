@@ -22,23 +22,39 @@
 //! let optimum = R.optimize(&parse!("x^3 - 3*x", R), &[x], None, Extremum::LocalMax).unwrap();
 //! assert_eq!(optimum.solution, Solution::Assignments(vec![(x, parse!("-1", R))]));
 //! ```
+//!
+//! Both kinds are listed with the values of the function by [`Optimize::extrema`], `extrema(x^2 - 2 x, x, 0, 3)`
+//! or `localextrema(x^3 - 3 x, x)`:
+//!
+//! ```
+//! use formalith::{field::real::R, optimize::Optimize, parse, symbol};
+//!
+//! let x = symbol!("x");
+//! let extrema = R.extrema(&parse!("x^3 - 3*x", R), &[x], None, true).unwrap();
+//! assert_eq!(extrema.to_string(), "min: x = 1, f = -2\nmax: x = -1, f = 2");
+//! ```
 
 mod multivariate;
 mod univariate;
 
-use std::cmp::Ordering;
+use std::{cmp::Ordering, fmt};
 
 use crate::{
-    context::Symbol,
+    context::{
+        Symbol,
+        assumptions::{Assumption, Assumptions},
+    },
     field::{
         Set,
         real::{
             Real,
-            expr::{Expr, constant_sign, depends, zero},
+            expr::{Expr, constant_sign, depends, size, subs, zero},
         },
     },
-    solve::{Equation, Solution, SolveError},
-    term::{Expand, Normalize, Term},
+    printer::{PrettyPrint, PrettyPrinter, Print, PrintOptions},
+    solve::{Assignments, Equation, Solution, SolveError, is_integer_parameter},
+    symbol,
+    term::{Expand, Normalize, SymbolTerm, Term},
 };
 
 /// The minimizers or maximizers of a function.
@@ -48,6 +64,103 @@ pub struct Optimum<T: Set> {
     pub equations: Vec<Equation<T>>,
     /// The points where the extremum is reached, [`Solution::NoSolution`] when it isn't, like for `{$e^x$}`.
     pub solution: Solution<T>,
+}
+
+/// A point where a function has an extremum, with the value of the function there.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ExtremumPoint<T: Set> {
+    /// Whether it is a maximum, otherwise a minimum.
+    pub max: bool,
+    /// The point, like a solution: unknowns which aren't listed can take any value.
+    pub point: Assignments<T>,
+    /// The value of the function at the point.
+    pub value: Term<T>,
+}
+
+/// The minima then the maxima of a function, global or local ones, printed one per line like
+/// `min: x = 1, f = -2`, `no extremum` when there is none.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Extrema<T: Set> {
+    /// The equations of the critical points, `{$diff f / diff x_i = 0$}` for each unknown.
+    pub equations: Vec<Equation<T>>,
+    /// The extrema, minima first.
+    pub points: Vec<ExtremumPoint<T>>,
+}
+
+impl<T: Set> Extrema<T> {
+    /// The symbol `f` standing for the function in the printed values.
+    fn function(set: T) -> Term<T> {
+        Term::Symbol(SymbolTerm::new(symbol!("f"), set))
+    }
+
+    /// The label of `point`, `min:` or `max:`.
+    fn label(point: &ExtremumPoint<T>, options: &PrintOptions) -> String {
+        let label = if point.max { "max:" } else { "min:" };
+        if options.typst {
+            format!("\"{label}\"")
+        } else {
+            label.to_owned()
+        }
+    }
+
+    /// The text printed when there is no extremum.
+    fn none(options: &PrintOptions) -> String {
+        if options.typst {
+            "\"no extremum\"".to_owned()
+        } else {
+            "no extremum".to_owned()
+        }
+    }
+}
+
+impl<T: Set> Print for Extrema<T> {
+    fn print(&self, options: &PrintOptions, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.points.is_empty() {
+            return f.write_str(&Self::none(options));
+        }
+        // One extremum per line, `\` being a line break in Typst
+        for (i, point) in self.points.iter().enumerate() {
+            if i != 0 {
+                f.write_str(if options.typst { " \\ " } else { "\n" })?;
+            }
+            f.write_str(&Self::label(point, options))?;
+            f.write_str(" ")?;
+            if !point.point.is_empty() {
+                Solution::print_assignments(&point.point, options, f)?;
+                Self::delimiter(",", options, f)?;
+                f.write_str(if options.typst { " quad " } else { " " })?;
+            }
+            Equation::new(Self::function(point.value.get_set()), point.value.clone())
+                .print(options, f)?;
+        }
+        Ok(())
+    }
+}
+
+impl<T: Set> PrettyPrint for Extrema<T> {
+    fn pretty_print(&self, options: &PrintOptions) -> PrettyPrinter {
+        if self.points.is_empty() {
+            return Self::none(options).into();
+        }
+        let mut res = PrettyPrinter::empty();
+        for point in &self.points {
+            let mut line = PrettyPrinter::empty();
+            let value = Equation::new(Self::function(point.value.get_set()), point.value.clone());
+            for equation in Solution::equations(&point.point).chain([value]) {
+                line.concat(", ", false, &equation.pretty_print(options));
+            }
+            let mut labeled = PrettyPrinter::from(Self::label(point, options));
+            labeled.concat(" ", false, &line);
+            res.stack(&labeled);
+        }
+        res
+    }
+}
+
+impl<T: Set> fmt::Display for Extrema<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        PrettyPrint::fmt(self, &PrintOptions::default(), f)
+    }
 }
 
 /// The kind of extremum searched.
@@ -93,6 +206,19 @@ pub trait Optimize: Set {
         bounds: Option<&(Term<Self>, Term<Self>)>,
         extremum: Extremum,
     ) -> Result<Optimum<Self>, SolveError>;
+
+    /// The points where `f` has a global minimum or maximum (local ones when `local` is `true`), with the values
+    /// of `f` there, like [`Optimize::optimize`] for both kinds.
+    ///
+    /// # Errors
+    /// Those of [`Optimize::optimize`] for either kind.
+    fn extrema(
+        &self,
+        f: &Term<Self>,
+        unknowns: &[Symbol],
+        bounds: Option<&(Term<Self>, Term<Self>)>,
+        local: bool,
+    ) -> Result<Extrema<Self>, SolveError>;
 }
 
 impl<T: Set> Optimize for T {
@@ -103,6 +229,16 @@ impl<T: Set> Optimize for T {
         _: Option<&(Term<Self>, Term<Self>)>,
         _: Extremum,
     ) -> Result<Optimum<Self>, SolveError> {
+        Err(SolveError::Unsupported)
+    }
+
+    default fn extrema(
+        &self,
+        _: &Term<Self>,
+        _: &[Symbol],
+        _: Option<&(Term<Self>, Term<Self>)>,
+        _: bool,
+    ) -> Result<Extrema<Self>, SolveError> {
         Err(SolveError::Unsupported)
     }
 }
@@ -144,6 +280,61 @@ impl Optimize for Real {
             solution,
         })
     }
+
+    fn extrema(
+        &self,
+        f: &Expr,
+        unknowns: &[Symbol],
+        bounds: Option<&(Expr, Expr)>,
+        local: bool,
+    ) -> Result<Extrema<Self>, SolveError> {
+        let (min, max) = if local {
+            (Extremum::LocalMin, Extremum::LocalMax)
+        } else {
+            (Extremum::GlobalMin, Extremum::GlobalMax)
+        };
+        let minima = self.optimize(f, unknowns, bounds, min)?;
+        let maxima = self.optimize(f, unknowns, bounds, max)?;
+        let mut points = vec![];
+        for (optimum, max) in [(&minima, false), (&maxima, true)] {
+            for point in optimum.solution.branches() {
+                points.push(ExtremumPoint {
+                    max,
+                    point: point.clone(),
+                    value: value_at(f, point)?,
+                });
+            }
+        }
+        Ok(Extrema {
+            equations: minima.equations,
+            points,
+        })
+    }
+}
+
+/// The value of `f` at `point`, its integer parameters `k`, `k_1`... being assumed integers: the smaller of the
+/// substituted term and its expansion.
+fn value_at(f: &Expr, point: &Assignments<Real>) -> Result<Expr, SolveError> {
+    let used = f.symbols();
+    let mut assumptions = Assumptions::current();
+    for (_, value) in point {
+        for k in value.symbols() {
+            if is_integer_parameter(k) && !used.contains(&k) {
+                assumptions.assume(k, Assumption::INTEGER).map_err(error)?;
+            }
+        }
+    }
+    let _guard = assumptions.enter();
+    let res = point
+        .iter()
+        .fold(f.clone(), |res, (symbol, value)| subs(&res, *symbol, value))
+        .normalize();
+    let expanded = res.expand();
+    Ok(if size(&expanded) < size(&res) {
+        expanded
+    } else {
+        res
+    })
 }
 
 /// An error with `reason`.

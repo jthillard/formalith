@@ -128,7 +128,9 @@ impl<T: Group> Solution<T> {
 
 impl<T: Set> Solution<T> {
     /// The assignments as equations `x = value`.
-    fn equations(assignments: &[(Symbol, Term<T>)]) -> impl Iterator<Item = Equation<T>> {
+    pub(crate) fn equations(
+        assignments: &[(Symbol, Term<T>)],
+    ) -> impl Iterator<Item = Equation<T>> {
         assignments.iter().map(|(symbol, value)| {
             Equation::new(
                 Term::Symbol(SymbolTerm::new(*symbol, value.get_set())),
@@ -138,7 +140,7 @@ impl<T: Set> Solution<T> {
     }
 
     /// The printed solutions, each one being a list of assignments.
-    fn branches(&self) -> &[Assignments<T>] {
+    pub(crate) fn branches(&self) -> &[Assignments<T>] {
         match self {
             Self::NoSolution => &[],
             Self::Assignments(assignments) => std::slice::from_ref(assignments),
@@ -170,7 +172,7 @@ impl<T: Set> Solution<T> {
     }
 
     /// Print one solution, its assignments being separated by commas.
-    fn print_assignments(
+    pub(crate) fn print_assignments(
         assignments: &[(Symbol, Term<T>)],
         options: &PrintOptions,
         f: &mut fmt::Formatter<'_>,

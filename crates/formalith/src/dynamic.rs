@@ -150,9 +150,10 @@ impl Evaluated {
             Statement::Expression(_) => StatementKind::Expression,
             Statement::Definition { .. } => StatementKind::Definition,
             Statement::Assume(_) => StatementKind::Assumption,
-            Statement::System { .. } | Statement::Inequalities { .. } | Statement::Ode { .. } => {
-                StatementKind::Solution
-            }
+            Statement::System { .. }
+            | Statement::Extrema { .. }
+            | Statement::Inequalities { .. }
+            | Statement::Ode { .. } => StatementKind::Solution,
         };
         Self {
             kind,
@@ -474,6 +475,17 @@ fn print_statement<E: SetParseExpression>(
             let mut res = print(
                 &|options| solution.with_options(options).to_string(),
                 solution.to_string(),
+            );
+            if !integers.is_empty() {
+                res.push_str(if typst { " \\ " } else { "\n" });
+                res.push_str(&integers_line(integers, typst));
+            }
+            res
+        }
+        Statement::Extrema { extrema, integers } => {
+            let mut res = print(
+                &|options| extrema.with_options(options).to_string(),
+                extrema.to_string(),
             );
             if !integers.is_empty() {
                 res.push_str(if typst { " \\ " } else { "\n" });

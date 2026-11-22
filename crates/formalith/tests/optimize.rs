@@ -211,3 +211,56 @@ mod local {
         assert!(argmin("localmin(x^3 + y^2, x, y)").is_err());
     }
 }
+
+mod both {
+    use super::argmin;
+
+    fn ok(result: &str) -> Result<String, String> {
+        Ok(result.to_owned())
+    }
+
+    #[test]
+    fn global() {
+        assert_eq!(
+            argmin("extrema(x^2 - 2*x, x, 0, 3)"),
+            ok("\"min:\" x = 1, quad f = -1 \\ \"max:\" x = 3, quad f = 3")
+        );
+        assert_eq!(
+            argmin("extrema(x/(x^2 + 1), x)"),
+            ok("\"min:\" x = -1, quad f = -frac(1, 2) \\ \"max:\" x = 1, quad f = frac(1, 2)")
+        );
+        // Only a minimum
+        assert_eq!(
+            argmin("extrema(x^2 - 2*x)"),
+            ok("\"min:\" x = 1, quad f = -1")
+        );
+        assert_eq!(argmin("extrema(x^3, x)"), ok("\"no extremum\""));
+        // Reached everywhere
+        assert_eq!(
+            argmin("extrema(5, x)"),
+            ok("\"min:\" f = 5 \\ \"max:\" f = 5")
+        );
+    }
+
+    #[test]
+    fn local() {
+        assert_eq!(
+            argmin("localextrema(x^3 - 3*x, x)"),
+            ok("\"min:\" x = 1, quad f = -2 \\ \"max:\" x = -1, quad f = 2")
+        );
+        let periodic = argmin("localextrema(cos(x), x)").unwrap();
+        assert!(periodic.starts_with("\"min:\" x = "), "{periodic}");
+        assert!(periodic.contains("quad f = -1 \\ \"max:\""), "{periodic}");
+        assert!(periodic.ends_with("quad f = 1 \\ k in ZZ"), "{periodic}");
+        assert_eq!(
+            argmin("localextrema(x^3 - 3*x + y^2, x, y)"),
+            ok("\"min:\" x = 1, y = 0, quad f = -2")
+        );
+        assert_eq!(
+            argmin("localextrema((x - y)^2, x, y)"),
+            ok("\"min:\" x = y, quad f = 0")
+        );
+        // Either kind failing is an error
+        assert!(argmin("localextrema(x^3 + y^2, x, y)").is_err());
+    }
+}

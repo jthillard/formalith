@@ -18,7 +18,7 @@ use crate::{
     },
     field::{Set, SetParseExpression},
     ode::{Condition, Dsolve, OdeSolution},
-    optimize::{Extremum, Optimize},
+    optimize::{Extrema, Extremum, Optimize},
     solve::{
         Equation, Solution, Solve,
         inequality::{Inequality, Region, SolveInequality},
@@ -265,6 +265,14 @@ pub enum Statement<E: Set> {
         /// The new integer parameters of the solutions, like `k` in `{$x = pi/6 + 2 k pi$}`.
         integers: Vec<Symbol>,
     },
+    /// The global or local minima and maxima of a function with its values there, like `extrema(x^2, x, -1, 2)`
+    /// or `localextrema(x^3 - 3 x, x)`.
+    Extrema {
+        /// The extrema.
+        extrema: Extrema<E>,
+        /// The new integer parameters of the points, like `k` in `{$x = 2 k pi$}`.
+        integers: Vec<Symbol>,
+    },
     /// A differential equation `dsolve(y' = y, y(0) = 1)`, solved.
     Ode {
         /// The equation, with the unknown function and its derivatives written `y(x)` and `diff(y(x), x)`.
@@ -286,13 +294,20 @@ pub enum Statement<E: Set> {
 /// The integer parameters `k`, `k_1`... of the periodic solutions of `equations` (see `solve::inverse`), the
 /// symbols of `solution` named like them which aren't in the equations.
 fn integer_parameters<E: Set>(equations: &[Equation<E>], solution: &Solution<E>) -> Vec<Symbol> {
+    new_integer_parameters(equations, solution.symbols())
+}
+
+/// The integer parameters among `symbols` which aren't in `equations`.
+fn new_integer_parameters<E: Set>(
+    equations: &[Equation<E>],
+    symbols: BTreeSet<Symbol>,
+) -> Vec<Symbol> {
     let used: BTreeSet<Symbol> = equations
         .iter()
         .flat_map(|equation| [&equation.lhs, &equation.rhs])
         .flat_map(Term::symbols)
         .collect();
-    solution
-        .symbols()
+    symbols
         .into_iter()
         .filter(|symbol| !used.contains(symbol) && is_integer_parameter(*symbol))
         .collect()
@@ -323,6 +338,13 @@ impl<E: Set> fmt::Display for Statement<E> {
                 solution, integers, ..
             } => {
                 write!(f, "{solution}")?;
+                if !integers.is_empty() {
+                    write!(f, "\n{}", integers_line(integers, false))?;
+                }
+                Ok(())
+            }
+            Self::Extrema { extrema, integers } => {
+                write!(f, "{extrema}")?;
                 if !integers.is_empty() {
                     write!(f, "\n{}", integers_line(integers, false))?;
                 }
@@ -413,6 +435,8 @@ impl<'a> Parser<'a> {
             Context::ARGMAX,
             Context::LOCALMIN,
             Context::LOCALMAX,
+            Context::EXTREMA,
+            Context::LOCALEXTREMA,
         ]
         .into_iter()
         .any(|function| self.is_call(function))
@@ -617,16 +641,19 @@ impl<'a> Parser<'a> {
         })
     }
 
-    /// Parse `argmin(f, x_1, ..., x_n)`, `argmin(f, x, a, b)` or the same with `argmax`, `localmin` or `localmax`,
-    /// finding the points where `f` reaches its global or local extrema. The variables are every symbol of `f`
-    /// sorted by name when there is none. With one variable and two more arguments which aren't both symbols of
-    /// `f`, they are the bounds.
+    /// Parse `argmin(f, x_1, ..., x_n)`, `argmin(f, x, a, b)` or the same with `argmax`, `localmin`, `localmax`,
+    /// `extrema` or `localextrema`, finding the points where `f` reaches its global or local extrema (both kinds
+    /// with the values of `f` for the last two). The variables are every symbol of `f` sorted by name when there
+    /// is none. With one variable and two more arguments which aren't both symbols of `f`, they are the bounds.
     fn parse_argmin<E: SetParseExpression>(&mut self, set: E) -> Result<Statement<E>, ParserError> {
+        // `None` for both kinds, global or local
         let (function, extremum) = [
-            (Context::ARGMIN, Extremum::GlobalMin),
-            (Context::ARGMAX, Extremum::GlobalMax),
-            (Context::LOCALMIN, Extremum::LocalMin),
-            (Context::LOCALMAX, Extremum::LocalMax),
+            (Context::ARGMIN, Some(Extremum::GlobalMin)),
+            (Context::ARGMAX, Some(Extremum::GlobalMax)),
+            (Context::LOCALMIN, Some(Extremum::LocalMin)),
+            (Context::LOCALMAX, Some(Extremum::LocalMax)),
+            (Context::EXTREMA, None),
+            (Context::LOCALEXTREMA, None),
         ]
         .into_iter()
         .find(|(function, _)| self.is_call(*function))
@@ -693,6 +720,28 @@ impl<'a> Parser<'a> {
                 )));
             }
         }
+        let Some(extremum) = extremum else {
+            let extrema = set.extrema(
+                &f,
+                &unknowns,
+                bounds.as_ref(),
+                function == Context::LOCALEXTREMA,
+            )?;
+            let symbols = extrema
+                .points
+                .iter()
+                .flat_map(|point| {
+                    point
+                        .point
+                        .iter()
+                        .map(|(_, value)| value)
+                        .chain([&point.value])
+                })
+                .flat_map(Term::symbols)
+                .collect();
+            let integers = new_integer_parameters(&extrema.equations, symbols);
+            return Ok(Statement::Extrema { extrema, integers });
+        };
         let optimum = set.optimize(&f, &unknowns, bounds.as_ref(), extremum)?;
         let integers = integer_parameters(&optimum.equations, &optimum.solution);
         Ok(Statement::System {

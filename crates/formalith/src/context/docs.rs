@@ -933,6 +933,39 @@ pub static BUILTIN_DOCS: [BuiltinDoc; Context::BUILTIN_NAMES.len()] = [
             ex("localmax(x^3, x)", "\"no solution\""),
         ],
     ),
+    doc(
+        Context::EXTREMA,
+        Statements,
+        "extrema(f, [x_1, ..., x_n]) or extrema(f, x, a, b)",
+        "Points where f has its global minimum and maximum, with the values of f there.",
+        "Arguments like argmin. The minima found by argmin then the maxima found by argmax, labeled min and max, \
+         with the value of f at each point.",
+        &[
+            ex(
+                "extrema(x^2 - 2*x, x, 0, 3)",
+                "\"min:\" x = 1, quad f = -1 \\ \"max:\" x = 3, quad f = 3",
+            ),
+            ex("extrema(x^3, x)", "\"no extremum\""),
+        ],
+    ),
+    doc(
+        Context::LOCALEXTREMA,
+        Statements,
+        "localextrema(f, [x_1, ..., x_n]) or localextrema(f, x, a, b)",
+        "Points where f has a local minimum or maximum, with the values of f there.",
+        "Arguments like argmin. The minima found by localmin then the maxima found by localmax, labeled min and \
+         max, with the value of f at each point.",
+        &[
+            ex(
+                "localextrema(x^3 - 3*x, x)",
+                "\"min:\" x = 1, quad f = -2 \\ \"max:\" x = -1, quad f = 2",
+            ),
+            ex(
+                "localextrema(x^2 + y^2, x, y)",
+                "\"min:\" x = 0, y = 0, quad f = 0",
+            ),
+        ],
+    ),
 ];
 
 #[cfg(test)]

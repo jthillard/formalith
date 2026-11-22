@@ -282,9 +282,14 @@ impl Context {
     pub const LOCALMIN: Symbol = Symbol(80);
     /// Local maximizers `localmax(f, x)` of a function, only allowed as a whole statement
     pub const LOCALMAX: Symbol = Symbol(81);
+    /// Global minima and maxima `extrema(f, x)` of a function with their values, only allowed as a whole statement
+    pub const EXTREMA: Symbol = Symbol(82);
+    /// Local minima and maxima `localextrema(f, x)` of a function with their values, only allowed as a whole
+    /// statement
+    pub const LOCALEXTREMA: Symbol = Symbol(83);
 
     #[rustfmt::skip]
-    const BUILTIN_NAMES: [&'static str; 82] = [
+    const BUILTIN_NAMES: [&'static str; 84] = [
         "abs", "det", "expand", "factor", "simplify", "re", "im", "conj", "sqrt", "root", "sign",
         "floor", "ceil", "min", "max", "gcd", "lcm", "quo", "rem", "diff", "solve", "approx",
         "exp", "ln", "sin", "cos", "tan", "pi", "e", "lim", "oo", "undefined",
@@ -294,7 +299,7 @@ impl Context {
         "dsolve", "transpose", "trace", "rank", "kernel", "charpoly", "eigenvalues", "eigenvectors",
         "hermite", "smith", "apart", "lambertw", "piecewise", "gradient", "jacobian", "hessian",
         "I", "degree", "argmin", "argmax", "localmin",
-        "localmax",
+        "localmax", "extrema", "localextrema",
     ];
 
     /// Return `true` if `symbol` is a builtin constant, like `{$pi$}`, which is not a function.
@@ -348,7 +353,9 @@ impl Context {
             | Self::ARGMIN
             | Self::ARGMAX
             | Self::LOCALMIN
-            | Self::LOCALMAX => Some((1, usize::MAX)),
+            | Self::LOCALMAX
+            | Self::EXTREMA
+            | Self::LOCALEXTREMA => Some((1, usize::MAX)),
             Self::APPROX | Self::LOG | Self::CHARPOLY => Some((1, 2)),
             Self::DIFF => Some((2, 3)),
             Self::APART | Self::DEGREE => Some((1, 2)),
