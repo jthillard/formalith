@@ -3,11 +3,12 @@
 use std::collections::{BTreeMap, HashMap};
 
 use eframe::egui::{self, Color32, RichText, TextEdit, TextStyle};
+use formalith_session::graph::GraphKind;
 use serde::{Deserialize, Serialize};
 
 use crate::{
     evaluator::{BackendFactory, Evaluator},
-    plot::{Drawable, Plotter},
+    plot::{ComplexView, Drawable, Plotter},
     protocol::{LineResult, Reply, Request, RequestLine, ResultKind},
     typeset::Typesetter,
 };
@@ -48,6 +49,9 @@ struct Line {
     text: String,
     color: [u8; 3],
     visible: bool,
+    /// How its graph is drawn when it is a function with complex values.
+    #[serde(default)]
+    complex_view: ComplexView,
 }
 
 /// A parameter of the graphs, with a slider.
@@ -116,6 +120,7 @@ impl State {
                 text,
                 color,
                 visible: true,
+                complex_view: ComplexView::default(),
             },
         );
         id
@@ -337,7 +342,10 @@ impl App {
             let id = self.state.lines[index].id;
             let pending = self.is_pending(id);
             let evaluated = self.results.get(&id);
-            let has_graph = evaluated.is_some_and(|evaluated| evaluated.result.graph.is_some());
+            let graph = evaluated.and_then(|evaluated| evaluated.result.graph.as_ref());
+            let has_graph = graph.is_some();
+            let is_complex_curve =
+                graph.is_some_and(|graph| matches!(graph.kind, GraphKind::ComplexCurve { .. }));
             let line = &mut self.state.lines[index];
             let selected = self.selected == Some(id);
             let frame = egui::Frame::group(ui.style()).fill(if selected {
@@ -354,6 +362,12 @@ impl App {
                     if has_graph {
                         ui.checkbox(&mut line.visible, "")
                             .on_hover_text("Show the graph");
+                    }
+                    if is_complex_curve {
+                        ui.selectable_value(&mut line.complex_view, ComplexView::Parts, "Re, Im")
+                            .on_hover_text("Draw the real and imaginary parts (dimmer) as curves");
+                        ui.selectable_value(&mut line.complex_view, ComplexView::Path, "path")
+                            .on_hover_text("Draw the path of the values in the complex plane");
                     }
                     // Right to left, so that the line takes exactly the remaining width: a wider one would widen
                     // the panel, then the line again at the next frame.
@@ -494,6 +508,7 @@ impl App {
                     color: Color32::from_rgb(line.color[0], line.color[1], line.color[2]),
                     params,
                     name: line.text.clone(),
+                    complex_view: line.complex_view,
                 })
             })
             .collect()

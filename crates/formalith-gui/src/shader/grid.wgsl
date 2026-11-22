@@ -2,11 +2,13 @@
 // template) of the lines `Im z = k` (in `color`) and `Re z = k` (in `fill`) for integers `k` from `-K` to `K`, `z`
 // moving between `-K` and `K` along them. Each instance is a line, cut into `SEGMENTS` segments drawn as quads;
 // segments through a pole or with an undefined end are dropped.
+// With the kind 5, it draws instead a single line: the path `(U(t), V(t))` of a function of a real `t` from `-K` to
+// `K`, `U` and `V` being evaluated with `y` undefined.
 
 struct Uniforms {
     // `x_min`, `x_max`, `y_min`, `y_max`
     view: vec4<f32>,
-    // Width and height of the plot in pixels, half the width of lines in pixels, the kind of graph (4)
+    // Width and height of the plot in pixels, half the width of lines in pixels, the kind of graph (4, or 5 for a path)
     frame: vec4<f32>,
     // Premultiplied colors of the two families of lines
     color: vec4<f32>,
@@ -41,7 +43,9 @@ fn image(instance: u32, t: f32) -> vec2<f32> {
     let lines = u32(2 * K + 1);
     let k = f32(i32(instance % lines) - K);
     var w: vec2<f32>;
-    if instance < lines {
+    if u.frame.w == 5.0 {
+        w = vec2<f32>(U(t, nf_nan()), V(t, nf_nan()));
+    } else if instance < lines {
         w = vec2<f32>(U(t, k), V(t, k));
     } else {
         w = vec2<f32>(U(k, t), V(k, t));
@@ -132,7 +136,7 @@ fn vs_main(@builtin(vertex_index) index: u32, @builtin(instance_index) instance:
     var out: VertexOutput;
     out.family = instance / lines;
     var half_width = u.frame.z;
-    if i32(instance % lines) == K {
+    if u.frame.w != 5.0 && i32(instance % lines) == K {
         half_width *= 1.6;
     }
     out.half_width = half_width;

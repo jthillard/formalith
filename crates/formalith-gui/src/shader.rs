@@ -254,6 +254,14 @@ pub fn grid(re: &Numeric, im: &Numeric) -> String {
     out
 }
 
+/// The shader drawing the path `(re(t), im(t))` of a function of a real `t`, from the template [`GRID`] (kind 5):
+/// `re` is `U(x, y)` and `im` is `V(x, y)`, evaluated with `y` undefined. It is drawn with [`GRID_VERTICES`] vertices
+/// and one instance.
+#[must_use]
+pub fn path(re: &Numeric, im: &Numeric) -> String {
+    grid(re, im)
+}
+
 /// The curves of a search of remarkable points.
 pub struct AnalysisCurves<'a> {
     /// The curve `y = f(x)` whose points are searched, with its parameters.

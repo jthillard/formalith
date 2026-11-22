@@ -40,7 +40,32 @@ pub struct Drawable<'a> {
     pub params: Vec<f64>,
     /// The name shown when hovering it.
     pub name: String,
+    /// How a [`GraphKind::ComplexCurve`] is drawn.
+    pub complex_view: ComplexView,
 }
+
+/// How a [`GraphKind::ComplexCurve`] is drawn.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum ComplexView {
+    /// The curves of the real part and of the imaginary part (dimmer).
+    #[default]
+    Parts,
+    /// The path `(Re f(t), Im f(t))` in the complex plane.
+    Path,
+}
+
+/// The shaders of a line: the only one of most graphs, or the imaginary part or the path of a
+/// [`GraphKind::ComplexCurve`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+enum Slot {
+    Main,
+    Imaginary,
+    Path,
+}
+
+/// Added to the identifier of a line for its second graph item (the imaginary part of a
+/// [`GraphKind::ComplexCurve`]), which needs its own uniforms.
+const SECOND_ITEM: u64 = 1 << 63;
 
 /// The view shown first and after a reset.
 const DEFAULT_VIEW: View = View {
@@ -71,8 +96,8 @@ type Range = [u64; 3];
 pub struct Plotter {
     /// Whether the GPU is set up, and colors are given in linear space.
     gpu: Option<bool>,
-    /// The shader of each line, with the revision it was made for.
-    shaders: HashMap<u64, (u64, Arc<Shader>)>,
+    /// The shaders of each line, with the revision they were made for.
+    shaders: HashMap<(u64, Slot), (u64, Arc<Shader>)>,
     analyzer: Option<Analyzer>,
     /// The last points found.
     remarkable: Option<(Content, Range, Vec<Point>)>,
@@ -117,18 +142,23 @@ impl Plotter {
 
     /// Forget the shaders of the lines which aren't in `ids`.
     pub fn retain(&mut self, ids: &[u64]) {
-        self.shaders.retain(|id, _| ids.contains(id));
+        self.shaders.retain(|(id, _), _| ids.contains(id));
     }
 
-    /// The shader of `drawable`, whose source is `source` when it changed.
-    fn shader(&mut self, drawable: &Drawable<'_>, source: impl FnOnce() -> String) -> Arc<Shader> {
+    /// The shader `slot` of `drawable`, whose source is `source` when it changed.
+    fn shader(
+        &mut self,
+        drawable: &Drawable<'_>,
+        slot: Slot,
+        source: impl FnOnce() -> String,
+    ) -> Arc<Shader> {
         profile_scope!("Plotter::shader");
-        match self.shaders.get(&drawable.id) {
+        match self.shaders.get(&(drawable.id, slot)) {
             Some((revision, shader)) if *revision == drawable.revision => shader.clone(),
             _ => {
                 let shader = Shader::new(source());
                 self.shaders
-                    .insert(drawable.id, (drawable.revision, shader.clone()));
+                    .insert((drawable.id, slot), (drawable.revision, shader.clone()));
                 shader
             }
         }
@@ -261,7 +291,7 @@ impl Plotter {
                 if drawable.params.len() > MAX_PARAMS {
                     return;
                 }
-                let shader = self.shader(drawable, || shader::grid(re, im));
+                let shader = self.shader(drawable, Slot::Main, || shader::grid(re, im));
                 #[allow(clippy::cast_possible_truncation)]
                 let params = drawable.params.iter().map(|value| *value as f32).collect();
                 plot_ui.add(GpuGraph {
@@ -280,22 +310,79 @@ impl Plotter {
                 });
                 return;
             }
+            GraphKind::ComplexCurve { re, im, .. } => {
+                match drawable.complex_view {
+                    ComplexView::Parts => {
+                        let re = [(re, Comparison::Equal)];
+                        self.draw_render(plot_ui, drawable, Slot::Main, &re, 0., bounds);
+                        let im = [(im, Comparison::Equal)];
+                        self.draw_render(plot_ui, drawable, Slot::Imaginary, &im, 0., bounds);
+                    }
+                    ComplexView::Path => {
+                        let Some(linear) = self.gpu else {
+                            return;
+                        };
+                        if drawable.params.len() > MAX_PARAMS {
+                            return;
+                        }
+                        let shader = self.shader(drawable, Slot::Path, || shader::path(re, im));
+                        #[allow(clippy::cast_possible_truncation)]
+                        let params = drawable.params.iter().map(|value| *value as f32).collect();
+                        plot_ui.add(GpuGraph {
+                            base: PlotItemBase::new(drawable.name.clone()),
+                            id: drawable.id,
+                            frame: self.frame,
+                            shader,
+                            color: color(drawable.color, linear),
+                            fill: color(drawable.color, linear),
+                            kind: 5.,
+                            bounds,
+                            params,
+                            drawable_color: drawable.color,
+                            draw: (shader::GRID_VERTICES, 1),
+                        });
+                    }
+                }
+                return;
+            }
         };
+        self.draw_render(plot_ui, drawable, Slot::Main, &relations, kind, bounds);
+    }
+
+    /// Draw the shader [`shader::render`] of `relations` with the kind `kind`, as the shader `slot` of `drawable`
+    /// (the imaginary part of a [`GraphKind::ComplexCurve`] being dimmer).
+    fn draw_render(
+        &mut self,
+        plot_ui: &mut egui_plot::PlotUi<'_>,
+        drawable: &Drawable<'_>,
+        slot: Slot,
+        relations: &[(&Numeric, Comparison)],
+        kind: f32,
+        bounds: [f64; 2],
+    ) {
         let Some(linear) = self.gpu else {
             return;
         };
         if drawable.params.len() > MAX_PARAMS {
             return;
         }
-        let shader = self.shader(drawable, || shader::render(&relations));
+        let shader = self.shader(drawable, slot, || shader::render(relations));
+        let (id, curve_color) = if slot == Slot::Imaginary {
+            (
+                drawable.id | SECOND_ITEM,
+                drawable.color.gamma_multiply(0.5),
+            )
+        } else {
+            (drawable.id, drawable.color)
+        };
         #[allow(clippy::cast_possible_truncation)]
         let params = drawable.params.iter().map(|value| *value as f32).collect();
         plot_ui.add(GpuGraph {
             base: PlotItemBase::new(drawable.name.clone()),
-            id: drawable.id,
+            id,
             frame: self.frame,
             shader,
-            color: color(drawable.color, linear),
+            color: color(curve_color, linear),
             fill: color(drawable.color.gamma_multiply(0.25), linear),
             kind,
             bounds,
@@ -464,22 +551,36 @@ fn hover(
             values[Graph::Y] = y;
             expr.eval(&values)
         };
+        // The distance to the curve `y = f(x)` and the point of the curve at the pointer
+        let curve_hit = |expr: &Numeric, derivative: Option<&Numeric>| {
+            let y = eval(expr, px, f64::NAN);
+            let slope = derivative.map_or_else(
+                || {
+                    (eval(expr, px + 1. / kx, f64::NAN) - eval(expr, px - 1. / kx, f64::NAN)) * kx
+                        / 2.
+                },
+                |derivative| eval(derivative, px, f64::NAN),
+            );
+            let distance = (y - py).abs() * ky / (slope * ky / kx).hypot(1.);
+            (distance, [px, y])
+        };
         let hit = match &drawable.graph.kind {
             GraphKind::Function { expr, derivative }
             | GraphKind::Integral {
                 expr, derivative, ..
-            } => {
-                let y = eval(expr, px, f64::NAN);
-                let slope = derivative.as_ref().map_or_else(
-                    || {
-                        (eval(expr, px + 1. / kx, f64::NAN) - eval(expr, px - 1. / kx, f64::NAN))
-                            * kx
-                            / 2.
-                    },
-                    |derivative| eval(derivative, px, f64::NAN),
+            } => curve_hit(expr, derivative.as_ref()),
+            GraphKind::ComplexCurve {
+                re,
+                im,
+                re_derivative,
+                im_derivative,
+            } if drawable.complex_view == ComplexView::Parts => {
+                let (re, im) = (
+                    curve_hit(re, re_derivative.as_ref()),
+                    curve_hit(im, im_derivative.as_ref()),
                 );
-                let distance = (y - py).abs() * ky / (slope * ky / kx).hypot(1.);
-                (distance, [px, y])
+                // NaN distances lose
+                if im.0 < re.0 || re.0.is_nan() { im } else { re }
             }
             GraphKind::InverseFunction { expr } => {
                 let x = eval(expr, f64::NAN, py);
@@ -512,7 +613,11 @@ fn hover(
                     None => continue,
                 }
             }
-            GraphKind::Point { .. } | GraphKind::ComplexMap { .. } => continue,
+            GraphKind::Point { .. }
+            | GraphKind::ComplexMap { .. }
+            | GraphKind::ComplexCurve { .. } => {
+                continue;
+            }
         };
         let (distance, point) = hit;
         if distance < HOVER_DISTANCE
@@ -937,5 +1042,19 @@ mod tests {
         assert!(image.at(0.5, 0.) > 0.5);
         // The image of `Im z = 1` is the circle of center `-i/2` and radius `1/2`
         assert!(image.at(0., -1.) > 0.5);
+    }
+
+    #[test]
+    fn test_path() {
+        let Some(device) = device() else {
+            eprintln!("No GPU, skipped");
+            return;
+        };
+        // `exp(i t)`: the unit circle
+        let source = shader::path(&compile("cos(x)"), &compile("sin(x)"));
+        let image = draw_shader(&device, source, 5., (shader::GRID_VERTICES, 1));
+        let (c, s) = (0.6_f64.cos(), 0.6_f64.sin());
+        assert!(image.at(c, s) > 0.5 && image.at(-1., 0.) > 0.5);
+        assert!(image.at(0., 0.) == 0. && image.at(2., 0.) == 0.);
     }
 }

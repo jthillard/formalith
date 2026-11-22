@@ -658,3 +658,18 @@ pub const C: C<R<Rational>> = C::new(R);
 pub fn parts(f: &Term<Complex>, z: Symbol, a: Symbol, b: Symbol) -> Option<(Expr, Expr)> {
     parts::split_with(f, Some((z, &(variable(a), variable(b)))))
 }
+
+/// The real and imaginary parts `{$(u, v)$}` of `{$f = u + i v$}`, every symbol of `f` being assumed real. `None`
+/// when a part can't be written, like `{$ln(i x)$}`.
+///
+/// ```
+/// use formalith::{field::{complex::{C, real_parts}, real::R}, parse};
+///
+/// let (u, v) = real_parts(&parse!("exp(i*x)", C)).unwrap();
+/// assert_eq!(u, parse!("cos(x)", R));
+/// assert_eq!(v, parse!("sin(x)", R));
+/// ```
+#[must_use]
+pub fn real_parts(f: &Term<Complex>) -> Option<(Expr, Expr)> {
+    parts::split(f)
+}
