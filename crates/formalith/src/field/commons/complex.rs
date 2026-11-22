@@ -368,6 +368,10 @@ impl PartiallyOrderedSet for C<R<Rational>> {
             None
         }
     }
+    /// Lexicographic order, real part first.
+    fn total_cmp(&self, a: &Self::Element, b: &Self::Element) -> Ordering {
+        self.plane.total_cmp(a, b)
+    }
 }
 
 impl Group for C<R<Rational>> {

@@ -140,6 +140,14 @@ impl<T: PartiallyOrderedSet> PartiallyOrderedSet for M<T> {
             _ => None,
         }
     }
+    fn total_cmp(&self, a: &Self::Element, b: &Self::Element) -> Ordering {
+        match (a, b) {
+            (VectorSpaceElement::Scalar(a, _), VectorSpaceElement::Scalar(b, _)) => {
+                self.scalar_sub_set.total_cmp(a, b)
+            }
+            _ => Ordering::Equal,
+        }
+    }
 }
 
 impl<T: Group> Group for M<T> {

@@ -110,6 +110,13 @@ pub trait Set: Clone + Copy + fmt::Debug + PartialEq + Eq + Hash + 'static {
 pub trait PartiallyOrderedSet: Set {
     /// Compares two elements of this set if possible, returns `None` otherwise
     fn partial_cmp(&self, a: &Self::Element, b: &Self::Element) -> Option<Ordering>;
+    /// Total order used to sort terms, extending [`Self::partial_cmp`]: elements it can't compare get an
+    /// arbitrary but fixed order.
+    ///
+    /// Defaults to [`Self::partial_cmp`], incomparable elements being equal.
+    fn total_cmp(&self, a: &Self::Element, b: &Self::Element) -> Ordering {
+        self.partial_cmp(a, b).unwrap_or(Ordering::Equal)
+    }
 }
 
 /// A group is a set and a binary operation `+` and :

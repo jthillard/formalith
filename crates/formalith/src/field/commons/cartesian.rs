@@ -74,6 +74,14 @@ impl<T: PartiallyOrderedSet, const K: usize> PartiallyOrderedSet for CartesianPo
             }
         })
     }
+    /// The lexicographic order, extending the product order.
+    fn total_cmp(&self, a: &Self::Element, b: &Self::Element) -> Ordering {
+        a.iter()
+            .zip(b)
+            .map(|(a, b)| self.set.total_cmp(a, b))
+            .find(|ordering| ordering.is_ne())
+            .unwrap_or(Ordering::Equal)
+    }
 }
 
 impl<T: Group, const K: usize> Group for CartesianPower<T, K> {

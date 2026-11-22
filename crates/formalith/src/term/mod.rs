@@ -262,10 +262,9 @@ impl<T: Group> Term<T> {
     #[allow(clippy::should_implement_trait)]
     pub fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         match (self, other) {
-            (Self::Value(Value { value: v1, .. }), Self::Value(Value { value: v2, .. })) => self
-                .get_set()
-                .partial_cmp(v1, v2)
-                .unwrap_or(Ordering::Equal),
+            (Self::Value(Value { value: v1, .. }), Self::Value(Value { value: v2, .. })) => {
+                self.get_set().total_cmp(v1, v2)
+            }
             (Self::Value(_), _) => Ordering::Greater,
             (Self::Symbol(s1), Self::Symbol(s2)) => s1.symbol.cmp(&s2.symbol),
             (Self::Pow(p1), Self::Pow(p2)) => p1

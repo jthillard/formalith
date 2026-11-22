@@ -337,12 +337,11 @@ impl<V: Monomial, T: Ring, U: Ring> MultivariatePolynomial<V, T, U> {
         });
         // Sort monomials
         self.terms.sort_by(|a, b| {
-            iter::partial_cmp_by(
+            iter::cmp_by(
                 b.0.iter().map(|(_, e)| e),
                 a.0.iter().map(|(_, e)| e),
-                |a, b| self.exponant_set.partial_cmp(a, b),
+                |a, b| self.exponant_set.total_cmp(a, b),
             )
-            .unwrap_or(Ordering::Equal)
             .then_with(|| {
                 // Break ties on variables, like `x^2` and `y^2`
                 iter::cmp_by(
@@ -617,11 +616,7 @@ impl<V: Monomial, T: Ring, U: Ring> MultivariatePolynomial<V, T, U> {
                 coefficients.push((exponant, term));
             }
         }
-        coefficients.sort_by(|(a, _), (b, _)| {
-            self.exponant_set
-                .partial_cmp(b, a)
-                .unwrap_or(Ordering::Equal)
-        });
+        coefficients.sort_by(|(a, _), (b, _)| self.exponant_set.total_cmp(b, a));
         coefficients
     }
 

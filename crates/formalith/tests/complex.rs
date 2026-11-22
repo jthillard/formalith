@@ -110,23 +110,39 @@ fn factor_over_gaussian_rationals() {
 }
 
 #[test]
+fn terms_differing_by_complex_constants_have_a_fixed_order() {
+    assert_eq!(
+        parse!("1/(x-i) + 1/(x+i)", C),
+        parse!("1/(x+i) + 1/(x-i)", C)
+    );
+    assert_eq!(
+        parse!("a*(x+2*i) + b*(x+i)", C),
+        parse!("b*(x+i) + a*(x+2*i)", C)
+    );
+    assert_eq!(
+        parse!("(x+i)*(x-i)*(x+1+i)", C),
+        parse!("(x+1+i)*(x-i)*(x+i)", C)
+    );
+}
+
+#[test]
 fn partial_fractions_over_gaussian_rationals() {
     assert_eq!(
         parse!("apart(1/(x^2+1))", C),
-        parse!("-i/(2*(x-i)) + i/(2*(x+i))", C)
+        parse!("i/(2*(x+i)) - i/(2*(x-i))", C)
     );
     assert_eq!(
         parse!("apart((x+1)/(x^2*(x-1)), x)", C),
-        parse!("2/(x-1) - 2/x - 1/x^2", C)
+        parse!("- 1/x^2 - 2/x + 2/(x-1)", C)
     );
     // Gaussian coefficients and polynomial part
     assert_eq!(
         parse!("apart(1/((x-i)*(x+1)))", C),
-        parse!("(1-i)/(2*(x-i)) - (1-i)/(2*(x+1))", C)
+        parse!("-(1-i)/(2*(x+1)) + (1-i)/(2*(x-i))", C)
     );
     assert_eq!(
         parse!("apart(x^3/(x-i))", C),
-        parse!("x^2 + i*x - 1 - i/(x-i)", C)
+        parse!("-i/(x-i) - 1 + i*x + x^2", C)
     );
     // Irreducible over `QQ(i)`
     assert_eq!(parse!("apart(1/(x^2-2))", C), parse!("1/(x^2-2)", C));

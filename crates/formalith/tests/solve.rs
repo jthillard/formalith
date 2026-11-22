@@ -239,7 +239,7 @@ fn polynomials_in_other_sets() {
     assert_eq!(solve_in("C", "x^2 + 1 = 0"), ok("x = -i \\ x = i"));
     assert_eq!(
         solve_in("C", "x^2 + y^2 = 0, x - y = 2"),
-        ok("x = 1+i, y = -1+i \\ x = 1-i, y = -1-i")
+        ok("x = 1-i, y = -1-i \\ x = 1+i, y = -1+i")
     );
     // Radicals
     assert_eq!(solve_in("C", "x^2 = 2"), ok("x = sqrt(2) \\ x = -sqrt(2)"));
@@ -345,7 +345,7 @@ fn complex_roots() {
     assert_eq!(solve_in("C", "x^2 = -1"), ok("x = -i \\ x = i"));
     assert_eq!(
         solve_in("C", "x^2 + 2*x + 5 = 0"),
-        ok("x = -1+2 i \\ x = -1-2 i")
+        ok("x = -1-2 i \\ x = -1+2 i")
     );
     assert_eq!(solve_in("C", "(1+i)*x = 2"), ok("x = 1-i"));
     assert_eq!(
