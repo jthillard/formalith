@@ -72,13 +72,31 @@ function initTypst() {
 
 // Renders are chained so the compiler is never used concurrently.
 let renderQueue = Promise.resolve();
-function renderMath(source) {
+
+function typstDocument(source) {
   // Typst points are rendered as CSS pixels, the math font is scaled up to match the monospace text
   const fontSize = parseFloat(getComputedStyle(document.body).fontSize) * 1.25;
-  const mainContent =
+  return (
     `#set page(width: auto, height: auto, margin: (x: 0pt, y: 0.3em));\n` +
     `#set text(size: ${fontSize}pt, fill: rgb("${TYPST_FILL}"));\n` +
-    `$ ${source} $`;
+    `$ ${source} $`
+  );
+}
+
+// Renders a first formula once the evaluator is ready, so the compiler, the renderer and the fonts are downloaded
+// before the first result instead of after it.
+let typstPrefetched = false;
+function prefetchTypst() {
+  if (typstPrefetched || !initTypst()) {
+    return;
+  }
+  typstPrefetched = true;
+  const mainContent = typstDocument('x');
+  renderQueue = renderQueue.then(() => $typst.svg({ mainContent })).catch(err => console.error(err));
+}
+
+function renderMath(source) {
+  const mainContent = typstDocument(source);
   const svg = renderQueue.then(() => $typst.svg({ mainContent }));
   renderQueue = svg.catch(() => {});
   return svg.then(svg => {
@@ -121,6 +139,7 @@ function startWorker() {
   worker = new Worker('worker.js', { type: 'module' });
   worker.onmessage = ({ data }) => {
     if (data.ready) {
+      prefetchTypst();
       return;
     }
     if (!pending || data.id !== pending.id) {
