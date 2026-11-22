@@ -224,7 +224,10 @@ fn integrals_of_real_and_imaginary_parts() {
 fn limits_and_series_of_real_and_imaginary_parts() {
     assert_eq!(eval("lim((exp(i*x)-1)/x, x, 0)"), "i");
     assert_eq!(eval("lim(exp(i*x), x, oo)"), "undefined");
-    assert_eq!(eval("series(exp(i*x), x, 0, 3)"), eval("1 + i*x - x^2/2"));
+    assert_eq!(
+        eval("series(exp(i*x), x, 0, 3)"),
+        eval("1 + i*x - x^2/2 + o(x^2)")
+    );
     // Non-real points are unsupported
     assert_eq!(eval("lim(x, x, i)"), "lim(x, x, i)");
 }

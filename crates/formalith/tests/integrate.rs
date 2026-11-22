@@ -282,7 +282,7 @@ fn error_function() {
     assert_eq!(integrate("lim(erf(1/x), x, 0, 1)"), "1");
     assert_eq!(
         integrate("series(erf(x), x, 0, 4)"),
-        integrate("2/sqrt(pi)*x - 2/(3*sqrt(pi))*x^3")
+        integrate("2/sqrt(pi)*x - 2/(3*sqrt(pi))*x^3 + o(x^3)")
     );
 }
 

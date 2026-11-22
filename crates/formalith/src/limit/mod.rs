@@ -30,6 +30,7 @@
 
 mod bounds;
 mod expansion;
+pub(crate) use expansion::remainder;
 mod gruntz;
 mod series;
 

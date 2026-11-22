@@ -7,6 +7,7 @@ use common::{
     numeric::{Function, env_with, eval},
     random,
     rng::Rng,
+    split_remainder,
 };
 use formalith::parser::environment::Environment;
 
@@ -26,7 +27,7 @@ fn series(input: &str) -> Verdict {
         |s| format!("series({f}, x, {a}, {n}, {s})"),
     );
     let s = match eval(&mut env, &call) {
-        Ok(res) if !res.contains("series(") => res,
+        Ok(res) if !res.contains("series(") => split_remainder(&res).0,
         Ok(res) => return Verdict::Skip(format!("unevaluated: {res}")),
         Err(e) => return Verdict::Skip(e),
     };

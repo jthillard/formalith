@@ -3,6 +3,7 @@
 use std::fmt::Display;
 
 use crate::{
+    context::Context,
     field::{Group, Set},
     printer::{PrettyPrint, PrettyPrinter, Print, PrintOptions},
 };
@@ -108,6 +109,13 @@ fn prints_negative<S: Group>(set: S, a: &S::Element, options: &PrintOptions) -> 
 }
 
 impl<T: Set> Add<T> {
+    /// The terms in printing order: remainders `{$o(u)$}` last, like in `{$1 + x + o(x)$}`.
+    fn print_order(&self) -> impl Iterator<Item = &Term<T>> {
+        let is_little_o = |term: &&Term<T>| matches!(term, Term::Fun(fun) if fun.get_ident() == Context::LITTLE_O);
+        let (little_o, others): (Vec<_>, Vec<_>) = self.terms.iter().partition(is_little_o);
+        others.into_iter().chain(little_o)
+    }
+
     fn print_default<
         F: FnMut(&Term<T>, &mut std::fmt::Formatter<'_>) -> Result<bool, std::fmt::Error>,
     >(
@@ -116,7 +124,7 @@ impl<T: Set> Add<T> {
         options: &crate::printer::PrintOptions,
         f: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result {
-        for (i, term) in self.terms.iter().enumerate() {
+        for (i, term) in self.print_order().enumerate() {
             if !special_cases(term, f)? {
                 match term {
                     Term::Mul(mul)
@@ -188,7 +196,7 @@ impl<T: Set> Add<T> {
         options: &PrintOptions,
     ) -> crate::printer::PrettyPrinter {
         let mut res: Option<PrettyPrinter> = None;
-        for term in &self.terms {
+        for term in self.print_order() {
             if !special_cases(term, &mut res) {
                 match term {
                     Term::Mul(mul)

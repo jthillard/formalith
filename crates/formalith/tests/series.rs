@@ -2,10 +2,50 @@
 use formalith::{field::real::R, parse};
 
 mod common;
-use common::line;
+use common::{line, split_remainder};
 
+/// The terms of a series, without its remainder.
 fn series(input: &str) -> String {
-    line(&parse!(input, R))
+    let printed = line(&parse!(input, R));
+    match split_remainder(&printed) {
+        (terms, Some(_)) => terms,
+        (_, None) => printed,
+    }
+}
+
+#[test]
+fn remainders() {
+    let remainder = |input: &str| split_remainder(&line(&parse!(input, R))).1;
+    assert_eq!(remainder("series(exp(x), x, 0, 4)").as_deref(), Some("x^3"));
+    assert_eq!(remainder("series(sin(x), x, 0)").as_deref(), Some("x^5"));
+    assert_eq!(
+        remainder("series(ln(x), x, 1, 3)").as_deref(),
+        Some("(x-1)^2")
+    );
+    assert_eq!(remainder("series(1/x, x, oo, 3)").as_deref(), Some("x^-2"));
+    assert_eq!(remainder("series(1/sin(x), x, 0, 2)").as_deref(), Some("x"));
+    assert_eq!(
+        remainder("series(sqrt(x), x, 0, 2, 1)").as_deref(),
+        Some("x")
+    );
+    assert_eq!(line(&parse!("series(x^3, x, 0, 2)", R)), "o(x)");
+    assert_eq!(line(&parse!("series(exp(x), x, 0, 1)", R)), "1+o(1)");
+    // Unevaluated series have none
+    assert_eq!(remainder("series(exp(1/x), x, 0)"), None);
+}
+
+#[test]
+fn little_o_absorbs_factors() {
+    assert_eq!(line(&parse!("3*o(x^2)", R)), "o(x^2)");
+    assert_eq!(line(&parse!("-o(x^2)", R)), "o(x^2)");
+    assert_eq!(line(&parse!("x*o(x^2)", R)), "o(x^3)");
+    assert_eq!(line(&parse!("o(x)*o(x^2)", R)), "o(x^3)");
+    assert_eq!(line(&parse!("o(-2*x)", R)), "o(x)");
+    assert_eq!(line(&parse!("o(x) - o(x)", R)), "o(x)");
+    assert_eq!(
+        line(&parse!("expand(2*series(exp(x), x, 0, 2))", R)),
+        "2*x+2+o(x)"
+    );
 }
 
 #[test]
@@ -105,7 +145,7 @@ fn roots_of_negative_values_are_unsupported() {
 
 #[test]
 fn series_of_classic_functions() {
-    let eq = |a: &str, b: &str| assert_eq!(parse!(a, R), parse!(b, R), "{a}");
+    let eq = |a: &str, b: &str| assert_eq!(series(a), line(&parse!(b, R)), "{a}");
     eq("series(atan(x), x, 0, 6)", "x - x^3/3 + x^5/5");
     eq("series(asin(x), x, 0, 4)", "x + x^3/6");
     eq("series(acos(x), x, 0, 4)", "pi/2 - x - x^3/6");
@@ -130,7 +170,7 @@ fn series_order_edge_cases() {
 
 #[test]
 fn series_of_compositions() {
-    let eq = |a: &str, b: &str| assert_eq!(parse!(a, R), parse!(b, R), "{a}");
+    let eq = |a: &str, b: &str| assert_eq!(series(a), line(&parse!(b, R)), "{a}");
     eq(
         "series(exp(x)/(1-x), x, 0, 4)",
         "1 + 2*x + 5/2*x^2 + 8/3*x^3",

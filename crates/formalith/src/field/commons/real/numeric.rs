@@ -250,6 +250,8 @@ impl Numeric {
                 }
                 Self::Pow(base, Box::new(Self::compile(&pow.exponant, vars)))
             }
+            // The remainder of a series is left out, so that its terms can be drawn
+            Term::Fun(fun) if fun.get_ident() == Context::LITTLE_O => Self::Const(0.),
             Term::Fun(fun) => {
                 let name = || Self::Unsupported(fun.get_ident_as_str().to_owned());
                 let Some(args) = fun.get_args::<Real>() else {

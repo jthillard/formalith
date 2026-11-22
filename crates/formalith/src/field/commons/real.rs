@@ -35,7 +35,7 @@ use crate::{
         Derivable, Field, Group, PartiallyOrderedSet, Ring, Set, SetParseExpression, matrix::M,
     },
     integrate::{IntegrateError, apart_arguments},
-    limit::{Direction, LimitError},
+    limit::{Direction, LimitError, remainder},
     parser::Parser,
     polynom::ToTerm,
     printer::PrettyPrinter,
@@ -392,8 +392,39 @@ impl Ring for R<Rational> {
                 if let Some(res) = self.merge_radicals(mul) {
                     return res;
                 }
+                let is_little_o = |factor: &&Term<Self>| matches!(factor, Term::Fun(fun) if fun.get_ident() == Context::LITTLE_O);
+                if mul.iter().any(|factor| is_little_o(&factor)) {
+                    // `{$f o(u) = o(f u)$}` and `{$o(u) o(v) = o(u v)$}`
+                    let mut res = Term::Value(Value::new(mul.coefficient.clone(), *self));
+                    for factor in mul {
+                        match factor {
+                            Term::Fun(fun) if fun.get_ident() == Context::LITTLE_O => {
+                                if let Some(arg) = fun.get_arg::<Self>() {
+                                    res = res * arg;
+                                }
+                            }
+                            _ => res = res * factor,
+                        }
+                    }
+                    return self.fun(Context::LITTLE_O, res);
+                }
             }
             Term::Fun(fun) => match fun.get_ident() {
+                Context::LITTLE_O => {
+                    // `{$o(c u) = o(u)$}` for a non-zero constant `c`
+                    match fun.get_arg::<Self>() {
+                        Some(Term::Value(c)) if c.value != 0 && c.value != 1 => {
+                            return self.fun(Context::LITTLE_O, self.value(Rational::ONE));
+                        }
+                        Some(Term::Mul(mul)) if mul.coefficient != 1 && mul.coefficient != 0 => {
+                            return self.fun(
+                                Context::LITTLE_O,
+                                Term::Mul(mul.clone()) / self.value(mul.coefficient.clone()),
+                            );
+                        }
+                        _ => {}
+                    }
+                }
                 Context::ARG => {
                     if let Some(res) = fun
                         .get_arg::<Self>()
@@ -477,7 +508,7 @@ impl Ring for R<Rational> {
                         if let (Some(order), Some(direction)) = (order, direction)
                             && let Ok(res) = f.series(x.symbol, point, &order, direction)
                         {
-                            return res;
+                            return res + remainder(x.symbol, point, &order);
                         }
                     }
                 }

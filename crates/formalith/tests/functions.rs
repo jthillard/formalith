@@ -363,7 +363,8 @@ fn derivatives_of_compositions() {
     );
     assert_eq!(
         parse!("diff(series(sin(x), x, 0, 4), x)", R),
-        parse!("1-x^2/2", R)
+        // The remainder has no derivative
+        parse!("1-x^2/2+diff(o(x^3), x)", R)
     );
 }
 

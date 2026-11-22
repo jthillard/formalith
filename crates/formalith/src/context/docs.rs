@@ -449,11 +449,12 @@ pub static BUILTIN_DOCS: [BuiltinDoc; Context::BUILTIN_NAMES.len()] = [
         Context::SERIES,
         Calculus,
         "series(f, x, a, [n, side])",
-        "Series expansion of f at a, the terms below (x - a)^n (6 by default).",
-        "At oo, the terms below x^-n. side is 1 or -1 like for lim. Exponents may be negative or fractional.",
+        "Series expansion of f at a, the terms below (x - a)^n (6 by default), plus the remainder o((x - a)^(n - 1)).",
+        "At oo, the terms below x^-n plus o(x^(1 - n)). side is 1 or -1 like for lim. Exponents may be negative or \
+         fractional.",
         &[
-            ex("series(exp(x), x, 0, 4)", "1 + x + x^2/2 + x^3/6"),
-            ex("series(sin(x), x, 0)", "x - x^3/6 + x^5/120"),
+            ex("series(exp(x), x, 0, 4)", "1 + x + x^2/2 + x^3/6 + o(x^3)"),
+            ex("series(sin(x), x, 0)", "x - x^3/6 + x^5/120 + o(x^5)"),
         ],
     ),
     doc(
@@ -1144,6 +1145,18 @@ pub static BUILTIN_DOCS: [BuiltinDoc; Context::BUILTIN_NAMES.len()] = [
             ex_in("C", "arg(1 + i)", "pi/4"),
             ex_in("C", "arg(-1 - sqrt(3)*i)", "-(2 pi)/3"),
             ex("arg(-2)", "pi"),
+        ],
+    ),
+    doc(
+        Context::LITTLE_O,
+        Calculus,
+        "o(u)",
+        "Little-o: a term negligible compared to u, the remainder of a series.",
+        "Constant factors are absorbed, and products are moved inside: f o(u) = o(f u). It is left out when the \
+         expression is drawn.",
+        &[
+            ex("series(cos(x), x, 0, 3)", "1 - x^2/2 + o(x^2)"),
+            ex("3*x*o(x^2)", "o(x^3)"),
         ],
     ),
 ];

@@ -4,7 +4,7 @@
 //! `{$w -> 0^+$}` is computed, then `w` is replaced back by `{$x - a$}`. Exponents may be negative or fractional,
 //! and coefficients may contain `{$ln(x - a)$}`.
 
-use crate::field::real::expr::{Expr, Real, fun, value, variable, zero};
+use crate::field::real::expr::{Expr, Real, fun, infinity_sign, value, variable, zero};
 use malachite::Rational;
 
 use crate::{
@@ -68,6 +68,18 @@ impl Term<Real> {
             }
         }
     }
+}
+
+/// The remainder `{$o((x - a)^(n - 1))$}` of a series at `point` (`{$o(x^(1 - n))$}` at `{$plus.minus oo$}`), `n`
+/// being `order`, added to the terms by the builtin `series`.
+pub(crate) fn remainder(x: Symbol, point: &Expr, order: &Rational) -> Expr {
+    let exponant = value(order - Rational::from(1));
+    let bound = if infinity_sign(point).is_some() {
+        variable(x).pow(&-exponant)
+    } else {
+        (variable(x) - point.clone()).pow(&exponant)
+    };
+    fun(Context::LITTLE_O, bound)
 }
 
 /// The series of `f` with `x` replaced by `at(w)` for `{$w -> 0^+$}`, up to `{$O(w^n)$}`, with `w` replaced back

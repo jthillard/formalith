@@ -29,7 +29,7 @@ use crate::{
         },
     },
     integrate::{IntegrateError, apart_arguments},
-    limit::{Direction, LimitError},
+    limit::{Direction, LimitError, remainder},
     parser::{Parser, lexer::TokenKind},
     printer::{PrettyPrinter, PrintOptions},
     term::{self, Fun, Mul, Normalize, SymbolTerm, Term, TermSet, Value},
@@ -203,7 +203,17 @@ impl C<R<Rational>> {
             }
         };
         let res = (|| {
-            let re = eval(&u)?;
+            let mut re = eval(&u)?;
+            if ident == Context::SERIES
+                && let Some(re) = &mut re
+                && let [point, rest @ ..] = rest.as_slice()
+            {
+                let order = match rest {
+                    [Term::Value(order), ..] => order.value.clone(),
+                    _ => Rational::from(6),
+                };
+                *re = &*re + &remainder(x, point, &order);
+            }
             let im = if v.is_zero() {
                 Some(v.clone())
             } else {
