@@ -4,7 +4,7 @@ use std::cmp::Ordering;
 
 use malachite::{Integer, base::num::arithmetic::traits::Parity};
 
-use crate::term::fun::eval_rewrite_builtin;
+use crate::term::fun::{eval_rewrite_builtin, natural_constant};
 use crate::{
     context::{Context, Symbol},
     field::{
@@ -24,13 +24,14 @@ pub type Polynomial<K> = MultivariatePolynomial<Symbol, K, Z<Integer>>;
 ///
 /// Elements are whole polynomials, kept expanded: `x` is parsed as a value of this ring, while other identifiers
 /// stay symbols. Polynomials can be divided with `quo` and `rem`, `gcd` and `lcm` are available when the
-/// coefficients form a field.
+/// coefficients form a field, and `degree(p)` gives the degree of a non-zero polynomial.
 /// ```
 /// use formalith::{field::{Set, real::R}, parse, symbol};
 ///
 /// let r_x = R.get_polynomial_ring(symbol!("x"));
 /// assert_eq!(parse!("(x+1)^2", r_x), parse!("x^2+2*x+1", r_x));
 /// assert_eq!(parse!("gcd(x^2-1, x^2+2*x+1)", r_x), parse!("x+1", r_x));
+/// assert_eq!(parse!("degree(x^4-1)", r_x), parse!("4", r_x));
 /// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Poly<K> {
@@ -155,6 +156,20 @@ impl<K: Ring> Poly<K> {
                 } else {
                     remainder
                 }))
+            }
+            (Context::DEGREE, [Term::Value(a)] | [Term::Value(a), Term::Value(_)])
+                if !a.value.is_zero()
+                    && fun
+                        .get_args::<Self>()?
+                        .get(1)
+                        .is_none_or(|x| *x == value(self.x())) =>
+            {
+                let degree = i64::try_from(&a.value.degree()).ok()?;
+                let degree = natural_constant(self.coefficients, degree)?;
+                let Term::Value(degree) = degree else {
+                    return None;
+                };
+                Some(value(self.constant(degree.value)))
             }
             _ => None,
         }

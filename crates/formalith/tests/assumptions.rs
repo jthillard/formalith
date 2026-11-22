@@ -155,6 +155,27 @@ fn definitions_and_assumptions() {
 }
 
 #[test]
+fn degree_with_symbolic_exponents() {
+    assert_eq!(
+        eval(&["assume(n integer, n >= 0)", "degree(x^n + x^10, x)"]),
+        expr("max(n, 10)")
+    );
+    assert_eq!(
+        eval(&["assume(n integer, n >= 0)", "degree(x^(n+1)*x^2 + x, x)"]),
+        expr("n + 3")
+    );
+    assert_eq!(
+        eval(&["assume(n integer, n >= 0)", "degree(x^n + x^(n+2), x)"]),
+        expr("n + 2")
+    );
+    // `n` may be negative
+    assert_eq!(
+        eval(&["assume(n integer)", "degree(x^n, x)"]),
+        expr("degree(x^n, x)")
+    );
+}
+
+#[test]
 fn typst_output() {
     assert_eq!(
         eval_statements(SetChoice::R, &["assume(a >= 0, n integer)"], true).unwrap(),

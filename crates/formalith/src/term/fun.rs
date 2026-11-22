@@ -397,6 +397,94 @@ pub(crate) fn eval_rewrite_builtin<T: Ring>(fun: &dyn Function<T>) -> Option<Ter
     }
 }
 
+/// Get the polynomial and the variable of the builtin `degree(f, x)`, the variable being the only symbol of `f`
+/// when it is omitted (any symbol if `f` has none). Returns `None` for other functions or arguments.
+pub(crate) fn degree_args<T: Set>(fun: &dyn Function<T>) -> Option<(&Term<T>, Symbol)> {
+    if fun.get_ident() != Context::DEGREE {
+        return None;
+    }
+    match fun.get_args::<T>()?.as_slice() {
+        [f, Term::Symbol(x)] => Some((f, x.symbol)),
+        [f] => {
+            let symbols: Vec<_> = f
+                .symbols()
+                .into_iter()
+                .filter(|s| !Context::is_builtin_constant(*s))
+                .collect();
+            match symbols.as_slice() {
+                [x] => Some((f, *x)),
+                [] => Some((f, Symbol::new("x"))),
+                _ => None,
+            }
+        }
+        _ => None,
+    }
+}
+
+/// Get the exponents of `x` in the terms of the expanded polynomial `f` (0 for terms without `x`). Exponents which
+/// aren't natural values must satisfy `accept`. Returns `None` if `f` is zero or isn't a polynomial in `x`, like
+/// `{$sin x$}`, `{$1/x$}` or `{$sqrt(x)$}`, its coefficients being assumed non-zero.
+pub(crate) fn degree_exponents<T>(
+    f: &Term<T>,
+    x: Symbol,
+    accept: impl Fn(&Term<T::ExponantSet>) -> bool,
+) -> Option<Vec<Term<T::ExponantSet>>>
+where
+    T: Ring<ExponantSet: Ring, ProductCoefficientSet = T>,
+{
+    let exponant_set = f.get_set().get_exponant_set();
+    let polynomial = f.to_polynomial();
+    if polynomial.is_zero() {
+        return None;
+    }
+    let mut exponents = vec![];
+    for (monomial, _) in polynomial.terms() {
+        let mut exponent = Term::zero(exponant_set);
+        for (base, e) in monomial {
+            if matches!(base, Term::Symbol(s) if s.symbol == x) {
+                let natural = matches!(e, Term::Value(v)
+                    if exponant_set.to_i64(&v.value).is_some_and(|n| n >= 0));
+                if !natural && (e.symbols().contains(&x) || !accept(e)) {
+                    return None;
+                }
+                exponent = e.clone();
+            } else if base.symbols().contains(&x) || e.symbols().contains(&x) {
+                return None;
+            }
+        }
+        if !exponents.contains(&exponent) {
+            exponents.push(exponent);
+        }
+    }
+    Some(exponents)
+}
+
+/// Get the integer `n` as a constant of `set`, `None` if it would be equal to a smaller natural number, like `7` in
+/// `{$ZZ/7ZZ$}`.
+pub(crate) fn natural_constant<T: Ring>(set: T, n: i64) -> Option<Term<T>> {
+    let value = set.nth(n);
+    (set.to_i64(&value) == Some(n) || (1..=n).all(|k| !set.is_zero(&set.nth(k))))
+        .then(|| Term::constant(value, set))
+}
+
+/// Evaluate the builtin `degree(f, x)` when every exponent of `x` is a natural value. Returns `None` for other
+/// functions, or when it can't be evaluated.
+pub(crate) fn eval_degree<T>(fun: &dyn Function<T>) -> Option<Term<T>>
+where
+    T: Ring<ExponantSet: Ring, ProductCoefficientSet = T>,
+{
+    let (f, x) = degree_args(fun)?;
+    let exponant_set = f.get_set().get_exponant_set();
+    let degree = degree_exponents(f, x, |_| false)?
+        .iter()
+        .filter_map(|e| match e {
+            Term::Value(v) => exponant_set.to_i64(&v.value),
+            _ => None,
+        })
+        .max()?;
+    natural_constant(fun.get_set(), degree)
+}
+
 /// Evaluate the builtin `diff(f, x)`, or `diff(f, x, n)` for the `n`-th derivative with a natural `n`, in a field
 /// of scalars. Returns `None` for other functions, or when they can't be evaluated.
 pub(crate) fn eval_calculus_builtin<T>(fun: &dyn Function<T>) -> Option<Term<T>>

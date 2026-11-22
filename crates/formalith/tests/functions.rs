@@ -512,3 +512,28 @@ fn piecewise() {
     );
     assert!(try_parse!("piecewise(x, 1)", R).is_err());
 }
+
+#[test]
+fn degree() {
+    assert_eq!(parse!("degree(x^3 + 2*x + 1, x)", R), parse!("3", R));
+    assert_eq!(parse!("degree((x+1)^2*(x-1))", R), parse!("3", R));
+    // Symbolic coefficients are assumed non-zero
+    assert_eq!(parse!("degree(a*x^2 + b*x, x)", R), parse!("2", R));
+    assert_eq!(parse!("degree(x*y^2, y)", R), parse!("2", R));
+    assert_eq!(parse!("degree(5, x)", R), parse!("0", R));
+    assert_eq!(parse!("degree(pi)", R), parse!("0", R));
+    assert_eq!(parse!("degree((x+i)^3)", C), parse!("3", C));
+    // Non polynomials, several symbols, zero and unassumed symbolic exponents stay unevaluated
+    let is_degree = |term| matches!(term, Term::Fun(fun) if fun.get_ident() == Context::DEGREE);
+    for input in [
+        "degree(sin(x), x)",
+        "degree(1/x, x)",
+        "degree(sqrt(x), x)",
+        "degree(2^x, x)",
+        "degree(x + y)",
+        "degree(0, x)",
+        "degree(x^n + x^10, x)",
+    ] {
+        assert!(is_degree(parse!(input, R)), "{input}");
+    }
+}

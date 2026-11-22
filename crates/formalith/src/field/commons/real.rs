@@ -23,7 +23,7 @@ use malachite::{
 use super::parse_rational_literal;
 use sign::SignMode;
 
-use crate::term::fun::{eval_calculus_builtin, eval_matrix_builtin};
+use crate::term::fun::{degree_args, degree_exponents, eval_calculus_builtin, eval_matrix_builtin};
 use crate::{
     context::{
         Context, Symbol,
@@ -419,6 +419,11 @@ impl Ring for R<Rational> {
                 }
                 Context::DET | Context::TRACE | Context::RANK | Context::CHARPOLY => {
                     if let Some(res) = eval_matrix_builtin(&**fun) {
+                        return res;
+                    }
+                }
+                Context::DEGREE => {
+                    if let Some(res) = self.eval_degree(&**fun) {
                         return res;
                     }
                 }
@@ -1377,6 +1382,40 @@ impl R<Rational> {
             angle(2) - res
         } else {
             res
+        })
+    }
+
+    /// Evaluate `degree(f, x)`. Exponents of `x` may be symbolic when they are non-negative integers by the
+    /// assumptions, the degree being their maximum, like `{$max(n, 10)$}` for `{$x^n + x^10$}`.
+    fn eval_degree(self, fun: &dyn term::Function<Self>) -> Option<Term<Self>> {
+        let (f, x) = degree_args(fun)?;
+        let exponents = degree_exponents(f, x, |e| {
+            sign::is_integer(e) && !sign::sign_set(e, SignMode::STRUCTURAL).contains(Ordering::Less)
+        })?;
+        // Drop the exponents smaller than another one
+        let dominated = |e: &Term<Self>| {
+            exponents.iter().any(|other| {
+                other != e && {
+                    let difference =
+                        sign::sign_set(&(other.clone() - e.clone()), SignMode::STRUCTURAL);
+                    !difference.contains(Ordering::Less)
+                }
+            })
+        };
+        let mut maxima: Vec<_> = exponents
+            .iter()
+            .filter(|e| !dominated(e))
+            .cloned()
+            .collect();
+        if maxima.is_empty() {
+            maxima = exponents;
+        }
+        // Values last, like `{$max(n, 10)$}`
+        maxima.sort_by_key(|e| matches!(e, Term::Value(_)));
+        Some(if maxima.len() == 1 {
+            maxima.pop()?
+        } else {
+            Term::Fun(Box::new(Fun::new(Context::MAX, maxima, self))).normalize()
         })
     }
 

@@ -66,6 +66,18 @@ fn gcd_lcm() {
 }
 
 #[test]
+fn degree() {
+    assert_eq!(eval("degree(x^4-1)"), "4");
+    assert_eq!(eval("degree(x^4-1, x)"), "4");
+    assert_eq!(eval("degree(3)"), "0");
+    assert_eq!(eval("degree(0)"), "degree(0)");
+    let z2_x = Zn::new(2).get_polynomial_ring(symbol!("x"));
+    assert_eq!(line(&parse!("degree(x+1)", z2_x)), "1");
+    // 2 isn't a natural number modulo 2
+    assert_eq!(line(&parse!("degree(x^2+1)", z2_x)), "degree(x^2+1)");
+}
+
+#[test]
 fn other_variables() {
     let r_t = R.get_polynomial_ring(symbol!("t"));
     assert_eq!(line(&parse!("(t+1)^2", r_t)), "t^2+2*t+1");

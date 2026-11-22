@@ -106,6 +106,15 @@ fn zero_divisors() {
 }
 
 #[test]
+fn degree() {
+    // The leading coefficient vanishes modulo 7
+    assert_eq!(eval("degree(7*x^2 + x, x)", 7), "1");
+    assert_eq!(eval("degree(x^6 + 1, x)", 7), "6");
+    // 7 isn't a natural number modulo 7
+    assert!(eval("degree(x^7 + 1, x)", 7).starts_with("degree"));
+}
+
+#[test]
 fn irreducible_polynomials_modulo_p() {
     assert_eq!(eval("factor(x^2+1)", 7), eval("x^2+1", 7));
     // x^4+1 is reducible modulo every prime

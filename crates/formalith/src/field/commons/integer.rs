@@ -22,7 +22,10 @@ use crate::{
     },
     parser::Parser,
     printer::PrettyPrinter,
-    term::{self, Fun, Term, TermSet, Value, fun::eval_matrix_builtin},
+    term::{
+        self, Fun, Term, TermSet, Value,
+        fun::{eval_degree, eval_matrix_builtin},
+    },
 };
 
 /// The integer ring `{$ZZ$}`
@@ -154,6 +157,9 @@ impl Ring for Z<Integer> {
                     Context::DET | Context::TRACE | Context::RANK | Context::CHARPOLY
                 ) && let Some(res) = eval_matrix_builtin(&**fun)
                 {
+                    return res;
+                }
+                if let Some(res) = eval_degree(&**fun) {
                     return res;
                 }
                 if fun.get_ident() == Context::ABS

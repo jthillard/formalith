@@ -269,9 +269,11 @@ impl Context {
     pub const JACOBIAN: Symbol = Symbol(74);
     /// Hessian matrix `hessian(f, x_1, ..., x_n)` of a scalar function, `{$H_(i j) = diff^2 f / (diff x_i diff x_j)$}`
     pub const HESSIAN: Symbol = Symbol(75);
+    /// Degree `degree(f, x)` of a polynomial `f` in `x`
+    pub const DEGREE: Symbol = Symbol(76);
 
     #[rustfmt::skip]
-    const BUILTIN_NAMES: [&'static str; 76] = [
+    const BUILTIN_NAMES: [&'static str; 77] = [
         "abs", "det", "expand", "factor", "simplify", "re", "im", "conj", "sqrt", "root", "sign",
         "floor", "ceil", "min", "max", "gcd", "lcm", "quo", "rem", "diff", "solve", "approx",
         "exp", "ln", "sin", "cos", "tan", "pi", "e", "lim", "oo", "undefined",
@@ -280,6 +282,7 @@ impl Context {
         "gamma", "beta", "digamma", "polygamma", "zeta", "euler_gamma", "sum", "product",
         "dsolve", "transpose", "trace", "rank", "kernel", "charpoly", "eigenvalues", "eigenvectors",
         "hermite", "smith", "apart", "lambertw", "piecewise", "gradient", "jacobian", "hessian",
+        "degree",
     ];
 
     /// Return `true` if `symbol` is a builtin constant, like `{$pi$}`, which is not a function.
@@ -313,7 +316,7 @@ impl Context {
             | Self::HESSIAN => Some((1, usize::MAX)),
             Self::APPROX | Self::LOG | Self::CHARPOLY => Some((1, 2)),
             Self::DIFF => Some((2, 3)),
-            Self::APART => Some((1, 2)),
+            Self::APART | Self::DEGREE => Some((1, 2)),
             Self::PIECEWISE => Some((2, usize::MAX)),
             Self::LIM => Some((3, 4)),
             Self::SERIES => Some((3, 5)),
