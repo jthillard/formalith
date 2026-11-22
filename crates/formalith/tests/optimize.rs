@@ -117,3 +117,97 @@ fn errors() {
     assert!(argmin("argmin(5)").is_err());
     assert!(argmin("argmin(floor(x), x)").is_err());
 }
+
+mod local {
+    use super::{argmin, eval, none, solved};
+
+    #[test]
+    fn polynomials() {
+        assert_eq!(argmin("localmin(x^3 - 3*x, x)"), solved("x = 1, x"));
+        assert_eq!(argmin("localmax(x^3 - 3*x, x)"), solved("x = -1, x"));
+        // An inflection point
+        assert_eq!(argmin("localmin(x^3, x)"), none());
+        // A degenerate minimum
+        assert_eq!(argmin("localmin(x^4, x)"), solved("x = 0, x"));
+        assert_eq!(argmin("localmax(x^4 - 2*x^2, x)"), solved("x = 0, x"));
+        assert_eq!(argmin("localmin(x^4 - 2*x^2, x)"), solved("x^2 = 1, x"));
+    }
+
+    #[test]
+    fn intervals() {
+        // Bounds are local extrema relative to the interval
+        assert_eq!(
+            argmin("localmin(x^3 - 3*x, x, -3, 3)"),
+            solved("(x + 3)*(x - 1) = 0, x")
+        );
+        assert_eq!(
+            argmin("localmax(x^3 - 3*x, x, -3, 3)"),
+            solved("(x - 3)*(x + 1) = 0, x")
+        );
+        assert_eq!(argmin("localmin(x, x, 0, 1)"), solved("x = 0, x"));
+    }
+
+    #[test]
+    fn special_points() {
+        assert_eq!(argmin("localmin(abs(x), x)"), solved("x = 0, x"));
+        assert_eq!(argmin("localmin(sqrt(x), x)"), solved("x = 0, x"));
+        assert_eq!(argmin("localmin(x^2 + 1/x^2, x)"), solved("x^2 = 1, x"));
+        // `f` is lower on the left of the jump at 0
+        assert_eq!(argmin("localmin(sign(x) + x^2, x)"), none());
+        assert_eq!(argmin("localmax(sign(x) - x^2, x)"), none());
+        // Constant on `{$[-1, 1]$}`
+        assert!(argmin("localmin(abs(x - 1) + abs(x + 1), x)").is_err());
+    }
+
+    #[test]
+    fn transcendental() {
+        assert_eq!(argmin("localmax(x*exp(-x), x)"), solved("x = 1, x"));
+        assert_eq!(argmin("localmin(x*exp(-x), x)"), none());
+        assert_eq!(argmin("localmin(cos(x), x)"), solved("cos(x) = -1, x"));
+        assert_eq!(argmin("localmax(cos(x), x)"), solved("cos(x) = 1, x"));
+        // No global minimum, but local ones
+        assert_eq!(argmin("argmin(x + 2*sin(x), x)"), none());
+        assert!(
+            argmin("localmin(x + 2*sin(x), x)")
+                .unwrap()
+                .contains("frac(2, 3) pi")
+        );
+    }
+
+    #[test]
+    fn parameters() {
+        assert_eq!(
+            eval(&["assume(a < 0)", "localmax(a*x^2 + b*x, x)"]),
+            eval(&["solve(2*a*x + b = 0, x)"])
+        );
+        assert!(argmin("localmin(a*x^2 + b*x, x)").is_err());
+    }
+
+    #[test]
+    fn several_variables() {
+        // A minimum at `{$(1, 0)$}` and a saddle at `{$(-1, 0)$}`
+        assert_eq!(
+            argmin("localmin(x^3 - 3*x + y^2, x, y)"),
+            solved("x = 1, y = 0, x, y")
+        );
+        assert_eq!(argmin("localmax(x^3 - 3*x + y^2, x, y)"), none());
+        assert_eq!(argmin("localmin(x^2 - y^2, x, y)"), none());
+        assert_eq!(
+            argmin("localmax(-x^2 - y^2 + 2*y, x, y)"),
+            solved("x = 0, y = 1, x, y")
+        );
+        // Not rational, by the Hessian matrix
+        assert_eq!(
+            argmin("localmin(exp(x^2 + y^2), x, y)"),
+            solved("x = 0, y = 0, x, y")
+        );
+        // Degenerate, global minima
+        assert_eq!(argmin("localmin((x - y)^2, x, y)"), solved("x = y, x, y"));
+        assert_eq!(
+            argmin("localmin(x^4 + y^2, x, y)"),
+            solved("x = 0, y = 0, x, y")
+        );
+        // Degenerate, neither a global minimum nor a global maximum
+        assert!(argmin("localmin(x^3 + y^2, x, y)").is_err());
+    }
+}

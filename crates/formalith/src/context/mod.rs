@@ -278,9 +278,13 @@ impl Context {
     pub const ARGMIN: Symbol = Symbol(78);
     /// Maximizers `argmax(f, x)` of a function, only allowed as a whole statement
     pub const ARGMAX: Symbol = Symbol(79);
+    /// Local minimizers `localmin(f, x)` of a function, only allowed as a whole statement
+    pub const LOCALMIN: Symbol = Symbol(80);
+    /// Local maximizers `localmax(f, x)` of a function, only allowed as a whole statement
+    pub const LOCALMAX: Symbol = Symbol(81);
 
     #[rustfmt::skip]
-    const BUILTIN_NAMES: [&'static str; 80] = [
+    const BUILTIN_NAMES: [&'static str; 82] = [
         "abs", "det", "expand", "factor", "simplify", "re", "im", "conj", "sqrt", "root", "sign",
         "floor", "ceil", "min", "max", "gcd", "lcm", "quo", "rem", "diff", "solve", "approx",
         "exp", "ln", "sin", "cos", "tan", "pi", "e", "lim", "oo", "undefined",
@@ -289,7 +293,8 @@ impl Context {
         "gamma", "beta", "digamma", "polygamma", "zeta", "euler_gamma", "sum", "product",
         "dsolve", "transpose", "trace", "rank", "kernel", "charpoly", "eigenvalues", "eigenvectors",
         "hermite", "smith", "apart", "lambertw", "piecewise", "gradient", "jacobian", "hessian",
-        "I", "degree", "argmin", "argmax",
+        "I", "degree", "argmin", "argmax", "localmin",
+        "localmax",
     ];
 
     /// Return `true` if `symbol` is a builtin constant, like `{$pi$}`, which is not a function.
@@ -341,7 +346,9 @@ impl Context {
             | Self::JACOBIAN
             | Self::HESSIAN
             | Self::ARGMIN
-            | Self::ARGMAX => Some((1, usize::MAX)),
+            | Self::ARGMAX
+            | Self::LOCALMIN
+            | Self::LOCALMAX => Some((1, usize::MAX)),
             Self::APPROX | Self::LOG | Self::CHARPOLY => Some((1, 2)),
             Self::DIFF => Some((2, 3)),
             Self::APART | Self::DEGREE => Some((1, 2)),

@@ -18,7 +18,7 @@ use crate::{
     },
     field::{Set, SetParseExpression},
     ode::{Condition, Dsolve, OdeSolution},
-    optimize::Optimize,
+    optimize::{Extremum, Optimize},
     solve::{
         Equation, Solution, Solve,
         inequality::{Inequality, Region, SolveInequality},
@@ -408,7 +408,15 @@ impl<'a> Parser<'a> {
         if self.is_call(Context::DSOLVE) {
             return self.parse_dsolve(set);
         }
-        if self.is_call(Context::ARGMIN) || self.is_call(Context::ARGMAX) {
+        if [
+            Context::ARGMIN,
+            Context::ARGMAX,
+            Context::LOCALMIN,
+            Context::LOCALMAX,
+        ]
+        .into_iter()
+        .any(|function| self.is_call(function))
+        {
             return self.parse_argmin(set);
         }
         let mut items = self.parse_items(set)?;
@@ -609,12 +617,21 @@ impl<'a> Parser<'a> {
         })
     }
 
-    /// Parse `argmin(f, x_1, ..., x_n)`, `argmin(f, x, a, b)` or the same with `argmax`, finding the points where
-    /// `f` reaches its global extremum. The variables are every symbol of `f` sorted by name when there is none.
-    /// With one variable and two more arguments which aren't both symbols of `f`, they are the bounds.
+    /// Parse `argmin(f, x_1, ..., x_n)`, `argmin(f, x, a, b)` or the same with `argmax`, `localmin` or `localmax`,
+    /// finding the points where `f` reaches its global or local extrema. The variables are every symbol of `f`
+    /// sorted by name when there is none. With one variable and two more arguments which aren't both symbols of
+    /// `f`, they are the bounds.
     fn parse_argmin<E: SetParseExpression>(&mut self, set: E) -> Result<Statement<E>, ParserError> {
-        let maximize = self.is_call(Context::ARGMAX);
-        let name = if maximize { "argmax" } else { "argmin" };
+        let (function, extremum) = [
+            (Context::ARGMIN, Extremum::GlobalMin),
+            (Context::ARGMAX, Extremum::GlobalMax),
+            (Context::LOCALMIN, Extremum::LocalMin),
+            (Context::LOCALMAX, Extremum::LocalMax),
+        ]
+        .into_iter()
+        .find(|(function, _)| self.is_call(*function))
+        .expect("The statement is a call to an extremum function");
+        let name = function.name();
         // `argmin(`
         self.next_token();
         self.next_token();
@@ -676,7 +693,7 @@ impl<'a> Parser<'a> {
                 )));
             }
         }
-        let optimum = set.optimize(&f, &unknowns, bounds.as_ref(), maximize)?;
+        let optimum = set.optimize(&f, &unknowns, bounds.as_ref(), extremum)?;
         let integers = integer_parameters(&optimum.equations, &optimum.solution);
         Ok(Statement::System {
             equations: optimum.equations,

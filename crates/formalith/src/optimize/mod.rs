@@ -1,5 +1,5 @@
-//! Global extrema: the points where a function reaches its minimum or maximum, `argmin(x^4 - 2 x^2, x)`,
-//! `argmax(x - x^2, x, 0, 2)` or `argmin(x^2 + y^2 - 2 x, x, y)`.
+//! Extrema: the points where a function reaches its global minimum or maximum, `argmin(x^4 - 2 x^2, x)`,
+//! `argmax(x - x^2, x, 0, 2)` or `argmin(x^2 + y^2 - 2 x, x, y)`, or a local one, `localmin(x^3 - 3 x, x)`.
 //!
 //! A function of one variable is minimized over ℝ or over `{$[a, b]$}` by comparing its values at its critical
 //! points, at the points where it isn't differentiable or stops being defined, and at the bounds, with its limits
@@ -8,12 +8,19 @@
 //! is the minimum when `{$f < m$}` has no solution, found by the cylindrical algebraic decomposition, otherwise
 //! there is no minimum, every minimizer of a differentiable function on an open set being a critical point.
 //!
+//! Local minima of a function of one variable are found by the first derivative test, with the signs of the
+//! derivative between its sorted critical points, and at the special points by comparing the value with the
+//! one-sided limits. Those of a function of several variables are critical points where the Hessian matrix is
+//! positive definite, degenerate ones being local minima when they are global ones.
+//!
 //! ```
-//! use formalith::{field::real::R, optimize::Optimize, parse, solve::Solution, symbol};
+//! use formalith::{field::real::R, optimize::{Extremum, Optimize}, parse, solve::Solution, symbol};
 //!
 //! let x = symbol!("x");
-//! let optimum = R.optimize(&parse!("x^2 - 2*x", R), &[x], None, false).unwrap();
+//! let optimum = R.optimize(&parse!("x^2 - 2*x", R), &[x], None, Extremum::GlobalMin).unwrap();
 //! assert_eq!(optimum.solution, Solution::Assignments(vec![(x, parse!("1", R))]));
+//! let optimum = R.optimize(&parse!("x^3 - 3*x", R), &[x], None, Extremum::LocalMax).unwrap();
+//! assert_eq!(optimum.solution, Solution::Assignments(vec![(x, parse!("-1", R))]));
 //! ```
 
 mod multivariate;
@@ -43,20 +50,48 @@ pub struct Optimum<T: Set> {
     pub solution: Solution<T>,
 }
 
-/// Sets in which global extrema can be found: only [`R`](crate::field::real::R), other sets fail at runtime.
+/// The kind of extremum searched.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Extremum {
+    /// The global minimum, `argmin`
+    GlobalMin,
+    /// The global maximum, `argmax`
+    GlobalMax,
+    /// Local minima, `localmin`
+    LocalMin,
+    /// Local maxima, `localmax`
+    LocalMax,
+}
+
+impl Extremum {
+    /// Whether maxima are searched.
+    #[must_use]
+    pub const fn is_max(self) -> bool {
+        matches!(self, Self::GlobalMax | Self::LocalMax)
+    }
+
+    /// Whether local extrema are searched.
+    #[must_use]
+    pub const fn is_local(self) -> bool {
+        matches!(self, Self::LocalMin | Self::LocalMax)
+    }
+}
+
+/// Sets in which extrema can be found: only [`R`](crate::field::real::R), other sets fail at runtime.
 pub trait Optimize: Set {
-    /// The points where `f` reaches its global minimum (its maximum when `maximize` is `true`) over the real
-    /// values of `unknowns`, or over `{$[a, b]$}` for `bounds` `(a, b)` and a single unknown.
+    /// The points where `f` reaches the `extremum` over the real values of `unknowns`, or over `{$[a, b]$}` for
+    /// `bounds` `(a, b)` and a single unknown.
     ///
     /// # Errors
-    /// [`SolveError::Optimization`] when the extremum can't be decided: equations that can't be solved, values or
-    /// limits that can't be compared, several variables in a function that isn't rational or with parameters.
+    /// [`SolveError::Optimization`] when the extremum can't be decided: equations that can't be solved, values,
+    /// limits or signs that can't be compared, several variables in a function that isn't rational or with
+    /// parameters for global extrema, degenerate critical points for local ones.
     fn optimize(
         &self,
         f: &Term<Self>,
         unknowns: &[Symbol],
         bounds: Option<&(Term<Self>, Term<Self>)>,
-        maximize: bool,
+        extremum: Extremum,
     ) -> Result<Optimum<Self>, SolveError>;
 }
 
@@ -66,7 +101,7 @@ impl<T: Set> Optimize for T {
         _: &Term<Self>,
         _: &[Symbol],
         _: Option<&(Term<Self>, Term<Self>)>,
-        _: bool,
+        _: Extremum,
     ) -> Result<Optimum<Self>, SolveError> {
         Err(SolveError::Unsupported)
     }
@@ -78,21 +113,29 @@ impl Optimize for Real {
         f: &Expr,
         unknowns: &[Symbol],
         bounds: Option<&(Expr, Expr)>,
-        maximize: bool,
+        extremum: Extremum,
     ) -> Result<Optimum<Self>, SolveError> {
         profile_scope!("optimize");
         let equations: Vec<_> = unknowns
             .iter()
             .map(|x| Equation::new(f.derivative(*x).normalize(), zero()))
             .collect();
-        let f = if maximize { -f } else { f.clone() };
+        // Maxima of `f` are minima of `-f`
+        let f = if extremum.is_max() { -f } else { f.clone() };
         let solution = if unknowns.iter().all(|x| !depends(&f, *x)) {
             // A constant function reaches its extremum everywhere
             Solution::Assignments(vec![])
         } else if let [x] = unknowns {
-            univariate::argmin(&f, *x, bounds, &equations[0])?
+            let analysis = univariate::Analysis::new(&f, *x, bounds)?;
+            if extremum.is_local() {
+                analysis.local_min()?
+            } else {
+                analysis.global_min()?
+            }
         } else if bounds.is_some() {
             return Err(error("bounds are only supported for a single variable"));
+        } else if extremum.is_local() {
+            multivariate::local_min(&f, unknowns, &equations)?
         } else {
             multivariate::argmin(&f, unknowns, &equations)?
         };

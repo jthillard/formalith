@@ -906,6 +906,33 @@ pub static BUILTIN_DOCS: [BuiltinDoc; Context::BUILTIN_NAMES.len()] = [
             ex("argmax(sin(x), x, 0, 4)", "x = pi/2"),
         ],
     ),
+    doc(
+        Context::LOCALMIN,
+        Statements,
+        "localmin(f, [x_1, ..., x_n]) or localmin(f, x, a, b)",
+        "Points where f has a local minimum, over the reals or over [a, b].",
+        "Arguments like argmin. Minima are relative to the domain, so bounds and points where f stops being \
+         defined may be local minima. In R only: functions of one variable by the signs of the derivative between \
+         the critical points, functions of several variables by the Hessian matrix (degenerate critical points are \
+         classified only when they are global extrema of rational functions).",
+        &[
+            ex("localmin(x^3 - 3*x, x)", "x = 1"),
+            ex("localmin(x^3 - 3*x, x, -3, 3)", "x = -3 \\ x = 1"),
+            ex("localmin(cos(x), x)", "x = pi + 2 k pi \\ k in ZZ"),
+            ex("localmin(x^3 - 3*x + y^2, x, y)", "x = 1, y = 0"),
+        ],
+    ),
+    doc(
+        Context::LOCALMAX,
+        Statements,
+        "localmax(f, [x_1, ..., x_n]) or localmax(f, x, a, b)",
+        "Points where f has a local maximum, over the reals or over [a, b].",
+        "Like localmin of -f.",
+        &[
+            ex("localmax(x^3 - 3*x, x)", "x = -1"),
+            ex("localmax(x^3, x)", "\"no solution\""),
+        ],
+    ),
 ];
 
 #[cfg(test)]

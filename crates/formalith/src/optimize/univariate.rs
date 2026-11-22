@@ -10,6 +10,11 @@
 //!
 //! Periodic critical points `{$c(k)$}`, `k` being an integer parameter, are listed on finite intervals, and kept
 //! over ℝ when `{$f(c(k))$}` doesn't depend on `k` (limits at infinity then don't exist, as `f` oscillates).
+//!
+//! Local minima, relative to the domain, use the same [`Analysis`]: a critical point is one when the derivative
+//! goes from negative to positive (signs sampled between the sorted critical points of each interval), a special
+//! point when `f` is above its value on each side where it is defined (one-sided limit, then the sign of the
+//! derivative next to it), and a periodic critical point by the first non-vanishing derivative of order at least 2.
 
 use std::cmp::Ordering;
 
@@ -22,7 +27,7 @@ use super::{compare, error, keep_lowest};
 use crate::{
     context::{
         Context, Symbol,
-        assumptions::{Assumption, Assumptions},
+        assumptions::{Assumption, Assumptions, AssumptionsGuard},
     },
     field::real::{
         R, Real,
@@ -40,6 +45,9 @@ use crate::{
 
 /// The most points a periodic solution gives on a finite interval.
 const MAX_PERIODIC_POINTS: i64 = 100;
+
+/// The highest order of the derivatives deciding whether a periodic critical point is a local extremum.
+const MAX_DERIVATIVE_ORDER: usize = 6;
 
 /// A condition for `f` to be defined, on a subterm `u`.
 #[derive(Clone, Copy, Debug)]
@@ -63,238 +71,462 @@ impl Condition {
     }
 }
 
-/// The minimizers of `f` in `x`, over `bounds` (ℝ by default). `derivative` is `{$f' = 0$}`.
-pub(super) fn argmin(
-    f: &Expr,
+/// An open interval between two points of [`Analysis::points`] (`None` for an infinite end) where `f` is defined.
+struct Piece {
+    /// The index of the lower end.
+    lower: Option<usize>,
+    /// The index of the upper end.
+    upper: Option<usize>,
+    /// The derivative of `f` on the interval, with `abs` and `sign` written with their sign there.
+    derivative: Expr,
+    /// The critical points inside, sorted.
+    critical: Vec<Expr>,
+    /// Whether `f` is constant on the interval.
+    flat: bool,
+}
+
+/// The domain of a function of one variable cut at its special points, with its critical points.
+pub(super) struct Analysis<'a> {
+    /// The function.
+    f: &'a Expr,
+    /// The variable.
     x: Symbol,
-    bounds: Option<&(Expr, Expr)>,
-    derivative: &Equation<Real>,
-) -> Result<Solution<Real>, SolveError> {
-    let (a, b) = bounds.cloned().unwrap_or_else(|| (-infinity(), infinity()));
-    if depends(&a, x) || depends(&b, x) {
-        return Err(error(format!("the bounds can't depend on `{}`", x.name())));
-    }
-    if infinity_sign(&a) == Some(Ordering::Greater) || infinity_sign(&b) == Some(Ordering::Less) {
-        return Err(error("the lower bound must be below the upper bound"));
-    }
-    if has_step(f) {
-        return Err(error("`floor`, `ceil` and `piecewise` aren't supported"));
-    }
-    let (lower, upper) = (finite(&a), finite(&b));
-    if let (Some(a), Some(b)) = (lower, upper)
-        && compare(a, b) != Some(Ordering::Less)
-    {
-        return Err(error(format!(
-            "can't check that `{}` is below `{}`",
-            plain(a),
-            plain(b)
-        )));
-    }
-    let mut conditions = vec![];
-    collect_conditions(f, x, &mut conditions);
-    // Special points, where `f` may stop being defined or differentiable
-    let mut special = vec![];
-    for (u, _) in &conditions {
-        special.extend(zeros(u, x)?);
-    }
-    let steps = step_arguments(f, x);
-    for u in &steps {
-        special.extend(zeros(u, x)?);
-    }
-    let (_, denominator) = derivative.lhs.as_fraction(true);
-    if depends(&denominator, x) {
-        special.extend(zeros(&denominator, x)?);
-    }
-    // Integer parameters of periodic solutions
-    let used = f.symbols();
-    let parameters = |point: &Expr| -> Vec<Symbol> {
-        point
-            .symbols()
-            .into_iter()
-            .filter(|s| is_integer_parameter(*s) && !used.contains(s))
-            .collect()
-    };
-    let (special, special_families) = periodic(special, &parameters, lower, upper)?;
-    if !special_families.is_empty() {
-        return Err(error(
-            "infinitely many points where the function isn't defined or differentiable",
-        ));
-    }
-    // With `abs` or `sign`, critical points are found on each interval, where their signs are constant
-    let (critical, families) = if steps.is_empty() {
-        let critical = roots(R.solve_for(std::slice::from_ref(derivative), &[x])?, x)?;
-        periodic(critical, &parameters, lower, upper)?
-    } else {
-        (vec![], vec![])
-    };
-    // The points cutting the domain, sorted
-    let mut points: Vec<Expr> = vec![];
-    for point in lower.into_iter().chain(upper) {
-        insert_sorted(&mut points, point.clone())?;
-    }
-    for point in special {
-        if is_inside(&point, lower, upper, true)? {
-            insert_sorted(&mut points, point)?;
+    /// The lower bound, possibly `{$-oo$}`.
+    lower: Expr,
+    /// The upper bound, possibly `{$oo$}`.
+    upper: Expr,
+    /// The conditions for `f` to be defined.
+    conditions: Vec<(Expr, Condition)>,
+    /// The finite bounds and the special points between them, where `f` may stop being defined or differentiable,
+    /// sorted.
+    points: Vec<Expr>,
+    /// The intervals between the points where `f` is defined.
+    pieces: Vec<Piece>,
+    /// Periodic critical points `{$c(k)$}`, only over ℝ without special points.
+    families: Vec<Expr>,
+}
+
+impl<'a> Analysis<'a> {
+    /// Analyze `f` in `x` over `bounds` (ℝ by default).
+    pub(super) fn new(
+        f: &'a Expr,
+        x: Symbol,
+        bounds: Option<&(Expr, Expr)>,
+    ) -> Result<Self, SolveError> {
+        let (a, b) = bounds.cloned().unwrap_or_else(|| (-infinity(), infinity()));
+        if depends(&a, x) || depends(&b, x) {
+            return Err(error(format!("the bounds can't depend on `{}`", x.name())));
         }
-    }
-    if !families.is_empty() && !points.is_empty() {
-        return Err(error(
-            "periodic critical points are only supported over ℝ for functions defined and differentiable everywhere",
-        ));
-    }
-    // The open intervals between the points, `None` being an infinite end, kept when `f` is defined there
-    let mut intervals: Vec<(Option<&Expr>, Option<&Expr>)> = vec![];
-    if lower.is_none() {
-        intervals.push((None, points.first()));
-    }
-    intervals.extend(points.windows(2).map(|w| (Some(&w[0]), Some(&w[1]))));
-    if upper.is_none() && !points.is_empty() {
-        intervals.push((points.last(), None));
-    }
-    let mut defined = vec![];
-    for interval in intervals {
-        if is_defined(&conditions, x, &sample(interval))? {
-            defined.push(interval);
-        }
-    }
-    // Limits at the ends of the intervals where `f` is defined, from inside
-    let mut limits = vec![];
-    for (l, r) in &defined {
-        limits.push(match l {
-            Some(l) => (*l, f.limit(x, l, Direction::Right)),
-            None => (&a, f.limit(x, &a, Direction::Both)),
-        });
-        limits.push(match r {
-            Some(r) => (*r, f.limit(x, r, Direction::Left)),
-            None => (&b, f.limit(x, &b, Direction::Both)),
-        });
-    }
-    if limits
-        .iter()
-        .any(|(_, limit)| matches!(limit, Ok(l) if infinity_sign(l) == Some(Ordering::Less)))
-    {
-        return Ok(Solution::NoSolution);
-    }
-    // Candidates: special points where `f` is defined, critical points inside an interval where it is defined,
-    // and intervals where `f` is constant, with a sample point
-    let mut candidates: Vec<(Expr, Option<(Option<&Expr>, Option<&Expr>)>)> = vec![];
-    for point in &points {
-        if is_defined(&conditions, x, point)? {
-            candidates.push((point.clone(), None));
-        }
-    }
-    for point in critical {
-        if !is_inside(&point, lower, upper, false)?
-            || points
-                .iter()
-                .any(|p| compare(p, &point) == Some(Ordering::Equal))
+        if infinity_sign(&a) == Some(Ordering::Greater) || infinity_sign(&b) == Some(Ordering::Less)
         {
-            continue;
+            return Err(error("the lower bound must be below the upper bound"));
         }
-        for (l, r) in &defined {
-            if is_inside(&point, *l, *r, true)? {
-                candidates.push((point, None));
-                break;
-            }
+        if has_step(f) {
+            return Err(error("`floor`, `ceil` and `piecewise` aren't supported"));
         }
-    }
-    if !steps.is_empty() {
-        for &(l, r) in &defined {
-            let at = sample((l, r));
-            let g = without_steps(f, x, &at)?;
-            let derivative = Equation::new(g.derivative(x).normalize(), zero());
-            if derivative.lhs.expand().is_zero() {
-                candidates.push((at, Some((l, r))));
-                continue;
-            }
-            let critical = roots(R.solve_for(&[derivative], &[x])?, x)?;
-            let (critical, families) = periodic(critical, &parameters, l, r)?;
-            if !families.is_empty() {
-                return Err(error(format!(
-                    "periodic critical points of `{}` on an infinite interval",
-                    plain(&g)
-                )));
-            }
-            for point in critical {
-                if is_inside(&point, l, r, true)? {
-                    candidates.push((point, None));
-                }
-            }
-        }
-    }
-    let oscillating = !families.is_empty() && !defined.is_empty();
-    if oscillating {
-        candidates.extend(families.into_iter().map(|point| (point, None)));
-    }
-    // The integer parameters of periodic points are assumed integers while evaluating `f`
-    let mut assumptions = Assumptions::current();
-    for (point, _) in &candidates {
-        for k in parameters(point) {
-            assumptions.assume(k, Assumption::INTEGER).map_err(error)?;
-        }
-    }
-    let _guard = assumptions.enter();
-    let mut best = vec![];
-    for (point, interval) in candidates {
-        let value = subs(f, x, &point).expand();
-        if has_special_constant(&value) {
-            continue;
-        }
-        if let Some(k) = parameters(&point).first()
-            && depends(&value, *k)
+        let (lower, upper) = (finite(&a), finite(&b));
+        if let (Some(a), Some(b)) = (lower, upper)
+            && compare(a, b) != Some(Ordering::Less)
         {
             return Err(error(format!(
-                "the value `{}` at the periodic point `{}` depends on `{}`",
-                plain(&value),
-                plain(&point),
-                k.name()
+                "can't check that `{}` is below `{}`",
+                plain(a),
+                plain(b)
             )));
         }
-        keep_lowest(&mut best, (point, interval), value)?;
+        let derivative = f.derivative(x).normalize();
+        let mut conditions = vec![];
+        collect_conditions(f, x, &mut conditions);
+        // Special points, where `f` may stop being defined or differentiable
+        let mut special = vec![];
+        for (u, _) in &conditions {
+            special.extend(zeros(u, x)?);
+        }
+        let steps = step_arguments(f, x);
+        for u in &steps {
+            special.extend(zeros(u, x)?);
+        }
+        let (_, denominator) = derivative.as_fraction(true);
+        if depends(&denominator, x) {
+            special.extend(zeros(&denominator, x)?);
+        }
+        let parameters = |point: &Expr| parameters(f, point);
+        let (special, special_families) = periodic(special, &parameters, lower, upper)?;
+        if !special_families.is_empty() {
+            return Err(error(
+                "infinitely many points where the function isn't defined or differentiable",
+            ));
+        }
+        // With `abs` or `sign`, critical points are found on each interval, where their signs are constant
+        let (critical, families) = if steps.is_empty() {
+            let equation = Equation::new(derivative.clone(), zero());
+            let critical = roots(R.solve_for(&[equation], &[x])?, x)?;
+            periodic(critical, &parameters, lower, upper)?
+        } else {
+            (vec![], vec![])
+        };
+        // The points cutting the domain, sorted
+        let mut points: Vec<Expr> = vec![];
+        for point in lower.into_iter().chain(upper) {
+            insert_sorted(&mut points, point.clone())?;
+        }
+        for point in special {
+            if is_inside(&point, lower, upper, true)? {
+                insert_sorted(&mut points, point)?;
+            }
+        }
+        if !families.is_empty() && !points.is_empty() {
+            return Err(error(
+                "periodic critical points are only supported over ℝ for functions defined and differentiable \
+                 everywhere",
+            ));
+        }
+        // The open intervals between the points, kept when `f` is defined there
+        let mut intervals: Vec<(Option<usize>, Option<usize>)> = vec![];
+        if lower.is_none() {
+            intervals.push((None, (!points.is_empty()).then_some(0)));
+        }
+        intervals.extend((1..points.len()).map(|i| (Some(i - 1), Some(i))));
+        if upper.is_none() && !points.is_empty() {
+            intervals.push((Some(points.len() - 1), None));
+        }
+        let end = |i: Option<usize>| i.map(|i| &points[i]);
+        let mut pieces = vec![];
+        for (i, j) in intervals {
+            let (l, r) = (end(i), end(j));
+            let at = sample((l, r));
+            if !is_defined(&conditions, x, &at)? {
+                continue;
+            }
+            let mut piece = Piece {
+                lower: i,
+                upper: j,
+                derivative: derivative.clone(),
+                critical: vec![],
+                flat: false,
+            };
+            let critical = if steps.is_empty() {
+                critical.clone()
+            } else {
+                let g = without_steps(f, x, &at)?;
+                piece.derivative = g.derivative(x).normalize();
+                if piece.derivative.expand().is_zero() {
+                    piece.flat = true;
+                    pieces.push(piece);
+                    continue;
+                }
+                let equation = Equation::new(piece.derivative.clone(), zero());
+                let critical = roots(R.solve_for(&[equation], &[x])?, x)?;
+                let (critical, families) = periodic(critical, &parameters, l, r)?;
+                if !families.is_empty() {
+                    return Err(error(format!(
+                        "periodic critical points of `{}` on an infinite interval",
+                        plain(&g)
+                    )));
+                }
+                critical
+            };
+            for point in critical {
+                if is_inside(&point, l, r, true)? {
+                    insert_sorted(&mut piece.critical, point)?;
+                }
+            }
+            pieces.push(piece);
+        }
+        Ok(Self {
+            f,
+            x,
+            lower: a,
+            upper: b,
+            conditions,
+            points,
+            pieces,
+            families,
+        })
     }
-    let Some((_, lowest)) = best.first() else {
-        return Ok(Solution::NoSolution);
-    };
-    if let Some(&((_, Some((l, r))), _)) = best.iter().find(|((_, interval), _)| interval.is_some())
-    {
+
+    /// The ends of `piece`, `None` being infinite.
+    fn ends(&self, piece: &Piece) -> (Option<&Expr>, Option<&Expr>) {
+        (
+            piece.lower.map(|i| &self.points[i]),
+            piece.upper.map(|i| &self.points[i]),
+        )
+    }
+
+    /// The error for a function constant on `piece`.
+    fn flat_error(&self, piece: &Piece) -> SolveError {
+        let (l, r) = self.ends(piece);
         let end =
             |end: Option<&Expr>, infinite: &str| end.map_or_else(|| infinite.to_owned(), plain);
-        return Err(error(format!(
+        error(format!(
             "the extremum is reached on the whole interval ({}, {})",
             end(l, "-oo"),
             end(r, "oo")
-        )));
+        ))
     }
-    for (point, limit) in limits {
-        let at = || format!("the limit of `{}` at `{}`", plain(f), plain(point));
-        match limit {
-            Ok(l) if infinity_sign(&l) == Some(Ordering::Greater) => {}
-            Ok(l) if !has_special_constant(&l) => match compare(&l, lowest) {
-                Some(Ordering::Less) => return Ok(Solution::NoSolution),
-                Some(_) => {}
-                None => {
-                    return Err(error(format!(
-                        "can't compare {} with `{}`",
-                        at(),
-                        plain(lowest)
-                    )));
-                }
-            },
-            Ok(ref l) if !depends(l, Context::UNDEFINED) => {
-                return Err(error(format!("can't decide {}, `{}`", at(), plain(l))));
+
+    /// The text `the limit of f at point`, for errors.
+    fn limit_text(&self, point: &Expr) -> String {
+        format!("the limit of `{}` at `{}`", plain(self.f), plain(point))
+    }
+
+    /// Assume the integer parameters of `points` to be integers, until the returned guard is dropped.
+    fn assume_integers<'p>(
+        &self,
+        points: impl IntoIterator<Item = &'p Expr>,
+    ) -> Result<AssumptionsGuard, SolveError> {
+        let mut assumptions = Assumptions::current();
+        for point in points {
+            for k in parameters(self.f, point) {
+                assumptions.assume(k, Assumption::INTEGER).map_err(error)?;
             }
-            Ok(_) | Err(LimitError::Undefined) if oscillating && is_infinite(point) => {}
-            Ok(_) | Err(LimitError::Undefined) => {
-                return Err(error(format!("{} doesn't exist", at())));
-            }
-            Err(_) => return Err(error(format!("can't find {}", at()))),
         }
+        Ok(assumptions.enter())
     }
-    Ok(Solution::from_branches(
-        best.into_iter()
-            .map(|((point, _), _)| vec![(x, point)])
-            .collect(),
-    ))
+
+    /// The points where `f` reaches its global minimum.
+    pub(super) fn global_min(&self) -> Result<Solution<Real>, SolveError> {
+        let (f, x) = (self.f, self.x);
+        // Limits at the ends of the intervals where `f` is defined, from inside
+        let mut limits = vec![];
+        for piece in &self.pieces {
+            let (l, r) = self.ends(piece);
+            limits.push(match l {
+                Some(l) => (l, f.limit(x, l, Direction::Right)),
+                None => (&self.lower, f.limit(x, &self.lower, Direction::Both)),
+            });
+            limits.push(match r {
+                Some(r) => (r, f.limit(x, r, Direction::Left)),
+                None => (&self.upper, f.limit(x, &self.upper, Direction::Both)),
+            });
+        }
+        if limits
+            .iter()
+            .any(|(_, limit)| matches!(limit, Ok(l) if infinity_sign(l) == Some(Ordering::Less)))
+        {
+            return Ok(Solution::NoSolution);
+        }
+        // Candidates: special points where `f` is defined, critical points, and intervals where `f` is constant,
+        // with a sample point
+        let mut candidates: Vec<(Expr, Option<&Piece>)> = vec![];
+        for point in &self.points {
+            if is_defined(&self.conditions, x, point)? {
+                candidates.push((point.clone(), None));
+            }
+        }
+        for piece in &self.pieces {
+            if piece.flat {
+                candidates.push((sample(self.ends(piece)), Some(piece)));
+            }
+            candidates.extend(piece.critical.iter().map(|point| (point.clone(), None)));
+        }
+        let oscillating = !self.families.is_empty() && !self.pieces.is_empty();
+        if oscillating {
+            candidates.extend(self.families.iter().map(|point| (point.clone(), None)));
+        }
+        let _guard = self.assume_integers(candidates.iter().map(|(point, _)| point))?;
+        let mut best = vec![];
+        for (point, piece) in candidates {
+            let value = subs(f, x, &point).expand();
+            if has_special_constant(&value) {
+                continue;
+            }
+            if let Some(k) = parameters(f, &point).first()
+                && depends(&value, *k)
+            {
+                return Err(error(format!(
+                    "the value `{}` at the periodic point `{}` depends on `{}`",
+                    plain(&value),
+                    plain(&point),
+                    k.name()
+                )));
+            }
+            keep_lowest(&mut best, (point, piece), value)?;
+        }
+        let Some((_, lowest)) = best.first() else {
+            return Ok(Solution::NoSolution);
+        };
+        if let Some(((_, Some(piece)), _)) = best.iter().find(|((_, piece), _)| piece.is_some()) {
+            return Err(self.flat_error(piece));
+        }
+        for (point, limit) in limits {
+            let at = || self.limit_text(point);
+            match limit {
+                Ok(l) if infinity_sign(&l) == Some(Ordering::Greater) => {}
+                Ok(l) if !has_special_constant(&l) => match compare(&l, lowest) {
+                    Some(Ordering::Less) => return Ok(Solution::NoSolution),
+                    Some(_) => {}
+                    None => {
+                        return Err(error(format!(
+                            "can't compare {} with `{}`",
+                            at(),
+                            plain(lowest)
+                        )));
+                    }
+                },
+                Ok(ref l) if !depends(l, Context::UNDEFINED) => {
+                    return Err(error(format!("can't decide {}, `{}`", at(), plain(l))));
+                }
+                Ok(_) | Err(LimitError::Undefined) if oscillating && is_infinite(point) => {}
+                Ok(_) | Err(LimitError::Undefined) => {
+                    return Err(error(format!("{} doesn't exist", at())));
+                }
+                Err(_) => return Err(error(format!("can't find {}", at()))),
+            }
+        }
+        Ok(Solution::from_branches(
+            best.into_iter()
+                .map(|((point, _), _)| vec![(x, point)])
+                .collect(),
+        ))
+    }
+
+    /// The points where `f` has a local minimum, relative to its domain.
+    ///
+    /// On each interval, the signs of the derivative between the sorted critical points give the critical points
+    /// where it goes from negative to positive. At a special point where `f` is defined, `f` must be above its
+    /// value on each side where it is defined: from the one-sided limit, or when it is equal to the value, from
+    /// the sign of the derivative next to the point. Periodic critical points use the higher derivative test.
+    pub(super) fn local_min(&self) -> Result<Solution<Real>, SolveError> {
+        let (f, x) = (self.f, self.x);
+        if let Some(piece) = self.pieces.iter().find(|piece| piece.flat) {
+            return Err(self.flat_error(piece));
+        }
+        let mut minimizers = vec![];
+        // For each point, whether the derivative next to it makes `f` go above its value, on each defined side
+        let mut sides: Vec<Vec<(Direction, bool)>> = vec![vec![]; self.points.len()];
+        // With periodic critical points there is a single interval, ℝ, whose critical points can't be sorted
+        let pieces = if self.families.is_empty() {
+            self.pieces.as_slice()
+        } else {
+            &[]
+        };
+        for piece in pieces {
+            let (l, r) = self.ends(piece);
+            let cuts: Vec<Option<&Expr>> = std::iter::once(l)
+                .chain(piece.critical.iter().map(Some))
+                .chain(std::iter::once(r))
+                .collect();
+            let mut signs = vec![];
+            for cut in cuts.windows(2) {
+                let at = subs(&piece.derivative, x, &sample((cut[0], cut[1]))).expand();
+                signs.push(match constant_sign(&at) {
+                    Some(sign @ (Ordering::Less | Ordering::Greater)) => sign,
+                    _ => {
+                        return Err(error(format!("can't find the sign of `{}`", plain(&at))));
+                    }
+                });
+            }
+            for (i, point) in piece.critical.iter().enumerate() {
+                if signs[i] == Ordering::Less && signs[i + 1] == Ordering::Greater {
+                    minimizers.push(point.clone());
+                }
+            }
+            if let Some(i) = piece.lower {
+                sides[i].push((Direction::Right, signs[0] == Ordering::Greater));
+            }
+            if let Some(i) = piece.upper {
+                sides[i].push((Direction::Left, signs[signs.len() - 1] == Ordering::Less));
+            }
+        }
+        for (point, sides) in self.points.iter().zip(sides) {
+            if sides.is_empty() || !is_defined(&self.conditions, x, point)? {
+                continue;
+            }
+            let value = subs(f, x, point).expand();
+            if has_special_constant(&value) {
+                continue;
+            }
+            let mut above = true;
+            for (direction, derivative_above) in sides {
+                let limit = f
+                    .limit(x, point, direction)
+                    .map_err(|_| error(format!("can't find {}", self.limit_text(point))))?;
+                above &= match infinity_sign(&limit) {
+                    Some(sign) => sign == Ordering::Greater,
+                    None if has_special_constant(&limit) => {
+                        return Err(error(format!(
+                            "can't decide {}, `{}`",
+                            self.limit_text(point),
+                            plain(&limit)
+                        )));
+                    }
+                    None => match compare(&limit, &value) {
+                        Some(Ordering::Greater) => true,
+                        Some(Ordering::Less) => false,
+                        Some(Ordering::Equal) => derivative_above,
+                        None => {
+                            return Err(error(format!(
+                                "can't compare {} with `{}`",
+                                self.limit_text(point),
+                                plain(&value)
+                            )));
+                        }
+                    },
+                };
+            }
+            if above {
+                minimizers.push(point.clone());
+            }
+        }
+        if !self.pieces.is_empty() && !self.families.is_empty() {
+            let _guard = self.assume_integers(&self.families)?;
+            for point in &self.families {
+                if self.is_min_by_derivatives(point)? {
+                    minimizers.push(point.clone());
+                }
+            }
+        }
+        Ok(Solution::from_branches(
+            minimizers
+                .into_iter()
+                .map(|point| vec![(x, point)])
+                .collect(),
+        ))
+    }
+
+    /// Whether `f` has a local minimum at the critical point `point`, by the first derivative of order at least 2
+    /// not vanishing there: a minimum when its order is even and it is positive.
+    fn is_min_by_derivatives(&self, point: &Expr) -> Result<bool, SolveError> {
+        let mut derivative = self.f.derivative(self.x).normalize();
+        for order in 2..=MAX_DERIVATIVE_ORDER {
+            derivative = derivative.derivative(self.x).normalize();
+            let at = subs(&derivative, self.x, point).expand();
+            if at.is_zero() {
+                continue;
+            }
+            if let Some(k) = parameters(self.f, point).first()
+                && depends(&at, *k)
+            {
+                return Err(error(format!(
+                    "the derivative `{}` at the periodic point `{}` depends on `{}`",
+                    plain(&at),
+                    plain(point),
+                    k.name()
+                )));
+            }
+            return match constant_sign(&at) {
+                Some(Ordering::Equal) => continue,
+                Some(sign) => Ok(order % 2 == 0 && sign == Ordering::Greater),
+                None => Err(error(format!("can't find the sign of `{}`", plain(&at)))),
+            };
+        }
+        Err(error(format!(
+            "the derivatives of `{}` up to order {MAX_DERIVATIVE_ORDER} vanish at `{}`",
+            plain(self.f),
+            plain(point)
+        )))
+    }
+}
+
+/// The integer parameters of the periodic `point` which aren't symbols of `f`.
+fn parameters(f: &Expr, point: &Expr) -> Vec<Symbol> {
+    let used = f.symbols();
+    point
+        .symbols()
+        .into_iter()
+        .filter(|s| is_integer_parameter(*s) && !used.contains(s))
+        .collect()
 }
 
 /// `Some(bound)` for a finite bound.
