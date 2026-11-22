@@ -71,7 +71,7 @@ fn segment_distance(p: vec2<f32>, a: vec2<f32>, b: vec2<f32>) -> f32 {
 const BISECTIONS: i32 = 12;
 
 // The distance in pixels from the pixel at `(a, c)` (along and across the independent axis) to the curve, from
-// samples one pixel apart, cut at undefined values and discontinuities.
+// samples one pixel apart, cut at undefined values and discontinuities, drawn up to them.
 fn curve_distance(a: f32, c: f32, extent: f32) -> f32 {
     let w = u.frame.z;
     let low = -4.0 * extent;
@@ -107,37 +107,46 @@ fn curve_distance(a: f32, c: f32, extent: f32) -> f32 {
             let defined = select(p1, p0, d0);
             p0 = defined;
             p1 = vec2<f32>(lo, v_lo);
-        } else {
-            let top = max(v0, v1);
-            let bottom = min(v0, v1);
-            if c < bottom - w - 1.0 || c > top + w + 1.0 {
-                draw = false;
-            } else if top - bottom > 2.0 {
-                // A steep segment: continuous if the jump shrinks when following it, else a pole or a step
-                let jump = top - bottom;
-                var lo = a0;
-                var hi = a1;
-                var v_lo = v0;
-                var v_hi = v1;
-                for (var i = 0; i < 10; i++) {
-                    let mid = 0.5 * (lo + hi);
-                    let v_mid = curve_at(mid);
-                    if !nf_finite(v_mid) {
-                        break;
-                    }
-                    if abs(v_mid - v_lo) > abs(v_hi - v_mid) {
-                        hi = mid;
-                        v_hi = v_mid;
-                    } else {
-                        lo = mid;
-                        v_lo = v_mid;
-                    }
+        } else if abs(v1 - v0) > 2.0 {
+            // A steep segment: continuous if the jump shrinks when following it, else a pole or a step, drawn up to
+            // what is left of the jump on both sides (to the edge of the view at a pole, to both levels at a step)
+            let jump = abs(v1 - v0);
+            var lo = a0;
+            var hi = a1;
+            var v_lo = v0;
+            var v_hi = v1;
+            for (var i = 0; i < BISECTIONS; i++) {
+                // Nothing more to see once the rest of the jump is under a pixel or beyond the same edge
+                let above = v_lo > high && v_hi > high;
+                let below = v_lo < low && v_hi < low;
+                if abs(v_hi - v_lo) < 1.0 || above || below {
+                    break;
                 }
-                let rest = abs(v_hi - v_lo);
-                if !nf_finite(rest) || rest > 0.25 * jump {
-                    draw = false;
+                let mid = 0.5 * (lo + hi);
+                let v_mid = curve_at(mid);
+                if !nf_finite(v_mid) {
+                    break;
+                }
+                if abs(v_mid - v_lo) > abs(v_hi - v_mid) {
+                    hi = mid;
+                    v_hi = v_mid;
+                } else {
+                    lo = mid;
+                    v_lo = v_mid;
                 }
             }
+            let rest = abs(v_hi - v_lo);
+            if !nf_finite(rest) || rest > 0.25 * jump {
+                let q = vec2<f32>(lo, clamp(v_lo, low, high));
+                let r = vec2<f32>(hi, clamp(v_hi, low, high));
+                p0.y = clamp(p0.y, low, high);
+                p1.y = clamp(p1.y, low, high);
+                let pixel = vec2<f32>(a, c);
+                best = min(best, min(segment_distance(pixel, p0, q), segment_distance(pixel, r, p1)));
+                draw = false;
+            }
+        } else if c < min(v0, v1) - w - 1.0 || c > max(v0, v1) + w + 1.0 {
+            draw = false;
         }
         if draw {
             p0.y = clamp(p0.y, low, high);

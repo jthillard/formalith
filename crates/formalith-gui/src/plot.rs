@@ -755,6 +755,17 @@ mod tests {
         assert!(image.at(0., 0.) > 0.5);
         let pole = std::f64::consts::FRAC_PI_2;
         assert!(image.at(pole, 0.) == 0. && image.at(-pole, 2.) == 0.);
+        // Narrow branches still go to the edges near their poles, without vertical lines
+        let image = curve("tan(4*x)");
+        let pole = std::f64::consts::FRAC_PI_8;
+        let pixel = VIEW.width() / f64::from(WIDTH);
+        let near = |y| {
+            (-3..=3)
+                .map(|k| image.at(pole + f64::from(k) * pixel, y))
+                .fold(0., f32::max)
+        };
+        assert!(near(5.5) > 0.5 && near(-5.5) > 0.5);
+        assert!(image.at(pole, 0.) == 0.);
         let image = curve("floor(x)");
         assert!(image.at(0.5, 0.) > 0.5);
         assert!(image.at(1., 0.5) == 0.);
