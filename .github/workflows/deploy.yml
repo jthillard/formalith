@@ -37,7 +37,7 @@ jobs:
         with:
           tool: wasm-pack
       - run: sudo apt-get install -y brotli
-      - run: make web gui-web
+      - run: ./dev web --release && ./dev gui-web --release
       # gzip and brotli copies for nginx's gzip_static / brotli_static
       - run: |
           find crates/formalith-web/www crates/formalith-gui/www -type f \

@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+# Runs Formalith's interfaces, see `./dev --help`
+set -euo pipefail
+cd "$(dirname "$0")"
+
+usage() {
+    cat <<'EOF'
+Usage: ./dev <command> [options] [-- args]
+
+Commands:
+  repl      the REPL (formalith-cli), arguments after `--` are passed to it
+  gui       the graphical interface, natively
+  web       the web REPL, built into crates/formalith-web/www/pkg
+  gui-web   the web GUI and its worker, built into crates/formalith-gui/www
+
+Options:
+  --release   optimized build (wasm: profile wasm-release and wasm-opt; otherwise a debug build without wasm-opt)
+  --profile   with the profiler window, F12 (gui, gui-web)
+  --serve     serve the page once built, on port 8000 (web) or 8001 (gui-web)
+EOF
+    exit "$1"
+}
+
+fail() {
+    echo "error: $1" >&2
+    exit 1
+}
+
+(($#)) || usage 1
+command=$1
+shift
+release=
+profile=
+serve=
+args=()
+while (($#)); do
+    case $1 in
+    --release) release=1 ;;
+    --profile) profile=1 ;;
+    --serve) serve=1 ;;
+    --)
+        shift
+        args=("$@")
+        break
+        ;;
+    -h | --help) usage 0 ;;
+    *) fail "unknown option $1" ;;
+    esac
+    shift
+done
+case $command in
+-h | --help) usage 0 ;;
+repl | gui | web | gui-web) ;;
+*) fail "unknown command $command" ;;
+esac
+if [[ $profile && $command != gui* ]]; then fail "--profile is only for gui and gui-web"; fi
+if [[ $serve && $command != *web ]]; then fail "--serve is only for web and gui-web"; fi
+if ((${#args[@]})) && [[ $command != repl ]]; then fail "arguments are only for repl"; fi
+
+cargo_flags=()
+if [[ $release ]]; then cargo_flags+=(--release); fi
+if [[ $profile ]]; then cargo_flags+=(--features profile); fi
+
+# Builds a wasm crate for the web: `wasm <crate> <out dir, relative to the crate>`
+wasm() {
+    local mode=(--dev --no-opt)
+    if [[ $release ]]; then mode=(--profile wasm-release); fi
+    wasm-pack build "crates/$1" --target web "${mode[@]}" --out-dir "$2" --no-typescript ${profile:+-- --features profile}
+}
+
+# Serves a page with `--serve`: `serve <directory> <port>`
+serve() {
+    if [[ $serve ]]; then exec python -m http.server -d "$1" "$2"; fi
+}
+
+case $command in
+repl) exec cargo run -p formalith-cli "${cargo_flags[@]}" -- "${args[@]}" ;;
+gui) exec cargo run -p formalith-gui "${cargo_flags[@]}" ;;
+web)
+    wasm formalith-web www/pkg
+    serve crates/formalith-web/www 8000
+    ;;
+gui-web)
+    # The interface and its Web Worker evaluating the lines, as two wasm modules
+    wasm formalith-gui www/pkg
+    wasm formalith-gui-worker ../formalith-gui/www/worker-pkg
+    serve crates/formalith-gui/www 8001
+    ;;
+esac

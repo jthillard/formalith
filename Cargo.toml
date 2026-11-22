@@ -13,7 +13,7 @@ license-file = "LICENSE"
 formalith = { path = "crates/formalith" }
 formalith-session = { path = "crates/formalith-session" }
 
-# The wasm builds (`make web`, `make gui-web`): small binaries, native builds keep `release`
+# The wasm builds (`./dev web --release`, `./dev gui-web --release`): small binaries, native builds keep `release`
 [profile.wasm-release]
 inherits = "release"
 opt-level = "s"
