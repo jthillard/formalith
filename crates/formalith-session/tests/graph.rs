@@ -42,7 +42,9 @@ fn test_function() {
 fn test_definitions() {
     let mut session = Session::new();
     let (text, graph) = draw(&mut session, "f(t) := t^3 - a*t");
-    assert_eq!(text, "f(t) := t^3-t*a");
+    // The order of `t` and `a` depends on when they were created, and tests run in parallel
+    let body = draw(&mut Session::new(), "t^3 - a*t").0;
+    assert_eq!(text, format!("f(t) := {body}"));
     let graph = graph.unwrap();
     assert_eq!(graph.params, ["a"]);
     let GraphKind::Function { expr, .. } = &graph.kind else {
