@@ -526,10 +526,10 @@ fn result_label(
                     ui.spinner();
                 }
                 if let Some((uri, bytes)) = image {
-                    // White glyphs, tinted like the text
+                    // White glyphs, tinted like strong text (the plain text color is a dim gray in the dark theme)
                     let image = egui::Image::from_bytes(uri, bytes)
                         .fit_to_original_size(1.)
-                        .tint(ui.visuals().text_color());
+                        .tint(ui.visuals().strong_text_color());
                     ui.add_enabled(!pending, image);
                 } else {
                     ui.add_enabled(

@@ -47,13 +47,13 @@
         if (typeof svg !== 'string' || !svg.includes('<svg')) {
           throw new Error('typst rendering failed');
         }
-        // The selectable text layer (`foreignObject`) and the scripts (not even valid XML) are for pages, not for
-        // the rasterizer (resvg)
+        // The selectable text layer (`foreignObject`), the scripts (not even valid XML) and the stylesheet are for
+        // pages, not for the rasterizer (resvg). The stylesheet fills glyphs with `var(--glyph_fill)`, which resvg
+        // doesn't support and draws black; without it, glyphs inherit the white fill of their text group.
         return svg
           .replace(/<script[\s\S]*?<\/script>/g, '')
-          .replace(/<foreignObject[\s\S]*?<\/foreignObject>/g, '')
-          .replace(/(fill|stroke)=(["'])(#000000?|#000000ff|black)\2/gi, '$1=$2#ffffff$2')
-          .replace(/(fill|stroke):\s*(#000000?|black)/gi, '$1:#ffffff');
+          .replace(/<style[\s\S]*?<\/style>/g, '')
+          .replace(/<foreignObject[\s\S]*?<\/foreignObject>/g, '');
       });
     };
   </script>
