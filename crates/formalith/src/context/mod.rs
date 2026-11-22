@@ -274,9 +274,13 @@ impl Context {
     pub const IDENTITY: Symbol = Symbol(76);
     /// Degree `degree(f, x)` of a polynomial `f` in `x`
     pub const DEGREE: Symbol = Symbol(77);
+    /// Minimizers `argmin(f, x)` of a function, only allowed as a whole statement
+    pub const ARGMIN: Symbol = Symbol(78);
+    /// Maximizers `argmax(f, x)` of a function, only allowed as a whole statement
+    pub const ARGMAX: Symbol = Symbol(79);
 
     #[rustfmt::skip]
-    const BUILTIN_NAMES: [&'static str; 78] = [
+    const BUILTIN_NAMES: [&'static str; 80] = [
         "abs", "det", "expand", "factor", "simplify", "re", "im", "conj", "sqrt", "root", "sign",
         "floor", "ceil", "min", "max", "gcd", "lcm", "quo", "rem", "diff", "solve", "approx",
         "exp", "ln", "sin", "cos", "tan", "pi", "e", "lim", "oo", "undefined",
@@ -285,7 +289,7 @@ impl Context {
         "gamma", "beta", "digamma", "polygamma", "zeta", "euler_gamma", "sum", "product",
         "dsolve", "transpose", "trace", "rank", "kernel", "charpoly", "eigenvalues", "eigenvectors",
         "hermite", "smith", "apart", "lambertw", "piecewise", "gradient", "jacobian", "hessian",
-        "I", "degree",
+        "I", "degree", "argmin", "argmax",
     ];
 
     /// Return `true` if `symbol` is a builtin constant, like `{$pi$}`, which is not a function.
@@ -335,7 +339,9 @@ impl Context {
             | Self::DSOLVE
             | Self::GRADIENT
             | Self::JACOBIAN
-            | Self::HESSIAN => Some((1, usize::MAX)),
+            | Self::HESSIAN
+            | Self::ARGMIN
+            | Self::ARGMAX => Some((1, usize::MAX)),
             Self::APPROX | Self::LOG | Self::CHARPOLY => Some((1, 2)),
             Self::DIFF => Some((2, 3)),
             Self::APART | Self::DEGREE => Some((1, 2)),

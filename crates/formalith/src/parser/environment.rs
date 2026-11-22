@@ -18,6 +18,7 @@ use crate::{
     },
     field::{Set, SetParseExpression},
     ode::{Condition, Dsolve, OdeSolution},
+    optimize::Optimize,
     solve::{
         Equation, Solution, Solve,
         inequality::{Inequality, Region, SolveInequality},
@@ -254,9 +255,10 @@ pub enum Statement<E: Set> {
         /// The body evaluated with its parameters as symbols.
         body: Term<E>,
     },
-    /// A system of equations, like `x + y = 3, x - y = 1`, solved for every symbol.
+    /// A system of equations, like `x + y = 3, x - y = 1`, solved for every symbol, or the extrema of a function,
+    /// like `argmin(x^2 - 2 x, x)`.
     System {
-        /// The equations.
+        /// The equations, those of the critical points for an extremum.
         equations: Vec<Equation<E>>,
         /// The solutions of the system.
         solution: Solution<E>,
@@ -405,6 +407,9 @@ impl<'a> Parser<'a> {
         }
         if self.is_call(Context::DSOLVE) {
             return self.parse_dsolve(set);
+        }
+        if self.is_call(Context::ARGMIN) || self.is_call(Context::ARGMAX) {
+            return self.parse_argmin(set);
         }
         let mut items = self.parse_items(set)?;
         self.expect_eof()?;
@@ -600,6 +605,82 @@ impl<'a> Parser<'a> {
         Ok(Statement::System {
             equations,
             solution,
+            integers,
+        })
+    }
+
+    /// Parse `argmin(f, x_1, ..., x_n)`, `argmin(f, x, a, b)` or the same with `argmax`, finding the points where
+    /// `f` reaches its global extremum. The variables are every symbol of `f` sorted by name when there is none.
+    /// With one variable and two more arguments which aren't both symbols of `f`, they are the bounds.
+    fn parse_argmin<E: SetParseExpression>(&mut self, set: E) -> Result<Statement<E>, ParserError> {
+        let maximize = self.is_call(Context::ARGMAX);
+        let name = if maximize { "argmax" } else { "argmin" };
+        // `argmin(`
+        self.next_token();
+        self.next_token();
+        let items = self.parse_items(set)?;
+        self.expect_token(&TokenKind::CloseParen)?;
+        self.expect_eof()?;
+        let mut args = vec![];
+        for (term, rhs) in items {
+            if rhs.is_some() {
+                return Err(ParserError::new(format!(
+                    "{name} expects a function and its variables, not a relation"
+                )));
+            }
+            args.push(term);
+        }
+        let f = args.remove(0);
+        let symbols = f.symbols();
+        let symbol_of_f =
+            |term: &Term<E>| matches!(term, Term::Symbol(s) if symbols.contains(&s.symbol));
+        let (variables, bounds) = match args.as_slice() {
+            [x, a, b] if !(symbol_of_f(a) && symbol_of_f(b)) => {
+                (std::slice::from_ref(x), Some((a.clone(), b.clone())))
+            }
+            variables => (variables, None),
+        };
+        let mut unknowns = vec![];
+        for variable in variables {
+            let Term::Symbol(symbol) = variable else {
+                return Err(ParserError::new(format!(
+                    "`{}` is not a variable, expected a symbol",
+                    plain(variable)
+                )));
+            };
+            let symbol = symbol.symbol;
+            if Context::is_builtin_constant(symbol) || set.is_constant(symbol.name()) {
+                return Err(ParserError::new(format!(
+                    "`{}` is a constant, not a variable",
+                    symbol.name()
+                )));
+            }
+            if unknowns.contains(&symbol) {
+                return Err(ParserError::new(format!(
+                    "Variable `{}` is repeated",
+                    symbol.name()
+                )));
+            }
+            unknowns.push(symbol);
+        }
+        if unknowns.is_empty() {
+            unknowns = symbols
+                .iter()
+                .copied()
+                .filter(|s| !Context::is_builtin_constant(*s) && !set.is_constant(s.name()))
+                .collect();
+            unknowns.sort_by(|a, b| a.name().cmp(b.name()));
+            if unknowns.is_empty() {
+                return Err(ParserError::new(format!(
+                    "{name} expects a function of at least one variable"
+                )));
+            }
+        }
+        let optimum = set.optimize(&f, &unknowns, bounds.as_ref(), maximize)?;
+        let integers = integer_parameters(&optimum.equations, &optimum.solution);
+        Ok(Statement::System {
+            equations: optimum.equations,
+            solution: optimum.solution,
             integers,
         })
     }

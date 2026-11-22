@@ -43,6 +43,7 @@ mod iter;
 pub mod limit;
 pub mod matrix;
 pub mod ode;
+pub mod optimize;
 pub mod parser;
 pub mod polynom;
 pub mod printer;

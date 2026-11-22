@@ -241,6 +241,8 @@ pub enum SolveError {
     Unsupported,
     /// Inequalities can't be solved, with the reason.
     Inequality(String),
+    /// The extremum of a function can't be found, with the reason.
+    Optimization(String),
 }
 
 impl fmt::Display for SolveError {
@@ -259,7 +261,7 @@ impl fmt::Display for SolveError {
             Self::Unsolvable(term) => write!(f, "can't solve `{term} = 0`"),
             Self::NotInvertible => f.write_str("a pivot is not invertible in this set"),
             Self::Unsupported => f.write_str("equations can't be solved in this set"),
-            Self::Inequality(reason) => f.write_str(reason),
+            Self::Inequality(reason) | Self::Optimization(reason) => f.write_str(reason),
         }
     }
 }

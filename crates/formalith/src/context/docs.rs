@@ -878,6 +878,34 @@ pub static BUILTIN_DOCS: [BuiltinDoc; Context::BUILTIN_NAMES.len()] = [
             ex("degree(x^2*y + y^3, y)", "3"),
         ],
     ),
+    doc(
+        Context::ARGMIN,
+        Statements,
+        "argmin(f, [x_1, ..., x_n]) or argmin(f, x, a, b)",
+        "Points where f reaches its global minimum, over the reals or over [a, b].",
+        "The variables are every symbol of f by default. With one variable and two more arguments which aren't \
+         both symbols of f, they are the bounds (possibly -oo or oo). In R only: functions of one variable are \
+         compared at their critical points, where they stop being defined or differentiable, and at the bounds, \
+         and with their limits; functions of several variables must be rational functions without parameters. \
+         Gives no solution when the minimum isn't reached, like for exp(x).",
+        &[
+            ex("argmin(x^4 - 2*x^2, x)", "x = -1 \\ x = 1"),
+            ex("argmin(x^3 - 3*x, x, -3, 3)", "x = -3"),
+            ex("argmin(x^2 + y^2 - 2*x, x, y)", "x = 1, y = 0"),
+            ex("argmin(exp(x), x)", "\"no solution\""),
+        ],
+    ),
+    doc(
+        Context::ARGMAX,
+        Statements,
+        "argmax(f, [x_1, ..., x_n]) or argmax(f, x, a, b)",
+        "Points where f reaches its global maximum, over the reals or over [a, b].",
+        "Like argmin of -f.",
+        &[
+            ex("argmax(x*exp(-x), x)", "x = 1"),
+            ex("argmax(sin(x), x, 0, 4)", "x = pi/2"),
+        ],
+    ),
 ];
 
 #[cfg(test)]
