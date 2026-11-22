@@ -40,19 +40,22 @@ pub use formalith;
 pub use formalith::dynamic::{Coefficients, SetChoice, sets_help};
 pub use formalith::parser::environment::Environment;
 use formalith::{
+    context::docs::{self, Category},
     dynamic::{self, Evaluated, StatementKind},
     printer::PrintOptions,
 };
 use graph::Graph;
 
 /// The commands of a session, with their description.
-pub const COMMANDS: [(&str, &str); 6] = [
+pub const COMMANDS: [(&str, &str); 8] = [
     (":defs", "list definitions and assumptions"),
     (":clear [name]", "remove a definition, or all of them"),
     (":set", "show the current set"),
     (":set <name>", "evaluate in another set"),
     (":typst", "toggle Typst math output"),
     ("help", "show this help"),
+    ("help builtins", "list the builtin functions"),
+    ("help <name>", "show the documentation of a builtin"),
 ];
 
 /// An interactive session: inputs are evaluated in the current set, with the definitions and assumptions made
@@ -143,6 +146,7 @@ impl Session {
                 (Output::Message(format!("typst output {state}")), true)
             }
             "help" | ":help" => (Output::Message(Self::help()), false),
+            "help builtins" | ":help builtins" => (Output::Message(builtins_help()), false),
             ":defs" => {
                 let definitions = dynamic::definitions(&self.env);
                 let definitions = if definitions.is_empty() {
@@ -153,7 +157,17 @@ impl Session {
                 (Output::Message(definitions), false)
             }
             _ => {
-                if let Some(name) = command_argument(line, ":set") {
+                if let Some(name) =
+                    command_argument(line, "help").or_else(|| command_argument(line, ":help"))
+                {
+                    match builtin_help(name) {
+                        Some(help) => (Output::Message(help), false),
+                        None => (
+                            Output::Error(format!("unknown builtin `{name}`, see `help builtins`")),
+                            false,
+                        ),
+                    }
+                } else if let Some(name) = command_argument(line, ":set") {
                     self.set_command(name)
                 } else if let Some(name) = command_argument(line, ":clear") {
                     match dynamic::clear_definitions(&mut self.env, name) {
@@ -253,6 +267,59 @@ impl Session {
 }
 
 /// The argument of `command` in `line`, if `line` is this command.
+/// The list of builtins by category, with their summary.
+fn builtins_help() -> String {
+    let mut help = String::from("builtins (`help <name>` for details):");
+    for category in Category::ALL {
+        help.push_str(&format!("\n{}:", category.title()));
+        for doc in category.builtins() {
+            help.push_str(&format!("\n  {:<13} {}", doc.name(), doc.summary));
+        }
+    }
+    help
+}
+
+/// The documentation of the builtin `name`: signature, description and examples.
+fn builtin_help(name: &str) -> Option<String> {
+    let doc = docs::find(name)?;
+    let mut help = format!("{}\n  {}", doc.signature, doc.summary);
+    if !doc.details.is_empty() {
+        help.push('\n');
+        help.push_str(&wrap(doc.details, 2, 100));
+    }
+    help.push_str("\nexamples:");
+    for example in doc.examples {
+        let set = if example.set == "R" {
+            String::new()
+        } else {
+            format!(" (in {})", example.set)
+        };
+        help.push_str(&format!("\n  {} → {}{set}", example.input, example.result));
+    }
+    Some(help)
+}
+
+/// `text` cut into lines of at most `width` characters (unless a word is longer), indented by `indent` spaces.
+fn wrap(text: &str, indent: usize, width: usize) -> String {
+    let mut lines = vec![String::new()];
+    for word in text.split_whitespace() {
+        let line = lines.last_mut().unwrap();
+        if !line.is_empty() && indent + line.chars().count() + 1 + word.chars().count() > width {
+            lines.push(word.to_owned());
+        } else {
+            if !line.is_empty() {
+                line.push(' ');
+            }
+            line.push_str(word);
+        }
+    }
+    lines
+        .iter()
+        .map(|line| format!("{:indent$}{line}", ""))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 fn command_argument<'a>(line: &'a str, command: &str) -> Option<&'a str> {
     let argument = line.strip_prefix(command)?;
     (argument.is_empty() || argument.starts_with(char::is_whitespace)).then(|| argument.trim())

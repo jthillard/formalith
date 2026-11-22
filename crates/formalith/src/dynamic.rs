@@ -316,12 +316,11 @@ impl FromStr for SetChoice {
     }
 }
 
-/// List the available sets with their description.
+/// The available sets, as their name (`Z/n` for every modulus...) and description.
 #[must_use]
-pub fn sets_help() -> String {
+pub fn sets() -> Vec<(String, &'static str)> {
     let x = Symbol::new("x");
-    let mut help = String::from("available sets:");
-    for (name, set) in SetChoice::ALL
+    SetChoice::ALL
         .into_iter()
         .map(|set| (set.name(), set))
         .chain([
@@ -329,8 +328,16 @@ pub fn sets_help() -> String {
             ("M(Z/n)".to_owned(), SetChoice::MZn(2)),
             ("K[x]".to_owned(), SetChoice::Poly(Coefficients::R, x)),
         ])
-    {
-        help.push_str(&format!("\n  {name:<6} {}", set.description()));
+        .map(|(name, set)| (name, set.description()))
+        .collect()
+}
+
+/// List the available sets with their description.
+#[must_use]
+pub fn sets_help() -> String {
+    let mut help = String::from("available sets:");
+    for (name, description) in sets() {
+        help.push_str(&format!("\n  {name:<6} {description}"));
     }
     help
 }

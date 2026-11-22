@@ -69,3 +69,16 @@ fn replay() {
     assert_eq!(restored.set(), SetChoice::Zn(5));
     assert_eq!(run(&mut restored, "b*3").0, run(&mut session, "b*3").0);
 }
+
+#[test]
+fn builtins_help() {
+    let mut session = Session::new();
+    let list = run(&mut session, "help builtins").0;
+    assert!(list.contains("Calculus:"));
+    assert!(list.contains("integrate"));
+    let help = run(&mut session, "help integrate").0;
+    assert!(help.starts_with("integrate(f, x, [a, b])"));
+    assert!(help.contains("integrate(x^2, x) → x^3/3"));
+    assert!(run(&mut session, ":help gcd").0.contains("(in Z)"));
+    assert!(matches!(session.run("help nope").output, Output::Error(_)));
+}

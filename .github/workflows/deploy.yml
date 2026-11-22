@@ -1,11 +1,11 @@
 name: Deploy
 
-# Builds the REPL and the GUI for the web once CI passes on main, and copies them to the VPS.
+# Builds the REPL, the GUI and the documentation for the web once CI passes on main, and copies them to the VPS.
 # Repository secrets:
 # - VPS_HOST, VPS_USER: where to connect with SSH
 # - VPS_SSH_KEY: private key of a deploy key authorized for VPS_USER
 # - VPS_KNOWN_HOSTS: the host's line(s), from `ssh-keyscan <host>`
-# - VPS_PATH: directory receiving `repl/` and `gui/`
+# - VPS_PATH: directory receiving `repl/`, `gui/` and `docs/`
 on:
   workflow_run:
     workflows: [CI]
@@ -37,10 +37,10 @@ jobs:
         with:
           tool: wasm-pack
       - run: sudo apt-get install -y brotli
-      - run: ./dev web --release && ./dev gui-web --release
+      - run: ./dev web --release && ./dev gui-web --release && ./dev docs
       # gzip and brotli copies for nginx's gzip_static / brotli_static
       - run: |
-          find crates/formalith-web/www crates/formalith-gui/www -type f \
+          find crates/formalith-web/www crates/formalith-gui/www target/docs-site -type f \
             \( -name '*.wasm' -o -name '*.js' -o -name '*.html' -o -name '*.css' \) \
             -exec gzip -9knf {} \; -exec brotli -kf {} \;
       - name: Copy to the VPS
@@ -55,3 +55,4 @@ jobs:
           sync() { rsync -rlcz --delete --delay-updates --exclude package.json --exclude .gitignore -e "ssh -i ~/.ssh/id_deploy" "$@"; }
           sync crates/formalith-web/www/ "$TARGET/repl/"
           sync crates/formalith-gui/www/ "$TARGET/gui/"
+          sync target/docs-site/ "$TARGET/docs/"

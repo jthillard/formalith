@@ -12,11 +12,12 @@ Commands:
   gui       the graphical interface, natively
   web       the web REPL, built into crates/formalith-web/www/pkg
   gui-web   the web GUI and its worker, built into crates/formalith-gui/www
+  docs      the documentation pages of the website, written into target/docs-site
 
 Options:
   --release   optimized build (wasm: profile wasm-release and wasm-opt; otherwise a debug build without wasm-opt)
   --profile   with the profiler window, F12 (gui, gui-web)
-  --serve     serve the page once built, on port 8000 (web) or 8001 (gui-web)
+  --serve     serve the page once built, on port 8000 (web), 8001 (gui-web) or 8002 (docs)
 EOF
     exit "$1"
 }
@@ -50,11 +51,11 @@ while (($#)); do
 done
 case $command in
 -h | --help) usage 0 ;;
-repl | gui | web | gui-web) ;;
+repl | gui | web | gui-web | docs) ;;
 *) fail "unknown command $command" ;;
 esac
 if [[ $profile && $command != gui* ]]; then fail "--profile is only for gui and gui-web"; fi
-if [[ $serve && $command != *web ]]; then fail "--serve is only for web and gui-web"; fi
+if [[ $serve && $command != *web && $command != docs ]]; then fail "--serve is only for web, gui-web and docs"; fi
 if ((${#args[@]})) && [[ $command != repl ]]; then fail "arguments are only for repl"; fi
 
 cargo_flags=()
@@ -85,5 +86,9 @@ gui-web)
     wasm formalith-gui www/pkg
     wasm formalith-gui-worker ../formalith-gui/www/worker-pkg
     serve crates/formalith-gui/www 8001
+    ;;
+docs)
+    cargo run -p formalith-session --example builtin_docs "${cargo_flags[@]}" -- target/docs-site
+    serve target/docs-site 8002
     ;;
 esac

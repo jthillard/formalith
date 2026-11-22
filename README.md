@@ -48,7 +48,8 @@ cargo run -- --set 'Z/7' 'factor(x^2 + 1)'
 ```
 
 In the REPL, `:set <name>` changes the set, `:typst` toggles Typst output, `f(x) := x^2` defines a function,
-`:defs` lists definitions and `:clear [name]` removes them. Systems are solved with `x + y = 3, x - y = 1`.
+`:defs` lists definitions and `:clear [name]` removes them, `help builtins` lists the builtin functions and
+`help <name>` documents one. Systems are solved with `x + y = 3, x - y = 1`.
 Assumptions on symbols are declared with `assume(a > 0, b != 0, n integer)`, giving `sqrt(a^2) = a`,
 `integrate(1/a, a) = ln(a)`, `cos(2 n pi) = 1` or `lim(exp(a x), x, oo) = oo`.
 
@@ -56,6 +57,8 @@ Assumptions on symbols are declared with `assume(a > 0, b != 0, n integer)`, giv
 
 `./dev web` builds the WebAssembly package (needs `wasm-pack`), `./dev web --serve` also serves the page on port 8000.
 Add `--release` for an optimized build (otherwise a debug build without `wasm-opt`), see `./dev --help`.
+`./dev docs --serve` writes the documentation page of the builtins into `target/docs-site/` and serves it on port
+8002.
 
 ## Graphing calculator
 

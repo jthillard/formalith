@@ -11,6 +11,7 @@ use append_only_vec::AppendOnlyVec;
 use crate::printer::{PrettyPrint, PrettyPrinter, Print};
 
 pub mod assumptions;
+pub mod docs;
 
 /// Store all symbols' data created
 static SYMBOLS: AppendOnlyVec<SymbolData> = AppendOnlyVec::new();

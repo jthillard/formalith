@@ -140,6 +140,7 @@ function startWorker() {
   worker.onmessage = ({ data }) => {
     if (data.ready) {
       prefetchTypst();
+      runQueued();
       return;
     }
     if (!pending || data.id !== pending.id) {
@@ -171,6 +172,7 @@ function startWorker() {
       }
     }
     scrollToPrompt();
+    runQueued();
   };
   worker.onerror = event => {
     event.preventDefault();
@@ -203,6 +205,22 @@ function run(line) {
   pending = { id: nextId++, line };
   busy.hidden = false;
   worker.postMessage(pending);
+}
+
+// Lines of the `run` query parameter (separated by newlines), like the examples of the documentation, run once
+// the worker is ready, one after the other
+const queued = (new URLSearchParams(location.search).get('run') ?? '')
+  .split('\n')
+  .map(line => line.trim())
+  .filter(Boolean);
+if (queued.length) {
+  window.history.replaceState(null, '', location.pathname);
+}
+
+function runQueued() {
+  if (!pending && queued.length) {
+    run(queued.shift());
+  }
 }
 
 form.addEventListener('submit', event => {
