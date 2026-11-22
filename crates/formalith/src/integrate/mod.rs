@@ -39,6 +39,7 @@
 
 mod abs;
 mod apart;
+pub(crate) use apart::apart_arguments;
 mod definite;
 mod parts;
 pub(crate) mod poly;

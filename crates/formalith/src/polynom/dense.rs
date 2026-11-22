@@ -1,6 +1,6 @@
 //! Dense univariate polynomials over a field of characteristic 0: rational coefficients for the
-//! factorization over `{$QQ$}` and the integration of rational functions, or coefficients in a differential
-//! field for the Risch algorithm.
+//! factorization over `{$QQ$}` and the integration of rational functions, Gaussian rationals for partial
+//! fractions over `{$QQ(i)$}`, or coefficients in a differential field for the Risch algorithm.
 
 use std::fmt::Debug;
 
@@ -64,6 +64,38 @@ impl Coefficient for Rational {
 
     fn inverse(&self) -> Self {
         Self::ONE / self
+    }
+}
+
+/// Gaussian rationals `{$a + b i$}` as `[a, b]`.
+impl Coefficient for [Rational; 2] {
+    fn from_rational(r: Rational) -> Self {
+        [r, Rational::ZERO]
+    }
+
+    fn is_zero(&self) -> bool {
+        self[0] == Rational::ZERO && self[1] == Rational::ZERO
+    }
+
+    fn plus(&self, other: &Self) -> Self {
+        [&self[0] + &other[0], &self[1] + &other[1]]
+    }
+
+    fn negate(&self) -> Self {
+        [-&self[0], -&self[1]]
+    }
+
+    fn times(&self, other: &Self) -> Self {
+        [
+            &self[0] * &other[0] - &self[1] * &other[1],
+            &self[0] * &other[1] + &self[1] * &other[0],
+        ]
+    }
+
+    fn inverse(&self) -> Self {
+        // `{$1 / (a + b i) = (a - b i) / (a^2 + b^2)$}`
+        let norm = &self[0] * &self[0] + &self[1] * &self[1];
+        [&self[0] / &norm, -&self[1] / norm]
     }
 }
 

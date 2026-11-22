@@ -32,7 +32,7 @@ use crate::{
     field::{
         Derivable, Field, Group, PartiallyOrderedSet, Ring, Set, SetParseExpression, matrix::M,
     },
-    integrate::IntegrateError,
+    integrate::{IntegrateError, apart_arguments},
     limit::{Direction, LimitError},
     parser::Parser,
     polynom::ToTerm,
@@ -460,22 +460,11 @@ impl Ring for R<Rational> {
                     }
                 }
                 Context::APART => {
-                    let res = match fun.get_args::<Self>().map(Vec::as_slice) {
-                        Some([f, Term::Symbol(x)]) => f.apart(x.symbol),
-                        Some([f]) => {
-                            let symbols: Vec<_> = f
-                                .symbols()
-                                .into_iter()
-                                .filter(|s| !Context::is_builtin_constant(*s))
-                                .collect();
-                            match symbols.as_slice() {
-                                [x] => f.apart(*x),
-                                _ => None,
-                            }
-                        }
-                        _ => None,
-                    };
-                    if let Some(res) = res {
+                    if let Some(res) = fun
+                        .get_args::<Self>()
+                        .and_then(|args| apart_arguments(args))
+                        .and_then(|(f, x)| f.apart(x))
+                    {
                         return res;
                     }
                 }

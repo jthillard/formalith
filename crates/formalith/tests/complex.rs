@@ -110,6 +110,34 @@ fn factor_over_gaussian_rationals() {
 }
 
 #[test]
+fn partial_fractions_over_gaussian_rationals() {
+    assert_eq!(
+        parse!("apart(1/(x^2+1))", C),
+        parse!("-i/(2*(x-i)) + i/(2*(x+i))", C)
+    );
+    assert_eq!(
+        parse!("apart((x+1)/(x^2*(x-1)), x)", C),
+        parse!("2/(x-1) - 2/x - 1/x^2", C)
+    );
+    // Gaussian coefficients and polynomial part
+    assert_eq!(
+        parse!("apart(1/((x-i)*(x+1)))", C),
+        parse!("(1-i)/(2*(x-i)) - (1-i)/(2*(x+1))", C)
+    );
+    assert_eq!(
+        parse!("apart(x^3/(x-i))", C),
+        parse!("x^2 + i*x - 1 - i/(x-i)", C)
+    );
+    // Irreducible over `QQ(i)`
+    assert_eq!(parse!("apart(1/(x^2-2))", C), parse!("1/(x^2-2)", C));
+    // Symbolic coefficients aren't supported
+    assert!(matches!(
+        parse!("apart(a/(x^2+1), x)", C),
+        formalith::term::Term::Fun(_)
+    ));
+}
+
+#[test]
 fn powers_of_i() {
     assert_eq!(eval("i^3"), "-i");
     assert_eq!(eval("i^4"), "1");

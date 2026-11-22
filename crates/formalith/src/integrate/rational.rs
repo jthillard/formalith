@@ -23,7 +23,10 @@ use crate::{
     term::{Expand, Normalize, Term},
 };
 
-use super::{ln_abs, poly::Poly};
+use super::{
+    ln_abs,
+    poly::{Poly, TermCoefficient},
+};
 
 type Complex = C<R<Rational>>;
 
@@ -78,12 +81,12 @@ fn hermite_reduce(mut a: Poly, d: &Poly, x: Symbol) -> (Expr, Poly, Poly) {
     (g, a, d)
 }
 
-/// The monic irreducible factors over `{$QQ$}` of a square-free polynomial.
-pub(crate) fn factor(d: &Poly, x: Symbol) -> Vec<Poly> {
+/// The monic irreducible factors over `{$QQ$}` (or `{$QQ(i)$}`) of a square-free polynomial.
+pub(crate) fn factor<F: TermCoefficient>(d: &Poly<F>, x: Symbol) -> Vec<Poly<F>> {
     if d.degree() <= 1 {
         return vec![d.monic()];
     }
-    let factored = d.to_term(x).factor();
+    let factored = F::factor_term(&d.to_term(x));
     let factors = match &factored {
         Term::Mul(mul) => mul.iter().cloned().collect(),
         _ => vec![factored],
@@ -91,7 +94,7 @@ pub(crate) fn factor(d: &Poly, x: Symbol) -> Vec<Poly> {
     let res: Option<Vec<_>> = factors
         .iter()
         .filter(|factor| !matches!(factor, Term::Value(_)))
-        .map(|factor| Poly::from_term(factor, x).map(|p| p.monic()))
+        .map(|factor| Poly::from_term_over(factor, x).map(|p| p.monic()))
         .collect();
     // Factors are polynomials of the variable, fall back to the whole polynomial otherwise
     res.filter(|factors| factors.iter().map(Poly::degree).sum::<usize>() == d.degree())

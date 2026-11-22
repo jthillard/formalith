@@ -27,7 +27,7 @@ use crate::{
             expr::{Expr, variable},
         },
     },
-    integrate::IntegrateError,
+    integrate::{IntegrateError, apart_arguments},
     limit::{Direction, LimitError},
     parser::{Parser, lexer::TokenKind},
     printer::{PrettyPrinter, PrintOptions},
@@ -492,6 +492,15 @@ impl Ring for C<R<Rational>> {
                 Context::FACTOR => {
                     if let Some(arg) = fun.get_arg::<Self>() {
                         return arg.factor();
+                    }
+                }
+                Context::APART => {
+                    if let Some(res) = fun
+                        .get_args::<Self>()
+                        .and_then(|args| apart_arguments(args))
+                        .and_then(|(f, x)| f.apart(x))
+                    {
+                        return res;
                     }
                 }
                 Context::DIFF => {
