@@ -154,6 +154,8 @@ impl Plotter {
             .default_y_bounds(DEFAULT_VIEW.y_min, DEFAULT_VIEW.y_max)
             .auto_bounds(Vec2b::FALSE)
             .allow_double_click_reset(false)
+            // The vertical scroll zooms (below) instead of panning.
+            .allow_scroll([true, false])
             .label_formatter(|position| match position {
                 HoverPosition::NearDataPoint {
                     plot_name,
@@ -172,6 +174,14 @@ impl Plotter {
                     [DEFAULT_VIEW.x_min, DEFAULT_VIEW.y_min],
                     [DEFAULT_VIEW.x_max, DEFAULT_VIEW.y_max],
                 ));
+            }
+            if plot_ui.response().contains_pointer() {
+                let ctx = plot_ui.ctx();
+                let speed = ctx.options(|options| options.input_options.scroll_zoom_speed);
+                let scroll = ctx.input(|input| input.smooth_scroll_delta.y);
+                if scroll != 0. {
+                    plot_ui.zoom_bounds_around_hovered(egui::Vec2::splat((speed * scroll).exp()));
+                }
             }
             let bounds = plot_ui.plot_bounds();
             if !(bounds.width() > 0. && bounds.height() > 0.) {
