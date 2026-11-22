@@ -196,12 +196,9 @@ fn risch() {
 fn non_elementary() {
     let x = symbol!("x");
     for f in [
-        "exp(x)/x",
-        "1/ln(x)",
         "ln(x)/(x+1)",
         "exp(exp(x))",
         "x^x",
-        "exp(x)*ln(x)",
         "exp(x^2)*ln(x)",
         "exp(x^3)",
     ] {
@@ -395,7 +392,7 @@ fn numerical_integrals() {
         "1.49364826562485"
     );
     // Slowly decaying oscillations don't converge, the integral stays unevaluated
-    assert!(integrate("approx(integrate(sin(x)/x, x, 0, oo))").contains("integrate"));
+    assert!(integrate("approx(integrate(sin(x)/sqrt(x), x, 0, oo))").contains("integrate"));
 }
 
 #[test]
@@ -505,8 +502,39 @@ fn trigonometric_substitution() {
 }
 
 #[test]
+fn exponential_integrals() {
+    // Non-elementary, but with the exponential, sine and cosine integrals
+    assert_eq!(integrate("integrate(exp(x)/x, x)"), "Ei(x)");
+    assert_eq!(integrate("integrate(1/ln(x), x)"), "Ei(ln(x))");
+    assert_eq!(integrate("integrate(sin(x)/x, x)"), "Si(x)");
+    assert_eq!(integrate("integrate(cos(2*x)/x, x)"), "Ci(2*x)");
+    assert_eq!(
+        integrate("integrate(sin(x + 1)/x, x)"),
+        integrate("sin(1)*Ci(x) + cos(1)*Si(x)")
+    );
+    assert_eq!(
+        integrate("integrate(exp(x + 1)/(2*x + 3), x)"),
+        integrate("exp(-1/2)*Ei(x + 3/2)/2")
+    );
+    check("Si(x)");
+    check("Ci(x)");
+    check("Ei(x)");
+    // By parts, `{$e^x ln x - "Ei"(x)$}`
+    check("exp(x)*ln(x)");
+    // `{$integral_0^oo sin(x)/x = pi/2$}`, `{$integral_1^oo e^(-x)/x = -"Ei"(-1)$}`
+    assert_eq!(integrate("integrate(sin(x)/x, x, 0, oo)"), "1/2*pi");
+    assert_eq!(integrate("integrate(sin(3*x)/x, x, -oo, oo)"), "pi");
+    assert_eq!(integrate("integrate(sin(x)/x, x, 0, 1)"), "Si(1)");
+    assert_eq!(integrate("integrate(exp(-x)/x, x, 1, oo)"), "-Ei(-1)");
+    assert_eq!(
+        integrate("integrate(cos(x)/x, x, 1, 2)"),
+        integrate("Ci(2) - Ci(1)")
+    );
+}
+
+#[test]
 fn non_elementary_integrals_stay_unevaluated() {
-    for f in ["sin(x^2)", "x^x", "exp(x)/x", "1/ln(x)"] {
+    for f in ["sin(x^2)", "x^x", "exp(x)/x^2"] {
         assert!(
             integrate(&format!("integrate({f}, x)")).contains("integrate"),
             "{f}"

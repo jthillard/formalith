@@ -2,7 +2,7 @@
 
 use formalith::{
     context::Context,
-    field::{complex::C, real::R},
+    field::{complex::C, integer::Z, modular::Zn, real::R},
     parse,
     term::Term,
     try_parse,
@@ -536,4 +536,92 @@ fn degree() {
     ] {
         assert!(is_degree(parse!(input, R)), "{input}");
     }
+}
+
+#[test]
+fn substitution() {
+    assert_eq!(
+        parse!("subs(x^2 + y, x, y + 1)", R),
+        parse!("(y + 1)^2 + y", R)
+    );
+    // Also in exponents in `R`
+    assert_eq!(parse!("subs(sin(x) + 2^x, x, 0)", R), parse!("1", R));
+    assert_eq!(parse!("subs(x^2, x, 3)", Z), parse!("9", Z));
+    assert_eq!(parse!("subs(x*i, x, i)", C), parse!("-1", C));
+}
+
+#[test]
+fn numerator_and_denominator() {
+    assert_eq!(parse!("numer(1/x + 1/y)", R), parse!("x + y", R));
+    assert_eq!(parse!("denom(1/x + 1/y)", R), parse!("x*y", R));
+    assert_eq!(parse!("numer(3/4)", R), parse!("3", R));
+    assert_eq!(parse!("denom(3/4)", R), parse!("4", R));
+    assert_eq!(parse!("denom(x)", R), parse!("1", R));
+}
+
+#[test]
+fn resultant_and_discriminant() {
+    assert_eq!(parse!("resultant(x^2 - 1, x - 2)", R), parse!("3", R));
+    assert_eq!(
+        parse!("resultant(x^2 + a, x - b, x)", R),
+        parse!("b^2 + a", R)
+    );
+    // A common root
+    assert_eq!(parse!("resultant(x^2 - 1, x^2 + x)", R), parse!("0", R));
+    assert_eq!(
+        parse!("discriminant(a*x^2 + b*x + c, x)", R),
+        parse!("b^2 - 4*a*c", R)
+    );
+    assert_eq!(
+        parse!("discriminant(x^3 + p*x + q, x)", R),
+        parse!("-4*p^3 - 27*q^2", R)
+    );
+    assert_eq!(parse!("discriminant(x^3 - x)", R), parse!("4", R));
+    assert_eq!(parse!("discriminant(2*x^2 + 3*x + 1)", Z), parse!("1", Z));
+    assert_eq!(
+        parse!("discriminant(x^2 + 1)", Zn::new(7)),
+        parse!("3", Zn::new(7))
+    );
+    // Several symbols without a variable, non-polynomials and constants stay unevaluated
+    let is = |term, ident| matches!(term, Term::Fun(fun) if fun.get_ident() == ident);
+    assert!(is(parse!("resultant(x + y, x - y)", R), Context::RESULTANT));
+    assert!(is(parse!("discriminant(sin(x))", R), Context::DISCRIMINANT));
+    assert!(is(parse!("discriminant(5, x)", R), Context::DISCRIMINANT));
+}
+
+#[test]
+fn round_and_trunc() {
+    assert_eq!(parse!("round(5/2)", R), parse!("3", R));
+    assert_eq!(parse!("round(-5/2)", R), parse!("-2", R));
+    assert_eq!(parse!("round(-7/4)", R), parse!("-2", R));
+    assert_eq!(parse!("round(x)", R), parse!("floor(x + 1/2)", R));
+    assert_eq!(parse!("trunc(-7/4)", R), parse!("-1", R));
+    assert_eq!(parse!("trunc(7/4)", R), parse!("1", R));
+    assert_eq!(parse!("trunc(x)", R), parse!("sign(x)*floor(abs(x))", R));
+    assert_eq!(parse!("erfc(x)", R), parse!("1 - erf(x)", R));
+}
+
+#[test]
+fn primality() {
+    assert_eq!(parse!("isprime(97)", R), parse!("1", R));
+    assert_eq!(parse!("isprime(91)", R), parse!("0", R));
+    assert_eq!(parse!("isprime(1)", R), parse!("0", R));
+    assert_eq!(parse!("isprime(1/2)", R), parse!("0", R));
+    assert_eq!(parse!("isprime(2^89 - 1)", R), parse!("1", R));
+    assert_eq!(parse!("isprime(2^67 - 1)", Z), parse!("0", Z));
+    assert_eq!(parse!("isprime(-7)", Z), parse!("0", Z));
+}
+
+#[test]
+fn exponential_integrals() {
+    assert_eq!(parse!("Si(0)", R), parse!("0", R));
+    assert_eq!(parse!("Si(-x)", R), parse!("-Si(x)", R));
+    assert_eq!(parse!("Si(oo)", R), parse!("pi/2", R));
+    assert_eq!(parse!("Si(-oo)", R), parse!("-pi/2", R));
+    assert_eq!(parse!("Ci(oo)", R), parse!("0", R));
+    assert_eq!(parse!("Ei(-oo)", R), parse!("0", R));
+    assert_eq!(parse!("Ei(0)", R), parse!("-oo", R));
+    assert_eq!(parse!("diff(Si(x), x)", R), parse!("sin(x)/x", R));
+    assert_eq!(parse!("diff(Ci(2*x), x)", R), parse!("cos(2*x)/x", R));
+    assert_eq!(parse!("diff(Ei(x), x)", R), parse!("exp(x)/x", R));
 }

@@ -193,3 +193,9 @@ fn series_of_polygamma() {
         series("ln(x) - 1/(2*x) - 1/(12*x^2)")
     );
 }
+
+#[test]
+fn series_of_exponential_integrals() {
+    assert_eq!(series("series(Si(x), x, 0, 6)"), "x-1/18*(x^3)+1/600*(x^5)");
+    assert_eq!(series("series(Ei(x), x, 1, 3)"), "Ei(1)+(x-1)*exp(1)");
+}

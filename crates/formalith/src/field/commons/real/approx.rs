@@ -277,6 +277,130 @@ impl Fixed {
         Some(fixed.to_rational(fixed.div(&(sum << 1_u64), &sqrt_pi)))
     }
 
+    /// The sine, cosine or exponential integral `{$"Si"(x)$}`, `{$"Ci"(x)$}` (for `{$x > 0$}`) or `{$"Ei"(x)$}`
+    /// (for `{$x != 0$}`): their power series, with more bits for the cancellation of their terms of size up to
+    /// `{$e^|x|$}`, or their asymptotic series when `{$e^(-|x|)$}` is below the precision.
+    fn exponential_integral(self, ident: Symbol, x: &Rational) -> Option<Rational> {
+        if ident == Context::SI && *x < 0 {
+            return self.exponential_integral(ident, &-x).map(|y| -y);
+        }
+        if *x == 0 || (ident == Context::CI && *x < 0) {
+            return (ident == Context::SI).then_some(Rational::ZERO);
+        }
+        let magnitude = x.abs();
+        if magnitude > MAX_EXP_ARGUMENT {
+            return None;
+        }
+        // `{$e^(-|x|) < 2^(-"bits")$}`
+        if magnitude > Rational::from(self.bits + 2 * GUARD_BITS) * Rational::from_signeds(7, 10) {
+            return self.asymptotic_exponential_integral(ident, x);
+        }
+        let extra =
+            u64::try_from(&(&magnitude * Rational::from(3) / Rational::from(2)).ceiling()).ok()?;
+        let fixed = Self {
+            bits: self.bits + extra + GUARD_BITS,
+        };
+        let y = fixed.from_rational(x);
+        let y2 = fixed.mul(&y, &y);
+        let mut sum = Integer::ZERO;
+        let mut k = 0_u64;
+        if ident == Context::SI {
+            // `{$sum_k (-1)^k x^(2k+1) / ((2k+1) (2k+1)!)$}`
+            let mut power = y;
+            while power != 0 {
+                let term = &power / Integer::from(2 * k + 1);
+                if k % 2 == 0 {
+                    sum += term;
+                } else {
+                    sum -= term;
+                }
+                power = fixed.mul(&power, &y2) / Integer::from((2 * k + 2) * (2 * k + 3));
+                k += 1;
+            }
+            return Some(fixed.to_rational(sum));
+        }
+        // `{$gamma + ln|x| + sum_(k >= 1) c_k$}`
+        let mut power = fixed.one();
+        loop {
+            k += 1;
+            if ident == Context::CI {
+                // `{$c_k = (-1)^k x^(2k) / (2k (2k)!)$}`
+                power = fixed.mul(&power, &y2) / Integer::from((2 * k - 1) * (2 * k));
+                let term = &power / Integer::from(2 * k);
+                if k % 2 == 0 {
+                    sum += term;
+                } else {
+                    sum -= term;
+                }
+            } else {
+                // `{$c_k = x^k / (k k!)$}`
+                power = fixed.mul(&power, &y) / Integer::from(k);
+                sum += &power / Integer::from(k);
+            }
+            if power == 0 {
+                break;
+            }
+        }
+        let euler_gamma = fixed.from_rational(&-fixed.digamma(&Rational::ONE)?);
+        Some(fixed.to_rational(sum + euler_gamma + fixed.ln(&magnitude)))
+    }
+
+    /// `{$"Si"(x)$}`, `{$"Ci"(x)$}` or `{$"Ei"(x)$}` for a large `|x|`, `{$x > 0$}` for the first two, by their
+    /// asymptotic series: `{$"Si"(x) = pi/2 - f(x) cos x - g(x) sin x$}`, `{$"Ci"(x) = f(x) sin x - g(x) cos x$}`
+    /// with `{$f(x) ~ sum_k (-1)^k (2k)! / x^(2k+1)$}` and `{$g(x) ~ sum_k (-1)^k (2k+1)! / x^(2k+2)$}`, and
+    /// `{$"Ei"(x) ~ e^x / x sum_k k! / x^k$}`.
+    fn asymptotic_exponential_integral(self, ident: Symbol, x: &Rational) -> Option<Rational> {
+        let fixed = Self {
+            bits: self.bits + GUARD_BITS,
+        };
+        let inv = fixed.from_rational(&x.reciprocal());
+        // The terms `{$t_k = t_(k-1) "ratio"(k) / x$}` from `{$t_1 = 1/x$}` while they decrease, `{$"ratio"(k)$}` giving
+        // the factor and whether the sign changes
+        let terms = |ratio: &dyn Fn(u64) -> (u64, bool)| {
+            let mut term = inv.clone();
+            let mut terms = vec![];
+            for k in 1..=fixed.bits {
+                let size = (&term).unsigned_abs();
+                if size == 0
+                    || terms
+                        .last()
+                        .is_some_and(|previous: &Integer| size > previous.unsigned_abs())
+                {
+                    break;
+                }
+                terms.push(term.clone());
+                let (factor, flip) = ratio(k);
+                term = fixed.mul(&term, &inv) * Integer::from(factor);
+                if flip {
+                    term = -term;
+                }
+            }
+            terms
+        };
+        if ident == Context::EI {
+            // `{$t_k = (k-1)! / x^k$}`
+            let series: Integer = terms(&|k| (k, false)).into_iter().sum();
+            let exp = fixed.exp(&fixed.from_rational(x))?;
+            return Some(fixed.to_rational(fixed.mul(&exp, &series)));
+        }
+        // `{$t_k = (-1)^(floor((k-1)/2)) (k-1)! / x^k$}`, the odd ones being the terms of `f`, the even ones of `g`
+        let (mut f, mut g) = (Integer::ZERO, Integer::ZERO);
+        for (k, term) in terms(&|k| (k, k % 2 == 0)).into_iter().enumerate() {
+            if k % 2 == 0 {
+                f += term;
+            } else {
+                g += term;
+            }
+        }
+        let (sin, cos) = fixed.sin_cos(&fixed.from_rational(x));
+        let res = if ident == Context::SI {
+            (fixed.pi() >> 1_u64) - fixed.mul(&f, &cos) - fixed.mul(&g, &sin)
+        } else {
+            fixed.mul(&f, &sin) - fixed.mul(&g, &cos)
+        };
+        Some(fixed.to_rational(res))
+    }
+
     /// The shift `N` such that the asymptotic series of the Gamma family at `{$y = x + N >= Y$}` reach the precision,
     /// their smallest term being about `{$e^(-2 pi Y)$}`, and the product `{$x (x + 1) ... (x + N - 1)$}`.
     /// `None` at the poles, non-positive integers.
@@ -456,6 +580,7 @@ impl Fixed {
             Context::ATAN => self.arctan(x),
             Context::ERF => self.erf(x, false)?,
             Context::ERFI => self.erf(x, true)?,
+            Context::SI | Context::CI | Context::EI => self.exponential_integral(ident, x)?,
             Context::ASIN => self.arcsin(x)?,
             Context::ACOS => self.to_rational(self.pi() >> 1_u64) - self.arcsin(x)?,
             Context::SINH | Context::COSH | Context::TANH => {
@@ -757,7 +882,10 @@ impl Fixed {
                         | Context::ACOSH
                         | Context::ATANH
                         | Context::ERF
-                        | Context::ERFI),
+                        | Context::ERFI
+                        | Context::SI
+                        | Context::CI
+                        | Context::EI),
                         [x],
                     ) => self.eval_elementary(ident, &self.evaluate(x)?),
                     (ident, args) => {

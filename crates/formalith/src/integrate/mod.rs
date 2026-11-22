@@ -118,7 +118,9 @@ impl Term<Real> {
     /// let x = symbol!("x");
     /// assert_eq!(parse!("cos(x)", R).integrate(x), Ok(parse!("sin(x)", R)));
     /// assert_eq!(parse!("x*exp(x)", R).integrate(x), Ok(parse!("x*exp(x) - exp(x)", R)));
-    /// assert_eq!(parse!("exp(x)/x", R).integrate(x), Err(IntegrateError::NonElementary));
+    /// assert_eq!(parse!("exp(x^2)*ln(x)", R).integrate(x), Err(IntegrateError::NonElementary));
+    /// // Not elementary, but an exponential integral
+    /// assert_eq!(parse!("exp(x)/x", R).integrate(x), Ok(parse!("Ei(x)", R)));
     /// ```
     pub fn integrate(&self, x: Symbol) -> IntegrateResult<Self> {
         profile_scope!("integrate");

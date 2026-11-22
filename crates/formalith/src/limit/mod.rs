@@ -468,8 +468,10 @@ fn eval_at(term: &Expr, x: Symbol, a: &Expr) -> Option<Expr> {
                 | Context::ABS
                 | Context::ATAN
                 | Context::ERF
-                | Context::ERFI => Some(fun(ident, arg)),
-                Context::LN if positive(&arg) => Some(fun(ident, arg)),
+                | Context::ERFI
+                | Context::SI => Some(fun(ident, arg)),
+                Context::LN | Context::CI if positive(&arg) => Some(fun(ident, arg)),
+                Context::EI if nonzero(&arg) => Some(fun(ident, arg)),
                 Context::GAMMA if gamma_pole(&arg).is_none() => Some(fun(ident, arg)),
                 _ => None,
             }

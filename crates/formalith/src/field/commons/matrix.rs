@@ -11,11 +11,12 @@ use crate::{
     context::{Context, Symbol},
     field::{
         EuclideanRing, Group, PartiallyOrderedSet, Ring, Set, SetParseExpression, integer::Z,
-        modular::Zn, real::R,
+        modular::Zn, primes, real::R,
     },
-    matrix::{Matrix, MatrixResult},
+    matrix::{Matrix, MatrixResult, eigen::real_roots},
     parser::{Parser, ParserError, lexer::TokenKind},
     printer::{PrettyPrint, PrettyPrinter, Print, PrintOptions},
+    solve::polynomial::polynomial_form,
     term::{self, Expand, Function, Term, TermSet, Value},
 };
 
@@ -229,9 +230,9 @@ impl<T: Ring> M<T> {
     /// `I(n)`. Returns `None` for other functions, or when they can't be evaluated, like the trace of a non-square
     /// matrix.
     fn eval_builtin(&self, fun: &dyn Function<Self>) -> Option<VectorSpaceElement<T, Matrix<T>>> {
+        // Bounded, so that a huge size doesn't abort on allocation
+        const MAX_SIZE: usize = 1000;
         if fun.get_ident() == Context::IDENTITY {
-            // Bounded, so that a huge size doesn't abort on allocation
-            const MAX_SIZE: usize = 1000;
             let Some(Term::Value(Value { value: n, .. })) = fun.get_args::<Z<Integer>>()?.first()
             else {
                 return None;
@@ -241,6 +242,27 @@ impl<T: Ring> M<T> {
                 .filter(|n| (1..=MAX_SIZE).contains(n))?;
             return Some(VectorSpaceElement::Vector(Matrix::identity(
                 n,
+                self.scalar_sub_set,
+            )));
+        }
+        if fun.get_ident() == Context::ZEROS {
+            let sizes = fun
+                .get_args::<Z<Integer>>()?
+                .iter()
+                .map(|size| match size {
+                    Term::Value(Value { value: n, .. }) => usize::try_from(n)
+                        .ok()
+                        .filter(|n| (1..=MAX_SIZE).contains(n)),
+                    _ => None,
+                })
+                .collect::<Option<Vec<_>>>()?;
+            let (height, width) = match sizes.as_slice() {
+                [n] => (*n, *n),
+                [n, m] => (*n, *m),
+                _ => return None,
+            };
+            return Some(VectorSpaceElement::Vector(Matrix::zero(
+                (height, width),
                 self.scalar_sub_set,
             )));
         }
@@ -255,6 +277,61 @@ impl<T: Ring> M<T> {
         }
         let scalars = self.scalar_sub_set;
         let scalar = |element| VectorSpaceElement::Scalar(element, scalars);
+        match fun.get_ident() {
+            Context::DIAG => {
+                let entries = match args.as_slice() {
+                    [vector] => Self::vector_entries(vector)?,
+                    _ => args
+                        .iter()
+                        .map(|arg| match arg {
+                            Term::Value(Value {
+                                value: VectorSpaceElement::Scalar(x, _),
+                                ..
+                            }) => Some(x.clone()),
+                            _ => None,
+                        })
+                        .collect::<Option<_>>()?,
+                };
+                let n = entries.len();
+                let mut matrix = Matrix::zero((n, n), scalars);
+                for (i, entry) in entries.into_iter().enumerate() {
+                    matrix[(i, i)] = entry;
+                }
+                return Some(VectorSpaceElement::Vector(matrix));
+            }
+            Context::ROOTS => {
+                let (p, x) = match args.as_slice() {
+                    [p] => (Self::scalar(p)?, None),
+                    [p, x] => (Self::scalar(p)?, Some(Self::symbol(x)?)),
+                    _ => return None,
+                };
+                let x = match x {
+                    Some(x) => x,
+                    None => {
+                        let symbols: Vec<_> = <T as MatrixEntries>::symbols(p)?
+                            .into_iter()
+                            .filter(|x| !Context::is_builtin_constant(*x))
+                            .collect();
+                        match symbols.as_slice() {
+                            [x] => *x,
+                            _ => return None,
+                        }
+                    }
+                };
+                let roots = <T as MatrixEntries>::roots(p, x)?;
+                return Some(VectorSpaceElement::Vector(Matrix::new(
+                    (roots.len(), 1),
+                    roots,
+                    scalars,
+                )));
+            }
+            Context::FACTORINT => {
+                let [n] = args.as_slice() else { return None };
+                return <T as MatrixEntries>::factorint(Self::scalar(n)?)
+                    .map(VectorSpaceElement::Vector);
+            }
+            _ => {}
+        }
         let matrix = match args.first()? {
             Term::Value(Value {
                 value: VectorSpaceElement::Vector(matrix),
@@ -306,6 +383,25 @@ impl<T: Ring> M<T> {
 }
 
 impl<T: Ring> M<T> {
+    /// The scalar `term` is, if it is one.
+    const fn scalar(term: &Term<Self>) -> Option<&T::Element> {
+        match term {
+            Term::Value(Value {
+                value: VectorSpaceElement::Scalar(x, _),
+                ..
+            }) => Some(x),
+            _ => None,
+        }
+    }
+
+    /// The symbol `term` is, a symbol of this set or a scalar symbol.
+    fn symbol(term: &Term<Self>) -> Option<Symbol> {
+        match term {
+            Term::Symbol(x) => Some(x.symbol),
+            _ => <T as MatrixEntries>::as_symbol(Self::scalar(term)?),
+        }
+    }
+
     /// The entries of a scalar (one entry) or of a row or column vector.
     fn vector_entries(term: &Term<Self>) -> Option<Vec<T::Element>> {
         match term {
@@ -413,6 +509,10 @@ pub trait MatrixEntries: Ring {
     fn symbols(element: &Self::Element) -> Option<BTreeSet<Symbol>>;
     /// The derivative of `element` with respect to `x`.
     fn derivative(element: &Self::Element, x: Symbol) -> Option<Self::Element>;
+    /// The roots of the polynomial `p` in `x`, repeated by multiplicity.
+    fn roots(p: &Self::Element, x: Symbol) -> Option<Vec<Self::Element>>;
+    /// The prime factorization of the number `n`, as rows `[p, e]` (see the builtin `factorint`).
+    fn factorint(n: &Self::Element) -> Option<Matrix<Self>>;
 }
 
 impl<T: Ring> MatrixEntries for T {
@@ -441,6 +541,12 @@ impl<T: Ring> MatrixEntries for T {
         None
     }
     default fn derivative(_: &Self::Element, _: Symbol) -> Option<Self::Element> {
+        None
+    }
+    default fn roots(_: &Self::Element, _: Symbol) -> Option<Vec<Self::Element>> {
+        None
+    }
+    default fn factorint(_: &Self::Element) -> Option<Matrix<Self>> {
         None
     }
 }
@@ -474,6 +580,12 @@ impl<T: Ring> MatrixEntries for TermSet<T> {
         Some(element.symbols())
     }
     default fn derivative(_: &Self::Element, _: Symbol) -> Option<Self::Element> {
+        None
+    }
+    default fn roots(_: &Self::Element, _: Symbol) -> Option<Vec<Self::Element>> {
+        None
+    }
+    default fn factorint(_: &Self::Element) -> Option<Matrix<Self>> {
         None
     }
 }
@@ -519,7 +631,26 @@ fn lift(matrix: &Matrix<TermSet<Zn>>) -> Option<Matrix<Z<Integer>>> {
     ))
 }
 
+/// The matrix of the rows `[p, e]` given by [`primes::factor_rational`], with entries built by `entry`.
+fn factorint_matrix<T: Ring>(
+    n: &Rational,
+    set: T,
+    entry: impl Fn(Integer) -> T::Element,
+) -> Option<Matrix<TermSet<T>>> {
+    let rows = primes::factor_rational(n)?;
+    let data = rows
+        .into_iter()
+        .flat_map(|(p, e)| [entry(p), entry(Integer::from(e))])
+        .map(|value| Term::constant(value, set))
+        .collect::<Vec<_>>();
+    Some(Matrix::new((data.len() / 2, 2), data, set.get_term_set()))
+}
+
 impl MatrixEntries for TermSet<Z<Integer>> {
+    fn factorint(n: &Self::Element) -> Option<Matrix<Self>> {
+        let Term::Value(n) = n else { return None };
+        factorint_matrix(&Rational::from(&n.value), Z, |x| x)
+    }
     /// The rank over `{$QQ$}`, the number of pivots of the Hermite normal form.
     fn rank(matrix: &Matrix<Self>) -> Option<usize> {
         Some(values(matrix)?.hermite_decomposition().2)
@@ -596,6 +727,22 @@ impl MatrixEntries for TermSet<Zn> {
 impl MatrixEntries for TermSet<R<Rational>> {
     fn derivative(element: &Self::Element, x: Symbol) -> Option<Self::Element> {
         Some(element.derivative(x))
+    }
+    fn roots(p: &Self::Element, x: Symbol) -> Option<Vec<Self::Element>> {
+        let p = p.expand();
+        // A polynomial of positive degree
+        if polynomial_form(&p, x).ok()?.len() < 2 {
+            return None;
+        }
+        let roots: Vec<_> = real_roots(&p, x)?
+            .into_iter()
+            .flat_map(|(value, multiplicity)| std::iter::repeat_n(value, multiplicity))
+            .collect();
+        (!roots.is_empty()).then_some(roots)
+    }
+    fn factorint(n: &Self::Element) -> Option<Matrix<Self>> {
+        let Term::Value(n) = n else { return None };
+        factorint_matrix(&n.value, R, Rational::from)
     }
     fn eigenspaces(matrix: &Matrix<Self>) -> Option<Vec<(Self::Element, usize, Matrix<Self>)>> {
         Some(

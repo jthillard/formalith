@@ -13,7 +13,8 @@ use malachite::{
 };
 
 use crate::term::fun::{
-    eval_calculus_builtin, eval_degree, eval_matrix_builtin, eval_rewrite_builtin,
+    eval_algebra_builtin, eval_calculus_builtin, eval_degree, eval_matrix_builtin,
+    eval_rewrite_builtin,
 };
 use crate::{
     context::{Context, Symbol},
@@ -530,7 +531,11 @@ impl Ring for C<R<Rational>> {
                         return res;
                     }
                 }
-                _ => {}
+                _ => {
+                    if let Some(res) = eval_algebra_builtin(&**fun) {
+                        return res;
+                    }
+                }
             },
             _ => {}
         }

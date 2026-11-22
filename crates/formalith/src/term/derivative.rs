@@ -164,6 +164,10 @@ impl<T: Derivable<ExponantSet = T, ProductCoefficientSet = T>> Term<T> {
                                     .normalize(),
                             )
                         }
+                        // `{$"Si"' = sin(u)/u$}`, `{$"Ci"' = cos(u)/u$}`, `{$"Ei"' = e^u/u$}`
+                        Context::SI => Some(apply(Context::SIN) / u),
+                        Context::CI => Some(apply(Context::COS) / u),
+                        Context::EI => Some(apply(Context::EXP) / u),
                         // `{$Gamma'(u) = Gamma(u) psi(u)$}`, `{$(u!)' = u! psi(u + 1)$}`
                         Context::GAMMA => Some(self * &digamma(u.clone())),
                         Context::FACTORIAL => Some(self * &digamma(u.clone() + one.clone())),

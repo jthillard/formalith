@@ -19,6 +19,7 @@ use crate::{
 };
 
 use super::{Flags, Term, Value, relation::Relation};
+use crate::solve::polynomial::{polynomial_form, sylvester_determinant};
 
 /// To allow function from any set to the set `T`, a dynamic dispatch is used with this trait, implementing needed methods.
 ///
@@ -548,6 +549,100 @@ pub(crate) fn eval_matrix_builtin<T: Ring>(fun: &dyn Function<T>) -> Option<Term
                 Some(_) => return None,
             };
             <TermSet<T> as MatrixEntries>::charpoly(matrix, x)
+        }
+        _ => None,
+    }
+}
+
+/// The variable of a polynomial builtin like `resultant(p, q, [x])`: `x` when it is given, otherwise the only symbol
+/// of the polynomials (`x` when they have none). Returns `None` when there are several symbols.
+fn polynomial_variable<T: Set>(polynomials: &[&Term<T>], x: Option<&Term<T>>) -> Option<Symbol> {
+    match x {
+        Some(Term::Symbol(x)) => Some(x.symbol),
+        Some(_) => None,
+        None => {
+            let symbols: BTreeSet<_> = polynomials
+                .iter()
+                .flat_map(|p| p.symbols())
+                .filter(|s| !Context::is_builtin_constant(*s))
+                .collect();
+            match symbols.len() {
+                0 => Some(Symbol::new("x")),
+                1 => symbols.into_iter().next(),
+                _ => None,
+            }
+        }
+    }
+}
+
+/// Bound on the size `{$m + n$}` of the Sylvester matrix of the builtins `resultant` and `discriminant`, whose
+/// determinant is computed with a minor per subset of columns.
+const MAX_SYLVESTER_SIZE: usize = 14;
+
+/// The resultant of `p` and `q` in `x`, `None` if they aren't polynomials in `x`, if one of them is zero or if
+/// their Sylvester matrix is too large.
+fn resultant<T: Ring>(p: &Term<T>, q: &Term<T>, x: Symbol) -> Option<Term<T>> {
+    let p = polynomial_form(&p.expand(), x).ok()?;
+    let q = polynomial_form(&q.expand(), x).ok()?;
+    if p.iter().all(Term::is_zero) || q.iter().all(Term::is_zero) {
+        return None;
+    }
+    if p.len() + q.len() - 2 > MAX_SYLVESTER_SIZE {
+        return None;
+    }
+    if p.len() == 1 && q.len() == 1 {
+        return Some(Term::one(p[0].get_set()));
+    }
+    Some(sylvester_determinant(&p, &q).expand())
+}
+
+/// The discriminant `{$(-1)^(n (n - 1)/2) "res"(p, p') / a_n$}` of a polynomial `p` of degree `{$n >= 1$}` in `x`
+/// with leading coefficient `{$a_n$}`, `None` if it can't be computed.
+fn discriminant<T: Ring>(p: &Term<T>, x: Symbol) -> Option<Term<T>> {
+    let coefficients = polynomial_form(&p.expand(), x).ok()?;
+    let n = coefficients.len() - 1;
+    if n == 0 || 2 * n - 1 > MAX_SYLVESTER_SIZE {
+        return None;
+    }
+    let set = p.get_set();
+    if n == 1 {
+        return Some(Term::one(set));
+    }
+    let derivative: Vec<_> = coefficients
+        .iter()
+        .enumerate()
+        .skip(1)
+        .map(|(i, c)| (Term::constant(set.nth(i as i64), set) * c).expand())
+        .collect();
+    let resultant = sylvester_determinant(&coefficients, &derivative).expand();
+    let signed = if (n * (n - 1) / 2) % 2 == 0 {
+        resultant
+    } else {
+        -resultant
+    };
+    let leading = &coefficients[n];
+    let res = (signed * leading.inv()).expand();
+    Some(if matches!(leading, Term::Value(_)) {
+        res
+    } else {
+        res.simplify()
+    })
+}
+
+/// Evaluate the builtins `subs(f, x, a)`, `numer(f)`, `denom(f)`, `resultant(p, q, [x])` and
+/// `discriminant(p, [x])`, which work in any ring. Returns `None` for other functions, or when they can't be
+/// evaluated.
+pub(crate) fn eval_algebra_builtin<T: Ring>(fun: &dyn Function<T>) -> Option<Term<T>> {
+    let args = fun.get_args::<T>()?;
+    match (fun.get_ident(), args.as_slice()) {
+        (Context::SUBS, [f, Term::Symbol(x), a]) => f.substitute(x.symbol, a),
+        (Context::NUMER, [f]) => Some(f.as_fraction(true).0),
+        (Context::DENOM, [f]) => Some(f.as_fraction(true).1),
+        (Context::RESULTANT, [p, q, x @ ..]) => {
+            resultant(p, q, polynomial_variable(&[p, q], x.first())?)
+        }
+        (Context::DISCRIMINANT, [p, x @ ..]) => {
+            discriminant(p, polynomial_variable(&[p], x.first())?)
         }
         _ => None,
     }

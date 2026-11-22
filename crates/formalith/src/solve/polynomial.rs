@@ -1107,7 +1107,7 @@ fn power<T: Ring>(x: Symbol, n: usize, set: T) -> Term<T> {
 ///
 /// # Errors
 /// Returns an error if the expression isn't polynomial in `x`, like `abs(x)` or `x^(1/2)`.
-pub(super) fn polynomial_form<T: Ring>(
+pub(crate) fn polynomial_form<T: Ring>(
     expression: &Term<T>,
     x: Symbol,
 ) -> Result<Vec<Term<T>>, SolveError> {
@@ -1166,7 +1166,7 @@ pub(super) fn polynomial_form<T: Ring>(
 ///
 /// It is computed by expanding along rows, with the minors memoized by the set of used columns, so that it doesn't
 /// need divisions.
-pub(super) fn sylvester_determinant<T: Ring>(p: &[Term<T>], q: &[Term<T>]) -> Term<T> {
+pub(crate) fn sylvester_determinant<T: Ring>(p: &[Term<T>], q: &[Term<T>]) -> Term<T> {
     let set = p[0].get_set();
     let (m, n) = (p.len() - 1, q.len() - 1);
     let size = m + n;

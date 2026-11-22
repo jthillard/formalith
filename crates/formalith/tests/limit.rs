@@ -341,3 +341,19 @@ fn oscillations_with_a_parametric_frequency() {
     assert_eq!(lim("lim(exp(-x)*sin(t*x), x, oo)"), "0");
     assert_eq!(lim("lim(cos(t*x), x, oo)"), "undefined");
 }
+
+#[test]
+fn limits_of_exponential_integrals() {
+    assert_eq!(lim("lim(Si(x), x, oo)"), "1/2*pi");
+    assert_eq!(lim("lim(Si(x), x, -oo)"), "-1/2*pi");
+    assert_eq!(lim("lim(Ci(x), x, oo)"), "0");
+    assert_eq!(lim("lim(Ei(x), x, -oo)"), "0");
+    // `{$"Ei"(x) ~ e^x / x$}`
+    assert_eq!(lim("lim(Ei(x)*x*exp(-x), x, oo)"), "1");
+    // `{$pi/2 - "Si"(x) ~ cos(x) / x$}` oscillates
+    assert_eq!(lim("lim(x*(pi/2 - Si(x)), x, oo)"), "undefined");
+    assert_eq!(lim("lim(Si(x)/x, x, 0)"), "1");
+    assert_eq!(lim("lim(Ci(x) - ln(x), x, 0, 1)"), "euler_gamma");
+    assert_eq!(lim("lim(Ei(x) - ln(abs(x)), x, 0)"), "euler_gamma");
+    assert_eq!(lim("lim(Si(x), x, 2)"), "Si(2)");
+}

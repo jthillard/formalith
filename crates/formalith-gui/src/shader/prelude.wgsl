@@ -580,3 +580,96 @@ fn nf_lambertw(x: f32) -> f32 {
     }
     return w;
 }
+
+// `Si(x)` (kind 0), `Ci(x)` (kind 1) or `Ei(x)` (kind 2): power series for small `|x|`, whose terms cancel up to
+// `e^|x|`, and asymptotic series otherwise. `Ci(x)` is undefined for `x <= 0`.
+fn nf_expint(kind: i32, x0: f32) -> f32 {
+    if nf_undef(x0) || (kind == 1 && x0 <= 0.0) {
+        return nf_nan();
+    }
+    // `Si` is odd
+    var x = x0;
+    var sign = 1.0;
+    if kind == 0 && x < 0.0 {
+        x = -x;
+        sign = -1.0;
+    }
+    if x == 0.0 {
+        return select(-nf_inf(), 0.0, kind == 0);
+    }
+    if !nf_finite(x) {
+        if kind == 0 {
+            return sign * PI / 2.0;
+        }
+        return select(0.0, x, kind == 2 && x > 0.0);
+    }
+    let bound = select(8.0, 30.0, kind == 2 && x > 0.0);
+    if abs(x) < bound {
+        var sum = 0.0;
+        var power = 1.0;
+        for (var i = 1; i < 200; i++) {
+            let k = f32(i);
+            var term = 0.0;
+            if kind == 0 {
+                // `(-1)^(k-1) x^(2k-1) / ((2k-1) (2k-1)!)`
+                power *= x / (2.0 * k - 1.0);
+                term = select(power, -power, i % 2 == 0) / (2.0 * k - 1.0);
+                power *= x / (2.0 * k);
+            } else if kind == 1 {
+                // `(-1)^k x^(2k) / (2k (2k)!)`
+                power *= -x * x / ((2.0 * k - 1.0) * (2.0 * k));
+                term = power / (2.0 * k);
+            } else {
+                // `x^k / (k k!)`
+                power *= x / k;
+                term = power / k;
+            }
+            sum += term;
+            if abs(term) <= 1e-8 * abs(sum) {
+                break;
+            }
+        }
+        if kind == 0 {
+            return sign * sum;
+        }
+        return sum + 0.5772156649015329 + log(abs(x));
+    }
+    // Terms `(k-1)! / x^k` while they decrease, with the signs of the auxiliary functions `f` and `g`
+    var f = 0.0;
+    var g = 0.0;
+    var ei = 0.0;
+    var term = 1.0 / x;
+    for (var k = 1; k < 100; k++) {
+        ei += term;
+        let signed = select(-term, term, (k - 1) % 4 < 2);
+        if k % 2 == 1 {
+            f += signed;
+        } else {
+            g += signed;
+        }
+        let next = term * f32(k) / x;
+        if abs(next) >= abs(term) {
+            break;
+        }
+        term = next;
+    }
+    if kind == 0 {
+        return sign * (PI / 2.0 - f * cos(x) - g * sin(x));
+    }
+    if kind == 1 {
+        return f * sin(x) - g * cos(x);
+    }
+    return nf_exp(x) * ei;
+}
+
+fn nf_si(x: f32) -> f32 {
+    return nf_expint(0, x);
+}
+
+fn nf_ci(x: f32) -> f32 {
+    return nf_expint(1, x);
+}
+
+fn nf_ei(x: f32) -> f32 {
+    return nf_expint(2, x);
+}

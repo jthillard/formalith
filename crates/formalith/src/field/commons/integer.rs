@@ -12,7 +12,7 @@ use malachite::{
     },
 };
 
-use super::parse_integer_literal;
+use super::{parse_integer_literal, primes};
 
 use crate::{
     context::Context,
@@ -24,7 +24,7 @@ use crate::{
     printer::PrettyPrinter,
     term::{
         self, Fun, Term, TermSet, Value,
-        fun::{eval_degree, eval_matrix_builtin},
+        fun::{eval_algebra_builtin, eval_degree, eval_matrix_builtin},
     },
 };
 
@@ -159,7 +159,7 @@ impl Ring for Z<Integer> {
                 {
                     return res;
                 }
-                if let Some(res) = eval_degree(&**fun) {
+                if let Some(res) = eval_degree(&**fun).or_else(|| eval_algebra_builtin(&**fun)) {
                     return res;
                 }
                 if fun.get_ident() == Context::ABS
@@ -180,6 +180,10 @@ impl Ring for Z<Integer> {
                             a.lcm(b)
                         };
                         return Term::Value(Value::new(Integer::from(res), *self));
+                    }
+                    (Context::ISPRIME, Some([Term::Value(n)])) => {
+                        let prime = Natural::try_from(&n.value).is_ok_and(|n| primes::is_prime(&n));
+                        return Term::Value(Value::new(Integer::from(u8::from(prime)), *self));
                     }
                     (Context::FACTORIAL, Some([Term::Value(n)])) => {
                         if let Ok(n) = u64::try_from(&n.value)

@@ -5,7 +5,7 @@ use std::{
     ops::{Index, IndexMut},
 };
 
-mod eigen;
+pub(crate) mod eigen;
 mod linalg;
 mod normal_form;
 

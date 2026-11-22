@@ -152,6 +152,9 @@ impl Emitter<'_> {
             NumFn::Zeta => "nf_zeta",
             NumFn::Factorial => "nf_factorial",
             NumFn::LambertW => "nf_lambertw",
+            NumFn::Si => "nf_si",
+            NumFn::Ci => "nf_ci",
+            NumFn::Ei => "nf_ei",
         };
         self.bind(&format!("{name}({})", arg(0)))
     }
@@ -301,7 +304,7 @@ pub(crate) mod tests {
     }
 
     /// Expressions using every kind of node and function.
-    pub const EXPRESSIONS: [&str; 14] = [
+    pub const EXPRESSIONS: [&str; 15] = [
         "x^2 + 3*x*y - 1/2",
         "sqrt(x) + x^(1/3) + x^(-2/5) + x^y + 2^x + x^123456789012",
         "exp(x) + ln(x) + sin(x) + cos(x) + tan(x)",
@@ -310,6 +313,7 @@ pub(crate) mod tests {
         "min(x, y, a) + max(x, b)",
         "erf(x) + erfi(x) + gamma(x) + factorial(x) + lambertw(x)",
         "polygamma(2, x) + zeta(x) + binomial(x, 3)",
+        "Si(x) + Ci(x) + Ei(x)",
         "piecewise(x < 0, -x, x <= 1, x^2, x > 2, a, x >= 3, b, 1)",
         "piecewise(x < 0, -x, x > 1, x^2)",
         "a*x + b + pi + e + euler_gamma",

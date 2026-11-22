@@ -9,7 +9,9 @@ use malachite::{
 
 use super::parse_integer_literal;
 
-use crate::term::fun::{eval_degree, eval_matrix_builtin, eval_rewrite_builtin};
+use crate::term::fun::{
+    eval_algebra_builtin, eval_degree, eval_matrix_builtin, eval_rewrite_builtin,
+};
 use crate::{
     context::{Context, Symbol},
     field::{Group, PartiallyOrderedSet, Ring, Set, SetParseExpression, integer::Z, matrix::M},
@@ -267,7 +269,11 @@ impl Ring for Zn {
                         return res;
                     }
                 }
-                _ => {}
+                _ => {
+                    if let Some(res) = eval_algebra_builtin(&**fun) {
+                        return res;
+                    }
+                }
             },
             _ => {}
         }

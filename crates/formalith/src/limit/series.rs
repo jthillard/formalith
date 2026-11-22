@@ -7,8 +7,8 @@
 
 use crate::field::real::{
     expr::{
-        Expr, depends, fun, gamma_pole, half, one, polygamma, polygamma_args, ratio, unary, value,
-        variable, zero,
+        Expr, depends, fun, gamma_pole, half, one, polygamma, polygamma_args, ratio, subs, unary,
+        value, variable, zero,
     },
     special::bernoulli,
 };
@@ -29,7 +29,7 @@ use crate::{
 
 use super::{
     LimitError, LimitResult, const_cmp,
-    gruntz::{Gruntz, erfcx, erfix, lgammastar},
+    gruntz::{Gruntz, eistar, erfcx, erfix, lgammastar, sif, sig},
     rational_bound,
 };
 
@@ -306,6 +306,12 @@ impl Expander<'_> {
                 Some((ident @ (Context::ERF | Context::ERFI), a)) => self.erf(ident, a, n)?,
                 Some((ident, a)) if ident == erfcx() => self.erfcx(a, n, true)?,
                 Some((ident, a)) if ident == erfix() => self.erfcx(a, n, false)?,
+                Some((ident @ (Context::SI | Context::CI | Context::EI), a)) => {
+                    self.exponential_integral(ident, a, n)?
+                }
+                Some((ident, a)) if ident == sif() || ident == sig() || ident == eistar() => {
+                    self.auxiliary_integral(ident, a, n)?
+                }
                 _ => return Err(LimitError::Unsupported),
             },
         };
@@ -640,6 +646,114 @@ impl Expander<'_> {
                 });
                 let c = if !alternating || k % 2 == 0 { c } else { -c };
                 Some(value(c) * &inv_sqrt_pi)
+            },
+            &n,
+        )
+    }
+
+    /// `{$"Si" a$}`, `{$"Ci" a$}` or `{$"Ei" a$}` for a bounded `a`. At `{$a_0 = 0$}`, with their power series
+    /// `{$"Si" a = sum_k (-1)^k a^(2 k + 1) / ((2 k + 1) (2 k + 1)!)$}`,
+    /// `{$"Ci" a = gamma + ln a + sum_(k >= 1) (-1)^k a^(2 k) / (2 k (2 k)!)$}` (`{$a -> 0^+$}`) and
+    /// `{$"Ei" a = gamma + ln|a| + sum_(k >= 1) a^k / (k k!)$}`. Elsewhere, with their Taylor series, from the
+    /// derivatives of `{$sin(t)/t$}`, `{$cos(t)/t$}` or `{$e^t/t$}` at `{$a_0$}` (positive for `{$"Ci"$}`).
+    fn exponential_integral(
+        &mut self,
+        ident: Symbol,
+        a: &Expr,
+        n: &Rational,
+    ) -> LimitResult<Series> {
+        let n = n.max(&Rational::ONE).clone();
+        let series = self.series(a, &n)?;
+        let (a0, u) = self.split_constant(series.clone())?;
+        if self.gruntz.is_zero(&a0) {
+            if ident == Context::CI {
+                let (_, _, c0) = self.with_lead(a, &n)?;
+                if self.gruntz.sign(&c0)? != Ordering::Greater {
+                    return Err(LimitError::Unsupported);
+                }
+            }
+            let power = Self::compose(
+                &series,
+                |j| {
+                    let (j_i64, sign) = (
+                        i64::try_from(j).ok()?,
+                        if (j / 2) % 2 == 0 { 1 } else { -1 },
+                    );
+                    let c = inverse_factorial(j) / Rational::from(j_i64.max(1));
+                    Some(value(match ident {
+                        Context::SI if j % 2 == 1 => Rational::from(sign) * c,
+                        Context::CI if j % 2 == 0 && j > 0 => Rational::from(sign) * c,
+                        Context::EI if j > 0 => c,
+                        _ => Rational::ZERO,
+                    }))
+                },
+                &n,
+            )?;
+            if ident == Context::SI {
+                return Ok(power);
+            }
+            let log =
+                variable(Context::EULER_GAMMA) + fun(Context::LN, fun(Context::ABS, a.clone()));
+            return self.series(&log, &n)?.add(&power);
+        }
+        if ident == Context::CI && self.gruntz.sign(&a0)? != Ordering::Greater {
+            return Err(LimitError::Unsupported);
+        }
+        // The derivatives of the integrand `{$d_1 = h(t)/t$}`, `{$d_(j + 1) = d_j'$}`, computed when needed
+        let t = Symbol::new("@ts");
+        let integrand = match ident {
+            Context::SI => Context::SIN,
+            Context::CI => Context::COS,
+            _ => Context::EXP,
+        };
+        let derivatives = std::cell::RefCell::new(vec![fun(integrand, variable(t)) / variable(t)]);
+        Self::compose(
+            &u,
+            |j| {
+                if j == 0 {
+                    return Some(fun(ident, a0.clone()));
+                }
+                let mut derivatives = derivatives.borrow_mut();
+                while derivatives.len() < j {
+                    let next = derivatives.last()?.derivative(t);
+                    derivatives.push(next);
+                }
+                Some(subs(&derivatives[j - 1], t, &a0) * value(inverse_factorial(j)))
+            },
+            &n,
+        )
+    }
+
+    /// The auxiliary functions [`sif`], [`sig`] and [`eistar`] of the sine, cosine and exponential integrals at
+    /// `{$a -> plus.minus oo$}`, with their asymptotic series `{$sum_k (-1)^k (2 k)! a^(-2 k - 1)$}`,
+    /// `{$sum_k (-1)^k (2 k + 1)! a^(-2 k - 2)$}` and `{$sum_(k >= 1) (k - 1)! a^(-k)$}`.
+    fn auxiliary_integral(&mut self, ident: Symbol, a: &Expr, n: &Rational) -> LimitResult<Series> {
+        let n = n.max(&Rational::ONE).clone();
+        let (_, e0, _) = self.with_lead(a, &n)?;
+        if const_cmp(&e0, &zero())? != Ordering::Less {
+            return Err(LimitError::Unsupported);
+        }
+        let v = self.series(&a.inv(), &n)?;
+        Self::compose(
+            &v,
+            |j| {
+                if j == 0 {
+                    return Some(zero());
+                }
+                // `{$(j - 1)!$}`, with the sign `{$(-1)^k$}` of the k-th term of `f` or `g`
+                let factorial = (1..j).fold(Rational::ONE, |res, i| res * Rational::from(i));
+                let sign = if ((j - 1) / 2) % 2 == 0 {
+                    Rational::ONE
+                } else {
+                    -Rational::ONE
+                };
+                Some(value(if ident == eistar() {
+                    factorial
+                } else if (ident == sif()) == (j % 2 == 1) {
+                    sign * factorial
+                } else {
+                    Rational::ZERO
+                }))
             },
             &n,
         )

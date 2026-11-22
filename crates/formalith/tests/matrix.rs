@@ -704,3 +704,43 @@ fn gradient_jacobian_hessian() {
         "gradient([[x,y]], x)"
     );
 }
+
+#[test]
+fn zeros_and_diag() {
+    assert_eq!(line(&parse!("zeros(2)", M)), "[[0,0],[0,0]]");
+    assert_eq!(line(&parse!("zeros(1, 3)", M)), "[[0,0,0]]");
+    assert_eq!(line(&parse!("zeros(2) + I(2)", M)), "[[1,0],[0,1]]");
+    assert_eq!(line(&parse!("diag(1, 2)", M)), "[[1,0],[0,2]]");
+    assert_eq!(line(&parse!("diag([[a, b]])", M)), "[[a,0],[0,b]]");
+    assert_eq!(line(&parse!("diag([[1],[2]])", M)), "[[1,0],[0,2]]");
+    assert_eq!(line(&parse!("2*diag(1, 2)", M)), "[[2,0],[0,4]]");
+    assert_eq!(line(&parse!("det(diag(2, 3, 5))", M)), "30");
+    // Sizes must be positive
+    assert_eq!(line(&parse!("zeros(0)", M)), "zeros(0)");
+}
+
+#[test]
+fn roots() {
+    assert_eq!(line(&parse!("roots(x^3 - x^2)", M)), "[[0],[0],[1]]");
+    assert_eq!(line(&parse!("roots(t^2 - 3*t + 2, t)", M)), "[[1],[2]]");
+    let roots = parse!("roots(x^2 - 2)", M);
+    assert_eq!(line(&roots), line(&parse!("[[sqrt(2)],[-sqrt(2)]]", M)));
+    // Without real root, or not a polynomial
+    assert_eq!(line(&parse!("roots(x^2 + 1)", M)), "roots(x^2+1)");
+    assert_eq!(line(&parse!("roots(5)", M)), "roots(5)");
+    assert_eq!(line(&parse!("roots(sin(x))", M)), "roots(sin(x))");
+}
+
+#[test]
+fn factorint() {
+    assert_eq!(line(&parse!("factorint(360)", M)), "[[2,3],[3,2],[5,1]]");
+    assert_eq!(line(&parse!("factorint(-3/4)", M)), "[[-1,1],[2,-2],[3,1]]");
+    assert_eq!(line(&parse!("factorint(1)", M)), "[[1,1]]");
+    assert_eq!(
+        line(&parse!("factorint(2^67 - 1)", M)),
+        "[[193707721,1],[761838257287,1]]"
+    );
+    let mz = M::new(TermSet::new(Z));
+    assert_eq!(line(&parse!("factorint(-12)", mz)), "[[-1,1],[2,2],[3,1]]");
+    assert_eq!(line(&parse!("factorint(0)", M)), "factorint(0)");
+}

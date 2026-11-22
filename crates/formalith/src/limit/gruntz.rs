@@ -104,11 +104,38 @@ impl Gruntz {
                 if matches!(ident, Context::SIN | Context::COS) && self.tends_to_infinity(&arg)? {
                     let angle = self.angle(&arg);
                     fun(ident, angle)
+                } else if matches!(ident, Context::SI | Context::CI)
+                    && self.tends_to_infinity(&arg)?
+                {
+                    self.trigonometric_integral_at_infinity(ident, arg)?
                 } else {
                     fun(ident, arg)
                 }
             }
             _ => try_map_operands(f, |operand| self.remove_oscillations(operand))?,
+        })
+    }
+
+    /// `{$"Si"(g)$}` or `{$"Ci"(g)$}` for `{$|g| -> oo$}`, written with an angle `t` in place of `g` as
+    /// `{$"Si"(g) = plus.minus pi/2 - f(g) cos t - g(g) sin t$}` (`{$g -> plus.minus oo$}`) and
+    /// `{$"Ci"(g) = f(g) sin t - g(g) cos t$}` (`{$g -> oo$}` only), the auxiliary functions [`sif`] and [`sig`]
+    /// having asymptotic series.
+    fn trigonometric_integral_at_infinity(&mut self, ident: Symbol, g: Expr) -> LimitResult<Expr> {
+        let limit = self.limit_infinity(&g)?;
+        let sign = if limit == infinity() {
+            one()
+        } else if limit == -infinity() && ident == Context::SI {
+            -one()
+        } else {
+            return Err(LimitError::Unsupported);
+        };
+        let angle = self.angle(&g);
+        let (sin, cos) = (fun(Context::SIN, angle.clone()), fun(Context::COS, angle));
+        let (f, h) = (fun(sif(), g.clone()), fun(sig(), g));
+        Ok(if ident == Context::SI {
+            sign * variable(Context::PI) * half() - f * cos - h * sin
+        } else {
+            f * sin - h * cos
         })
     }
 
@@ -387,6 +414,10 @@ impl Gruntz {
                         return Ok(fun(Context::EXP, exponant));
                     }
                 }
+                if ident == Context::EI && is_infinite(&self.limit_infinity(&arg)?) {
+                    // `{$"Ei"(g) = e^g "eistar"(g)$}`
+                    return Ok(fun(Context::EXP, arg.clone()) * fun(eistar(), arg));
+                }
                 if matches!(ident, Context::ERF | Context::ERFI) {
                     let limit = self.limit_infinity(&arg)?;
                     if is_infinite(&limit) {
@@ -436,10 +467,17 @@ impl Gruntz {
                     g,
                 )) => self.mrv(g),
                 Some((ident, g))
-                    if ident == erfcx() || ident == erfix() || ident == lgammastar() =>
+                    if ident == erfcx()
+                        || ident == erfix()
+                        || ident == lgammastar()
+                        || ident == sif()
+                        || ident == sig()
+                        || ident == eistar() =>
                 {
                     self.mrv(g)
                 }
+                // Unbounded arguments were rewritten
+                Some((Context::SI | Context::CI | Context::EI, g)) => self.mrv(g),
                 // `{$Gamma g$}` with `{$g -> oo$}` was rewritten, and `{$psi^((m))(g)$}` has a series
                 Some((Context::GAMMA, g)) => self.mrv(g),
                 None if polygamma_args(f).is_some() => {
@@ -617,6 +655,24 @@ pub(super) fn erfix() -> Symbol {
 /// used internally for `{$g -> +oo$}`.
 pub(super) fn lgammastar() -> Symbol {
     Symbol::new("@lgammastar")
+}
+
+/// The auxiliary function `{$f(g) = "Ci"(g) sin g + (pi/2 - "Si"(g)) cos g$}` of the sine and cosine integrals,
+/// with the asymptotic series `{$sum_k (-1)^k (2 k)! / g^(2 k + 1)$}`, only used internally for `{$|g| -> oo$}`.
+pub(super) fn sif() -> Symbol {
+    Symbol::new("@sif")
+}
+
+/// The auxiliary function `{$g(g) = -"Ci"(g) cos g + (pi/2 - "Si"(g)) sin g$}` of the sine and cosine integrals,
+/// with the asymptotic series `{$sum_k (-1)^k (2 k + 1)! / g^(2 k + 2)$}`, only used internally for `{$|g| -> oo$}`.
+pub(super) fn sig() -> Symbol {
+    Symbol::new("@sig")
+}
+
+/// The scaled exponential integral `{$"eistar"(g) = e^(-g) "Ei"(g)$}`, with the asymptotic series
+/// `{$sum_(k >= 1) (k - 1)! / g^k$}`, only used internally for `{$|g| -> oo$}`.
+pub(super) fn eistar() -> Symbol {
+    Symbol::new("@eistar")
 }
 
 /// `{$ln a$}`, simplifying `{$ln e^h = h$}`.

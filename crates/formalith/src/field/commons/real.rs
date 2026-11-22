@@ -20,10 +20,12 @@ use malachite::{
     },
 };
 
-use super::parse_rational_literal;
+use super::{parse_rational_literal, primes};
 use sign::SignMode;
 
-use crate::term::fun::{degree_args, degree_exponents, eval_calculus_builtin, eval_matrix_builtin};
+use crate::term::fun::{
+    degree_args, degree_exponents, eval_algebra_builtin, eval_calculus_builtin, eval_matrix_builtin,
+};
 use crate::{
     context::{
         Context, Symbol,
@@ -424,6 +426,18 @@ impl Ring for R<Rational> {
                 }
                 Context::DEGREE => {
                     if let Some(res) = self.eval_degree(&**fun) {
+                        return res;
+                    }
+                }
+                // Also in exponents, unlike other rings
+                Context::SUBS => {
+                    if let Some([f, Term::Symbol(x), a]) = fun.get_args::<Self>().map(Vec::as_slice)
+                    {
+                        return expr::subs(f, x.symbol, a);
+                    }
+                }
+                Context::NUMER | Context::DENOM | Context::RESULTANT | Context::DISCRIMINANT => {
+                    if let Some(res) = eval_algebra_builtin(&**fun) {
                         return res;
                     }
                 }
@@ -923,7 +937,13 @@ impl R<Rational> {
             {
                 Some(value(Rational::ZERO))
             }
-            (Context::ERF | Context::ERFI, [x]) if x.is_zero() => Some(value(Rational::ZERO)),
+            (Context::ERF | Context::ERFI | Context::SI, [x]) if x.is_zero() => {
+                Some(value(Rational::ZERO))
+            }
+            // Logarithmic singularities
+            (Context::CI | Context::EI, [x]) if x.is_zero() => {
+                Some(-Term::Symbol(SymbolTerm::new(Context::OO, self)))
+            }
             (Context::COSH, [x]) if x.is_zero() => Some(value(Rational::ONE)),
             (Context::ACOSH, [x]) if x.is_one() => Some(value(Rational::ZERO)),
             (Context::ASIN | Context::ACOS | Context::ATAN, [x]) => {
@@ -934,6 +954,24 @@ impl R<Rational> {
             }
             (Context::SEC, [x]) => Some(self.fun(Context::COS, x.clone()).inv()),
             (Context::CSC, [x]) => Some(self.fun(Context::SIN, x.clone()).inv()),
+            (Context::ERFC, [x]) => Some(value(Rational::ONE) - self.fun(Context::ERF, x.clone())),
+            // Halves are rounded up, `{$"round"(x) = floor(x + 1/2)$}`
+            (Context::ROUND, [x]) => {
+                Some(self.fun(Context::FLOOR, x + &value(Rational::from_signeds(1, 2))))
+            }
+            (Context::TRUNC, [Term::Value(x)]) => Some(value(if x.value < 0 {
+                Rational::from((&x.value).ceiling())
+            } else {
+                Rational::from((&x.value).floor())
+            })),
+            (Context::TRUNC, [x]) => Some(
+                self.fun(Context::SIGN, x.clone())
+                    * self.fun(Context::FLOOR, self.fun(Context::ABS, x.clone())),
+            ),
+            (Context::ISPRIME, [Term::Value(x)]) => {
+                let prime = Natural::try_from(&x.value).is_ok_and(|n| primes::is_prime(&n));
+                Some(value(Rational::from(u8::from(prime))))
+            }
             (Context::LOG, [x]) => Some(self.eval_log(x, &value(Rational::from(10)))),
             (Context::LOG, [x, base]) => Some(self.eval_log(x, base)),
             // Approximations stay unevaluated, the singular values being exact
@@ -1108,7 +1146,8 @@ impl R<Rational> {
             | Context::ATANH
             | Context::SIGN
             | Context::ERF
-            | Context::ERFI => Some(-self.fun(ident, -x)),
+            | Context::ERFI
+            | Context::SI => Some(-self.fun(ident, -x)),
             Context::COS | Context::COSH => Some(self.fun(ident, -x)),
             _ => None,
         }
@@ -1247,7 +1286,7 @@ impl R<Rational> {
         let value = |value| Term::Value(Value::new(value, self));
         let oo = Term::Symbol(SymbolTerm::new(Context::OO, self));
         if *x == -&oo {
-            return (ident == Context::EXP).then(|| value(Rational::ZERO));
+            return matches!(ident, Context::EXP | Context::EI).then(|| value(Rational::ZERO));
         }
         if *x != oo {
             return None;
@@ -1261,9 +1300,11 @@ impl R<Rational> {
             | Context::ACOSH
             | Context::GAMMA
             | Context::FACTORIAL
-            | Context::LAMBERTW => Some(oo),
+            | Context::LAMBERTW
+            | Context::EI => Some(oo),
             Context::TANH | Context::ERF | Context::ZETA => Some(value(Rational::ONE)),
-            Context::ATAN => {
+            Context::CI => Some(value(Rational::ZERO)),
+            Context::ATAN | Context::SI => {
                 Some(Term::Symbol(SymbolTerm::new(Context::PI, self)) / value(Rational::from(2)))
             }
             _ => None,

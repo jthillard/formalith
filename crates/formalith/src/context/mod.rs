@@ -287,9 +287,41 @@ impl Context {
     /// Local minima and maxima `localextrema(f, x)` of a function with their values, only allowed as a whole
     /// statement
     pub const LOCALEXTREMA: Symbol = Symbol(83);
+    /// Substitution `subs(f, x, a)` of `x` by `a` in `f`
+    pub const SUBS: Symbol = Symbol(84);
+    /// Numerator `numer(f)` of `f` written as a fraction
+    pub const NUMER: Symbol = Symbol(85);
+    /// Denominator `denom(f)` of `f` written as a fraction
+    pub const DENOM: Symbol = Symbol(86);
+    /// Roots `roots(p, x)` of a polynomial, as a column repeated by multiplicity
+    pub const ROOTS: Symbol = Symbol(87);
+    /// Resultant `resultant(p, q, x)` of two polynomials
+    pub const RESULTANT: Symbol = Symbol(88);
+    /// Discriminant `discriminant(p, x)` of a polynomial
+    pub const DISCRIMINANT: Symbol = Symbol(89);
+    /// Complementary error function `{$"erfc"(x) = 1 - "erf"(x)$}`
+    pub const ERFC: Symbol = Symbol(90);
+    /// Nearest integer `round(x)`, halves rounded up
+    pub const ROUND: Symbol = Symbol(91);
+    /// Integer part `trunc(x)`, rounded toward zero
+    pub const TRUNC: Symbol = Symbol(92);
+    /// Primality test `isprime(n)`, 1 for a prime and 0 otherwise
+    pub const ISPRIME: Symbol = Symbol(93);
+    /// Prime factorization `factorint(n)` of an integer, as rows `[p, e]`
+    pub const FACTORINT: Symbol = Symbol(94);
+    /// Zero matrix `zeros(n, m)`
+    pub const ZEROS: Symbol = Symbol(95);
+    /// Diagonal matrix `diag(a_1, ..., a_n)`
+    pub const DIAG: Symbol = Symbol(96);
+    /// Sine integral `{$"Si"(x) = integral_0^x sin(t)/t dif t$}`
+    pub const SI: Symbol = Symbol(97);
+    /// Cosine integral `{$"Ci"(x) = gamma + ln x + integral_0^x (cos(t) - 1)/t dif t$}`
+    pub const CI: Symbol = Symbol(98);
+    /// Exponential integral `{$"Ei"(x) = gamma + ln|x| + integral_0^x (e^t - 1)/t dif t$}`
+    pub const EI: Symbol = Symbol(99);
 
     #[rustfmt::skip]
-    const BUILTIN_NAMES: [&'static str; 84] = [
+    const BUILTIN_NAMES: [&'static str; 100] = [
         "abs", "det", "expand", "factor", "simplify", "re", "im", "conj", "sqrt", "root", "sign",
         "floor", "ceil", "min", "max", "gcd", "lcm", "quo", "rem", "diff", "solve", "approx",
         "exp", "ln", "sin", "cos", "tan", "pi", "e", "lim", "oo", "undefined",
@@ -299,7 +331,9 @@ impl Context {
         "dsolve", "transpose", "trace", "rank", "kernel", "charpoly", "eigenvalues", "eigenvectors",
         "hermite", "smith", "apart", "lambertw", "piecewise", "gradient", "jacobian", "hessian",
         "I", "degree", "argmin", "argmax", "localmin",
-        "localmax", "extrema", "localextrema",
+        "localmax", "extrema", "localextrema", "subs", "numer", "denom", "roots", "resultant",
+        "discriminant", "erfc", "round", "trunc", "isprime", "factorint", "zeros", "diag", "Si", "Ci",
+        "Ei",
     ];
 
     /// Return `true` if `symbol` is a builtin constant, like `{$pi$}`, which is not a function.
@@ -327,6 +361,10 @@ impl Context {
                 | Self::JACOBIAN
                 | Self::HESSIAN
                 | Self::IDENTITY
+                | Self::ROOTS
+                | Self::FACTORINT
+                | Self::ZEROS
+                | Self::DIAG
         )
     }
 
@@ -357,6 +395,10 @@ impl Context {
             | Self::EXTREMA
             | Self::LOCALEXTREMA => Some((1, usize::MAX)),
             Self::APPROX | Self::LOG | Self::CHARPOLY => Some((1, 2)),
+            Self::SUBS => Some((3, 3)),
+            Self::RESULTANT => Some((2, 3)),
+            Self::ROOTS | Self::DISCRIMINANT | Self::ZEROS => Some((1, 2)),
+            Self::DIAG => Some((1, usize::MAX)),
             Self::DIFF => Some((2, 3)),
             Self::APART | Self::DEGREE => Some((1, 2)),
             Self::PIECEWISE => Some((2, usize::MAX)),

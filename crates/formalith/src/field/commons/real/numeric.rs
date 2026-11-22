@@ -71,6 +71,9 @@ pub enum NumFn {
     Factorial,
     Binomial,
     LambertW,
+    Si,
+    Ci,
+    Ei,
     /// `piecewise(c1, v1, c2, v2, ..., default)`
     Piecewise,
     /// A comparison of its two arguments, 1 if it holds, 0 otherwise.
@@ -112,6 +115,9 @@ impl NumFn {
             Context::ZETA => Self::Zeta,
             Context::FACTORIAL => Self::Factorial,
             Context::LAMBERTW => Self::LambertW,
+            Context::SI => Self::Si,
+            Context::CI => Self::Ci,
+            Context::EI => Self::Ei,
             Context::POLYGAMMA if arity == 2 => return Some(Self::Polygamma),
             Context::BINOMIAL if arity == 2 => return Some(Self::Binomial),
             Context::PIECEWISE if arity >= 2 => return Some(Self::Piecewise),
@@ -171,6 +177,7 @@ impl NumFn {
             Self::Zeta => zeta(x),
             Self::Binomial => binomial(x, y),
             Self::LambertW => lambert_w(x),
+            Self::Si | Self::Ci | Self::Ei => exponential_integral(self, x),
             Self::Piecewise => args
                 .chunks(2)
                 .find_map(|chunk| match chunk {
@@ -444,6 +451,96 @@ fn erfi(x: f64) -> f64 {
     }
 }
 
+/// `{$"Si"(x)$}`, `{$"Ci"(x)$}` or `{$"Ei"(x)$}`, by their power series for small `|x|` (whose terms cancel up to
+/// `{$e^|x|$}`), and their asymptotic series otherwise. `NaN` for `{$"Ci"(x)$}` with `{$x <= 0$}`.
+fn exponential_integral(fun: NumFn, x: f64) -> f64 {
+    /// Below this bound, the power series loses at most 7 digits.
+    const SERIES_BOUND: f64 = 16.;
+    if x.is_nan() || (fun == NumFn::Ci && x <= 0.) {
+        return f64::NAN;
+    }
+    if fun == NumFn::Si && x < 0. {
+        return -exponential_integral(fun, -x);
+    }
+    if x == 0. {
+        return if fun == NumFn::Si {
+            0.
+        } else {
+            f64::NEG_INFINITY
+        };
+    }
+    if x.is_infinite() {
+        return match fun {
+            NumFn::Si => std::f64::consts::FRAC_PI_2,
+            NumFn::Ei if x > 0. => x,
+            _ => 0.,
+        };
+    }
+    // `{$"Ei"$}` has no cancellation for positive `x`
+    let bound = if fun == NumFn::Ei && x > 0. {
+        40.
+    } else {
+        SERIES_BOUND
+    };
+    if x.abs() < bound {
+        let mut sum = 0.;
+        let mut power = 1.;
+        for k in 1..500 {
+            let k = f64::from(k);
+            let term = match fun {
+                // `{$x^(2k-1) / ((2k-1) (2k-1)!)$}` with alternating signs
+                NumFn::Si => {
+                    power *= x / (2. * k - 1.);
+                    let term = power / (2. * k - 1.);
+                    power *= x / (2. * k);
+                    if k % 2. == 0. { -term } else { term }
+                }
+                // `{$(-1)^k x^(2k) / (2k (2k)!)$}`
+                NumFn::Ci => {
+                    power *= -x * x / ((2. * k - 1.) * (2. * k));
+                    power / (2. * k)
+                }
+                // `{$x^k / (k k!)$}`
+                _ => {
+                    power *= x / k;
+                    power / k
+                }
+            };
+            sum += term;
+            if term.abs() <= 1e-17 * sum.abs() {
+                break;
+            }
+        }
+        return if fun == NumFn::Si {
+            sum
+        } else {
+            sum + EULER_GAMMA + x.abs().ln()
+        };
+    }
+    // Terms `{$t_k = (k - 1)! / x^k$}` while they decrease, with the signs of `f` and `g` for `{$"Si"$}` and `{$"Ci"$}`
+    let (mut f, mut g, mut ei) = (0., 0., 0.);
+    let mut term = 1. / x;
+    for k in 1..200 {
+        ei += term;
+        let signed = if (k - 1) % 4 < 2 { term } else { -term };
+        if k % 2 == 1 {
+            f += signed;
+        } else {
+            g += signed;
+        }
+        let next = term * f64::from(k) / x;
+        if next.abs() >= term.abs() {
+            break;
+        }
+        term = next;
+    }
+    match fun {
+        NumFn::Si => std::f64::consts::FRAC_PI_2 - f * x.cos() - g * x.sin(),
+        NumFn::Ci => f * x.sin() - g * x.cos(),
+        _ => x.exp() * ei,
+    }
+}
+
 /// The principal branch `{$W_0(x)$}` of the Lambert W function, by Halley's iteration.
 fn lambert_w(x: f64) -> f64 {
     let branch = -1. / std::f64::consts::E;
@@ -525,6 +622,27 @@ mod tests {
         assert_close(eval("erfi(x)", 1.), 1.650_425_758_797_542_9);
         assert_close(eval("erfi(x)", 6.), 4.112_751_455_828_239e14);
         assert_close(eval("erfi(x)", 4.9), 3_149_283_850.004_450_8);
+    }
+
+    #[test]
+    fn test_exponential_integrals() {
+        // Reference values, on both sides of the bound between the power and asymptotic series
+        let close = |a: f64, b: f64| assert!((a - b).abs() <= 1e-7 * (1. + b.abs()), "{a} != {b}");
+        close(eval("Si(x)", 1.), 0.946_083_070_367_183);
+        close(eval("Si(x)", -2.), -1.605_412_976_802_695);
+        close(eval("Si(x)", 15.), 1.618_194_443_708_369);
+        close(eval("Si(x)", 100.), 1.562_225_466_889_056);
+        close(eval("Ci(x)", 1.), 0.337_403_922_900_968);
+        close(eval("Ci(x)", 20.), 0.044_419_820_845_353);
+        close(eval("Ci(x)", 100.), -0.005_148_825_142_610);
+        close(eval("Ei(x)", 1.), 1.895_117_816_355_937);
+        close(eval("Ei(x)", -1.), -0.219_383_934_395_520);
+        close(eval("Ei(x)", 50.), 1.058_563_689_713_169e20);
+        close(
+            eval("Ei(x)", -20.) * 1e10,
+            -9.835_525_290_649_882e-11 * 1e10,
+        );
+        assert!(eval("Ci(x)", -1.).is_nan());
     }
 
     #[test]

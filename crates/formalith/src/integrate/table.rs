@@ -1,7 +1,8 @@
 //! Integrals of elementary functions of a linear argument, of square roots of quadratic polynomials, of
 //! products `{$e^u sin v$}` and `{$e^u cos v$}`, and of `{$p e^q$}` for polynomials `p` and quadratic
 //! polynomials `q` with the error functions `{$"erf"$}` and `{$"erfi"$}`, and of `{$1 / (A x^2 + B)$}` with
-//! symbolic `A` and `B`.
+//! symbolic `A` and `B`, and of `{$e^u / v$}`, `{$sin(u) / v$}` and `{$cos(u) / v$}` for linear `u` and `v`, with the
+//! exponential, sine and cosine integrals.
 
 use crate::field::real::expr::{
     Expr, constant_sign, depends, fun, map_tree, one, ratio, unary, value, variable, zero,
@@ -13,7 +14,7 @@ use malachite::Rational;
 
 use crate::{
     context::{Context, Symbol},
-    term::Term,
+    term::{Expand, Term},
 };
 
 use super::{Integrator, factors, linear, ln_abs, poly::Poly};
@@ -59,7 +60,8 @@ pub(super) fn integrate(_: &mut Integrator, f: &Expr, x: Symbol) -> Option<Expr>
         }
         Term::Mul(_) => exp_trig(f, x)
             .or_else(|| linear_quadratic(f, x))
-            .or_else(|| polynomial_gaussian(f, x)),
+            .or_else(|| polynomial_gaussian(f, x))
+            .or_else(|| exponential_integral(f, x)),
         Term::Value(_) | Term::Add(_) => None,
     }
 }
@@ -91,6 +93,10 @@ fn elementary(ident: Symbol, u: &Expr) -> Option<Expr> {
         // By parts, `{$integral "erf" = u "erf" u + e^(-u^2) / sqrt(pi)$}`
         Context::ERF => u * &f + fun(Context::EXP, -u2) / sqrt(variable(Context::PI)),
         Context::ERFI => u * &f - fun(Context::EXP, u2) / sqrt(variable(Context::PI)),
+        // By parts, `{$integral "Si" = u "Si" u + cos u$}`, with the derivatives `{$sin(u)/u$}`, `{$cos(u)/u$}`, `{$e^u/u$}`
+        Context::SI => u * &f + fun(Context::COS, u.clone()),
+        Context::CI => u * &f - fun(Context::SIN, u.clone()),
+        Context::EI => u * &f - fun(Context::EXP, u.clone()),
         _ => return None,
     })
 }
@@ -112,6 +118,47 @@ fn exp_trig(f: &Expr, x: Symbol) -> Option<Expr> {
         Context::COS => exp * (a * cos + b * sin) / norm,
         _ => return None,
     })
+}
+
+/// `{$integral g(a x + b) / (p x + q)$}` for `{$g = exp$}`, `sin` or `cos`, with the exponential, sine and cosine
+/// integrals: with `{$t = p x + q$}`, `{$a x + b = alpha t + beta$}`, `{$integral e^(alpha t + beta) / t = e^beta "Ei"(alpha t)$}`,
+/// `{$integral sin(alpha t + beta) / t = cos(beta) "Si"(alpha t) + sin(beta) "Ci"(alpha t)$}` and
+/// `{$integral cos(alpha t + beta) / t = cos(beta) "Ci"(alpha t) - sin(beta) "Si"(alpha t)$}`.
+fn exponential_integral(f: &Expr, x: Symbol) -> Option<Expr> {
+    let [first, second] = factors(f).try_into().ok()?;
+    let ((ident, u), t) = match (&first, &second) {
+        (Term::Pow(pow), g) | (g, Term::Pow(pow))
+            if **pow.exponant == value(Rational::from(-1)) =>
+        {
+            (unary(g)?, &*pow.base)
+        }
+        _ => return None,
+    };
+    if !matches!(ident, Context::EXP | Context::SIN | Context::COS) {
+        return None;
+    }
+    let (a, p) = (linear(u, x)?, linear(t, x)?);
+    let alpha = &a / &p;
+    let beta = u - &(&alpha * t);
+    if depends(&beta, x) {
+        return None;
+    }
+    let scaled = (&alpha * t).expand();
+    let (si, ci) = (
+        fun(Context::SI, scaled.clone()),
+        fun(Context::CI, scaled.clone()),
+    );
+    let (cos, sin) = (
+        fun(Context::COS, beta.clone()),
+        fun(Context::SIN, beta.clone()),
+    );
+    Some(
+        match ident {
+            Context::EXP => fun(Context::EXP, beta) * fun(Context::EI, scaled),
+            Context::SIN => cos * si + sin * ci,
+            _ => cos * ci - sin * si,
+        } / p,
+    )
 }
 
 /// A quadratic polynomial `{$c_2 x^2 + c_1 x + c_0$}` written `{$c_2 (x + h)^2 + k$}`, as `{$(c_2, h, k)$}`.

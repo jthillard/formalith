@@ -524,8 +524,8 @@ where
                             let count = args.len();
                             (Term::Fun(Box::new(Fun::new(ident, args, set))), count)
                         }
-                        // The size of an identity matrix is an integer, whatever the set
-                        Context::IDENTITY => {
+                        // Matrix sizes are integers, whatever the set
+                        Context::IDENTITY | Context::ZEROS => {
                             let args = self.parse_args(Z)?;
                             let count = args.len();
                             (Term::Fun(Box::new(Fun::new(ident, args, set))), count)

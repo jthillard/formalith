@@ -966,6 +966,173 @@ pub static BUILTIN_DOCS: [BuiltinDoc; Context::BUILTIN_NAMES.len()] = [
             ),
         ],
     ),
+    doc(
+        Context::SUBS,
+        Algebra,
+        "subs(f, x, a)",
+        "Replaces the symbol x by a in f.",
+        "In R, x is also replaced in exponents; in other sets, the substitution stays unevaluated when x is in an \
+         exponent.",
+        &[
+            ex("subs(x^2 + y, x, y + 1)", "y + (y + 1)^2"),
+            ex("subs(sin(x) + 2^x, x, 0)", "1"),
+        ],
+    ),
+    doc(
+        Context::NUMER,
+        Algebra,
+        "numer(f)",
+        "Numerator of f written as a single fraction.",
+        "",
+        &[ex("numer(1/x + 1/y)", "x + y"), ex("numer(3/4)", "3")],
+    ),
+    doc(
+        Context::DENOM,
+        Algebra,
+        "denom(f)",
+        "Denominator of f written as a single fraction.",
+        "",
+        &[ex("denom(1/x + 1/y)", "x y"), ex("denom(3/4)", "4")],
+    ),
+    doc(
+        Context::ROOTS,
+        Algebra,
+        "roots(p, [x])",
+        "Real roots of a polynomial, as a column repeated by multiplicity.",
+        "x may be omitted when p has a single symbol. In M only, over the rationals: the roots found by solve, \
+         unevaluated when there is none.",
+        &[
+            ex_in("M", "roots(x^3 - x^2)", "mat(0; 0; 1)"),
+            ex_in("M", "roots(x^2 - 2)", "mat(sqrt(2); -sqrt(2))"),
+        ],
+    ),
+    doc(
+        Context::RESULTANT,
+        Algebra,
+        "resultant(p, q, [x])",
+        "Resultant of two polynomials in x, the determinant of their Sylvester matrix.",
+        "x may be omitted when p and q have a single symbol. It is zero exactly when p and q have a common root \
+         (or both leading coefficients vanish). Evaluated when the degrees add up to at most 14.",
+        &[
+            ex("resultant(x^2 - 1, x - 2)", "3"),
+            ex("resultant(x^2 + a, x - b, x)", "a + b^2"),
+        ],
+    ),
+    doc(
+        Context::DISCRIMINANT,
+        Algebra,
+        "discriminant(p, [x])",
+        "Discriminant of a polynomial in x, zero exactly when p has a multiple root.",
+        "x may be omitted when p has a single symbol. (-1)^(n (n - 1)/2) resultant(p, p')/a_n for a polynomial of \
+         degree n with leading coefficient a_n, 1 for degree 1.",
+        &[
+            ex("discriminant(a*x^2 + b*x + c, x)", "b^2 - 4 a c"),
+            ex("discriminant(x^3 - x)", "4"),
+        ],
+    ),
+    doc(
+        Context::ERFC,
+        Special,
+        "erfc(x)",
+        "Complementary error function, 1 - erf(x).",
+        "In R, rewritten as 1 - erf(x).",
+        &[ex("erfc(0)", "1"), ex("lim(erfc(x), x, oo)", "0")],
+    ),
+    doc(
+        Context::ROUND,
+        Arithmetic,
+        "round(x)",
+        "Nearest integer to x, halves being rounded up.",
+        "In R, rewritten as floor(x + 1/2).",
+        &[
+            ex("round(5/2)", "3"),
+            ex("round(-7/4)", "-2"),
+            ex("round(x)", "floor(x + 1/2)"),
+        ],
+    ),
+    doc(
+        Context::TRUNC,
+        Arithmetic,
+        "trunc(x)",
+        "Integer part of x, rounded toward zero.",
+        "In R, rewritten as sign(x) floor(|x|) unless x is a value.",
+        &[ex("trunc(-7/4)", "-1"), ex("trunc(7/4)", "1")],
+    ),
+    doc(
+        Context::ISPRIME,
+        Arithmetic,
+        "isprime(n)",
+        "1 if the integer n is a prime number, 0 otherwise.",
+        "In Z and R. Exact below 3.3 10^24, a strong probable prime test with many bases above.",
+        &[ex("isprime(97)", "1"), ex("isprime(91)", "0")],
+    ),
+    doc(
+        Context::FACTORINT,
+        Arithmetic,
+        "factorint(n)",
+        "Prime factorization of a non-zero integer or rational, as rows [p, e] for each factor p^e.",
+        "In M and M(Z). A negative number has a first row [-1, 1], denominators have negative exponents, and 1 \
+         is [1, 1]. Unevaluated when a factor is too large to be found.",
+        &[
+            ex_in("M", "factorint(360)", "mat(2, 3; 3, 2; 5, 1)"),
+            ex_in("M", "factorint(-3/4)", "mat(-1, 1; 2, -2; 3, 1)"),
+        ],
+    ),
+    doc(
+        Context::ZEROS,
+        Matrices,
+        "zeros(n, [m])",
+        "Zero matrix with n rows and m columns, square by default.",
+        "",
+        &[
+            ex_in("M", "zeros(2)", "mat(0, 0; 0, 0)"),
+            ex_in("M", "zeros(1, 3)", "mat(0, 0, 0)"),
+        ],
+    ),
+    doc(
+        Context::DIAG,
+        Matrices,
+        "diag(a_1, ..., a_n)",
+        "Diagonal matrix with the entries a_1, ..., a_n.",
+        "The entries may also be given as a single row or column.",
+        &[
+            ex_in("M", "diag(1, 2)", "mat(1, 0; 0, 2)"),
+            ex_in("M", "diag([[a, b]])", "mat(a, 0; 0, b)"),
+        ],
+    ),
+    doc(
+        Context::SI,
+        Special,
+        "Si(x)",
+        "Sine integral, the integral of sin(t)/t from 0 to x.",
+        "Odd, with Si(oo) = pi/2. It is the antiderivative of sin(a x + b)/x.",
+        &[
+            ex("diff(Si(x), x)", "sin(x)/x"),
+            ex("integrate(sin(x)/x, x, 0, oo)", "pi/2"),
+        ],
+    ),
+    doc(
+        Context::CI,
+        Special,
+        "Ci(x)",
+        "Cosine integral, euler_gamma + ln x + the integral of (cos(t) - 1)/t from 0 to x, for x > 0.",
+        "Ci(oo) = 0. It is the antiderivative of cos(a x + b)/x.",
+        &[
+            ex("diff(Ci(x), x)", "cos(x)/x"),
+            ex("integrate(cos(2*x)/x, x)", "op(\"Ci\")(2 x)"),
+        ],
+    ),
+    doc(
+        Context::EI,
+        Special,
+        "Ei(x)",
+        "Exponential integral, euler_gamma + ln|x| + the integral of (e^t - 1)/t from 0 to x.",
+        "Ei(-oo) = 0 and Ei(oo) = oo. It is the antiderivative of e^(a x + b)/x.",
+        &[
+            ex("diff(Ei(x), x)", "exp(x)/x"),
+            ex("integrate(exp(-x)/x, x)", "op(\"Ei\")(-x)"),
+        ],
+    ),
 ];
 
 #[cfg(test)]

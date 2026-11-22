@@ -66,6 +66,42 @@ fn kernel(mut matrix: Matrix<TermSet<R<Rational>>>) -> Matrix<TermSet<R<Rational
     basis
 }
 
+/// The real roots of the expanded polynomial `p` in `x` found by [`Solve::solve_for`], with their
+/// multiplicities, in the order of its solutions. Returns `None` if they can't be computed.
+pub(crate) fn real_roots(
+    p: &Term<R<Rational>>,
+    x: Symbol,
+) -> Option<Vec<(Term<R<Rational>>, usize)>> {
+    let roots = match R
+        .solve_for(&[Equation::new(p.clone(), Term::zero(R))], &[x])
+        .ok()?
+    {
+        Solution::Assignments(assignments) => vec![assignments],
+        Solution::Alternatives(branches) => branches,
+        Solution::NoSolution => vec![],
+    };
+    let mut multiplicities = vec![];
+    for assignments in roots {
+        let [(_, value)] = assignments.as_slice() else {
+            return None;
+        };
+        // The multiplicity is the order of the first derivative which doesn't vanish at the root
+        let mut multiplicity = 0;
+        let mut derivative = p.clone();
+        while derivative
+            .substitute(x, value)?
+            .expand()
+            .simplify()
+            .is_zero()
+        {
+            multiplicity += 1;
+            derivative = derivative.derivative(x).expand();
+        }
+        multiplicities.push((value.clone(), multiplicity));
+    }
+    Some(multiplicities)
+}
+
 /// An eigenvalue of a matrix with its eigenspace.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Eigenspace {
@@ -85,33 +121,7 @@ impl Matrix<TermSet<R<Rational>>> {
     pub fn eigenspaces(&self) -> Option<Vec<Eigenspace>> {
         let x = Symbol::new("@l");
         let charpoly = self.charpoly(x).ok()?.expand();
-        let roots = match R
-            .solve_for(&[Equation::new(charpoly.clone(), Term::zero(R))], &[x])
-            .ok()?
-        {
-            Solution::Assignments(assignments) => vec![assignments],
-            Solution::Alternatives(branches) => branches,
-            Solution::NoSolution => vec![],
-        };
-        let mut multiplicities = vec![];
-        for assignments in roots {
-            let [(_, value)] = assignments.as_slice() else {
-                return None;
-            };
-            // The multiplicity is the order of the first derivative which doesn't vanish at the root
-            let mut multiplicity = 0;
-            let mut derivative = charpoly.clone();
-            while derivative
-                .substitute(x, value)?
-                .expand()
-                .simplify()
-                .is_zero()
-            {
-                multiplicity += 1;
-                derivative = derivative.derivative(x).expand();
-            }
-            multiplicities.push((value.clone(), multiplicity));
-        }
+        let multiplicities = real_roots(&charpoly, x)?;
         // Before computing eigenspaces, which is slow with radicals, `{$x^3 - 4 x^2 - 3 x + 37$}` having non-real roots
         let total: usize = multiplicities
             .iter()

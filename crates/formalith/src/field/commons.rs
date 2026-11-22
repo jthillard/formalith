@@ -32,6 +32,7 @@ pub mod matrix;
 pub mod modular;
 pub mod natural;
 pub mod polynomial;
+pub(crate) mod primes;
 pub mod real;
 
 /// Parse a number literal as a rational, `target` naming the malachite type in the error message.

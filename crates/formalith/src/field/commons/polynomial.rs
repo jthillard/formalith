@@ -4,7 +4,7 @@ use std::cmp::Ordering;
 
 use malachite::{Integer, base::num::arithmetic::traits::Parity};
 
-use crate::term::fun::{eval_rewrite_builtin, natural_constant};
+use crate::term::fun::{eval_algebra_builtin, eval_rewrite_builtin, natural_constant};
 use crate::{
     context::{Context, Symbol},
     field::{
@@ -134,7 +134,7 @@ impl<K: Ring> Poly<K> {
     /// Evaluate the builtin function `fun`, returning `None` if it can't be evaluated.
     fn eval_builtin(self, fun: &dyn Function<Self>) -> Option<Term<Self>> {
         let value = |value| Term::constant(value, self);
-        if let Some(res) = eval_rewrite_builtin(fun) {
+        if let Some(res) = eval_rewrite_builtin(fun).or_else(|| eval_algebra_builtin(fun)) {
             return Some(res);
         }
         match (fun.get_ident(), fun.get_args::<Self>()?.as_slice()) {
