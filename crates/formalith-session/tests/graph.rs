@@ -162,6 +162,42 @@ fn test_points() {
 }
 
 #[test]
+fn test_integrals() {
+    let mut session = Session::new();
+    let (text, graph) = draw(&mut session, "integrate(exp(x), x, 0, 1)");
+    assert_eq!(text, "exp(1)-1");
+    let GraphKind::Integral {
+        expr,
+        derivative,
+        a,
+        b,
+    } = graph.unwrap().kind
+    else {
+        panic!("not an integral");
+    };
+    assert_close(expr.eval(&[1., f64::NAN]), 1f64.exp());
+    assert_close(derivative.unwrap().eval(&[1., f64::NAN]), 1f64.exp());
+    assert_close(a.eval(&[f64::NAN, f64::NAN]), 0.);
+    assert_close(b.eval(&[f64::NAN, f64::NAN]), 1.);
+    // In another variable, with parameters in the bounds
+    let (_, graph) = draw(&mut session, "integrate(t^2, t, -oo, c)");
+    let graph = graph.unwrap();
+    assert_eq!(graph.params, ["c"]);
+    let GraphKind::Integral { expr, a, b, .. } = graph.kind else {
+        panic!("not an integral");
+    };
+    assert_close(expr.eval(&[3., f64::NAN, 2.]), 9.);
+    assert_eq!(a.eval(&[f64::NAN, f64::NAN, 2.]), f64::NEG_INFINITY);
+    assert_close(b.eval(&[f64::NAN, f64::NAN, 2.]), 2.);
+    // Bounds depending on the variable give functions, integrands in two variables nothing
+    assert!(matches!(
+        draw(&mut session, "integrate(t, t, 0, x)").1.unwrap().kind,
+        GraphKind::Function { .. }
+    ));
+    assert_eq!(draw(&mut session, "integrate(x*y, x, 0, 1)").1, None);
+}
+
+#[test]
 fn test_errors() {
     let mut session = Session::new();
     assert!(matches!(session.graph("1 +").0.output, Output::Error(_)));

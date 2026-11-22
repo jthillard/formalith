@@ -1,5 +1,6 @@
 //! Graphs of the lines of a session, for graphical interfaces: curves `y = f(x)`, `x = g(y)`, implicit curves and
-//! regions in `x` and `y` (also intersections of several relations, like `x^2 + y^2 < 1, y > 0`), and points.
+//! regions in `x` and `y` (also intersections of several relations, like `x^2 + y^2 < 1, y > 0`), points, and the
+//! areas of definite integrals `integrate(f, x, a, b)`.
 //!
 //! Graphs are compiled to [`Numeric`] expressions, evaluated with the values `[x, y, params...]`: `x` at index
 //! [`Graph::X`], `y` at index [`Graph::Y`] and the parameters of [`Graph::params`] after them.
@@ -59,6 +60,18 @@ pub enum GraphKind {
     Implicit {
         /// The relations, at least one.
         relations: Vec<ImplicitRelation>,
+    },
+    /// The curve `y = f(x)` with the area between it and the axis `y = 0` for `x` between `a` and `b`, from a
+    /// definite integral `integrate(f, x, a, b)`.
+    Integral {
+        /// `f(x)`.
+        expr: Numeric,
+        /// `f'(x)`, if it can be evaluated.
+        derivative: Option<Numeric>,
+        /// The lower bound, which may depend on the parameters.
+        a: Numeric,
+        /// The upper bound, which may depend on the parameters.
+        b: Numeric,
     },
     /// A point.
     Point {
@@ -151,6 +164,10 @@ impl Graph {
             GraphKind::Implicit { relations } => relations
                 .iter()
                 .find_map(|relation| relation.expr.unsupported()),
+            GraphKind::Integral { expr, a, b, .. } => expr
+                .unsupported()
+                .or_else(|| a.unsupported())
+                .or_else(|| b.unsupported()),
             GraphKind::Point { x, y } => x.unsupported().or_else(|| y.unsupported()),
         }
     }
@@ -206,23 +223,60 @@ fn compile<const N: usize>(
     })
 }
 
+/// A compiled derivative, if it can be evaluated.
+fn evaluable(derivative: Numeric) -> Option<Numeric> {
+    derivative.unsupported().is_none().then_some(derivative)
+}
+
 /// The graph of `y = f(x)`, `x` being `var`.
 fn function(f: &Term<Real>, var: Symbol) -> Graph {
     let derivative = f.derivative(var);
-    let mut graph = compile([f, &derivative], var, |[expr, derivative]| {
+    compile([f, &derivative], var, |[expr, derivative]| {
         GraphKind::Function {
             expr,
-            derivative: Some(derivative),
+            derivative: evaluable(derivative),
         }
-    });
-    if let GraphKind::Function { derivative, .. } = &mut graph.kind
-        && derivative
-            .as_ref()
-            .is_some_and(|derivative| derivative.unsupported().is_some())
+    })
+}
+
+/// The graph of a definite integral `integrate(f, var, a, b)`, if `f` only depends on `var` and parameters, and the
+/// bounds only on parameters.
+fn integral_graph(line: &str, env: &Environment) -> Option<Graph> {
+    let [f, var, a, b] = split_call(line, "integrate")?;
+    let Term::Symbol(var) = parse(var, env).ok()? else {
+        return None;
+    };
+    let var = var.symbol();
+    let (f, a, b) = (
+        parse(f, env).ok()?,
+        parse(a, env).ok()?,
+        parse(b, env).ok()?,
+    );
+    let (x, y) = xy();
+    let f_symbols = f.symbols();
+    if [x, y]
+        .into_iter()
+        .any(|symbol| symbol != var && f_symbols.contains(&symbol))
     {
-        *derivative = None;
+        return None;
     }
-    graph
+    for bound in [&a, &b] {
+        let symbols = bound.symbols();
+        if [var, x, y].iter().any(|symbol| symbols.contains(symbol)) {
+            return None;
+        }
+    }
+    let derivative = f.derivative(var);
+    Some(compile(
+        [&f, &derivative, &a, &b],
+        var,
+        |[expr, derivative, a, b]| GraphKind::Integral {
+            expr,
+            derivative: evaluable(derivative),
+            a,
+            b,
+        },
+    ))
 }
 
 /// The graph of a relation `lhs op rhs`, if it depends on `x` or `y`.
@@ -322,6 +376,24 @@ fn split_point(line: &str) -> Option<(&str, &str)> {
         return None;
     }
     Some((&inner[..comma], &inner[comma + 1..]))
+}
+
+/// The `N` arguments of a call `name(...)` making up the whole line.
+fn split_call<'a, const N: usize>(line: &'a str, name: &str) -> Option<[&'a str; N]> {
+    let inner = line.strip_prefix(name)?.trim_start();
+    if !inner.starts_with('(') || closing_bracket(inner)? != inner.len() - 1 {
+        return None;
+    }
+    let inner = &inner[1..inner.len() - 1];
+    let mut args = vec![];
+    let mut start = 0;
+    for (i, c) in top_level(inner).chain([(inner.len(), ',')]) {
+        if c == ',' {
+            args.push(&inner[start..i]);
+            start = i + 1;
+        }
+    }
+    args.try_into().ok()
 }
 
 /// The sides of a single relation `lhs op rhs`, outside of brackets, `None` for definitions, systems and chains of
@@ -424,6 +496,10 @@ pub(crate) fn evaluate(
         };
         return Ok((evaluated, graph));
     }
+    if let Some(graph) = integral_graph(line, env) {
+        let statement = env.eval(line, R).map_err(|err| err.to_string())?;
+        return Ok((Evaluated::new(statement), Some(graph)));
+    }
     let statement = env.eval(line, R).map_err(|err| err.to_string())?;
     let graph = match &statement {
         Statement::Expression(term) => {
@@ -452,6 +528,15 @@ mod tests {
         assert_eq!(split_point("(a, f(1, 2))"), Some(("a", " f(1, 2)")));
         assert_eq!(split_point("(x + 1)(x - 1)"), None);
         assert_eq!(split_point("(1, 2, 3)"), None);
+        assert_eq!(
+            split_call("integrate (f(x, 1), x, 0, 1)", "integrate"),
+            Some(["f(x, 1)", " x", " 0", " 1"])
+        );
+        assert_eq!(split_call::<4>("integrate(x, x)", "integrate"), None);
+        assert_eq!(
+            split_call::<4>("integrate(x, x, 0, 1) + 1", "integrate"),
+            None
+        );
         assert_eq!(
             split_relation("y = x^2"),
             Some(("y ", Relation::Equal, " x^2"))

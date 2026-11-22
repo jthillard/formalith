@@ -1,18 +1,19 @@
 // Draws the graph of `F` (emitted after this template, with `F_at`, `relation_of` and `COUNT`) in the whole plot,
 // each fragment evaluating `F` around itself: curves `y = F(x)` and `x = F(y)` from a few samples per pixel. For
 // the relations `F_at(i, x, y) op 0` holding together, curves `F_i(x, y) = 0` from the sign of `F_i` around the
-// pixel, regions from their signs at the pixel.
+// pixel, regions from their signs at the pixel. Definite integrals are the curve `y = F(x)` over the area between
+// it and the axis.
 
 struct Uniforms {
     // `x_min`, `x_max`, `y_min`, `y_max`
     view: vec4<f32>,
     // Width and height of the plot in pixels, half the width of lines in pixels, the kind of graph (0: `y = F(x)`,
-    // 1: `x = F(y)`, 2: `F(x, y)` compared with 0)
+    // 1: `x = F(y)`, 2: `F(x, y)` compared with 0, 3: `y = F(x)` with the area of its integral)
     frame: vec4<f32>,
     // Premultiplied colors
     color: vec4<f32>,
     fill: vec4<f32>,
-    // Unused, unused, the period of dashes of strict boundaries in pixels
+    // The bounds of the integral (finite, in order), the period of dashes of strict boundaries in pixels
     flags: vec4<f32>,
     params: array<vec4<f32>, 16>,
 }
@@ -41,7 +42,7 @@ fn vs_main(@builtin(vertex_index) index: u32) -> VertexOutput {
 
 // The coordinate along the independent axis at the pixel coordinate `a` (from the left or the bottom).
 fn along_value(a: f32) -> f32 {
-    if u.frame.w == 0.0 {
+    if u.frame.w != 1.0 {
         return u.view.x + a * (u.view.y - u.view.x) / u.frame.x;
     }
     return u.view.z + a * (u.view.w - u.view.z) / u.frame.y;
@@ -50,7 +51,7 @@ fn along_value(a: f32) -> f32 {
 // The value of the curve at the pixel coordinate `a`, in pixels from the left or the bottom.
 fn curve_at(a: f32) -> f32 {
     let t = along_value(a);
-    if u.frame.w == 0.0 {
+    if u.frame.w != 1.0 {
         return (F(t, nf_nan()) - u.view.z) * u.frame.y / (u.view.w - u.view.z);
     }
     return (F(nf_nan(), t) - u.view.x) * u.frame.x / (u.view.y - u.view.x);
@@ -230,6 +231,21 @@ fn contour_coverage(i: u32, p: vec2<f32>, x: f32, y: f32, value: f32) -> f32 {
     return coverage;
 }
 
+// The fill of the area between the curve `y = F(x)` and the axis `y = 0` from `x = flags.x` to `x = flags.y` at
+// the pixel `p` (from the bottom left).
+fn area(p: vec2<f32>) -> vec4<f32> {
+    let a = (u.flags.x - u.view.x) * u.frame.x / (u.view.y - u.view.x);
+    let b = (u.flags.y - u.view.x) * u.frame.x / (u.view.y - u.view.x);
+    let v = curve_at(p.x);
+    if !nf_finite(v) {
+        return vec4<f32>(0.0);
+    }
+    let zero = -u.view.z * u.frame.y / (u.view.w - u.view.z);
+    let across = clamp(min(p.x - a, b - p.x) + 0.5, 0.0, 1.0);
+    let along = clamp(min(p.y - min(v, zero), max(v, zero) - p.y) + 0.5, 0.0, 1.0);
+    return u.fill * across * along;
+}
+
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let pixel = in.uv * u.frame.xy;
@@ -242,6 +258,10 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     if u.frame.w == 1.0 {
         let coverage = clamp(u.frame.z + 0.5 - curve_distance(p.y, p.x, u.frame.x), 0.0, 1.0);
         return u.color * coverage;
+    }
+    if u.frame.w == 3.0 {
+        let coverage = clamp(u.frame.z + 0.5 - curve_distance(p.x, p.y, u.frame.y), 0.0, 1.0);
+        return u.color * coverage + area(p) * (1.0 - coverage);
     }
     let x = u.view.x + p.x * (u.view.y - u.view.x) / u.frame.x;
     let y = u.view.z + p.y * (u.view.w - u.view.z) / u.frame.y;

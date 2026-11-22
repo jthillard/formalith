@@ -221,8 +221,20 @@ impl Plotter {
     /// Draw `drawable`.
     fn draw(&mut self, plot_ui: &mut egui_plot::PlotUi<'_>, drawable: &Drawable<'_>) {
         profile_scope!("Plotter::draw", &drawable.name);
+        let mut bounds = [0.; 2];
         let (kind, relations) = match &drawable.graph.kind {
             GraphKind::Function { expr, .. } => (0., vec![(expr, Comparison::Equal)]),
+            GraphKind::Integral { expr, a, b, .. } => {
+                let values = values(&drawable.params);
+                let (a, b) = (a.eval(&values), b.eval(&values));
+                // Without bounds, only the curve
+                if a.is_nan() || b.is_nan() {
+                    (0., vec![(expr, Comparison::Equal)])
+                } else {
+                    bounds = [a.min(b), a.max(b)];
+                    (3., vec![(expr, Comparison::Equal)])
+                }
+            }
             GraphKind::InverseFunction { expr } => (1., vec![(expr, Comparison::Equal)]),
             GraphKind::Implicit { relations } => (
                 2.,
@@ -264,6 +276,7 @@ impl Plotter {
             color: color(drawable.color, linear),
             fill: color(drawable.color.gamma_multiply(0.25), linear),
             kind,
+            bounds,
             params,
             drawable_color: drawable.color,
         });
@@ -293,14 +306,12 @@ impl Plotter {
         else {
             return;
         };
-        let GraphKind::Function { expr, derivative } = &drawable.graph.kind else {
+        let Some((expr, derivative)) = curve(drawable.graph) else {
             return;
         };
         let others: Vec<&Drawable<'_>> = drawables
             .iter()
-            .filter(|other| {
-                other.id != drawable.id && matches!(other.graph.kind, GraphKind::Function { .. })
-            })
+            .filter(|other| other.id != drawable.id && curve(other.graph).is_some())
             .collect();
         let mut content: Content = vec![];
         for curve in std::iter::once(drawable).chain(others.iter().copied()) {
@@ -321,13 +332,10 @@ impl Plotter {
         if !current && !analyzer.is_busy() {
             let curves = AnalysisCurves {
                 f: (expr, drawable.params.len()),
-                derivative: derivative.as_ref(),
+                derivative,
                 others: others
                     .iter()
-                    .filter_map(|other| match &other.graph.kind {
-                        GraphKind::Function { expr, .. } => Some((expr, other.params.len())),
-                        _ => None,
-                    })
+                    .filter_map(|other| Some((curve(other.graph)?.0, other.params.len())))
                     .collect(),
             };
             #[allow(clippy::cast_possible_truncation)]
@@ -377,6 +385,17 @@ impl Plotter {
     }
 }
 
+/// The curve `y = f(x)` of `graph` with `f'`, if it has one.
+const fn curve(graph: &Graph) -> Option<(&Numeric, Option<&Numeric>)> {
+    match &graph.kind {
+        GraphKind::Function { expr, derivative }
+        | GraphKind::Integral {
+            expr, derivative, ..
+        } => Some((expr, derivative.as_ref())),
+        _ => None,
+    }
+}
+
 /// The premultiplied components of `color`, in linear space or not.
 fn color(color: Color32, linear: bool) -> [f32; 4] {
     if linear {
@@ -423,7 +442,10 @@ fn hover(
             expr.eval(&values)
         };
         let hit = match &drawable.graph.kind {
-            GraphKind::Function { expr, derivative } => {
+            GraphKind::Function { expr, derivative }
+            | GraphKind::Integral {
+                expr, derivative, ..
+            } => {
                 let y = eval(expr, px, f64::NAN);
                 let slope = derivative.as_ref().map_or_else(
                     || {
@@ -490,6 +512,8 @@ struct GpuGraph {
     fill: [f32; 4],
     /// The kind of graph, see [`crate::shader::RENDER`].
     kind: f32,
+    /// The bounds of the area of an integral, in order.
+    bounds: [f64; 2],
     params: Vec<f32>,
     drawable_color: Color32,
 }
@@ -540,8 +564,9 @@ fn uniforms(
         graph.fill[1],
         graph.fill[2],
         graph.fill[3],
-        0.,
-        0.,
+        // Beyond the view, the bounds only need to stay out of it
+        graph.bounds[0].clamp(view.x_min - view.width(), view.x_max + view.width()) as f32,
+        graph.bounds[1].clamp(view.x_min - view.width(), view.x_max + view.width()) as f32,
         DASH_PERIOD * pixels_per_point,
         0.,
     ]);
@@ -656,6 +681,7 @@ mod tests {
             color: color(Color32::WHITE, false),
             fill: color(Color32::WHITE.gamma_multiply(0.25), false),
             kind,
+            bounds: [-1., 2.],
             params: vec![2., -3.],
             drawable_color: Color32::WHITE,
         };
@@ -826,5 +852,13 @@ mod tests {
         );
         assert!(image.at(0., 2.) > 0.5);
         assert!(image.at(0., -2.) == 0. && image.at(0., 1.) == 0. && image.at(1., 0.) == 0.);
+        // The area of an integral from -1 to 2, above and below the axis
+        let image = draw(&device, &[("x^2 - 1", Comparison::Equal)], 3.);
+        assert!(image.at(1.5, 1.5_f64.powi(2) - 1.) > 0.5);
+        assert!((image.at(1.5, 0.6) - 0.25).abs() < 0.02);
+        assert!((image.at(0., -0.5) - 0.25).abs() < 0.02);
+        assert!(image.at(0., 0.5) == 0. && image.at(1.5, 2.) == 0.);
+        assert!(image.at(-2., -2.) == 0. && image.at(3., 2.) == 0.);
+        assert!(image.at(2.5, 2.5_f64.powi(2) - 1.) > 0.5);
     }
 }
