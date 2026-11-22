@@ -640,6 +640,34 @@ fn integer_and_modular_matrices() {
 }
 
 #[test]
+fn identity() {
+    assert_eq!(line(&parse!("I(2)", M)), "[[1,0],[0,1]]");
+    // The size is an integer expression
+    assert_eq!(line(&parse!("I(1+1)", M)), "[[1,0],[0,1]]");
+    assert_eq!(line(&parse!("I(3)*[[1],[2],[3]]", M)), "[[1],[2],[3]]");
+    assert_eq!(line(&parse!("det(I(4))", M)), "1");
+    // Scalars times builtins returning matrices are products in `M`, not scalars
+    assert_eq!(line(&parse!("2*I(2)", M)), "[[2,0],[0,2]]");
+    assert_eq!(line(&parse!("2*transpose([[1,2]])", M)), "[[2],[4]]");
+    assert_eq!(
+        line(&parse!("[[1,2],[3,4]] - x*I(2)", M)),
+        line(&parse!("[[1-x,2],[3,4-x]]", M))
+    );
+    assert_eq!(
+        line(&parse!("expand(det(x*I(2) - [[1,2],[3,4]]))", M)),
+        line(&parse!("charpoly([[1,2],[3,4]])", M))
+    );
+    assert_eq!(
+        line(&parse!("I(2)", M::new(TermSet::new(Zn::new(5))))),
+        "[[1,0],[0,1]]"
+    );
+    // Unevaluated without a positive integer size, or outside of matrices
+    assert_eq!(line(&parse!("I(n)", M)), "I(n)");
+    assert_eq!(line(&parse!("I(0)", M)), "I(0)");
+    assert_eq!(line(&parse!("I(3)", R)), "I(3)");
+}
+
+#[test]
 fn gradient_jacobian_hessian() {
     assert_eq!(line(&parse!("gradient(x^2*y, x, y)", M)), "[[2*x*y],[x^2]]");
     // Every symbol sorted by name by default, without constants

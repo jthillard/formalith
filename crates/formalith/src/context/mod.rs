@@ -269,11 +269,13 @@ impl Context {
     pub const JACOBIAN: Symbol = Symbol(74);
     /// Hessian matrix `hessian(f, x_1, ..., x_n)` of a scalar function, `{$H_(i j) = diff^2 f / (diff x_i diff x_j)$}`
     pub const HESSIAN: Symbol = Symbol(75);
+    /// Identity matrix `I(n)` of size `n`
+    pub const IDENTITY: Symbol = Symbol(76);
     /// Degree `degree(f, x)` of a polynomial `f` in `x`
-    pub const DEGREE: Symbol = Symbol(76);
+    pub const DEGREE: Symbol = Symbol(77);
 
     #[rustfmt::skip]
-    const BUILTIN_NAMES: [&'static str; 77] = [
+    const BUILTIN_NAMES: [&'static str; 78] = [
         "abs", "det", "expand", "factor", "simplify", "re", "im", "conj", "sqrt", "root", "sign",
         "floor", "ceil", "min", "max", "gcd", "lcm", "quo", "rem", "diff", "solve", "approx",
         "exp", "ln", "sin", "cos", "tan", "pi", "e", "lim", "oo", "undefined",
@@ -282,7 +284,7 @@ impl Context {
         "gamma", "beta", "digamma", "polygamma", "zeta", "euler_gamma", "sum", "product",
         "dsolve", "transpose", "trace", "rank", "kernel", "charpoly", "eigenvalues", "eigenvectors",
         "hermite", "smith", "apart", "lambertw", "piecewise", "gradient", "jacobian", "hessian",
-        "degree",
+        "I", "degree",
     ];
 
     /// Return `true` if `symbol` is a builtin constant, like `{$pi$}`, which is not a function.
@@ -291,6 +293,25 @@ impl Context {
         matches!(
             symbol,
             Self::PI | Self::E | Self::OO | Self::UNDEFINED | Self::EULER_GAMMA
+        )
+    }
+
+    /// Return `true` if `symbol` is a builtin returning a matrix, like `transpose`, which is a function of the
+    /// matrix set and not of its scalars.
+    #[must_use]
+    pub const fn returns_matrix(symbol: Symbol) -> bool {
+        matches!(
+            symbol,
+            Self::TRANSPOSE
+                | Self::KERNEL
+                | Self::EIGENVALUES
+                | Self::EIGENVECTORS
+                | Self::HERMITE
+                | Self::SMITH
+                | Self::GRADIENT
+                | Self::JACOBIAN
+                | Self::HESSIAN
+                | Self::IDENTITY
         )
     }
 

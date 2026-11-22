@@ -9,7 +9,7 @@ use std::iter::Peekable;
 use std::ops::Range;
 
 use crate::context::{Context, Symbol};
-use crate::field::{Group, Ring, Set, SetParseExpression};
+use crate::field::{Group, Ring, Set, SetParseExpression, integer::Z};
 use crate::term::{Fun, Mul, Normalize, SymbolTerm, Term, Value, flags::Flags, relation::Relation};
 
 use environment::Environment;
@@ -81,6 +81,9 @@ pub struct Parser<'a> {
     /// The priority of the expression being parsed, so that literals parsing a whole expression (the scalars of
     /// `M<TermSet<R>>`) stop at the same operators, `{$A^2 + 2 A$}` not being `{$A^(2 + 2 A)$}`
     pub(crate) priority: usize,
+    /// Whether a scalar of a matrix set is being parsed, so that builtins returning matrices aren't parsed as
+    /// scalars (see [`Context::returns_matrix`]), except inside parentheses
+    pub(crate) scalar_of_matrix: bool,
 }
 
 impl<'a> Parser<'a> {
@@ -97,6 +100,7 @@ impl<'a> Parser<'a> {
             adjacent: false,
             env: None,
             ode: None,
+            scalar_of_matrix: false,
             priority: 0,
         };
         parser.next_token();
@@ -257,13 +261,15 @@ impl Parser<'_> {
         match &self.token.kind {
             TokenKind::OpenParen => {
                 self.next_token();
-                let content =
-                    ParseExpression::<E>::parse_expression(self, 0, set)?.ok_or_else(|| {
-                        ParserError::new(format!(
-                            "Expression expected at position {}",
-                            self.start_span
-                        ))
-                    })?;
+                let scalar_of_matrix = std::mem::replace(&mut self.scalar_of_matrix, false);
+                let content = ParseExpression::<E>::parse_expression(self, 0, set);
+                self.scalar_of_matrix = scalar_of_matrix;
+                let content = content?.ok_or_else(|| {
+                    ParserError::new(format!(
+                        "Expression expected at position {}",
+                        self.start_span
+                    ))
+                })?;
                 self.expect_token(&TokenKind::CloseParen)?;
                 Ok(Some(content))
             }
@@ -431,6 +437,12 @@ impl Parser<'_> {
 
     /// parse arguments of a function, separated by a comma.
     fn parse_args<E: Set>(&mut self, arg_set: E) -> Result<Vec<Term<E>>, ParserError> {
+        let scalar_of_matrix = std::mem::replace(&mut self.scalar_of_matrix, false);
+        let args = self.parse_args_unscoped(arg_set);
+        self.scalar_of_matrix = scalar_of_matrix;
+        args
+    }
+    fn parse_args_unscoped<E: Set>(&mut self, arg_set: E) -> Result<Vec<Term<E>>, ParserError> {
         let mut args = vec![];
         loop {
             args.push(
@@ -461,6 +473,13 @@ where
         priority: usize,
         set: E,
     ) -> Result<Option<Term<E>>, ParserError> {
+        if self.scalar_of_matrix
+            && let TokenKind::Ident(name) = &self.token.kind
+            && Context::returns_matrix(Symbol::new(name.as_str()))
+        {
+            // Not a scalar, the matrix set parses it, see `M::parse_literal`
+            return Ok(None);
+        }
         self.priority = priority;
         let mut self_in_coefficient_set = self.clone();
         let node = self.parse_ode_function(set)?;
@@ -502,6 +521,12 @@ where
                         | Context::HERMITE
                         | Context::SMITH => {
                             let args = self.parse_args(set.get_matrix_argument_set())?;
+                            let count = args.len();
+                            (Term::Fun(Box::new(Fun::new(ident, args, set))), count)
+                        }
+                        // The size of an identity matrix is an integer, whatever the set
+                        Context::IDENTITY => {
+                            let args = self.parse_args(Z)?;
                             let count = args.len();
                             (Term::Fun(Box::new(Fun::new(ident, args, set))), count)
                         }

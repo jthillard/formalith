@@ -217,9 +217,25 @@ impl<T: Ring> M<T> {
     }
 
     /// Evaluate the matrix builtins (`det`, `transpose`, `trace`, `rank`, `kernel`, `charpoly`, `eigenvalues`,
-    /// `eigenvectors`, `hermite` and `smith`) of a matrix value, and `gradient`, `jacobian` and `hessian`. Returns
-    /// `None` for other functions, or when they can't be evaluated, like the trace of a non-square matrix.
+    /// `eigenvectors`, `hermite` and `smith`) of a matrix value, `gradient`, `jacobian`, `hessian`, and the identity
+    /// `I(n)`. Returns `None` for other functions, or when they can't be evaluated, like the trace of a non-square
+    /// matrix.
     fn eval_builtin(&self, fun: &dyn Function<Self>) -> Option<VectorSpaceElement<T, Matrix<T>>> {
+        if fun.get_ident() == Context::IDENTITY {
+            // Bounded, so that a huge size doesn't abort on allocation
+            const MAX_SIZE: usize = 1000;
+            let Some(Term::Value(Value { value: n, .. })) = fun.get_args::<Z<Integer>>()?.first()
+            else {
+                return None;
+            };
+            let n = usize::try_from(n)
+                .ok()
+                .filter(|n| (1..=MAX_SIZE).contains(n))?;
+            return Some(VectorSpaceElement::Vector(Matrix::identity(
+                n,
+                self.scalar_sub_set,
+            )));
+        }
         let args = fun.get_args::<Self>()?;
         if matches!(
             fun.get_ident(),
@@ -797,25 +813,15 @@ impl<T: SetParseExpression> SetParseExpression for M<T> {
     fn parse_literal(&self, parser: &mut Parser) -> Result<Option<Self::Element>, String> {
         // Builtins returning matrices are functions of this set, not scalars like other functions
         if let TokenKind::Ident(name) = &parser.token.kind
-            && matches!(
-                Symbol::new(name.as_str()),
-                Context::TRANSPOSE
-                    | Context::KERNEL
-                    | Context::EIGENVALUES
-                    | Context::EIGENVECTORS
-                    | Context::HERMITE
-                    | Context::SMITH
-                    | Context::GRADIENT
-                    | Context::JACOBIAN
-                    | Context::HESSIAN
-            )
+            && Context::returns_matrix(Symbol::new(name.as_str()))
         {
             return Ok(None);
         }
-        Ok(self
-            .scalar_sub_set
-            .parse_literal(parser)?
-            .map(|parsed| VectorSpaceElement::Scalar(parsed, self.scalar_sub_set)))
+        // The scalar stops before them too, `{$2 I(2)$}` being a scalar times a matrix
+        let scalar_of_matrix = std::mem::replace(&mut parser.scalar_of_matrix, true);
+        let parsed = self.scalar_sub_set.parse_literal(parser);
+        parser.scalar_of_matrix = scalar_of_matrix;
+        Ok(parsed?.map(|parsed| VectorSpaceElement::Scalar(parsed, self.scalar_sub_set)))
     }
     fn is_constant(&self, name: &str) -> bool {
         self.scalar_sub_set.is_constant(name)
