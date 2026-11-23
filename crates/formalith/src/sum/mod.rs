@@ -25,10 +25,11 @@
 //! assert_eq!(parse!("product(k, k, 1, n)", R), parse!("factorial(n)", R));
 //! ```
 
-mod field;
+pub(crate) mod field;
 mod gosper;
 mod polynomial;
 mod product;
+mod taylor;
 
 use std::{cmp::Ordering, error::Error, fmt};
 

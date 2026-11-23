@@ -498,6 +498,16 @@ impl Ring for R<Rational> {
                     if let Some([f, Term::Symbol(x), point, rest @ ..]) =
                         fun.get_args::<Self>().map(Vec::as_slice)
                     {
+                        if let [Term::Symbol(oo), direction @ ..] = rest
+                            && oo.symbol == Context::OO
+                        {
+                            if let Some(direction) = Direction::from_args(direction)
+                                && let Ok(res) = f.infinite_series(x.symbol, point, direction)
+                            {
+                                return res;
+                            }
+                            return a;
+                        }
                         let (order, direction) = match rest {
                             [] => (Some(Rational::from(6)), Some(Direction::Both)),
                             [Term::Value(order), direction @ ..] => {

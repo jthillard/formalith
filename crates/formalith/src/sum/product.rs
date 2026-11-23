@@ -282,6 +282,73 @@ fn absorb_factors(term: Expr) -> Expr {
     term
 }
 
+/// Merge pairs of factorials and `{$Gamma$}` functions of a product with the duplication formula
+/// `{$Gamma(z) Gamma(z + 1/2) = 2^(1 - 2z) sqrt(pi) Gamma(2z)$}` (`{$u! = Gamma(u + 1)$}`), with the same integer
+/// exponent, like `{$k! Gamma(k + 3/2) = 2^(-2k - 1) sqrt(pi) (2k + 1)!$}`. `{$Gamma(2z)$}` is written with a
+/// factorial when the constant part of `{$2z$}` is a positive integer.
+pub(super) fn duplicate_gammas(term: &Expr) -> Expr {
+    let Ok(term) = try_map_operands::<Infallible>(term, |t| Ok(duplicate_gammas(t)));
+    let Term::Mul(mul) = &term else {
+        return term;
+    };
+    // The factors `{$Gamma(z)^e$}`
+    let parse = |t: &Expr| -> Option<(Expr, Expr)> {
+        let (base, exponent) = match t {
+            Term::Pow(pow) => match &**pow.exponant {
+                Term::Value(e) if e.value.denominator_ref() == &1u32 => {
+                    (&*pow.base, (**pow.exponant).clone())
+                }
+                _ => return None,
+            },
+            _ => (t, one()),
+        };
+        match unary(base)? {
+            (Context::FACTORIAL, u) => Some((u + &one(), exponent)),
+            (Context::GAMMA, z) => Some((z.clone(), exponent)),
+            _ => None,
+        }
+    };
+    let factors: Vec<Expr> = mul.iter().cloned().collect();
+    let parsed: Vec<_> = factors.iter().map(parse).collect();
+    for i in 0..factors.len() {
+        let Some((z, e)) = &parsed[i] else { continue };
+        let Some(j) = (0..factors.len()).find(|&j| {
+            j != i
+                && parsed[j].as_ref().is_some_and(|(v, f)| {
+                    f == e && (v - z).normalize() == value(Rational::from_signeds(1, 2))
+                })
+        }) else {
+            continue;
+        };
+        let two_z = (&value(Rational::from(2)) * z).expand();
+        let constant = match &two_z {
+            Term::Add(add) => add.iter().find_map(|t| match t {
+                Term::Value(v) => Some(v.value.clone()),
+                _ => None,
+            }),
+            Term::Value(v) => Some(v.value.clone()),
+            _ => Some(Rational::from(0)),
+        }
+        .unwrap_or_default();
+        let gamma = if constant.denominator_ref() == &1u32 && constant >= 1 {
+            fun(Context::FACTORIAL, &two_z - &one())
+        } else {
+            fun(Context::GAMMA, two_z.clone())
+        };
+        let merged = value(Rational::from(2)).pow(&((one() - two_z) * e).expand())
+            * variable(Context::PI).pow(&(value(Rational::from_signeds(1, 2)) * e))
+            * gamma.pow(e);
+        let res = factors
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| *index != i && *index != j)
+            .fold(value(mul.coefficient.clone()), |res, (_, t)| res * t)
+            * merged;
+        return duplicate_gammas(&res);
+    }
+    term
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -297,6 +364,14 @@ mod tests {
         assert_eq!(
             antiquotient(&parse!("2k + 1", R), k),
             Some(parse!("2^k*gamma(k + 1/2)", R))
+        );
+    }
+
+    #[test]
+    fn duplicated_gammas() {
+        assert_eq!(
+            duplicate_gammas(&parse!("1/(factorial(k)*gamma(k + 3/2))", R)),
+            parse!("2^(2k + 1)/(sqrt(pi)*factorial(2k + 1))", R)
         );
     }
 

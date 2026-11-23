@@ -4,8 +4,10 @@
 //! `{$w -> 0^+$}` is computed, then `w` is replaced back by `{$x - a$}`. Exponents may be negative or fractional,
 //! and coefficients may contain `{$ln(x - a)$}`.
 
-use crate::field::real::expr::{Expr, Real, fun, infinity_sign, value, variable, zero};
-use malachite::Rational;
+use crate::field::real::expr::{
+    Expr, Real, depends, fun, infinity_sign, one, value, variable, zero,
+};
+use malachite::{Rational, base::num::arithmetic::traits::Parity};
 
 use crate::{
     context::{Context, Symbol},
@@ -13,6 +15,16 @@ use crate::{
 };
 
 use super::{Direction, LimitError, LimitResult, gruntz::Gruntz, prepare, series};
+
+/// The terms `{$c_i w^(e_i)$}` of a series in `w`, which stands for an expression in `x`.
+pub(crate) struct SeriesTerms {
+    /// Pairs `{$(e_i, c_i)$}` with rational exponents, sorted by increasing exponent, without zero coefficients.
+    pub(crate) terms: Vec<(Rational, Expr)>,
+    /// Whether the terms are the whole series, without remainder.
+    pub(crate) exact: bool,
+    /// The expression `w` in `x`: `{$x - a$}`, `{$a - x$}` or `{$plus.minus 1/x$}`.
+    pub(crate) w: Expr,
+}
 
 impl Term<Real> {
     /// Series of the expression when `x` tends to `point`, from the side given by `direction`, up to
@@ -68,6 +80,89 @@ impl Term<Real> {
             }
         }
     }
+}
+
+/// The terms of the series of `f` when `x` tends to `point` up to `{$O(w^n)$}`, `n` being `order`, with `w` being
+/// `{$x - a$}` (`{$a - x$}` from the left, `{$plus.minus 1/x$}` at `{$plus.minus oo$}`). Exponents must be rational
+/// and coefficients free of `{$ln w$}`.
+///
+/// # Errors
+/// Like [`Term::series`], [`LimitError::Unsupported`] for irrational exponents and logarithms.
+pub(crate) fn series_terms(
+    f: &Expr,
+    x: Symbol,
+    point: &Expr,
+    order: &Rational,
+    direction: Direction,
+) -> LimitResult<SeriesTerms> {
+    let (f, infinite) = prepare(f, x, point, direction)?;
+    if let Some(sign) = infinite {
+        let sign = value(Rational::from(sign as i64));
+        return side_terms(&f, x, order, |w| &sign / w, &sign / &variable(x));
+    }
+    let side = |sign: i64| {
+        let sign = value(Rational::from(sign));
+        let w = &sign * &(variable(x) - point.clone());
+        side_terms(&f, x, order, |w| point + &(&sign * w), w)
+    };
+    match direction {
+        Direction::Right => side(1),
+        Direction::Left => side(-1),
+        Direction::Both => {
+            // `{$sum c_i (x - a)^(e_i) = sum c'_i (a - x)^(e_i)$}` when the exponents are integers and
+            // `{$c'_i = (-1)^(e_i) c_i$}`
+            let (right, left) = (side(1)?, side(-1)?);
+            let same = right.exact == left.exact
+                && right.terms.len() == left.terms.len()
+                && right
+                    .terms
+                    .iter()
+                    .zip(&left.terms)
+                    .all(|((er, cr), (el, cl))| {
+                        er == el && er.denominator_ref() == &1u32 && {
+                            let sign = if er.numerator_ref().even() {
+                                one()
+                            } else {
+                                -one()
+                            };
+                            cl == &(&sign * cr) || (cl - &(&sign * cr)).simplify().is_zero()
+                        }
+                    });
+            if same {
+                Ok(right)
+            } else {
+                Err(LimitError::Undefined)
+            }
+        }
+    }
+}
+
+/// The terms of the series of `f` with `x` replaced by `at(w)` for `{$w -> 0^+$}`, up to `{$O(w^n)$}`.
+fn side_terms(
+    f: &Expr,
+    x: Symbol,
+    order: &Rational,
+    at: impl Fn(&Expr) -> Expr,
+    back: Expr,
+) -> LimitResult<SeriesTerms> {
+    let mut gruntz = Gruntz::new(x);
+    let logw = Symbol::new("@l");
+    let f = f
+        .substitute(x, &at(&variable(gruntz.w)))
+        .ok_or(LimitError::Unsupported)?;
+    let (terms, exact) = series::expand_exact(&mut gruntz, &f, &variable(logw), order)?;
+    let terms = terms
+        .into_iter()
+        .map(|(exponant, coefficient)| match exponant {
+            Term::Value(e) if !depends(&coefficient, logw) => Ok((e.value, coefficient)),
+            _ => Err(LimitError::Unsupported),
+        })
+        .collect::<LimitResult<_>>()?;
+    Ok(SeriesTerms {
+        terms,
+        exact,
+        w: back,
+    })
 }
 
 /// The remainder `{$o((x - a)^(n - 1))$}` of a series at `point` (`{$o(x^(1 - n))$}` at `{$plus.minus oo$}`), `n`

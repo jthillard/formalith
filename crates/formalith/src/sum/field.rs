@@ -15,7 +15,7 @@ use crate::{
 
 /// The subterms free of the index used as generators `{$t_1, ..., t_n$}`.
 #[derive(Default)]
-pub(super) struct Params {
+pub(crate) struct Params {
     atoms: Vec<Expr>,
 }
 
@@ -33,7 +33,7 @@ impl Params {
     }
 
     /// A term free of `k` as an element of the field, `None` if it divides by 0.
-    pub(super) fn elem(&mut self, term: &Expr) -> Option<Elem> {
+    pub(crate) fn elem(&mut self, term: &Expr) -> Option<Elem> {
         Some(match term {
             Term::Value(v) => Elem::rational(v.value.clone()),
             Term::Add(add) => add
@@ -62,7 +62,7 @@ impl Params {
     }
 
     /// The polynomial in `k` given by an expression, `None` if it isn't one.
-    pub(super) fn poly(&mut self, term: &Expr, k: Symbol) -> Option<EPoly> {
+    pub(crate) fn poly(&mut self, term: &Expr, k: Symbol) -> Option<EPoly> {
         self.expanded_poly(&term.expand(), k)
     }
 
@@ -92,7 +92,7 @@ impl Params {
 
     /// The rational function `{$p / q$}` in `k` given by an expression, reduced with `q` monic, `None` if it isn't
     /// one.
-    pub(super) fn rational(&mut self, term: &Expr, k: Symbol) -> Option<(EPoly, EPoly)> {
+    pub(crate) fn rational(&mut self, term: &Expr, k: Symbol) -> Option<(EPoly, EPoly)> {
         let (num, den) = term.as_fraction(true);
         let num = self.poly(&num, k)?;
         let den = self.poly(&den, k)?;
@@ -103,7 +103,7 @@ impl Params {
     }
 
     /// The element as an expression.
-    pub(super) fn to_term(&self, e: &Elem) -> Expr {
+    pub(crate) fn to_term(&self, e: &Elem) -> Expr {
         match e {
             Elem::Rational(r) => value(r.clone()),
             Elem::Fraction(_) => {
@@ -121,7 +121,7 @@ impl Params {
     }
 
     /// The polynomial in `x` as an expression.
-    pub(super) fn poly_to_term(&self, p: &EPoly, x: &Expr) -> Expr {
+    pub(crate) fn poly_to_term(&self, p: &EPoly, x: &Expr) -> Expr {
         p.coefficients()
             .iter()
             .enumerate()
@@ -137,13 +137,13 @@ impl Params {
     }
 
     /// The polynomial in `k` as an expression.
-    pub(super) fn k_poly_to_term(&self, p: &EPoly, k: Symbol) -> Expr {
+    pub(crate) fn k_poly_to_term(&self, p: &EPoly, k: Symbol) -> Expr {
         self.poly_to_term(p, &variable(k))
     }
 }
 
 /// The fraction `{$p / q$}` reduced, with `q` monic.
-pub(super) fn reduce(num: &EPoly, den: &EPoly) -> (EPoly, EPoly) {
+pub(crate) fn reduce(num: &EPoly, den: &EPoly) -> (EPoly, EPoly) {
     let g = num.gcd(den);
     let (num, den) = if g.degree() == 0 {
         (num.clone(), den.clone())

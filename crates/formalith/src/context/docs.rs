@@ -451,10 +451,23 @@ pub static BUILTIN_DOCS: [BuiltinDoc; Context::BUILTIN_NAMES.len()] = [
         "series(f, x, a, [n, side])",
         "Series expansion of f at a, the terms below (x - a)^n (6 by default), plus the remainder o((x - a)^(n - 1)).",
         "At oo, the terms below x^-n plus o(x^(1 - n)). side is 1 or -1 like for lim. Exponents may be negative or \
-         fractional.",
+         fractional. With n = oo, the whole series as sums of general terms, when the coefficients satisfy a \
+         recurrence c(k + m) = r(k) c(k) with a rational function r (exp, sin, atan, asin, erf, ln(1 + x), \
+         (1 + x)^a, their sums and products, rational functions with real poles...). Every general term is proven: \
+         from the differential equation of f, or by checking the one the term implies; otherwise the series stays \
+         unevaluated. These sums aren't evaluated back.",
         &[
             ex("series(exp(x), x, 0, 4)", "1 + x + x^2/2 + x^3/6 + o(x^3)"),
             ex("series(sin(x), x, 0)", "x - x^3/6 + x^5/120 + o(x^5)"),
+            ex("series(exp(x), x, 0, oo)", "sum_(k = 0)^oo x^k/k!"),
+            ex(
+                "series(sin(x), x, 0, oo)",
+                "sum_(k = 0)^oo (-1)^k x^(2k + 1)/(2k + 1)!",
+            ),
+            ex(
+                "series(ln(1 + x), x, 0, oo)",
+                "sum_(k = 1)^oo (-1)^(k + 1) x^k/k",
+            ),
         ],
     ),
     doc(

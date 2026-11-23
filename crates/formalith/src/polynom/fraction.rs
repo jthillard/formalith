@@ -239,7 +239,17 @@ pub(crate) fn sample_points(n: usize) -> impl Iterator<Item = Vec<Rational>> {
 
 /// A solution `r` of the linear system whose rows are `{$(a_1, ..., a_n, b)$}` with `{$sum a_i r_i = b$}`, the
 /// free unknowns being 0, or `None` if it is inconsistent.
-pub(crate) fn solve_linear<F: Coefficient>(mut rows: Vec<Vec<F>>, n: usize) -> Option<Vec<F>> {
+pub(crate) fn solve_linear<F: Coefficient>(rows: Vec<Vec<F>>, n: usize) -> Option<Vec<F>> {
+    solve_linear_rank(rows, n).map(|(res, _)| res)
+}
+
+/// The only solution of the linear system of [`solve_linear`], or `None` if it has none or several.
+pub(crate) fn solve_linear_unique<F: Coefficient>(rows: Vec<Vec<F>>, n: usize) -> Option<Vec<F>> {
+    solve_linear_rank(rows, n).and_then(|(res, rank)| (rank == n).then_some(res))
+}
+
+/// A solution of [`solve_linear`] and the rank of the system.
+fn solve_linear_rank<F: Coefficient>(mut rows: Vec<Vec<F>>, n: usize) -> Option<(Vec<F>, usize)> {
     let mut pivots = vec![];
     let mut row = 0;
     for column in 0..n {
@@ -267,10 +277,11 @@ pub(crate) fn solve_linear<F: Coefficient>(mut rows: Vec<Vec<F>>, n: usize) -> O
         return None;
     }
     let mut res = vec![F::zero(); n];
+    let rank = pivots.len();
     for (i, column) in pivots.into_iter().enumerate() {
         res[column] = rows[i][n].clone();
     }
-    Some(res)
+    Some((res, rank))
 }
 
 #[cfg(test)]

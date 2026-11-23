@@ -239,3 +239,83 @@ fn series_of_exponential_integrals() {
     assert_eq!(series("series(Si(x), x, 0, 6)"), "x-1/18*(x^3)+1/600*(x^5)");
     assert_eq!(series("series(Ei(x), x, 1, 3)"), "Ei(1)+(x-1)*exp(1)");
 }
+
+/// Whole series `series(f, x, a, oo)`, printed on one line.
+fn whole(input: &str) -> String {
+    line(&parse!(&format!("series({input}, oo)"), R))
+}
+
+#[test]
+fn whole_series() {
+    let cases = [
+        ("exp(x), x, 0", "sum((x^k)*(factorial(k)^-1), k, 0, oo)"),
+        (
+            "sin(x), x, 0",
+            "sum((x^(2*k+1))*(factorial(2*k+1)^-1)*((-1)^k), k, 0, oo)",
+        ),
+        (
+            "cos(x), x, 0",
+            "sum((x^(2*k))*(factorial(2*k)^-1)*((-1)^k), k, 0, oo)",
+        ),
+        (
+            "atan(x), x, 0",
+            "sum(((2*k+1)^-1)*(x^(2*k+1))*((-1)^k), k, 0, oo)",
+        ),
+        (
+            "asin(x), x, 0",
+            "sum(((2*k+1)^-1)*(x^(2*k+1))*factorial(2*k)*(factorial(k)^-2)*(2^(-2*k)), k, 0, oo)",
+        ),
+        (
+            "ln(1 + x), x, 0",
+            "sum((x^k)*(k^-1)*((-1)^(k+1)), k, 1, oo)",
+        ),
+        ("(1 + x)^a, x, 0", "sum((x^k)*binomial(a, k), k, 0, oo)"),
+        ("1/(1 + x^2), x, 0", "sum((x^(2*k))*((-1)^k), k, 0, oo)"),
+        (
+            "1/((1 - x)*(1 - 2*x)), x, 0",
+            "sum(-(x^k)+(x^k)*(2^(k+1)), k, 0, oo)",
+        ),
+        (
+            "exp(x), x, 1",
+            "sum(((x-1)^k)*exp(1)*(factorial(k)^-1), k, 0, oo)",
+        ),
+        // Laurent series, and at infinity
+        (
+            "exp(x)/x, x, 0",
+            "sum((x^k)*(factorial(k+1)^-1), k, -1, oo)",
+        ),
+        ("1/(x - 1), x, oo", "sum(x^(-k), k, 1, oo)"),
+    ];
+    for (f, expected) in cases {
+        assert_eq!(whole(f), expected, "{f}");
+    }
+    // Sums of series with different general terms
+    assert_eq!(
+        whole("exp(x) + sin(x), x, 0"),
+        "sum((x^k)*(factorial(k)^-1), k, 0, oo)+sum((x^(2*k+1))*(factorial(2*k+1)^-1)*((-1)^k), k, 0, oo)"
+    );
+    // Only proven general terms: `{$x^40$}` breaks the recurrence of `{$e^x$}`
+    assert_eq!(
+        whole("exp(x) + x^40, x, 0"),
+        "x^40+sum((x^k)*(factorial(k)^-1), k, 0, oo)"
+    );
+    // Finite series, and series without a hypergeometric general term
+    assert_eq!(whole("x^2 + 1, x, 0"), "x^2+1");
+    assert_eq!(whole("tan(x), x, 0"), "series(tan(x), x, 0, oo)");
+    assert_eq!(whole("abs(x), x, 0"), "series(abs(x), x, 0, oo)");
+    // Proofs which can't be done stay unevaluated
+    assert_eq!(
+        whole("x*exp(x^2)*cos(x), x, 0"),
+        "series(x*exp(x^2)*cos(x), x, 0, oo)"
+    );
+    // Irrational poles, Fibonacci numbers by Binet's formula
+    assert_eq!(
+        whole("1/(1 - x - x^2), x, 0"),
+        "sum((1/10*(5^(1/2)+5)*((1/2*(5^(1/2))+1/2)^k)+1/10*((-1/2*(5^(1/2))+1/2)^k)*(-(5^(1/2))+5))*(x^k), k, 0, oo)"
+    );
+    // Complex poles without a period
+    assert_eq!(
+        whole("1/(1 - x + 2*x^2), x, 0"),
+        "series((-x+2*(x^2)+1)^-1, x, 0, oo)"
+    );
+}

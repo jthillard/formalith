@@ -238,13 +238,25 @@ pub(super) fn expand(
     logw: &Expr,
     n: &Rational,
 ) -> LimitResult<Vec<(Expr, Expr)>> {
+    expand_exact(gruntz, f, logw, n).map(|(terms, _)| terms)
+}
+
+/// The terms of [`expand`], and whether they are the whole series of `f` (no remainder).
+pub(super) fn expand_exact(
+    gruntz: &mut Gruntz,
+    f: &Expr,
+    logw: &Expr,
+    n: &Rational,
+) -> LimitResult<(Vec<(Expr, Expr)>, bool)> {
     let series = Expander { gruntz, logw }.series(f, n)?;
-    Ok(series
+    let exact = series.order.is_none();
+    let terms = series
         .terms
         .into_iter()
         .filter(|(_, coefficient)| !gruntz.is_zero(coefficient))
         .map(|(exponant, coefficient)| (exponant, coefficient.simplify()))
-        .collect())
+        .collect();
+    Ok((terms, exact))
 }
 
 /// A higher order to retry an expansion with.

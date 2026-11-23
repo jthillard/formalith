@@ -340,6 +340,13 @@ impl Context {
         "Ei", "arg", "o",
     ];
 
+    /// The internal function `@sum(f, k, a, b)`, a sum which isn't evaluated, printed like `sum`: the result of
+    /// `series(f, x, a, oo)`, which `sum` would evaluate back to `f`.
+    pub(crate) fn held_sum() -> Symbol {
+        static HELD_SUM: LazyLock<Symbol> = LazyLock::new(|| Symbol::new("@sum"));
+        *HELD_SUM
+    }
+
     /// Return `true` if `symbol` is a builtin constant, like `{$pi$}`, which is not a function.
     #[must_use]
     pub const fn is_builtin_constant(symbol: Symbol) -> bool {

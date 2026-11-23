@@ -39,6 +39,10 @@ pub trait Function<T: Set>: Debug + DynClone + DynEq + DynHash + Flags + PrettyP
     fn collect_symbols(&self, symbols: &mut BTreeSet<Symbol>);
     /// Get the identifier of the function as a string.
     fn get_ident_as_str(&self) -> &str {
+        // A held sum prints like a sum, so that it can be parsed back
+        if self.get_ident() == Context::held_sum() {
+            return Context::SUM.name();
+        }
         self.get_ident().name()
     }
 }
@@ -222,14 +226,15 @@ impl<From: Set, T: Set> Print for Fun<From, T> {
                 u.print(options, f)?;
                 return f.write_str(")");
             }
-            if matches!(self.ident, Context::SUM | Context::PRODUCT)
+            if (matches!(self.ident, Context::SUM | Context::PRODUCT)
+                || self.ident == Context::held_sum())
                 && let [fun, k, a, b] = args.as_slice()
             {
                 // `{$sum_(k = a)^b f$}`
                 write!(
                     f,
                     "{}_(",
-                    if self.ident == Context::SUM {
+                    if self.ident != Context::PRODUCT {
                         "sum"
                     } else {
                         "product"
@@ -346,7 +351,8 @@ impl<From: Set, T: Set> PrettyPrint for Fun<From, T> {
             });
             return res;
         }
-        if matches!(self.ident, Context::SUM | Context::PRODUCT)
+        if (matches!(self.ident, Context::SUM | Context::PRODUCT)
+            || self.ident == Context::held_sum())
             && let [fun, k, a, b] = self.args.as_slice()
         {
             let mut res = fun.pretty_print(options);
@@ -355,10 +361,10 @@ impl<From: Set, T: Set> PrettyPrint for Fun<From, T> {
             }
             let mut lower = k.pretty_print(options);
             lower.concat("=", false, &a.pretty_print(options));
-            let sign = if self.ident == Context::SUM {
-                '∑'
-            } else {
+            let sign = if self.ident == Context::PRODUCT {
                 '∏'
+            } else {
+                '∑'
             };
             res.big_operator(sign, &lower, &b.pretty_print(options));
             return res;

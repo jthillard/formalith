@@ -30,7 +30,7 @@
 
 mod bounds;
 mod expansion;
-pub(crate) use expansion::remainder;
+pub(crate) use expansion::{remainder, series_terms};
 mod gruntz;
 mod series;
 

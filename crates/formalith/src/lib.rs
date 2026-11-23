@@ -38,6 +38,7 @@ pub mod combinatorics;
 pub mod context;
 pub mod dynamic;
 pub mod field;
+mod holonomic;
 pub mod integrate;
 mod iter;
 pub mod limit;
