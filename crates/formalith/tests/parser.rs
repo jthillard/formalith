@@ -259,3 +259,17 @@ fn test_parse_long_input() {
     let nested = format!("{}x{}", "(".repeat(100), ")".repeat(100));
     assert_eq!(parse!(&nested, R), parse!("x", R));
 }
+
+#[test]
+fn test_parse_factorial() {
+    assert_eq!(parse!("3!", R), 6.into());
+    assert_eq!(parse!("3!", Z), parse!("6", Z));
+    assert_eq!(parse!("(n+1)!", R), parse!("factorial(n+1)", R));
+    assert_eq!(parse!("n!^2", R), parse!("factorial(n)^2", R));
+    assert_eq!(parse!("2^3!", R), 64.into());
+    assert_eq!(parse!("-3!", R), (-6).into());
+    assert_eq!(parse!("3!*x", R), parse!("6*x", R));
+    assert_eq!(parse!("3!!", R), 720.into());
+    assert_eq!(parse!("1/2!", R), parse!("1/2", R));
+    assert!(try_parse!("!", R).is_err());
+}

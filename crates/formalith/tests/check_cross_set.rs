@@ -25,8 +25,8 @@ fn consistent(input: &str) -> Verdict {
     let Ok(zi) = Integer::from_str(&z) else {
         return Verdict::Skip(format!("not an integer in Z: {z}"));
     };
-    // Unevaluated builtins (`factorial` in `C`...) aren't compared
-    let unevaluated = |v: &Result<String, String>| v.as_ref().is_ok_and(|v| v.contains('('));
+    // Unevaluated builtins (`factorial` in `C`, printed `n!`...) aren't compared
+    let unevaluated = |v: &Result<String, String>| v.as_ref().is_ok_and(|v| v.contains(['(', '!']));
     for set in [SetChoice::R, SetChoice::C] {
         match value(set) {
             Ok(v) if v == z => {}

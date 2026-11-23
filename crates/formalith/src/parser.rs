@@ -561,6 +561,13 @@ where
                     }
                     node = fun.normalize();
                 }
+                // Postfix factorials bind tighter than any operator: `{$n!^2 = (n!)^2$}`, `{$2^3! = 2^(3!)$}`
+                while self.token.kind == TokenKind::Bang {
+                    self.next_token();
+                    node = Term::Fun(Box::new(Fun::new(Context::FACTORIAL, vec![node], set)))
+                        .normalize();
+                    node_in_coefficient_set = Err(ParserError::new("factorial of a coefficient"));
+                }
                 let mut op = self.get_op();
                 while self.token.kind != TokenKind::Eof
                     && op.is_some()

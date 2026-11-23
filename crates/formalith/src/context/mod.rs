@@ -71,7 +71,7 @@ impl PrettyPrint for Symbol {
         &self,
         _options: &crate::printer::PrintOptions,
     ) -> crate::printer::PrettyPrinter {
-        PrettyPrinter::from(self.name().to_owned())
+        PrettyPrinter::from(crate::printer::pretty_name(self.name()).into_owned())
     }
 }
 

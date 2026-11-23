@@ -579,9 +579,10 @@ pub static BUILTIN_DOCS: [BuiltinDoc; Context::BUILTIN_NAMES.len()] = [
         Arithmetic,
         "factorial(n)",
         "Factorial n!, extended to half-integers.",
-        "",
+        "Also written `n!`, binding tighter than any operator (`n!^2` is `(n!)^2`, `-3!` is `-6`); `n!=3` is `n != 3`, write `n! = 3`.",
         &[
             ex("factorial(5)", "120"),
+            ex("3!^2", "36"),
             ex("factorial(1/2)", "sqrt(pi)/2"),
         ],
     ),

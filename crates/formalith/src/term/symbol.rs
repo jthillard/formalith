@@ -58,7 +58,7 @@ impl<T: Debug> PrettyPrint for SymbolTerm<T> {
             Context::PI => "π".to_string(),
             Context::OO => "∞".to_string(),
             Context::EULER_GAMMA => "γ".to_string(),
-            _ => self.symbol.name().to_owned(),
+            _ => crate::printer::pretty_name(self.symbol.name()).into_owned(),
         })
     }
 }

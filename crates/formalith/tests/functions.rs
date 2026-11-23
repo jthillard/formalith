@@ -78,7 +78,7 @@ fn rounding() {
     assert_eq!(parse!("ceil(7/2)", R), 4.into());
     assert_eq!(parse!("ceil(-7/2)", R), (-3).into());
     assert_eq!(parse!("floor(3)", R), 3.into());
-    assert_eq!(parse!("floor(x)", R).to_string(), "floor(x)");
+    assert_eq!(parse!("floor(x)", R).to_string(), "⌊x⌋");
 }
 
 #[test]

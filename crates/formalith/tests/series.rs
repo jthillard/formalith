@@ -250,14 +250,14 @@ fn whole(input: &str) -> String {
 #[test]
 fn whole_series() {
     let cases = [
-        ("exp(x), x, 0", "sum((x^k)*(factorial(k)^-1), k, 0, oo)"),
+        ("exp(x), x, 0", "sum((x^k)*(k!^-1), k, 0, oo)"),
         (
             "sin(x), x, 0",
-            "sum((x^(2*k+1))*(factorial(2*k+1)^-1)*((-1)^k), k, 0, oo)",
+            "sum((x^(2*k+1))*((2*k+1)!^-1)*((-1)^k), k, 0, oo)",
         ),
         (
             "cos(x), x, 0",
-            "sum((x^(2*k))*(factorial(2*k)^-1)*((-1)^k), k, 0, oo)",
+            "sum((x^(2*k))*((2*k)!^-1)*((-1)^k), k, 0, oo)",
         ),
         (
             "atan(x), x, 0",
@@ -265,7 +265,7 @@ fn whole_series() {
         ),
         (
             "asin(x), x, 0",
-            "sum(((2*k+1)^-1)*(x^(2*k+1))*factorial(2*k)*(factorial(k)^-2)*(2^(-2*k)), k, 0, oo)",
+            "sum(((2*k+1)^-1)*(x^(2*k+1))*(2*k)!*(k!^-2)*(2^(-2*k)), k, 0, oo)",
         ),
         (
             "ln(1 + x), x, 0",
@@ -277,15 +277,9 @@ fn whole_series() {
             "1/((1 - x)*(1 - 2*x)), x, 0",
             "sum(-(x^k)+(x^k)*(2^(k+1)), k, 0, oo)",
         ),
-        (
-            "exp(x), x, 1",
-            "sum(((x-1)^k)*exp(1)*(factorial(k)^-1), k, 0, oo)",
-        ),
+        ("exp(x), x, 1", "sum(((x-1)^k)*exp(1)*(k!^-1), k, 0, oo)"),
         // Laurent series, and at infinity
-        (
-            "exp(x)/x, x, 0",
-            "sum((x^k)*(factorial(k+1)^-1), k, -1, oo)",
-        ),
+        ("exp(x)/x, x, 0", "sum((x^k)*((k+1)!^-1), k, -1, oo)"),
         ("1/(x - 1), x, oo", "sum(x^(-k), k, 1, oo)"),
     ];
     for (f, expected) in cases {
@@ -294,12 +288,12 @@ fn whole_series() {
     // Sums of series with different general terms
     assert_eq!(
         whole("exp(x) + sin(x), x, 0"),
-        "sum((x^k)*(factorial(k)^-1), k, 0, oo)+sum((x^(2*k+1))*(factorial(2*k+1)^-1)*((-1)^k), k, 0, oo)"
+        "sum((x^k)*(k!^-1), k, 0, oo)+sum((x^(2*k+1))*((2*k+1)!^-1)*((-1)^k), k, 0, oo)"
     );
     // Only proven general terms: `{$x^40$}` breaks the recurrence of `{$e^x$}`
     assert_eq!(
         whole("exp(x) + x^40, x, 0"),
-        "x^40+sum((x^k)*(factorial(k)^-1), k, 0, oo)"
+        "x^40+sum((x^k)*(k!^-1), k, 0, oo)"
     );
     // Rational terms of a sum split into partial fractions, and a polynomial factor distributed
     assert!(!whole("-sin(x) + 1/((4 - x)*(3 + x)), x, 0").contains("series"));

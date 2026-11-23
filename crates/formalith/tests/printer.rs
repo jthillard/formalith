@@ -281,3 +281,57 @@ fn typst_output_of_calculus() {
         assert!(!printed.contains('\u{1b}'), "{input}");
     }
 }
+
+#[test]
+fn print_factorials() {
+    assert_eq!(line(&parse!("factorial(n)", R)), "n!");
+    assert_eq!(line(&parse!("factorial(x+1)", R)), "(x+1)!");
+    assert_eq!(line(&parse!("factorial(n)^2", R)), "n!^2");
+    assert_eq!(line(&parse!("x^factorial(n)", R)), "x^n!");
+    assert_eq!(typst(&parse!("factorial(x+1)", R)), "(x+1)!");
+    assert_eq!(pretty(&parse!("factorial(n)", R)), "n!");
+    assert_eq!(pretty(&parse!("factorial(x+1)", R)), "(x + 1)!");
+    assert_eq!(pretty(&parse!("factorial(1/3)", R)), "⎛1⎞ \n⎜─⎟!\n⎝3⎠ ");
+}
+
+#[test]
+fn pretty_print_special_functions() {
+    assert_eq!(pretty(&parse!("gamma(x)", R)), "Γ(x)");
+    assert_eq!(pretty(&parse!("zeta(s)", R)), "ζ(s)");
+    assert_eq!(pretty(&parse!("lambertw(x)", R)), "W(x)");
+    assert_eq!(pretty(&parse!("polygamma(0, x)", R)), "ψ(x)");
+    assert_eq!(pretty(&parse!("polygamma(1, x)", R)), " (1)   \nψ   (x)");
+    assert_eq!(pretty(&parse!("floor(x)", R)), "⌊x⌋");
+    assert_eq!(pretty(&parse!("ceil(x)", R)), "⌈x⌉");
+    assert_eq!(pretty(&parse!("floor(x/2)", R)), "⎢x⎥\n⎢─⎥\n⎣2⎦");
+    assert_eq!(pretty(&parse!("binomial(n, k)", R)), "⎛n⎞\n⎝k⎠");
+}
+
+#[test]
+fn pretty_print_greek_names() {
+    assert_eq!(pretty(&parse!("alpha + beta_1", R)), "α + β_1");
+    assert_eq!(pretty(&parse!("phi(x)", R)), "φ(x)");
+    assert_eq!(pretty(&parse!("Omega", R)), "Ω");
+    assert_eq!(pretty(&parse!("alphabet", R)), "alphabet");
+    assert_eq!(line(&parse!("alpha", R)), "alpha");
+}
+
+#[test]
+fn pretty_print_limits_and_derivatives() {
+    assert_eq!(
+        pretty(&parse!("lim(f(x), x, 0)", R)),
+        " lim  f(x)\nx → 0     "
+    );
+    assert_eq!(
+        pretty(&parse!("lim(f(x), x, 0, -1)", R)),
+        " lim   f(x)\nx → 0⁻     "
+    );
+    assert_eq!(
+        pretty(&parse!("diff(f(x), x)", R)),
+        "d     \n──f(x)\ndx    "
+    );
+    assert_eq!(
+        pretty(&parse!("diff(f(x), x, 2)", R)),
+        " 2     \nd      \n───f(x)\n  2    \ndx     "
+    );
+}

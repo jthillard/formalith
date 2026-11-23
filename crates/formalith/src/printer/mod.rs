@@ -273,8 +273,37 @@ const fn get_drawings_chars(sym: char) -> Option<(char, char, char)> {
         '[' => Some(('⎡', '⎢', '⎣')),
         ']' => Some(('⎤', '⎥', '⎦')),
         '|' => Some(('│', '│', '│')),
+        '⌊' => Some(('⎢', '⎢', '⎣')),
+        '⌋' => Some(('⎥', '⎥', '⎦')),
+        '⌈' => Some(('⎡', '⎢', '⎢')),
+        '⌉' => Some(('⎤', '⎥', '⎥')),
         _ => None,
     }
+}
+
+/// Greek letters, by the names that pretty printing writes as letters.
+#[rustfmt::skip]
+const GREEK: [(&str, &str); 34] = [
+    ("alpha", "α"), ("beta", "β"), ("gamma", "γ"), ("delta", "δ"), ("epsilon", "ε"),
+    ("zeta", "ζ"), ("eta", "η"), ("theta", "θ"), ("iota", "ι"), ("kappa", "κ"),
+    ("lambda", "λ"), ("mu", "μ"), ("nu", "ν"), ("xi", "ξ"), ("omicron", "ο"), ("rho", "ρ"),
+    ("sigma", "σ"), ("tau", "τ"), ("upsilon", "υ"), ("phi", "φ"), ("chi", "χ"), ("psi", "ψ"),
+    ("omega", "ω"), ("Gamma", "Γ"), ("Delta", "Δ"), ("Theta", "Θ"), ("Lambda", "Λ"),
+    ("Xi", "Ξ"), ("Pi", "Π"), ("Sigma", "Σ"), ("Phi", "Φ"), ("Psi", "Ψ"), ("Omega", "Ω"),
+    ("Upsilon", "Υ"),
+];
+
+/// The name of a symbol or function as pretty printed: a Greek letter for its name, like `α` for `alpha`, also before
+/// a subscript (`α_1` for `alpha_1`).
+#[must_use]
+pub fn pretty_name(name: &str) -> std::borrow::Cow<'_, str> {
+    let (letter, rest) = name.find('_').map_or((name, ""), |i| name.split_at(i));
+    GREEK
+        .iter()
+        .find(|(greek, _)| *greek == letter)
+        .map_or(std::borrow::Cow::Borrowed(name), |(_, glyph)| {
+            std::borrow::Cow::Owned(format!("{glyph}{rest}"))
+        })
 }
 
 impl PrettyPrinter {
@@ -566,27 +595,39 @@ impl PrettyPrinter {
         column.concat(" ", false, self);
         *self = column;
     }
-    /// Put self after a big operator `sign`, like `∑`, with its `lower` and `upper` bounds.
+    /// Put self after a big operator `sign`, like `∑` or `lim`, with its `lower` part and an optional `upper` one.
     ///
     /// ```text
     ///   n
-    ///   ∑  f(k)
-    /// k=1
+    ///   ∑  f(k)    lim  f(x)
+    /// k=1         x → 0
     /// ```
-    pub fn big_operator(&mut self, sign: char, lower: &Self, upper: &Self) {
-        let width = lower.width().max(upper.width()).max(1);
+    pub fn big_operator(&mut self, sign: &str, lower: &Self, upper: Option<&Self>) {
+        let mut column = upper.cloned().unwrap_or_else(Self::empty);
+        column.over(&Self::from(sign.to_string()));
+        column.over(lower);
+        column.baseline = upper.map_or(0, Self::height);
+        column.concat(" ", false, self);
+        *self = column;
+    }
+    /// Put `lower` below `self`, both centered horizontally, keeping the baseline of `self`, like the parts of a
+    /// binomial coefficient.
+    pub fn over(&mut self, lower: &Self) {
+        if self.is_empty() {
+            *self = lower.clone();
+            return;
+        }
+        let width = self.width().max(lower.width());
         let center = |part: &Self| {
             let mut part = part.clone();
             let (height, baseline) = (part.height(), part.baseline);
             part.center(height, width, baseline);
             part
         };
-        let mut column = center(upper);
-        column.stack(&center(&Self::from(sign.to_string())));
-        column.stack(&center(lower));
-        column.baseline = upper.height();
-        column.concat(" ", false, self);
-        *self = column;
+        let baseline = self.baseline;
+        *self = center(self);
+        self.stack(&center(lower));
+        self.baseline = baseline;
     }
     /// Add `sym` at the left of self, converting it to unicode drawings chars.
     pub fn left(&mut self, sym: char) {

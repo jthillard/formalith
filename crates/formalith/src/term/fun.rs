@@ -164,6 +164,23 @@ impl<From: Set, T: Set> Print for Fun<From, T> {
             f.write_str(" ")?;
             return rhs.print(options, f);
         }
+        if let (Context::FACTORIAL, [n]) = (self.ident, args.as_slice()) {
+            // `{$n!$}`, `(-1)!` and `(1/2)!`, since the parser reads `-1!` as `-(1!)` and `1/2!` as `1/(2!)`
+            if let Term::Value(value) = n
+                && !value
+                    .with_options(PrintOptions::plain())
+                    .to_string()
+                    .chars()
+                    .all(char::is_alphanumeric)
+            {
+                Self::group_delim("(", options, f)?;
+                n.print(options, f)?;
+                Self::group_delim(")", options, f)?;
+            } else {
+                Self::group(*n, options, f)?;
+            }
+            return Self::operator("!", options, f);
+        }
         if options.typst && self.ident == Context::PIECEWISE {
             // `{$cases(v_1 & "if" c_1, ..., d & "otherwise")$}`
             f.write_str("cases(")?;
@@ -209,11 +226,6 @@ impl<From: Set, T: Set> Print for Fun<From, T> {
                     fun.print(options, f)?;
                     return f.write_str(")");
                 }
-            }
-            if let (Context::FACTORIAL, [n]) = (self.ident, args.as_slice()) {
-                // `{$n!$}`
-                Self::group(*n, options, f)?;
-                return f.write_str("!");
             }
             if let (Context::POLYGAMMA, [m, u]) = (self.ident, args.as_slice()) {
                 // `{$psi(u)$}`, or `{$psi^((m))(u)$}`
@@ -366,7 +378,10 @@ impl<From: Set, T: Set> PrettyPrint for Fun<From, T> {
             } else {
                 '∑'
             };
-            res.big_operator(sign, &lower, &b.pretty_print(options));
+            res.big_operator(&sign.to_string(), &lower, Some(&b.pretty_print(options)));
+            return res;
+        }
+        if let Some(res) = self.pretty_print_special(options) {
             return res;
         }
         if let (Some(relation), [lhs, rhs]) =
@@ -383,15 +398,117 @@ impl<From: Set, T: Set> PrettyPrint for Fun<From, T> {
             res.concat(",", false, &arg);
         }
         res.paren();
-        if self.ident == Context::ABS {
-            let mut res = self.args.first().unwrap().pretty_print(options);
-            res.group('|', '|');
-            res
-        } else {
-            let mut fun = PrettyPrinter::from(self.get_ident_as_str().to_string());
-            fun.concat("", false, &res);
-            fun
-        }
+        let name = match self.ident {
+            Context::GAMMA => "Γ".into(),
+            Context::BETA => "B".into(),
+            Context::ZETA => "ζ".into(),
+            Context::LAMBERTW => "W".into(),
+            _ => crate::printer::pretty_name(self.get_ident_as_str()),
+        };
+        let mut fun = PrettyPrinter::from(name.into_owned());
+        fun.concat("", false, &res);
+        fun
+    }
+}
+
+impl<From: Set, T: Set> Fun<From, T> {
+    /// Pretty print the builtins drawn with their own notation, like `{$n!$}`, `{$floor(x)$}` or `{$binom(n, k)$}`.
+    fn pretty_print_special(&self, options: &PrintOptions) -> Option<PrettyPrinter> {
+        let pretty = |term: &Term<From>| term.pretty_print(options);
+        Some(match (self.ident, self.args.as_slice()) {
+            (Context::ABS, [u]) => {
+                let mut res = pretty(u);
+                res.group('|', '|');
+                res
+            }
+            (Context::FLOOR, [u]) => {
+                let mut res = pretty(u);
+                res.group('⌊', '⌋');
+                res
+            }
+            (Context::CEIL, [u]) => {
+                let mut res = pretty(u);
+                res.group('⌈', '⌉');
+                res
+            }
+            (Context::FACTORIAL, [n]) => {
+                let mut res = pretty(n);
+                if match n {
+                    Term::Add(_) | Term::Mul(_) | Term::Pow(_) => true,
+                    Term::Value(value) => {
+                        !value.set.is_atomic(&value.value)
+                            || value.typst().to_string().starts_with('-')
+                    }
+                    Term::Symbol(_) | Term::Fun(_) => false,
+                } || res.height() > 1
+                {
+                    res.paren();
+                }
+                res.concat("!", false, &PrettyPrinter::empty());
+                res
+            }
+            (Context::BINOMIAL, [n, k]) => {
+                let mut res = pretty(n);
+                res.over(&pretty(k));
+                res.paren();
+                res
+            }
+            (Context::POLYGAMMA, [m, u]) => {
+                let mut res = PrettyPrinter::from("ψ".to_string());
+                if m.with_options(PrintOptions::plain()).to_string() != "0" {
+                    let mut order = pretty(m);
+                    order.paren();
+                    res.pow(&order);
+                }
+                let mut arg = pretty(u);
+                arg.paren();
+                res.concat("", false, &arg);
+                res
+            }
+            (Context::LIM, [f, x, point, direction @ ..]) => {
+                let side = match direction {
+                    [] => "",
+                    [direction] => match direction
+                        .with_options(PrintOptions::plain())
+                        .to_string()
+                        .as_str()
+                    {
+                        "1" => "⁺",
+                        "-1" => "⁻",
+                        _ => return None,
+                    },
+                    _ => return None,
+                };
+                let mut lower = pretty(x);
+                lower.concat("→", true, &pretty(point));
+                lower.concat(side, false, &PrettyPrinter::empty());
+                let mut res = pretty(f);
+                if matches!(f, Term::Add(_)) {
+                    res.paren();
+                }
+                res.big_operator("lim", &lower, None);
+                res
+            }
+            (Context::DIFF, [f, x, order @ ..]) if order.len() <= 1 => {
+                let order = order.first().map(pretty);
+                let order = order.filter(|order| order.lines != ["1"]);
+                let mut d = PrettyPrinter::from("d".to_string());
+                let mut dx = PrettyPrinter::from("d".to_string());
+                dx.concat("", false, &pretty(x));
+                if let Some(order) = &order {
+                    d.pow(order);
+                    dx.pow(order);
+                }
+                d.vertical_concat("─", &dx);
+                let mut res = pretty(f);
+                if !matches!(f, Term::Symbol(_) | Term::Fun(_)) {
+                    res.paren();
+                }
+                d.concat("", false, &res);
+                d
+            }
+            _ => return None,
+        })
     }
 }
 

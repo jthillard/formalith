@@ -73,6 +73,8 @@ pub enum TokenKind {
     GreaterEqual,
     /// !=
     NotEqual,
+    /// !, a factorial `n!`
+    Bang,
     /// ', a derivative in `dsolve`
     Prime,
     /// End Of File
@@ -168,6 +170,7 @@ impl Lexer<'_> {
                 self.chars.next();
                 TokenKind::NotEqual
             }
+            '!' => TokenKind::Bang,
             '^' => TokenKind::Caret,
             '\'' => TokenKind::Prime,
             '{' => TokenKind::OpenBrace,
@@ -411,7 +414,9 @@ mod tests {
 
     #[test]
     fn unknown_characters() {
-        assert_eq!(kinds("@$#!"), vec![TokenKind::Unknown; 4]);
+        assert_eq!(kinds("@$#?"), vec![TokenKind::Unknown; 4]);
+        assert_eq!(kinds("!"), vec![TokenKind::Bang]);
+        assert_eq!(kinds("!="), vec![TokenKind::NotEqual]);
         // Length is counted in bytes
         assert_eq!(lengths("é"), vec![2]);
     }

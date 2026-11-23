@@ -166,17 +166,14 @@ fn verify(input: &str, output: &str) -> Verdict {
 #[test]
 fn oracle_detects_wrong_terms() {
     let wrong = |input: &str, output: &str| matches!(verify(input, output), Verdict::Wrong(_));
-    assert!(wrong(
-        "exp(x); 0",
-        "sum((x^k)*(factorial(k+1)^-1), k, 0, oo)"
-    ));
+    assert!(wrong("exp(x); 0", "sum((x^k)*((k+1)!^-1), k, 0, oo)"));
     // Right up to `{$x^20$}`
     assert!(wrong(
         "1/(1 - x); 0",
         "sum(x^k, k, 0, 19) + sum(2*x^k, k, 20, oo)"
     ));
     assert!(matches!(
-        verify("exp(x); 0", "sum((x^k)*(factorial(k)^-1), k, 0, oo)"),
+        verify("exp(x); 0", "sum((x^k)*(k!^-1), k, 0, oo)"),
         Verdict::Pass
     ));
 }
