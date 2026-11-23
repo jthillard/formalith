@@ -4,11 +4,11 @@ use std::cmp::Ordering;
 
 use super::{Add, Mul, Pow, Term};
 use crate::{
-    field::{Group, Ring},
+    field::{Group, Monoid, Ring, Semiring},
     term::{Normalize, flags::Flags},
 };
 
-impl<T: Group> std::ops::Add for &Term<T> {
+impl<T: Monoid> std::ops::Add for &Term<T> {
     type Output = Term<T>;
 
     fn add(self, rhs: Self) -> Self::Output {
@@ -110,19 +110,19 @@ impl<T: Group> std::ops::Add for &Term<T> {
     }
 }
 
-impl<T: Group> std::ops::AddAssign<&Self> for Term<T> {
+impl<T: Monoid> std::ops::AddAssign<&Self> for Term<T> {
     fn add_assign(&mut self, rhs: &Self) {
         *self = &*self + rhs;
     }
 }
 
-impl<T: Group> std::ops::AddAssign for Term<T> {
+impl<T: Monoid> std::ops::AddAssign for Term<T> {
     fn add_assign(&mut self, rhs: Self) {
         *self = &*self + &rhs;
     }
 }
 
-impl<T: Group> std::ops::Add<&Self> for Term<T> {
+impl<T: Monoid> std::ops::Add<&Self> for Term<T> {
     type Output = Self;
 
     fn add(self, rhs: &Self) -> Self::Output {
@@ -130,7 +130,7 @@ impl<T: Group> std::ops::Add<&Self> for Term<T> {
     }
 }
 
-impl<T: Group> std::ops::Add for Term<T> {
+impl<T: Monoid> std::ops::Add for Term<T> {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
@@ -138,7 +138,7 @@ impl<T: Group> std::ops::Add for Term<T> {
     }
 }
 
-impl<T: Ring> std::ops::Mul for &Term<T> {
+impl<T: Semiring> std::ops::Mul for &Term<T> {
     type Output = Term<T>;
 
     fn mul(self, rhs: Self) -> Self::Output {
@@ -154,19 +154,19 @@ impl<T: Ring> std::ops::Mul for &Term<T> {
     }
 }
 
-impl<T: Ring> std::ops::MulAssign<&Self> for Term<T> {
+impl<T: Semiring> std::ops::MulAssign<&Self> for Term<T> {
     fn mul_assign(&mut self, rhs: &Self) {
         *self = &*self * rhs;
     }
 }
 
-impl<T: Ring> std::ops::MulAssign for Term<T> {
+impl<T: Semiring> std::ops::MulAssign for Term<T> {
     fn mul_assign(&mut self, rhs: Self) {
         *self = &*self * &rhs;
     }
 }
 
-impl<T: Ring> std::ops::Mul<&Self> for Term<T> {
+impl<T: Semiring> std::ops::Mul<&Self> for Term<T> {
     type Output = Self;
 
     fn mul(self, rhs: &Self) -> Self::Output {
@@ -174,7 +174,7 @@ impl<T: Ring> std::ops::Mul<&Self> for Term<T> {
     }
 }
 
-impl<T: Ring> std::ops::Mul for Term<T> {
+impl<T: Semiring> std::ops::Mul for Term<T> {
     type Output = Self;
 
     fn mul(self, rhs: Self) -> Self::Output {
@@ -278,7 +278,7 @@ impl<T: Group> std::ops::Sub for Term<T> {
     }
 }
 
-impl<T: Ring> Term<T> {
+impl<T: Semiring> Term<T> {
     /// Compute `self^exponant`
     #[must_use]
     pub fn pow(&self, exponant: &Term<T::ExponantSet>) -> Self {

@@ -8,10 +8,12 @@ use std::fmt::{Debug, Display};
 use std::iter::Peekable;
 use std::ops::Range;
 
-use malachite::Integer;
+use malachite::{Integer, Natural};
 
 use crate::context::{Context, Symbol};
-use crate::field::{Group, Ring, Set, SetParseExpression, integer::Z};
+use crate::field::{
+    Group, Monoid, Ring, Semiring, Set, SetParseExpression, integer::Z, natural::N,
+};
 use crate::printer::{Print, PrintOptions};
 use crate::term::{Fun, Mul, Normalize, SymbolTerm, Term, Value, flags::Flags, relation::Relation};
 
@@ -644,16 +646,34 @@ impl<E: Set> CheckExponent<E> for Parser<'_> {
     }
 }
 
-impl<E: Ring<ExponantSet = Z<Integer>>> CheckExponent<E> for Parser<'_> {
+impl<E: Semiring<ExponantSet = Z<Integer>>> CheckExponent<E> for Parser<'_> {
     default fn check_exponent(exponent: &Term<Z<Integer>>) -> Result<(), ParserError> {
-        if exponent.normalize().as_fraction(false).1.is_one() {
-            Ok(())
-        } else {
-            Err(ParserError::new(format!(
-                "the exponent {} isn't an integer",
+        check_integer_exponent(exponent)
+    }
+}
+
+fn check_integer_exponent(exponent: &Term<Z<Integer>>) -> Result<(), ParserError> {
+    if exponent.normalize().as_fraction(false).1.is_one() {
+        Ok(())
+    } else {
+        Err(ParserError::new(format!(
+            "the exponent {} isn't an integer",
+            exponent.with_options(PrintOptions::plain())
+        )))
+    }
+}
+
+// In `N`, there is no division, so exponents must not be negative either
+impl CheckExponent<N<Natural>> for Parser<'_> {
+    fn check_exponent(exponent: &Term<Z<Integer>>) -> Result<(), ParserError> {
+        check_integer_exponent(exponent)?;
+        if exponent.normalize().is_strictly_negative() {
+            return Err(ParserError::new(format!(
+                "the exponent {} is negative, but division isn't defined in this set",
                 exponent.with_options(PrintOptions::plain())
-            )))
+            )));
         }
+        Ok(())
     }
 }
 
@@ -664,7 +684,81 @@ impl CheckExponent<Z<Integer>> for Parser<'_> {
     }
 }
 
-impl<E: Ring> ParseBinary<E> for Parser<'_> {
+/// Applies a binary operator other than `^` to parsed operands, `-` and `/` being only defined in rings.
+trait ApplyBinary<E: Set> {
+    fn apply_binary(
+        current: Term<E>,
+        current_in_coefficient_set: Result<
+            Option<<<E as Set>::ProductCoefficientSet as Set>::Element>,
+            ParserError,
+        >,
+        op: Op,
+        right: Term<E>,
+        set: E,
+    ) -> Result<Term<E>, ParserError>;
+}
+
+/// `+` and `*`, defined in every semiring.
+fn apply_semiring_binary<E: Semiring>(
+    current: Term<E>,
+    current_in_coefficient_set: Result<
+        Option<<<E as Set>::ProductCoefficientSet as Set>::Element>,
+        ParserError,
+    >,
+    op: Op,
+    right: Term<E>,
+    set: E,
+) -> Result<Term<E>, ParserError> {
+    match op {
+        Op::Add => Ok(current + right),
+        Op::Multiply => Ok(if let Ok(Some(current)) = current_in_coefficient_set {
+            Term::Mul(Mul::new(current, vec![right], set)).normalize()
+        } else {
+            current * right
+        }),
+        Op::Subtract => Err(ParserError::new(
+            "subtraction isn't defined in this set, which has no additive inverses",
+        )),
+        Op::Divide => Err(ParserError::new("division isn't defined in this set")),
+        Op::Pow => unreachable!(),
+    }
+}
+
+impl<E: Semiring> ApplyBinary<E> for Parser<'_> {
+    default fn apply_binary(
+        current: Term<E>,
+        current_in_coefficient_set: Result<
+            Option<<<E as Set>::ProductCoefficientSet as Set>::Element>,
+            ParserError,
+        >,
+        op: Op,
+        right: Term<E>,
+        set: E,
+    ) -> Result<Term<E>, ParserError> {
+        apply_semiring_binary(current, current_in_coefficient_set, op, right, set)
+    }
+}
+
+impl<E: Ring> ApplyBinary<E> for Parser<'_> {
+    fn apply_binary(
+        current: Term<E>,
+        current_in_coefficient_set: Result<
+            Option<<<E as Set>::ProductCoefficientSet as Set>::Element>,
+            ParserError,
+        >,
+        op: Op,
+        right: Term<E>,
+        set: E,
+    ) -> Result<Term<E>, ParserError> {
+        match op {
+            Op::Subtract => Ok(current - right),
+            Op::Divide => Ok(current / right),
+            _ => apply_semiring_binary(current, current_in_coefficient_set, op, right, set),
+        }
+    }
+}
+
+impl<E: Semiring> ParseBinary<E> for Parser<'_> {
     fn parse_binary_expr(
         &mut self,
         current: Term<E>,
@@ -688,19 +782,13 @@ impl<E: Ring> ParseBinary<E> for Parser<'_> {
             ParseExpression::<E>::parse_expression(self, op.get_priority(), set)?
         {
             return Ok((
-                match op {
-                    Op::Add => current + right,
-                    Op::Subtract => current - right,
-                    Op::Multiply => {
-                        if let Ok(Some(current)) = current_in_coefficient_set {
-                            Term::Mul(Mul::new(current, vec![right], set)).normalize()
-                        } else {
-                            current * right
-                        }
-                    }
-                    Op::Divide => current / right,
-                    Op::Pow => unreachable!(),
-                },
+                <Self as ApplyBinary<E>>::apply_binary(
+                    current,
+                    current_in_coefficient_set,
+                    op,
+                    right,
+                    set,
+                )?,
                 true,
             ));
         }
@@ -770,6 +858,21 @@ trait ParseUnary<E: Set> {
 impl<E: Set> ParseUnary<E> for Parser<'_> {
     default fn parse_unary(&mut self, _set: E) -> Result<Option<Term<E>>, ParserError> {
         Ok(None)
+    }
+}
+
+impl<E: Monoid> ParseUnary<E> for Parser<'_> {
+    default fn parse_unary(&mut self, set: E) -> Result<Option<Term<E>>, ParserError> {
+        match self.get_op() {
+            Some(Op::Add) => {
+                self.next_token();
+                ParseExpression::<E>::parse_expression(self, Op::Multiply.get_priority(), set)
+            }
+            Some(Op::Subtract) => Err(ParserError::new(
+                "negation isn't defined in this set, which has no additive inverses",
+            )),
+            _ => Ok(None),
+        }
     }
 }
 

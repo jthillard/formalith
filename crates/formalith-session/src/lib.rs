@@ -395,3 +395,18 @@ impl fmt::Display for Output {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn panics_are_errors() {
+        let session = Session::new();
+        let panic: std::thread::Result<Result<(Evaluated, ()), String>> = Err(Box::new(()));
+        let (output, changes_state, extra) = session.respond(panic);
+        assert!(matches!(output, Output::Error(_)));
+        assert!(!changes_state);
+        assert!(extra.is_none());
+    }
+}

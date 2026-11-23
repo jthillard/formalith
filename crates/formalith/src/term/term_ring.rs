@@ -3,7 +3,10 @@
 use std::cmp::Ordering;
 
 use crate::{
-    field::{Field, Group, PartiallyOrderedSet, Ring, Set, SetParseExpression, TryExprFrom},
+    field::{
+        Field, Group, Monoid, PartiallyOrderedSet, Ring, Semiring, Set, SetParseExpression,
+        TryExprFrom,
+    },
     parser::{ParseExpression, Parser, ParserError},
     printer::{PrettyPrint, Print},
     term::{Expand, Normalize, flags::Flags},
@@ -70,13 +73,9 @@ impl<T: PartiallyOrderedSet> PartiallyOrderedSet for TermSet<T> {
     }
 }
 
-impl<T: Group> Group for TermSet<T> {
+impl<T: Monoid> Monoid for TermSet<T> {
     fn zero(&self) -> Self::Element {
         Term::Value(Value::new(self.get_set().zero(), *self.get_set()))
-    }
-
-    fn nth(&self, nth: i64) -> Self::Element {
-        Term::Value(Value::new(self.get_set().nth(nth), *self.get_set()))
     }
 
     fn add(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
@@ -84,16 +83,22 @@ impl<T: Group> Group for TermSet<T> {
         a + b
     }
 
-    fn neg(&self, a: &Self::Element) -> Self::Element {
-        -a
-    }
-
     fn to_i64(&self, a: &Self::Element) -> Option<i64> {
         a.to_i64()
     }
 }
 
-impl<T: Ring> Ring for TermSet<T> {
+impl<T: Group> Group for TermSet<T> {
+    fn nth(&self, nth: i64) -> Self::Element {
+        Term::Value(Value::new(self.get_set().nth(nth), *self.get_set()))
+    }
+
+    fn neg(&self, a: &Self::Element) -> Self::Element {
+        -a
+    }
+}
+
+impl<T: Ring> Semiring for TermSet<T> {
     fn one(&self) -> Self::Element {
         Term::Value(Value::new(self.get_set().one(), *self.get_set()))
     }
@@ -102,21 +107,27 @@ impl<T: Ring> Ring for TermSet<T> {
         a * b
     }
 
-    fn try_inv(&self, a: &Self::Element) -> Option<Self::Element> {
-        Some(a.inv())
-    }
     fn normalize(&self, a: Term<Self>) -> Term<Self> {
         let a = self.get_set().try_from_expr(a).unwrap();
         Term::Value(Value::new(a.normalize(), *self))
     }
+
     fn simplify(&self, a: Term<Self>) -> Term<Self> {
         let a = self.get_set().try_from_expr(a).unwrap();
         Term::Value(Value::new(a.simplify(), *self))
     }
+
     fn expand(&self, a: Term<Self>) -> Term<Self> {
         let a = self.get_set().try_from_expr(a).unwrap();
         Term::Value(Value::new(a.expand(), *self))
     }
+}
+
+impl<T: Ring> Ring for TermSet<T> {
+    fn try_inv(&self, a: &Self::Element) -> Option<Self::Element> {
+        Some(a.inv())
+    }
+
     fn as_fraction(&self, a: &Self::Element) -> (Self::Element, Self::Element) {
         a.as_fraction(false)
     }

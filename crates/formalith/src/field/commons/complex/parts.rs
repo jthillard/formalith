@@ -11,7 +11,7 @@ use super::C;
 use crate::{
     context::{Context, Symbol},
     field::{
-        Group, Ring, TryExprFrom,
+        Group, Semiring, TryExprFrom,
         real::{
             R,
             expr::{Expr, Real, fun, one, size, value, variable, zero},

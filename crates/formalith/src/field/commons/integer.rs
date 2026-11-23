@@ -17,8 +17,8 @@ use super::{parse_integer_literal, primes};
 use crate::{
     context::Context,
     field::{
-        EuclideanRing, Group, PartiallyOrderedSet, Ring, Set, SetParseExpression, matrix::M,
-        real::MAX_FACTORIAL,
+        EuclideanRing, Group, Monoid, PartiallyOrderedSet, Ring, Semiring, Set, SetParseExpression,
+        matrix::M, real::MAX_FACTORIAL,
     },
     parser::Parser,
     printer::PrettyPrinter,
@@ -75,21 +75,13 @@ impl PartiallyOrderedSet for Z<Integer> {
     }
 }
 
-impl Group for Z<Integer> {
+impl Monoid for Z<Integer> {
     fn zero(&self) -> Self::Element {
         Integer::ZERO
     }
 
-    fn nth(&self, nth: i64) -> <Self::ProductCoefficientSet as Set>::Element {
-        Integer::const_from_signed(nth)
-    }
-
     fn add(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
         a + b
-    }
-
-    fn neg(&self, a: &Self::Element) -> Self::Element {
-        -a
     }
 
     fn to_i64(&self, a: &Self::Element) -> Option<i64> {
@@ -97,23 +89,23 @@ impl Group for Z<Integer> {
     }
 }
 
-impl Ring for Z<Integer> {
+impl Group for Z<Integer> {
+    fn nth(&self, nth: i64) -> <Self::ProductCoefficientSet as Set>::Element {
+        Integer::const_from_signed(nth)
+    }
+
+    fn neg(&self, a: &Self::Element) -> Self::Element {
+        -a
+    }
+}
+
+impl Semiring for Z<Integer> {
     fn one(&self) -> Self::Element {
         Integer::ONE
     }
 
     fn mul(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
         a * b
-    }
-
-    fn try_inv(&self, a: &Self::Element) -> Option<Self::Element> {
-        if *a == 1 {
-            Some(Integer::const_from_unsigned(1))
-        } else if *a == -1 {
-            Some(Integer::const_from_signed(-1))
-        } else {
-            None
-        }
     }
 
     fn normalize(&self, a: Term<Self>) -> Term<Self> {
@@ -217,6 +209,18 @@ impl Ring for Z<Integer> {
             _ => {}
         }
         a
+    }
+}
+
+impl Ring for Z<Integer> {
+    fn try_inv(&self, a: &Self::Element) -> Option<Self::Element> {
+        if *a == 1 {
+            Some(Integer::const_from_unsigned(1))
+        } else if *a == -1 {
+            Some(Integer::const_from_signed(-1))
+        } else {
+            None
+        }
     }
 }
 impl EuclideanRing for Z<Integer> {

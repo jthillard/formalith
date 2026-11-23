@@ -193,14 +193,15 @@ fn replayed_lines_restore_random_sessions() {
 }
 
 #[test]
-fn panics_are_errors_and_the_session_goes_on() {
+fn errors_and_the_session_goes_on() {
     let mut session = Session::new();
     assert_eq!(run(&mut session, "a := 2").1, true);
     assert_eq!(run(&mut session, ":set N").1, true);
-    // `N` has no arithmetic, its normalization isn't implemented
-    let response = session.run("integrate(x, x)");
+    assert_eq!(run(&mut session, "a + 3").0, "5");
+    // `N` has no subtraction
+    let response = session.run("a - 3");
     assert!(matches!(response.output, Output::Error(_)));
     assert!(!response.replay);
     assert_eq!(run(&mut session, ":set R").1, true);
-    assert_eq!(run(&mut session, "a + 1").0, "3");
+    assert_eq!(run(&mut session, "a - 3").0, "-1");
 }

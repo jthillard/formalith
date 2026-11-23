@@ -13,7 +13,7 @@ use std::{collections::HashMap, fmt::Debug};
 use malachite::{Integer, Rational, base::num::arithmetic::traits::Pow};
 
 use crate::{
-    field::{Ring, Set, TryElementFrom, complex::C, integer::Z, real::R},
+    field::{Ring, Semiring, Set, TryElementFrom, complex::C, integer::Z, real::R},
     polynom::{Monomial, MultivariatePolynomial},
     term::{Term, TermSet},
 };

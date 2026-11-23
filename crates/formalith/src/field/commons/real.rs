@@ -32,7 +32,8 @@ use crate::{
         assumptions::{SignSet, assumption},
     },
     field::{
-        Derivable, Field, Group, PartiallyOrderedSet, Ring, Set, SetParseExpression, matrix::M,
+        Derivable, Field, Group, Monoid, PartiallyOrderedSet, Ring, Semiring, Set,
+        SetParseExpression, matrix::M,
     },
     integrate::{IntegrateError, apart_arguments},
     limit::{Direction, LimitError, remainder},
@@ -135,21 +136,13 @@ impl PartiallyOrderedSet for R<Rational> {
     }
 }
 
-impl Group for R<Rational> {
+impl Monoid for R<Rational> {
     fn zero(&self) -> Self::Element {
         Rational::ZERO
     }
 
-    fn nth(&self, nth: i64) -> <Self::ProductCoefficientSet as Set>::Element {
-        Rational::const_from_signed(nth)
-    }
-
     fn add(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
         a + b
-    }
-
-    fn neg(&self, a: &Self::Element) -> Self::Element {
-        -a
     }
 
     fn to_i64(&self, a: &Self::Element) -> Option<i64> {
@@ -157,31 +150,23 @@ impl Group for R<Rational> {
     }
 }
 
-impl Ring for R<Rational> {
+impl Group for R<Rational> {
+    fn nth(&self, nth: i64) -> <Self::ProductCoefficientSet as Set>::Element {
+        Rational::const_from_signed(nth)
+    }
+
+    fn neg(&self, a: &Self::Element) -> Self::Element {
+        -a
+    }
+}
+
+impl Semiring for R<Rational> {
     fn one(&self) -> Self::Element {
         Rational::ONE
     }
 
     fn mul(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
         a * b
-    }
-
-    fn try_inv(&self, a: &Self::Element) -> Option<Self::Element> {
-        if *a == 0 { None } else { Some(a.pow(-1_i64)) }
-    }
-
-    fn as_fraction(&self, a: &Self::Element) -> (Self::Element, Self::Element) {
-        let sign = a.sign();
-        let (num, den) = a.to_numerator_and_denominator();
-        let (mut num, den) = (num.into(), den.into());
-        if sign == Ordering::Less {
-            num *= -Rational::ONE;
-        }
-        (num, den)
-    }
-
-    fn coefficient_gcd(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
-        Self::gcd_rational(a, b)
     }
 
     fn normalize(&self, a: Term<Self>) -> Term<Self> {
@@ -678,6 +663,26 @@ impl Ring for R<Rational> {
             }
             _ => a,
         }
+    }
+}
+
+impl Ring for R<Rational> {
+    fn try_inv(&self, a: &Self::Element) -> Option<Self::Element> {
+        if *a == 0 { None } else { Some(a.pow(-1_i64)) }
+    }
+
+    fn as_fraction(&self, a: &Self::Element) -> (Self::Element, Self::Element) {
+        let sign = a.sign();
+        let (num, den) = a.to_numerator_and_denominator();
+        let (mut num, den) = (num.into(), den.into());
+        if sign == Ordering::Less {
+            num *= -Rational::ONE;
+        }
+        (num, den)
+    }
+
+    fn coefficient_gcd(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
+        Self::gcd_rational(a, b)
     }
 }
 

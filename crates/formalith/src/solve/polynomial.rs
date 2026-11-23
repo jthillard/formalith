@@ -35,7 +35,7 @@ use crate::{
         assumptions::{SignSet, assumption},
     },
     field::{
-        Group, Ring, TryElementFrom, TryExprFrom,
+        Monoid, Ring, Semiring, TryElementFrom, TryExprFrom,
         complex::C,
         integer::Z,
         modular::Zn,

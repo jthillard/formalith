@@ -3,7 +3,7 @@
 use std::cmp::Ordering;
 
 use crate::{
-    field::{Group, PartiallyOrderedSet, Set},
+    field::{Group, Monoid, PartiallyOrderedSet, Set},
     printer::{PrettyPrinter, PrintOptions},
 };
 
@@ -84,18 +84,20 @@ impl<T: PartiallyOrderedSet, const K: usize> PartiallyOrderedSet for CartesianPo
     }
 }
 
-impl<T: Group, const K: usize> Group for CartesianPower<T, K> {
+impl<T: Monoid, const K: usize> Monoid for CartesianPower<T, K> {
     fn zero(&self) -> Self::Element {
         std::array::from_fn(|_| self.set.zero())
     }
 
+    fn add(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
+        std::array::from_fn(|i| self.set.add(&a[i], &b[i]))
+    }
+}
+
+impl<T: Group, const K: usize> Group for CartesianPower<T, K> {
     /// The diagonal element `(n, n, ..., n)`.
     fn nth(&self, nth: i64) -> Self::Element {
         std::array::from_fn(|_| self.set.nth(nth))
-    }
-
-    fn add(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
-        std::array::from_fn(|i| self.set.add(&a[i], &b[i]))
     }
 
     fn neg(&self, a: &Self::Element) -> Self::Element {
@@ -109,7 +111,7 @@ mod tests {
 
     use malachite::Rational;
 
-    use crate::field::{Group, PartiallyOrderedSet, Set, real::R};
+    use crate::field::{Group, Monoid, PartiallyOrderedSet, Set, real::R};
 
     fn pair(a: i64, b: i64) -> [Rational; 2] {
         [Rational::from(a), Rational::from(b)]

@@ -11,7 +11,7 @@ use malachite::{
 };
 
 use super::multivariate::SparsePoly;
-use crate::field::{Ring, complex::C};
+use crate::field::{Ring, Semiring, complex::C};
 
 /// A Gaussian rational `{$a + b i$}`, stored as `[a, b]`.
 pub type Gaussian = [Rational; 2];

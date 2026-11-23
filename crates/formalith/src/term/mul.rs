@@ -3,7 +3,7 @@
 use std::fmt::Display;
 
 use crate::{
-    field::{Group, Ring, Set},
+    field::{Group, Monoid, Ring, Semiring, Set},
     printer::{PrettyPrint, PrettyPrinter, Print, PrintOptions},
     term::Normalize,
 };

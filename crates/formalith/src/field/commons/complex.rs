@@ -19,8 +19,8 @@ use crate::term::fun::{
 use crate::{
     context::{Context, Symbol},
     field::{
-        Derivable, Field, Group, PartiallyOrderedSet, Ring, Set, SetParseExpression,
-        TryElementFrom, TryExprFrom,
+        Derivable, Field, Group, Monoid, PartiallyOrderedSet, Ring, Semiring, Set,
+        SetParseExpression, TryElementFrom, TryExprFrom,
         cartesian::CartesianPower,
         matrix::M,
         real::{
@@ -385,21 +385,13 @@ impl PartiallyOrderedSet for C<R<Rational>> {
     }
 }
 
-impl Group for C<R<Rational>> {
+impl Monoid for C<R<Rational>> {
     fn zero(&self) -> Self::Element {
         self.plane.zero()
     }
 
-    fn nth(&self, nth: i64) -> Self::Element {
-        [self.real().nth(nth), Rational::ZERO]
-    }
-
     fn add(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
         self.plane.add(a, b)
-    }
-
-    fn neg(&self, a: &Self::Element) -> Self::Element {
-        self.plane.neg(a)
     }
 
     fn to_i64(&self, a: &Self::Element) -> Option<i64> {
@@ -407,7 +399,17 @@ impl Group for C<R<Rational>> {
     }
 }
 
-impl Ring for C<R<Rational>> {
+impl Group for C<R<Rational>> {
+    fn nth(&self, nth: i64) -> Self::Element {
+        [self.real().nth(nth), Rational::ZERO]
+    }
+
+    fn neg(&self, a: &Self::Element) -> Self::Element {
+        self.plane.neg(a)
+    }
+}
+
+impl Semiring for C<R<Rational>> {
     fn one(&self) -> Self::Element {
         [Rational::ONE, Rational::ZERO]
     }
@@ -415,30 +417,6 @@ impl Ring for C<R<Rational>> {
     fn mul(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
         let ([a, b], [c, d]) = (a, b);
         [a * c - b * d, a * d + b * c]
-    }
-
-    fn try_inv(&self, a: &Self::Element) -> Option<Self::Element> {
-        if self.is_zero(a) {
-            return None;
-        }
-        let norm = &a[0] * &a[0] + &a[1] * &a[1];
-        Some([&a[0] / &norm, -&a[1] / norm])
-    }
-
-    fn as_fraction(&self, a: &Self::Element) -> (Self::Element, Self::Element) {
-        let den = Rational::from(Natural::lcm(
-            a[0].denominator_ref().clone(),
-            a[1].denominator_ref().clone(),
-        ));
-        ([&a[0] * &den, &a[1] * &den], [den, Rational::ZERO])
-    }
-
-    fn coefficient_gcd(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
-        // The rational gcd of the components divides both numbers
-        let gcd = [&a[1], &b[0], &b[1]]
-            .into_iter()
-            .fold(a[0].clone(), |gcd, x| R::gcd_rational(&gcd, x));
-        [gcd, Rational::ZERO]
     }
 
     fn normalize(&self, a: Term<Self>) -> Term<Self> {
@@ -587,6 +565,32 @@ impl Ring for C<R<Rational>> {
             }
         }
         a
+    }
+}
+
+impl Ring for C<R<Rational>> {
+    fn try_inv(&self, a: &Self::Element) -> Option<Self::Element> {
+        if self.is_zero(a) {
+            return None;
+        }
+        let norm = &a[0] * &a[0] + &a[1] * &a[1];
+        Some([&a[0] / &norm, -&a[1] / norm])
+    }
+
+    fn as_fraction(&self, a: &Self::Element) -> (Self::Element, Self::Element) {
+        let den = Rational::from(Natural::lcm(
+            a[0].denominator_ref().clone(),
+            a[1].denominator_ref().clone(),
+        ));
+        ([&a[0] * &den, &a[1] * &den], [den, Rational::ZERO])
+    }
+
+    fn coefficient_gcd(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
+        // The rational gcd of the components divides both numbers
+        let gcd = [&a[1], &b[0], &b[1]]
+            .into_iter()
+            .fold(a[0].clone(), |gcd, x| R::gcd_rational(&gcd, x));
+        [gcd, Rational::ZERO]
     }
 }
 

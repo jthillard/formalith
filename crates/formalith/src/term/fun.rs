@@ -10,7 +10,7 @@ use owo_colors::colors::Cyan;
 use crate::{
     context::{Context, Symbol},
     field::{
-        Derivable, Group, Ring, Set,
+        Derivable, Monoid, Ring, Set,
         matrix::{M, MatrixEntries, VectorSpaceElement},
     },
     iter,
@@ -100,7 +100,7 @@ impl<T: Set> CmpArgs for Term<T> {
     }
 }
 
-impl<T: Group> CmpArgs for Term<T> {
+impl<T: Monoid> CmpArgs for Term<T> {
     fn cmp_args(a: &[Self], b: &[Self]) -> Ordering {
         a.len()
             .cmp(&b.len())

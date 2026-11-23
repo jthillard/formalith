@@ -10,8 +10,8 @@ use std::{
 use crate::{
     context::{Context, Symbol},
     field::{
-        EuclideanRing, Group, PartiallyOrderedSet, Ring, Set, SetParseExpression, integer::Z,
-        modular::Zn, primes, real::R,
+        EuclideanRing, Group, Monoid, PartiallyOrderedSet, Ring, Semiring, Set, SetParseExpression,
+        integer::Z, modular::Zn, primes, real::R,
     },
     matrix::{Matrix, MatrixResult, eigen::real_roots},
     parser::{Parser, ParserError, lexer::TokenKind},
@@ -151,13 +151,9 @@ impl<T: PartiallyOrderedSet> PartiallyOrderedSet for M<T> {
     }
 }
 
-impl<T: Group> Group for M<T> {
+impl<T: Group> Monoid for M<T> {
     fn zero(&self) -> Self::Element {
         VectorSpaceElement::Scalar(self.scalar_sub_set.zero(), self.scalar_sub_set)
-    }
-
-    fn nth(&self, nth: i64) -> Self::Element {
-        VectorSpaceElement::Scalar(self.scalar_sub_set.nth(nth), self.scalar_sub_set)
     }
 
     fn add(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
@@ -177,6 +173,12 @@ impl<T: Group> Group for M<T> {
             }
             _ => None,
         }
+    }
+}
+
+impl<T: Group> Group for M<T> {
+    fn nth(&self, nth: i64) -> Self::Element {
+        VectorSpaceElement::Scalar(self.scalar_sub_set.nth(nth), self.scalar_sub_set)
     }
 
     fn neg(&self, a: &Self::Element) -> Self::Element {
@@ -755,10 +757,11 @@ impl MatrixEntries for TermSet<R<Rational>> {
     }
 }
 
-impl<T: Ring> Ring for M<T> {
+impl<T: Ring> Semiring for M<T> {
     fn one(&self) -> Self::Element {
         VectorSpaceElement::Scalar(self.scalar_sub_set.one(), self.scalar_sub_set)
     }
+
     fn one_like(&self, a: &Self::Element) -> Self::Element {
         match a {
             VectorSpaceElement::Vector(matrix) if matrix.width() == matrix.height() => {
@@ -772,6 +775,7 @@ impl<T: Ring> Ring for M<T> {
             _ => self.one(),
         }
     }
+
     fn mul(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
         self.try_mul(a, b)
             .unwrap_or_else(|| panic!("Can't multiply {a} and {b} !"))
@@ -797,35 +801,6 @@ impl<T: Ring> Ring for M<T> {
                 }))
             }
         }
-    }
-
-    fn try_inv(&self, a: &Self::Element) -> Option<Self::Element> {
-        match a {
-            VectorSpaceElement::Scalar(scalar, _) => self
-                .scalar_sub_set
-                .try_inv(scalar)
-                .map(|elem| VectorSpaceElement::Scalar(elem, self.scalar_sub_set)),
-            VectorSpaceElement::Vector(matrix) => matrix.inv().ok().map(VectorSpaceElement::Vector),
-        }
-    }
-
-    fn as_fraction(&self, a: &Self::Element) -> (Self::Element, Self::Element) {
-        let num = match &a {
-            VectorSpaceElement::Vector(matrix) => {
-                let mut res = matrix.clone();
-                res.data.iter_mut().for_each(|x| {
-                    *x = self
-                            .scalar_sub_set
-                            .normalize(Term::Value(Value::new(x.clone(), self.scalar_sub_set)))
-                            .as_value()
-                            .expect("Unified expression is not a value and should be converted inside the matrix ring")
-                            .value;
-                });
-                VectorSpaceElement::Vector(res)
-            }
-            VectorSpaceElement::Scalar(_, _) => a.clone(),
-        };
-        (num, self.one())
     }
 
     fn normalize(&self, mut a: Term<Self>) -> Term<Self> {
@@ -955,6 +930,37 @@ impl<T: Ring> Ring for M<T> {
             }),
             _ => a,
         }
+    }
+}
+
+impl<T: Ring> Ring for M<T> {
+    fn try_inv(&self, a: &Self::Element) -> Option<Self::Element> {
+        match a {
+            VectorSpaceElement::Scalar(scalar, _) => self
+                .scalar_sub_set
+                .try_inv(scalar)
+                .map(|elem| VectorSpaceElement::Scalar(elem, self.scalar_sub_set)),
+            VectorSpaceElement::Vector(matrix) => matrix.inv().ok().map(VectorSpaceElement::Vector),
+        }
+    }
+
+    fn as_fraction(&self, a: &Self::Element) -> (Self::Element, Self::Element) {
+        let num = match &a {
+            VectorSpaceElement::Vector(matrix) => {
+                let mut res = matrix.clone();
+                res.data.iter_mut().for_each(|x| {
+                    *x = self
+                            .scalar_sub_set
+                            .normalize(Term::Value(Value::new(x.clone(), self.scalar_sub_set)))
+                            .as_value()
+                            .expect("Unified expression is not a value and should be converted inside the matrix ring")
+                            .value;
+                });
+                VectorSpaceElement::Vector(res)
+            }
+            VectorSpaceElement::Scalar(_, _) => a.clone(),
+        };
+        (num, self.one())
     }
 }
 

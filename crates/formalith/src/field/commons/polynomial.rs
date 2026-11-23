@@ -8,8 +8,8 @@ use crate::term::fun::{eval_algebra_builtin, eval_rewrite_builtin, natural_const
 use crate::{
     context::{Context, Symbol},
     field::{
-        EuclideanRing, Group, PartiallyOrderedSet, Ring, Set, SetParseExpression, integer::Z,
-        matrix::M,
+        EuclideanRing, Group, Monoid, PartiallyOrderedSet, Ring, Semiring, Set, SetParseExpression,
+        integer::Z, matrix::M,
     },
     parser::{Parser, lexer::TokenKind},
     polynom::MultivariatePolynomial,
@@ -228,7 +228,7 @@ impl<K: Ring> PartiallyOrderedSet for Poly<K> {
     }
 }
 
-impl<K: Ring> Group for Poly<K> {
+impl<K: Ring> Monoid for Poly<K> {
     fn zero(&self) -> Self::Element {
         self.constant(self.coefficients.zero())
     }
@@ -237,12 +237,18 @@ impl<K: Ring> Group for Poly<K> {
         a.is_zero()
     }
 
-    fn nth(&self, nth: i64) -> Self::Element {
-        self.constant(self.coefficients.nth(nth))
-    }
-
     fn add(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
         Self::normalized(a + b)
+    }
+
+    fn to_i64(&self, a: &Self::Element) -> Option<i64> {
+        self.coefficients.to_i64(&self.as_constant(a)?)
+    }
+}
+
+impl<K: Ring> Group for Poly<K> {
+    fn nth(&self, nth: i64) -> Self::Element {
+        self.constant(self.coefficients.nth(nth))
     }
 
     fn neg(&self, a: &Self::Element) -> Self::Element {
@@ -252,13 +258,9 @@ impl<K: Ring> Group for Poly<K> {
     fn sub(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
         Self::normalized(a - b)
     }
-
-    fn to_i64(&self, a: &Self::Element) -> Option<i64> {
-        self.coefficients.to_i64(&self.as_constant(a)?)
-    }
 }
 
-impl<K: Ring> Ring for Poly<K> {
+impl<K: Ring> Semiring for Poly<K> {
     fn one(&self) -> Self::Element {
         self.constant(self.coefficients.one())
     }
@@ -269,12 +271,6 @@ impl<K: Ring> Ring for Poly<K> {
 
     fn mul(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
         Self::normalized(a * b)
-    }
-
-    /// Only constants with an invertible coefficient are invertible.
-    fn try_inv(&self, a: &Self::Element) -> Option<Self::Element> {
-        let c = self.as_constant(a)?;
-        Some(self.constant(self.coefficients.try_inv(&c)?))
     }
 
     fn normalize(&self, a: Term<Self>) -> Term<Self> {
@@ -305,6 +301,14 @@ impl<K: Ring> Ring for Poly<K> {
             return Term::expand_sum_power(add, n, |n| self.constant(self.integer(&n)));
         }
         a
+    }
+}
+
+impl<K: Ring> Ring for Poly<K> {
+    /// Only constants with an invertible coefficient are invertible.
+    fn try_inv(&self, a: &Self::Element) -> Option<Self::Element> {
+        let c = self.as_constant(a)?;
+        Some(self.constant(self.coefficients.try_inv(&c)?))
     }
 }
 

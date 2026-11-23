@@ -14,7 +14,10 @@ use crate::term::fun::{
 };
 use crate::{
     context::{Context, Symbol},
-    field::{Group, PartiallyOrderedSet, Ring, Set, SetParseExpression, integer::Z, matrix::M},
+    field::{
+        Group, Monoid, PartiallyOrderedSet, Ring, Semiring, Set, SetParseExpression, integer::Z,
+        matrix::M,
+    },
     parser::Parser,
     polynom::factor::modular::{factor_with_multiplicities, is_prime},
     printer::{PrettyPrinter, PrintOptions},
@@ -199,18 +202,20 @@ impl PartiallyOrderedSet for Zn {
     }
 }
 
-impl Group for Zn {
+impl Monoid for Zn {
     fn zero(&self) -> Self::Element {
         0
     }
 
-    fn nth(&self, nth: i64) -> Self::Element {
-        u64::try_from(i128::from(nth).rem_euclid(i128::from(self.modulus)))
-            .expect("Reduced integer fits in u64")
-    }
-
     fn add(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
         u64::try_from((u128::from(*a) + u128::from(*b)) % u128::from(self.modulus))
+            .expect("Reduced integer fits in u64")
+    }
+}
+
+impl Group for Zn {
+    fn nth(&self, nth: i64) -> Self::Element {
+        u64::try_from(i128::from(nth).rem_euclid(i128::from(self.modulus)))
             .expect("Reduced integer fits in u64")
     }
 
@@ -219,7 +224,7 @@ impl Group for Zn {
     }
 }
 
-impl Ring for Zn {
+impl Semiring for Zn {
     fn one(&self) -> Self::Element {
         1
     }
@@ -227,21 +232,6 @@ impl Ring for Zn {
     fn mul(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
         u64::try_from((u128::from(*a) * u128::from(*b)) % u128::from(self.modulus))
             .expect("Reduced integer fits in u64")
-    }
-
-    /// Inverse using the extended Euclidean algorithm, it exists when `a` and `n` are coprime.
-    fn try_inv(&self, a: &Self::Element) -> Option<Self::Element> {
-        let (mut r0, mut r1) = (i128::from(self.modulus), i128::from(*a));
-        let (mut s0, mut s1) = (0i128, 1i128);
-        while r1 != 0 {
-            let q = r0 / r1;
-            (r0, r1) = (r1, r0 - q * r1);
-            (s0, s1) = (s1, s0 - q * s1);
-        }
-        (r0 == 1).then(|| {
-            u64::try_from(s0.rem_euclid(i128::from(self.modulus)))
-                .expect("Reduced integer fits in u64")
-        })
     }
 
     fn normalize(&self, a: Term<Self>) -> Term<Self> {
@@ -294,6 +284,23 @@ impl Ring for Zn {
             return Term::expand_sum_power(add, n, |n| self.reduce(&n));
         }
         a
+    }
+}
+
+impl Ring for Zn {
+    /// Inverse using the extended Euclidean algorithm, it exists when `a` and `n` are coprime.
+    fn try_inv(&self, a: &Self::Element) -> Option<Self::Element> {
+        let (mut r0, mut r1) = (i128::from(self.modulus), i128::from(*a));
+        let (mut s0, mut s1) = (0i128, 1i128);
+        while r1 != 0 {
+            let q = r0 / r1;
+            (r0, r1) = (r1, r0 - q * r1);
+            (s0, s1) = (s1, s0 - q * s1);
+        }
+        (r0 == 1).then(|| {
+            u64::try_from(s0.rem_euclid(i128::from(self.modulus)))
+                .expect("Reduced integer fits in u64")
+        })
     }
 }
 

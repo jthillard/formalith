@@ -15,7 +15,7 @@ use crate::{
     combinatorics::{Combinatorics, CompositionIterator},
     context::{Context, Symbol},
     field::{
-        Group, PartiallyOrderedSet, Ring, Set, TryElementFrom,
+        Group, Monoid, PartiallyOrderedSet, Ring, Semiring, Set, TryElementFrom,
         matrix::{M, VectorSpaceElement},
     },
     iter,
@@ -95,7 +95,7 @@ impl<T: PartiallyOrderedSet> std::cmp::PartialOrd for Term<T> {
     }
 }
 
-impl<T: Group> Term<T> {
+impl<T: Monoid> Term<T> {
     /// Check if the expression is strictly positive
     pub fn is_strictly_positive(&self) -> bool {
         matches!(
@@ -235,13 +235,15 @@ impl<T: Set> Term<T> {
     }
 }
 impl<T: Group> Term<T> {
-    /// Create a zero constant expression
-    pub fn zero(set: T) -> Self {
-        Self::Value(Value::new(set.zero(), set))
-    }
     /// Create the constant `n * 1`
     pub fn nth(n: i64, set: T) -> Self {
         Self::Value(Value::new(set.nth(n), set))
+    }
+}
+impl<T: Monoid> Term<T> {
+    /// Create a zero constant expression
+    pub fn zero(set: T) -> Self {
+        Self::Value(Value::new(set.zero(), set))
     }
     /// Check if the term is zero
     /// ```
@@ -257,7 +259,7 @@ impl<T: Group> Term<T> {
     }
 }
 
-impl<T: Group> Term<T> {
+impl<T: Monoid> Term<T> {
     /// Compare two terms
     #[allow(clippy::should_implement_trait)]
     pub fn cmp(&self, other: &Self) -> std::cmp::Ordering {
@@ -416,7 +418,7 @@ trait MergeFactors {
     fn merge_factors(&mut self, other: &Self) -> bool;
 }
 
-impl<T: Group> Term<T> {
+impl<T: Monoid> Term<T> {
     /// Mark a merged constant as approximate if one of the merged terms was (see [`flags::APPROXIMATE`]).
     fn propagate_approximation(&mut self, approximate: bool) {
         if approximate && matches!(self, Self::Value(_) | Self::Mul(_)) {
@@ -510,7 +512,7 @@ impl<T: Set> MergeTerms for Term<T> {
     }
 }
 
-impl<T: Group> MergeTerms for Term<T> {
+impl<T: Monoid> MergeTerms for Term<T> {
     default fn merge_terms(&mut self, other: &Self) -> bool {
         if matches!(self, Self::Fun(_)) && self == other {
             // Merge f(x) + f(x)
@@ -621,7 +623,7 @@ impl<T: Set> MergeFactors for Term<T> {
     }
 }
 
-impl<T: Ring> Term<T> {
+impl<T: Semiring> Term<T> {
     fn merge_factors_in_ring(&mut self, other: &Self) -> bool {
         match (self.borrow_mut(), other) {
             (
@@ -668,12 +670,12 @@ impl<T: Ring> Term<T> {
     }
 }
 
-impl<T: Ring> MergeFactors for Term<T> {
+impl<T: Semiring> MergeFactors for Term<T> {
     default fn merge_factors(&mut self, other: &Self) -> bool {
         self.merge_factors_in_ring(other)
     }
 }
-impl<T: Ring<ExponantSet: Ring>> MergeFactors for Term<T> {
+impl<T: Semiring<ExponantSet: Ring>> MergeFactors for Term<T> {
     fn merge_factors(&mut self, other: &Self) -> bool {
         if self.merge_factors_in_ring(other) {
             true
@@ -1042,24 +1044,25 @@ impl<T: Ring> Term<T> {
         terms
     }
 }
+// Without inverses, expansions can't go through fractions: terms are only normalized
 impl<T: Set> Expand for Term<T> {
     default fn expand(&self) -> Self {
-        todo!()
+        self.normalize()
     }
     default fn expand_without_norm(&self) -> Self {
-        todo!()
+        self.clone()
     }
 }
+// Without addition nor product, nothing can be merged: only function arguments are normalized
 impl<T: Set> Normalize for Term<T> {
     default fn normalize(&self) -> Self {
         match self {
-            // Atoms are already normalized
-            Self::Value(_) | Self::Symbol(_) => self.clone(),
-            _ => todo!(),
+            Self::Fun(fun) => (**fun).normalize(),
+            _ => self.clone(),
         }
     }
 }
-impl<T: Ring> Term<T> {
+impl<T: Semiring> Term<T> {
     fn normalize_in_ring(&self) -> Self {
         let mut res = match self {
             Self::Value(_) | Self::Symbol(_) => self.clone(),
@@ -1233,7 +1236,7 @@ impl<T: Ring> Term<T> {
         res
     }
 }
-impl<T: Ring> Term<T> {
+impl<T: Semiring> Term<T> {
     /// The product of zero with `factors`: zero, or `undefined` when a factor is infinite, `{$0 oo$}`.
     fn zero_times<'a>(set: T, mut factors: impl Iterator<Item = &'a Self>) -> Self {
         if factors.any(|f| {
@@ -1246,7 +1249,7 @@ impl<T: Ring> Term<T> {
         }
     }
 }
-impl<T: Ring<ExponantSet: Ring>> Term<T> {
+impl<T: Semiring<ExponantSet: Ring>> Term<T> {
     fn normalize_in_ring_with_ring_exponant(&self) -> Self {
         let normalized = self.normalize_in_ring();
         if let Self::Pow(pow) = &normalized {
@@ -1271,13 +1274,13 @@ impl<T: Ring<ExponantSet: Ring>> Term<T> {
     }
 }
 
-impl<T: Ring> Normalize for Term<T> {
+impl<T: Semiring> Normalize for Term<T> {
     default fn normalize(&self) -> Self {
         self.normalize_in_ring()
     }
 }
 
-impl<T: Ring<ExponantSet: Ring>> Normalize for Term<T> {
+impl<T: Semiring<ExponantSet: Ring>> Normalize for Term<T> {
     default fn normalize(&self) -> Self {
         self.normalize_in_ring_with_ring_exponant()
     }
@@ -1450,6 +1453,9 @@ impl<T: Ring> Term<T> {
         debug_assert!(!self.needs_normalization());
         Self::one(self.get_set()) / self
     }
+}
+
+impl<T: Semiring> Term<T> {
     /// Return the constant 1
     pub fn one(set: T) -> Self {
         Self::Value(Value::new(set.one(), set))

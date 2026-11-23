@@ -119,32 +119,62 @@ pub trait PartiallyOrderedSet: Set {
     }
 }
 
-/// A group is a set and a binary operation `+` and :
-/// - `+` is associative
+/// A commutative monoid is a set and a binary operation `+` and :
+/// - `+` is associative and commutative
 /// - `+` has an identity element `zero`
-/// - Every element has an inverse element
-pub trait Group: PartiallyOrderedSet {
-    /// Get the zero (aka identity element for `+`) of this group
+///
+/// Unlike a [Group], elements may have no inverse, like natural integers.
+pub trait Monoid: PartiallyOrderedSet {
+    /// Get the zero (aka identity element for `+`) of this monoid
     fn zero(&self) -> Self::Element;
     /// Check if a number is zero.
     ///
-    /// Defaults to an equality check with [`Group::zero`], but it's not always a desired behaviour :
+    /// Defaults to an equality check with [`Monoid::zero`], but it's not always a desired behaviour :
     /// `10` in `Z/5Z` is zero (in its equivalence class)
     fn is_zero(&self, a: &Self::Element) -> bool {
         *a == self.zero()
     }
-    /// Get the nth element by computing `n * 1`
-    fn nth(&self, nth: i64) -> Self::Element;
-    /// Add two elements of this group.
+    /// Add two elements of this monoid.
     fn add(&self, a: &Self::Element, b: &Self::Element) -> Self::Element;
-    /// Add two elements of this group into the first one.
+    /// Add two elements of this monoid into the first one.
     fn add_assign(&self, a: &mut Self::Element, b: &Self::Element) {
         *a = self.add(a, b);
     }
-    /// Add two elements of this group, returning `None` if they can't be added (like matrices of different sizes).
+    /// Add two elements of this monoid, returning `None` if they can't be added (like matrices of different sizes).
     fn try_add(&self, a: &Self::Element, b: &Self::Element) -> Option<Self::Element> {
         Some(self.add(a, b))
     }
+
+    /// Checks if a is greater or equal than zero in this monoid.
+    fn is_positive(&self, a: &Self::Element) -> bool {
+        self.is_zero(a) || self.is_strictly_positive(a)
+    }
+
+    /// Checks if a is greater than zero in this monoid.
+    fn is_strictly_positive(&self, a: &Self::Element) -> bool {
+        matches!(self.partial_cmp(a, &self.zero()), Some(Ordering::Greater))
+    }
+
+    /// Checks if a is less or equal than zero in this monoid.
+    fn is_negative(&self, a: &Self::Element) -> bool {
+        self.is_zero(a) || self.is_strictly_negative(a)
+    }
+
+    /// Checks if a is less than zero in this monoid.
+    fn is_strictly_negative(&self, a: &Self::Element) -> bool {
+        matches!(self.partial_cmp(a, &self.zero()), Some(Ordering::Less))
+    }
+
+    /// Return `a` as a machine integer if it is an integer of this monoid, `None` otherwise or if it's unknown.
+    fn to_i64(&self, _a: &Self::Element) -> Option<i64> {
+        None
+    }
+}
+
+/// A group is a [Monoid] where every element has an inverse element for `+`.
+pub trait Group: Monoid {
+    /// Get the nth element by computing `n * 1`
+    fn nth(&self, nth: i64) -> Self::Element;
     /// Computes the symmetric (inverse) element of `a` in this group for `+`
     fn neg(&self, a: &Self::Element) -> Self::Element;
     /// Computes the symmetric (inverse) element of `a` in this group for `+` into `a`
@@ -158,31 +188,6 @@ pub trait Group: PartiallyOrderedSet {
     /// Subtract two elements of this group into the first one.
     fn sub_assign(&self, a: &mut Self::Element, b: &Self::Element) {
         *a = self.sub(a, b);
-    }
-
-    /// Checks if a is greater or equal than zero in this group.
-    fn is_positive(&self, a: &Self::Element) -> bool {
-        self.is_zero(a) || self.is_strictly_positive(a)
-    }
-
-    /// Checks if a is greater than zero in this group.
-    fn is_strictly_positive(&self, a: &Self::Element) -> bool {
-        matches!(self.partial_cmp(a, &self.zero()), Some(Ordering::Greater))
-    }
-
-    /// Checks if a is less or equal than zero in this group.
-    fn is_negative(&self, a: &Self::Element) -> bool {
-        self.is_zero(a) || self.is_strictly_negative(a)
-    }
-
-    /// Checks if a is less than zero in this group.
-    fn is_strictly_negative(&self, a: &Self::Element) -> bool {
-        matches!(self.partial_cmp(a, &self.zero()), Some(Ordering::Less))
-    }
-
-    /// Return `a` as a machine integer if it is an integer of this group, `None` otherwise or if it's unknown.
-    fn to_i64(&self, _a: &Self::Element) -> Option<i64> {
-        None
     }
 }
 
@@ -214,36 +219,58 @@ impl<T: Set, From: Set> TryElementFrom<From> for T {
     }
 }
 
-/// A ring is an abelian (commutative) [Group] with a binary operation `*` and :
+/// A semiring is a commutative [Monoid] with a binary operation `*` and :
 /// - `*` is associative
 /// - `*` has an identity element `one`
 /// - `*` is distributive over `+`
-pub trait Ring: Group {
-    /// Get the one (aka identity element for `*`) of this group
+/// - `zero` is absorbing for `*`
+///
+/// Unlike a [Ring], elements may have no additive inverse, like natural integers.
+pub trait Semiring: Monoid {
+    /// Get the one (aka identity element for `*`) of this semiring
     fn one(&self) -> Self::Element;
     /// Check if a number is one.
     ///
-    /// Defaults to an equality check with [`Ring::one`], but it's not always a desired behaviour :
+    /// Defaults to an equality check with [`Semiring::one`], but it's not always a desired behaviour :
     /// `11`in `Z/5Z` is one (in its equivalence class)
     fn is_one(&self, a: &Self::Element) -> bool {
         *a == self.one()
     }
     /// The one of the same shape as `a`, like the identity matrix of its size: `{$a^0$}`.
     ///
-    /// Defaults to [`Ring::one`].
+    /// Defaults to [`Semiring::one`].
     fn one_like(&self, _a: &Self::Element) -> Self::Element {
         self.one()
     }
-    /// Multiply two elements of this ring
+    /// Multiply two elements of this semiring
     fn mul(&self, a: &Self::Element, b: &Self::Element) -> Self::Element;
-    /// Multiply two elements of this ring, returning `None` if they can't be multiplied (like matrices of incompatible sizes).
+    /// Multiply two elements of this semiring, returning `None` if they can't be multiplied (like matrices of incompatible sizes).
     fn try_mul(&self, a: &Self::Element, b: &Self::Element) -> Option<Self::Element> {
         Some(self.mul(a, b))
     }
-    /// Multiply two elements of this ring into a
+    /// Multiply two elements of this semiring into a
     fn mul_assign(&self, a: &mut Self::Element, b: &Self::Element) {
         *a = self.mul(a, b);
     }
+
+    /// Normalize a mathematical expression using rules specific to this set. Check [`real::R::normalize`]
+    fn normalize(&self, a: Term<Self>) -> Term<Self> {
+        a
+    }
+
+    /// Expand a mathematical expression using rules specific to this set. Check [`M::expand`]
+    fn expand(&self, a: Term<Self>) -> Term<Self> {
+        a
+    }
+
+    /// Simplify a mathematical expression using rules specific to this set. Check [`M::simplify`]
+    fn simplify(&self, a: Term<Self>) -> Term<Self> {
+        a
+    }
+}
+
+/// A ring is an abelian (commutative) [Group] and a [Semiring].
+pub trait Ring: Group + Semiring {
     /// Try computing the inverse element of a, returning `None` if it doesn't exist.
     fn try_inv(&self, a: &Self::Element) -> Option<Self::Element>;
     /// Compute `{$"base"^"exponant"$}` by squaring, inverting `base` for negative exponants. Returns `None` when
@@ -278,21 +305,6 @@ pub trait Ring: Group {
     /// Defaults to one, meaning there is nothing to cancel.
     fn coefficient_gcd(&self, _a: &Self::Element, _b: &Self::Element) -> Self::Element {
         self.one()
-    }
-
-    /// Normalize a mathematical expression using rules specific to this group. Check [`real::R::normalize`]
-    fn normalize(&self, a: Term<Self>) -> Term<Self> {
-        a
-    }
-
-    /// Expand a mathematical expression using rules specific to this group. Check [`M::expand`]
-    fn expand(&self, a: Term<Self>) -> Term<Self> {
-        a
-    }
-
-    /// Simplify a mathematical expression using rules specific to this group. Check [`M::simplify`]
-    fn simplify(&self, a: Term<Self>) -> Term<Self> {
-        a
     }
 }
 

@@ -77,11 +77,6 @@ Ideas and known gaps, roughly by area. `AGENTS.md` describes what exists; this f
   `C`.
 - `simplify`, `expand` and `diff` of matrix literals don't parse in `M` (`simplify([[x, 1], [0, x]])`).
 
-## Other sets
-
-- `N` has no arithmetic and its normalization is `todo!()`: `integrate(x, x)` in `N` panics (caught by sessions)
-  instead of returning an error.
-
 ## GUI
 
 - Remarkable points (roots, extrema) on WebGL2, which has no compute shaders.
