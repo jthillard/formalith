@@ -8,8 +8,11 @@ use std::fmt::{Debug, Display};
 use std::iter::Peekable;
 use std::ops::Range;
 
+use malachite::Integer;
+
 use crate::context::{Context, Symbol};
 use crate::field::{Group, Ring, Set, SetParseExpression, integer::Z};
+use crate::printer::{Print, PrintOptions};
 use crate::term::{Fun, Mul, Normalize, SymbolTerm, Term, Value, flags::Flags, relation::Relation};
 
 use environment::Environment;
@@ -172,8 +175,8 @@ impl Parser<'_> {
         }
     }
     /// Whether the current token starts an implicit product with the number literal just before it, like `2x` or
-    /// `3(x + 1)`, or with the closing parenthesis just before it, like `(x + 1)(x - 1)`. A space (`5 x`) or an
-    /// exponent-like identifier (`1e3`) is not a product.
+    /// `3(x + 1)`, or with the closing parenthesis just before it, like `(x + 1)(x - 1)`. A space (`5 x`) is not a
+    /// product (`1e3` is a single literal).
     fn implicit_product(&self) -> bool {
         if !self.adjacent {
             return false;
@@ -181,13 +184,7 @@ impl Parser<'_> {
         match self.prev_token.kind {
             TokenKind::Literal {
                 kind: LiteralTokenKind::Int | LiteralTokenKind::Float,
-            } => match &self.token.kind {
-                TokenKind::OpenParen => true,
-                TokenKind::Ident(name) => !name
-                    .strip_prefix(['e', 'E'])
-                    .is_some_and(|rest| rest.starts_with(|c: char| c.is_ascii_digit())),
-                _ => false,
-            },
+            } => matches!(self.token.kind, TokenKind::OpenParen | TokenKind::Ident(_)),
             TokenKind::CloseParen => self.token.kind == TokenKind::OpenParen,
             _ => false,
         }
@@ -629,6 +626,37 @@ impl<E: Set> ParseBinary<E> for Parser<'_> {
     }
 }
 
+/// Rejects exponents that mean nothing in a set, like `x^(1/2)` in `Z/n` or `R[x]`, whose exponents are integers.
+trait CheckExponent<E: Set> {
+    fn check_exponent(exponent: &Term<E::ExponantSet>) -> Result<(), ParserError>;
+}
+
+impl<E: Set> CheckExponent<E> for Parser<'_> {
+    default fn check_exponent(_: &Term<E::ExponantSet>) -> Result<(), ParserError> {
+        Ok(())
+    }
+}
+
+impl<E: Ring<ExponantSet = Z<Integer>>> CheckExponent<E> for Parser<'_> {
+    default fn check_exponent(exponent: &Term<Z<Integer>>) -> Result<(), ParserError> {
+        if exponent.normalize().as_fraction(false).1.is_one() {
+            Ok(())
+        } else {
+            Err(ParserError::new(format!(
+                "the exponent {} isn't an integer",
+                exponent.with_options(PrintOptions::plain())
+            )))
+        }
+    }
+}
+
+// In `Z`, exponents are elements of the set itself, where `1/2` is a term like any other
+impl CheckExponent<Z<Integer>> for Parser<'_> {
+    fn check_exponent(_: &Term<Z<Integer>>) -> Result<(), ParserError> {
+        Ok(())
+    }
+}
+
 impl<E: Ring> ParseBinary<E> for Parser<'_> {
     fn parse_binary_expr(
         &mut self,
@@ -646,6 +674,7 @@ impl<E: Ring> ParseBinary<E> for Parser<'_> {
                 op.get_priority() - 1,
                 set.get_exponant_set(),
             )? {
+                <Self as CheckExponent<E>>::check_exponent(&right)?;
                 return Ok((current.pow(&right), true));
             }
         } else if let Some(right) =

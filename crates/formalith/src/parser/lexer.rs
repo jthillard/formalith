@@ -194,19 +194,44 @@ impl Lexer<'_> {
         while self.peek_char().is_ascii_digit() {
             self.chars.next();
         }
+        let mut float = false;
         if self.peek_char() == '.' {
+            float = true;
             self.chars.next();
             while self.peek_char().is_ascii_digit() {
                 self.chars.next();
             }
-            TokenKind::Literal {
-                kind: LiteralTokenKind::Float,
-            }
-        } else {
-            TokenKind::Literal {
-                kind: LiteralTokenKind::Int,
-            }
         }
+        if self.consume_exponent() {
+            float = true;
+        }
+        TokenKind::Literal {
+            kind: if float {
+                LiteralTokenKind::Float
+            } else {
+                LiteralTokenKind::Int
+            },
+        }
+    }
+    /// Consume an exponent `e-20` / `E+3` / `e3` after a number, only when digits follow it, so `2e` and `2ex`
+    /// stay products with an identifier.
+    fn consume_exponent(&mut self) -> bool {
+        let mut ahead = self.chars.clone();
+        if !matches!(ahead.next(), Some('e' | 'E')) {
+            return false;
+        }
+        let mut next = ahead.next();
+        if matches!(next, Some('+' | '-')) {
+            next = ahead.next();
+        }
+        if !next.is_some_and(|c| c.is_ascii_digit()) {
+            return false;
+        }
+        while ahead.clone().next().is_some_and(|c| c.is_ascii_digit()) {
+            ahead.next();
+        }
+        self.chars = ahead;
+        true
     }
     fn consume_ident(&mut self) -> TokenKind {
         while self.peek_char().is_ascii_alphanumeric() || self.peek_char() == '_' {
@@ -316,6 +341,25 @@ mod tests {
         assert_eq!(kinds(".5"), vec![TokenKind::Unknown, INT]);
         // Only one dot per number
         assert_eq!(kinds("1.2.3"), vec![FLOAT, TokenKind::Unknown, INT]);
+        // Scientific notation
+        assert_eq!(kinds("1e-20"), vec![FLOAT]);
+        assert_eq!(kinds("1.5E+3"), vec![FLOAT]);
+        assert_eq!(
+            kinds("2e3x"),
+            vec![FLOAT, TokenKind::Ident("x".to_string())]
+        );
+        assert_eq!(lengths("1e-20 2"), vec![5, 1, 1]);
+        // Without digits, the exponent is an identifier
+        assert_eq!(kinds("2e"), vec![INT, TokenKind::Ident("e".to_string())]);
+        assert_eq!(
+            kinds("2e-x"),
+            vec![
+                INT,
+                TokenKind::Ident("e".to_string()),
+                TokenKind::Minus,
+                TokenKind::Ident("x".to_string())
+            ]
+        );
     }
 
     #[test]

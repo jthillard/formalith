@@ -1,11 +1,13 @@
 use formalith::{
     field::{
         Set,
+        integer::Z,
         matrix::{M, VectorSpaceElement},
+        modular::Zn,
         real::R,
     },
     matrix::Matrix,
-    parse, try_parse,
+    parse, symbol, try_parse,
 };
 use malachite::Rational;
 
@@ -104,10 +106,39 @@ fn test_parse_nested_det() {
 #[test]
 fn test_parse_trailing_input() {
     for input in [
-        "5 x", "5)", "5 5", "x y", "5 $ 3", "x,y", "1..2", "1e3", "abs 3", "2 (x)",
+        "5 x", "5)", "5 5", "x y", "5 $ 3", "x,y", "1..2", "abs 3", "2 (x)",
     ] {
         assert!(try_parse!(input, R).is_err(), "{input:?}");
     }
+}
+
+#[test]
+fn test_parse_scientific_notation() {
+    for (input, expected) in [
+        ("1e-20", "1/10^20"),
+        ("1e3", "1000"),
+        ("1.5E+3", "1500"),
+        ("2.5e-1x", "x/4"),
+        ("2e", "2*e"),
+        ("2e-x", "2*e - x"),
+    ] {
+        assert_eq!(parse!(input, R), parse!(expected, R), "{input:?}");
+    }
+    assert_eq!(parse!("1e3", Z), parse!("1000", Z));
+    assert!(try_parse!("1e-3", Z).is_err());
+}
+
+#[test]
+fn test_parse_integer_exponents() {
+    let z7 = Zn::new(7);
+    for input in ["x^(1/2)", "x^(n/2)", "2^(1/3)"] {
+        assert!(try_parse!(input, z7).is_err(), "{input:?}");
+    }
+    assert_eq!(parse!("x^(4/2)", z7), parse!("x^2", z7));
+    assert!(try_parse!("x^-1", z7).is_ok());
+    assert!(try_parse!("x^(1/2)", R.get_polynomial_ring(symbol!("x"))).is_err());
+    // Exponents of `Z` are terms of `Z`, where `1/2` is allowed
+    assert!(try_parse!("x^(1/2)", Z).is_ok());
 }
 
 #[test]

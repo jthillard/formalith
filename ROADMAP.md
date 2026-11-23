@@ -25,11 +25,6 @@ Ideas and known gaps, roughly by area. `AGENTS.md` describes what exists; this f
   - printing `4^k` rather than `2^(2k)`.
 - `exp(a ln u)` with a symbolic `a` is slow in the series engine: `series((1 + x)^a, x, 0, 8)` doesn't finish.
 
-## Parsing
-
-- `1e-20` silently evaluates to `e - 20`: reject it or read it as a decimal.
-- `x^(1/2)` is accepted in `Z/n`, where rational exponents mean nothing; it should be an error.
-
 ## Approximation
 
 - `approx` underflows to `0.0` below about `1e-1385` (`approx(1/factorial(700))`): the fixed-point precision
