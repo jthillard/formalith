@@ -155,11 +155,8 @@ fn limits_of_powers_of_negative_constants() {
 
 #[test]
 fn limits_left_unevaluated() {
-    // Unbounded near the zeros of `sin`, or several independent oscillations
-    assert_eq!(
-        lim("lim(1/(x*sin(x)), x, oo)"),
-        "lim((x^-1)*(sin(x)^-1), x, oo)"
-    );
+    // Tends to `oo` on its domain, between poles where it isn't defined, or several independent oscillations
+    assert_eq!(lim("lim(x/sin(x)^2, x, oo)"), "lim(x*(sin(x)^-2), x, oo)");
     assert_eq!(
         lim("lim(sin(x)+sin(x^2), x, oo)"),
         "lim(sin(x^2)+sin(x), x, oo)"
@@ -173,12 +170,12 @@ fn limits_left_unevaluated() {
 #[test]
 fn print_limits() {
     assert_eq!(
-        typst(&parse!("lim(1/(x*sin(x)), x, oo)", R)),
-        "lim_(x -> oo) (frac(1, x sin(x)))"
+        typst(&parse!("lim(x/sin(x)^2, x, oo)", R)),
+        "lim_(x -> oo) (frac(x, sin(x)^2))"
     );
     assert_eq!(
-        typst(&parse!("lim(1/(x*sin(1/x)), x, 0, -1)", R)),
-        "lim_(x -> 0^-) (frac(1, x sin(frac(1, x))))"
+        typst(&parse!("lim(1/(x^2*sin(1/x)^2), x, 0, -1)", R)),
+        "lim_(x -> 0^-) (frac(1, x^2 sin(frac(1, x))^2))"
     );
     assert_eq!(
         typst(&parse!("lim(1/x, x, 0, 2)", R)),
@@ -325,6 +322,31 @@ fn limits_with_factorials() {
     assert_eq!(lim("lim(gamma(x+1/2)/(sqrt(x)*gamma(x)), x, oo)"), "1");
     assert_eq!(lim("lim(x*gamma(x), x, 0)"), "1");
     assert_eq!(lim("lim(gamma(x), x, 0)"), "undefined");
+}
+
+#[test]
+fn limits_of_gamma_at_minus_infinity() {
+    // Poles accumulate at `-oo`
+    assert_eq!(lim("lim(gamma(x), x, -oo)"), "undefined");
+    assert_eq!(lim("lim(gamma(x)^2, x, -oo)"), "undefined");
+    assert_eq!(lim("lim(gamma(x) + 1, x, -oo)"), "undefined");
+    assert_eq!(lim("lim(1/gamma(x), x, -oo)"), "undefined");
+    assert_eq!(lim("lim(gamma(x+1/2)/gamma(x), x, -oo)"), "undefined");
+    assert_eq!(lim("lim(gamma(1/x), x, 0, -1)"), "undefined");
+    // By the reflection formula
+    assert_eq!(lim("lim(gamma(x)*sin(pi*x), x, -oo)"), "0");
+    assert_eq!(lim("lim(factorial(x)*sin(pi*x), x, -oo)"), "0");
+    assert_eq!(lim("lim(gamma(x)/gamma(x+1), x, -oo)"), "0");
+    assert_eq!(lim("lim(x*gamma(x)/gamma(x+1), x, -oo)"), "1");
+    assert_eq!(lim("lim(gamma(x)*gamma(1-x)*sin(pi*x), x, -oo)"), "pi");
+}
+
+#[test]
+fn limits_with_accumulating_poles() {
+    assert_eq!(lim("lim(1/(x*sin(x)), x, oo)"), "undefined");
+    assert_eq!(lim("lim(tan(x), x, oo)"), "undefined");
+    assert_eq!(lim("lim(1/cos(x)^2, x, oo)"), "undefined");
+    assert_eq!(lim("lim(sin(x)/sin(x+1), x, oo)"), "undefined");
 }
 
 #[test]

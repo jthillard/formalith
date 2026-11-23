@@ -34,7 +34,8 @@ Ideas and known gaps, roughly by area. `AGENTS.md` describes what exists; this f
 
 ## Limits
 
-- `gamma(g)` with `g -> -oo`.
+- `polygamma(m, g)` with `g -> -oo` (reflection with derivatives of `cot`), and `gamma` at `-oo` nested in
+  internal limits.
 
 ## Integration
 

@@ -73,10 +73,18 @@ impl Gruntz {
     }
 
     /// `{$lim_(x -> +oo) f$}`, the entry point. Unlike [`Gruntz::limit_infinity`], used for the intermediate
-    /// limits, it supports oscillating `sin` and `cos`, and gives limits like `{$sign(a) oo$}` for a parameter `a`.
+    /// limits, it supports oscillating `sin` and `cos`, `{$Gamma(g)$}` with `{$g -> -oo$}` (see
+    /// [`Self::reflect_gamma`]), and gives limits like `{$sign(a) oo$}` for a parameter `a`.
     pub(super) fn limit(&mut self, f: &Expr) -> LimitResult<Expr> {
-        let f = self.remove_oscillations(f)?;
-        self.check_bounded(&f)?;
+        let f = self.reflect_gamma(f)?;
+        let f = self.remove_oscillations(&f)?;
+        if let Err(error) = self.check_bounded(&f) {
+            return Err(if self.accumulating_poles(&f) {
+                LimitError::Undefined
+            } else {
+                error
+            });
+        }
         let mut f = f;
         let res = loop {
             if !self.depends(&f) {
@@ -90,6 +98,98 @@ impl Gruntz {
             }
         };
         self.without_angles(&res).map(|res| res.normalize())
+    }
+
+    /// Rewrite each `{$Gamma(g)$}` with `{$g -> -oo$}` in `f` by the reflection formula
+    /// `{$Gamma(g) = pi / (sin(pi g) Gamma(1 - g))$}`, so that `{$Gamma(1 - g)$}` is rewritten by Stirling's
+    /// formula and `{$sin(pi g)$}` gets an angle.
+    fn reflect_gamma(&mut self, f: &Expr) -> LimitResult<Expr> {
+        if !self.depends(f) {
+            return Ok(f.clone());
+        }
+        Ok(match f {
+            Term::Pow(pow) => self.reflect_gamma(&pow.base)?.pow(&pow.exponant),
+            Term::Fun(_) if polygamma_args(f).is_some() => {
+                let (m, arg) = polygamma_args(f).ok_or(LimitError::Unsupported)?;
+                polygamma(m, self.reflect_gamma(arg)?)
+            }
+            Term::Fun(_) => {
+                let (ident, arg) = unary(f).ok_or(LimitError::Unsupported)?;
+                let arg = self.reflect_gamma(arg)?;
+                if ident == Context::GAMMA && self.limit_infinity(&arg)? == -infinity() {
+                    let pi = variable(Context::PI);
+                    let sin = fun(Context::SIN, &pi * &arg);
+                    return Ok(pi / (sin * fun(Context::GAMMA, one() - arg)));
+                }
+                fun(ident, arg)
+            }
+            _ => try_map_operands(f, |operand| self.reflect_gamma(operand))?,
+        })
+    }
+
+    /// Whether `f`, rejected by [`Self::check_bounded`], has poles accumulating at `{$+oo$}` around which it is
+    /// unbounded without tending to `{$plus.minus oo$}`, so that its limit doesn't exist: its denominator has a
+    /// factor `{$D^n$}`, `D` being `{$sin u$}` or `{$cos u$}` for `u` linear in a single angle `t`, and the rest
+    /// `A` of `f` doesn't vanish at the zeros `{$t_0$}` of `D` for large `x`. For an odd `n`, `f` changes sign
+    /// across each pole; for an even `n`, `A` must have a finite limit, so that `f` stays bounded between the
+    /// poles (`{$x / sin(x)^2 -> oo$}` on its domain).
+    fn accumulating_poles(&mut self, f: &Expr) -> bool {
+        let (num, den) = f.as_fraction(true);
+        let factors = match &den {
+            Term::Mul(mul) => mul.iter().cloned().collect(),
+            _ => vec![den.clone()],
+        };
+        factors.iter().any(|factor| {
+            let (base, n) = match factor {
+                Term::Pow(pow) => match pow.exponant.to_i64() {
+                    Some(n) if n > 0 => (&*pow.base, n),
+                    _ => return false,
+                },
+                _ => (factor, 1),
+            };
+            self.pole_of(&num, &den, base, n).unwrap_or(false)
+        })
+    }
+
+    /// Whether the factor `{$D^n$}` of the denominator `den` of `{$f = "num" / "den"$}` gives poles where `f` is
+    /// unbounded, see [`Self::accumulating_poles`]. `None` when it can't be decided.
+    fn pole_of(&mut self, num: &Expr, den: &Expr, d: &Expr, n: i64) -> Option<bool> {
+        let (ident @ (Context::SIN | Context::COS), u) = unary(d)? else {
+            return None;
+        };
+        let [t] = angles(u)[..] else {
+            return None;
+        };
+        if self.depends(u) {
+            return None;
+        }
+        // `{$u = k t + c$}`
+        let c = u.substitute(t, &zero())?;
+        let k = &u.substitute(t, &one())? - &c;
+        if has_angle(&c)
+            || has_angle(&k)
+            || k.is_zero()
+            || !(u - &(&k * &variable(t) + &c)).simplify().is_zero()
+        {
+            return None;
+        }
+        let root = if ident == Context::SIN {
+            zero()
+        } else {
+            variable(Context::PI) * half()
+        };
+        let t0 = (root - c) / k;
+        let rest = num * &(d.pow(&value(Rational::from(n))) / den);
+        self.check_bounded(&rest).ok()?;
+        let at_pole = rest.substitute(t, &t0)?;
+        if has_angle(&at_pole) {
+            return None;
+        }
+        let (c0, _) = self.leadterm(&at_pole).ok()?;
+        if self.is_zero(&c0) {
+            return None;
+        }
+        Some(n % 2 == 1 || !is_infinite(&self.limit_infinity(&rest).ok()?))
     }
 
     /// Replace the arguments `g` of `{$sin g$}` and `{$cos g$}` tending to `{$plus.minus oo$}` by angles.
@@ -402,7 +502,8 @@ impl Gruntz {
                 if ident == Context::GAMMA {
                     let limit = self.limit_infinity(&arg)?;
                     if limit == -infinity() {
-                        // Poles accumulate at `{$-oo$}`
+                        // Poles accumulate at `{$-oo$}`, only rewritten at the top level by
+                        // `Self::reflect_gamma`
                         return Err(LimitError::Unsupported);
                     }
                     if limit == infinity() {

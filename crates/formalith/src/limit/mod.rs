@@ -13,7 +13,9 @@
 //!
 //! `{$sin g$}` and `{$cos g$}` with `{$g -> plus.minus oo$}` oscillate: `g` is replaced by an angle `{$theta$}`, a
 //! constant for the algorithm, after checking that the expression stays bounded away from its singularities for
-//! every `{$theta$}`. A result depending on `{$theta$}` means that the limit doesn't exist. A limit whose sign
+//! every `{$theta$}`. A result depending on `{$theta$}` means that the limit doesn't exist, and so do poles of
+//! `{$1/sin theta$}` accumulating at infinity (`{$tan x$}` at `{$oo$}`). `{$Gamma(g)$}` with `{$g -> -oo$}` is
+//! rewritten by the reflection formula `{$Gamma(g) = pi / (sin(pi g) Gamma(1 - g))$}`. A limit whose sign
 //! depends on parameters is `{$sign(a) oo$}`.
 //!
 //! The same series give expansions `series(f, x, a, n)`, see [`Term::series`].
@@ -91,8 +93,8 @@ pub enum LimitError {
     Undefined,
     /// The expression contains something the algorithm can't handle, like `{$floor(x)$}` at `{$oo$}`.
     Unsupported,
-    /// The limit couldn't be determined, like `{$1/(x sin x)$}` at `{$oo$}` (unbounded near the zeros of `sin`),
-    /// or a too deep recursion.
+    /// The limit couldn't be determined, like `{$x / sin(x)^2$}` at `{$oo$}` (`{$oo$}` on its domain, which has
+    /// holes at the zeros of `sin`), or a too deep recursion.
     Unknown,
 }
 
