@@ -82,3 +82,86 @@ fn builtins_help() {
     assert!(run(&mut session, ":help gcd").0.contains("(in Z)"));
     assert!(matches!(session.run("help nope").output, Output::Error(_)));
 }
+
+/// A tiny deterministic generator for the random sessions.
+struct Lcg(u64);
+
+impl Lcg {
+    fn below(&mut self, n: usize) -> usize {
+        self.0 = self
+            .0
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1);
+        ((self.0 >> 33) % n as u64) as usize
+    }
+}
+
+/// Lines changing or using the state of a session.
+const LINES: [&str; 22] = [
+    "a := 3",
+    "a := 5",
+    "b := a + 1",
+    "f(x) := x^2 + a",
+    "g(x, y) := f(x) - y",
+    "assume(c > 0)",
+    "assume(c < 0)",
+    "assume(n integer)",
+    ":set R",
+    ":set Z/7",
+    ":set C",
+    ":set Z",
+    ":clear a",
+    ":clear f",
+    ":clear",
+    ":typst",
+    "f(2)",
+    "g(1, b)",
+    "abs(c)",
+    "sqrt(c^2)",
+    "1/0",
+    "x +",
+];
+
+/// Probes of the state: the set, the definitions and values using them.
+const PROBES: [&str; 7] = [":set", ":defs", "a", "b", "f(4)", "g(2, 3)", "sqrt(c^2)"];
+
+#[test]
+fn replayed_lines_restore_random_sessions() {
+    for seed in 0..60 {
+        let mut rng = Lcg(seed);
+        let mut session = Session::new();
+        let mut replayed = vec![];
+        let mut history = vec![];
+        for _ in 0..12 {
+            let line = LINES[rng.below(LINES.len())];
+            history.push(line);
+            if session.run(line).replay {
+                replayed.push(line);
+            }
+        }
+        let mut restored = Session::new();
+        for line in &replayed {
+            restored.run(line);
+        }
+        for probe in PROBES {
+            assert_eq!(
+                run(&mut restored, probe),
+                run(&mut session, probe),
+                "`{probe}` after {history:?}, replaying {replayed:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn panics_are_errors_and_the_session_goes_on() {
+    let mut session = Session::new();
+    assert_eq!(run(&mut session, "a := 2").1, true);
+    assert_eq!(run(&mut session, ":set N").1, true);
+    // `N` has no arithmetic, its normalization isn't implemented
+    let response = session.run("integrate(x, x)");
+    assert!(matches!(response.output, Output::Error(_)));
+    assert!(!response.replay);
+    assert_eq!(run(&mut session, ":set R").1, true);
+    assert_eq!(run(&mut session, "a + 1").0, "3");
+}
