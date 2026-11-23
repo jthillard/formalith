@@ -29,9 +29,9 @@ use super::{R, special::bernoulli};
 type Real = R<Rational>;
 
 /// Default number of significant digits of `approx`.
-pub(super) const DEFAULT_DIGITS: u64 = 15;
+pub(crate) const DEFAULT_DIGITS: u64 = 15;
 /// Maximum number of significant digits of `approx`.
-pub(super) const MAX_DIGITS: u64 = 10_000;
+pub(crate) const MAX_DIGITS: u64 = 10_000;
 /// Arguments of `exp` above this bound are not evaluated, the result being too large.
 const MAX_EXP_ARGUMENT: u64 = 100_000;
 /// Integer exponents above this bound are not evaluated.
@@ -1079,7 +1079,7 @@ fn decimal_digits(x: &Rational, digits: u64) -> (Natural, i64) {
 }
 
 /// Round `x` to `digits` significant digits.
-pub(super) fn round_significant(x: &Rational, digits: u64) -> Rational {
+pub(crate) fn round_significant(x: &Rational, digits: u64) -> Rational {
     if *x == 0 {
         return Rational::ZERO;
     }
@@ -1121,7 +1121,7 @@ pub(super) fn precision(x: &Rational) -> u64 {
 
 /// Print an approximated value as a decimal number, in scientific notation if it is very large or very small. Every
 /// digit of a decimal number is printed, other numbers are rounded to [`DEFAULT_DIGITS`] digits.
-pub(super) fn format_decimal(x: &Rational, typst: bool) -> String {
+pub(crate) fn format_decimal(x: &Rational, typst: bool) -> String {
     if *x == 0 {
         return "0.0".to_owned();
     }

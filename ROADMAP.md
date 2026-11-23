@@ -32,10 +32,6 @@ Ideas and known gaps, roughly by area. `AGENTS.md` describes what exists; this f
 - `gamma` and `polygamma` of very large arguments are slow (`approx(gamma(10^6 + 1/3))` takes minutes in a
   debug build).
 
-## Complex numbers
-
-- `approx`, `re` and `im` don't evaluate transcendental values in `C` (`approx(exp(1 + i))`, `re(exp(i))`).
-
 ## Limits
 
 - `gamma(g)` with `g -> -oo`.

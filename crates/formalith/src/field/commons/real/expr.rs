@@ -79,7 +79,15 @@ pub(crate) fn arg(u: &Expr, v: &Expr) -> Option<Expr> {
         }
     };
     let pi = variable(Context::PI);
-    let su = sign_of(u)?;
+    let Some(su) = sign_of(u) else {
+        // `{$arg(u + i v) = plus.minus pi/2 - atan(u/v)$}` for `{$v != 0$}`, whatever the sign of `u`
+        let side = match sign_of(v)? {
+            Ordering::Greater => 1,
+            Ordering::Less => -1,
+            Ordering::Equal => return None,
+        };
+        return Some(ratio(side, 2) * pi - fun(Context::ATAN, u / v));
+    };
     // `{$arg(u + i v) = atan(v/u)$}` for `{$u > 0$}`, whatever the sign of `v`
     if su == Ordering::Greater && !v.is_zero() {
         return Some(fun(Context::ATAN, v / u));

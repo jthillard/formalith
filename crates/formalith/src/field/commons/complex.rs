@@ -1,5 +1,6 @@
 //! The complex field `{$CC$}`.
 
+mod approx;
 mod parts;
 
 use std::cmp::Ordering;
@@ -25,6 +26,7 @@ use crate::{
         matrix::M,
         real::{
             R,
+            approx::format_decimal,
             expr::{self, Expr, variable},
         },
     },
@@ -123,6 +125,7 @@ impl C<R<Rational>> {
                     _ => value(self.conj(c)) * self.fun(Context::CONJ, rest),
                 })
             }
+            _ if parts::is_constant(arg) => parts::constant_part(ident, arg),
             // `{$overline(overline(z)) = z$}`
             Term::Fun(inner) if ident == Context::CONJ && inner.get_ident() == Context::CONJ => {
                 inner.get_arg::<Self>().cloned()
@@ -228,6 +231,63 @@ impl C<R<Rational>> {
         }
     }
 
+    /// Print `{$"re" + "im" i$}`, the parts being printed by `part`.
+    fn print_parts(
+        self,
+        elem: &[Rational; 2],
+        options: &PrintOptions,
+        f: &mut std::fmt::Formatter<'_>,
+        part: impl Fn(&Rational, &mut std::fmt::Formatter<'_>) -> std::fmt::Result,
+    ) -> std::fmt::Result {
+        let [re, im] = elem;
+        if *im == 0 {
+            return part(re, f);
+        }
+        if *re != 0 {
+            part(re, f)?;
+            write!(f, "{}", if *im < 0 { "-" } else { "+" })?;
+        } else if *im < 0 {
+            write!(f, "-")?;
+        }
+        let magnitude = im.abs();
+        if magnitude != 1 {
+            part(&magnitude, f)?;
+            write!(f, "{}", if options.typst { " " } else { "*" })?;
+        }
+        write!(f, "i")
+    }
+
+    /// Pretty print `{$"re" + "im" i$}`, the parts being printed by `part`.
+    fn pretty_print_parts(
+        elem: &[Rational; 2],
+        part: impl Fn(&Rational) -> PrettyPrinter,
+    ) -> PrettyPrinter {
+        let [re, im] = elem;
+        if *im == 0 {
+            return part(re);
+        }
+        let i = PrettyPrinter::from("i".to_string());
+        let magnitude = im.abs();
+        let imaginary = if magnitude == 1 {
+            i
+        } else {
+            let mut res = part(&magnitude);
+            res.concat("⋅", false, &i);
+            res
+        };
+        if *re != 0 {
+            let mut res = part(re);
+            res.concat(if *im < 0 { "-" } else { "+" }, true, &imaginary);
+            res
+        } else if *im < 0 {
+            let mut res = PrettyPrinter::from("-".to_string());
+            res.concat("", false, &imaginary);
+            res
+        } else {
+            imaginary
+        }
+    }
+
     /// Evaluate `{$e^(q i pi)$}` for a half-integer `q`, which is 1, `i`, -1 or `-i`.
     fn eval_exp(self, arg: &Term<Self>) -> Option<Term<Self>> {
         let Term::Mul(mul) = arg else { return None };
@@ -314,48 +374,27 @@ impl Set for C<R<Rational>> {
         options: &PrintOptions,
         f: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result {
-        let [re, im] = elem;
-        if *im == 0 {
-            return self.real().print(re, options, f);
-        }
-        if *re != 0 {
-            self.real().print(re, options, f)?;
-            write!(f, "{}", if *im < 0 { "-" } else { "+" })?;
-        } else if *im < 0 {
-            write!(f, "-")?;
-        }
-        let magnitude = im.abs();
-        if magnitude != 1 {
-            self.real().print(&magnitude, options, f)?;
-            write!(f, "{}", if options.typst { " " } else { "*" })?;
-        }
-        write!(f, "i")
+        self.print_parts(elem, options, f, |x, f| self.real().print(x, options, f))
     }
     fn pretty_print(&self, elem: &Self::Element, options: &PrintOptions) -> PrettyPrinter {
-        let [re, im] = elem;
-        if *im == 0 {
-            return self.real().pretty_print(re, options);
-        }
-        let i = PrettyPrinter::from("i".to_string());
-        let magnitude = im.abs();
-        let imaginary = if magnitude == 1 {
-            i
-        } else {
-            let mut res = self.real().pretty_print(&magnitude, options);
-            res.concat("⋅", false, &i);
-            res
-        };
-        if *re != 0 {
-            let mut res = self.real().pretty_print(re, options);
-            res.concat(if *im < 0 { "-" } else { "+" }, true, &imaginary);
-            res
-        } else if *im < 0 {
-            let mut res = PrettyPrinter::from("-".to_string());
-            res.concat("", false, &imaginary);
-            res
-        } else {
-            imaginary
-        }
+        Self::pretty_print_parts(elem, |x| self.real().pretty_print(x, options))
+    }
+    fn print_approximate(
+        &self,
+        elem: &Self::Element,
+        options: &PrintOptions,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        self.print_parts(elem, options, f, |x, f| {
+            f.write_str(&format_decimal(x, options.typst))
+        })
+    }
+    fn pretty_print_approximate(
+        &self,
+        elem: &Self::Element,
+        _options: &PrintOptions,
+    ) -> PrettyPrinter {
+        Self::pretty_print_parts(elem, |x| PrettyPrinter::from(format_decimal(x, false)))
     }
     fn element_eq(&self, a: &Self::Element, b: &Self::Element) -> bool {
         self.plane.element_eq(a, b)
@@ -451,6 +490,25 @@ impl Semiring for C<R<Rational>> {
                         let half = [Rational::from_signeds(1, 2), Rational::ZERO];
                         return Term::Value(Value::new(norm, *self))
                             .pow(&Term::Value(Value::new(half, *self)));
+                    }
+                    if let Some(res) = fun
+                        .get_arg::<Self>()
+                        .and_then(|arg| parts::constant_part(Context::ABS, arg))
+                    {
+                        return res;
+                    }
+                }
+                Context::LN => {
+                    if let Some(res) = fun.get_arg::<Self>().and_then(parts::principal_ln) {
+                        return res;
+                    }
+                }
+                Context::APPROX => {
+                    if let Some(res) = fun
+                        .get_args::<Self>()
+                        .and_then(|args| approx::eval_approx(args))
+                    {
+                        return res;
                     }
                 }
                 Context::SQRT => {
@@ -664,7 +722,7 @@ pub fn parts(f: &Term<Complex>, z: Symbol, a: Symbol, b: Symbol) -> Option<(Expr
 }
 
 /// The real and imaginary parts `{$(u, v)$}` of `{$f = u + i v$}`, every symbol of `f` being assumed real. `None`
-/// when a part can't be written, like `{$ln(i x)$}`.
+/// when a part can't be written, like `{$sqrt(i x)$}`.
 ///
 /// ```
 /// use formalith::{field::{complex::{C, real_parts}, real::R}, parse};

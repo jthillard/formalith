@@ -14,7 +14,7 @@ use crate::{
         Group, Semiring, TryExprFrom,
         real::{
             R,
-            expr::{Expr, Real, fun, one, size, value, variable, zero},
+            expr::{self, Expr, Real, fun, half, one, size, value, variable, zero},
             sign::{SignMode, sign},
         },
     },
@@ -28,7 +28,7 @@ type Complex = Term<C<R<Rational>>>;
 const MAX_EXPONANT: u64 = 16;
 
 /// The parts `{$(u, v)$}` of `{$f = u + i v$}`, assuming every symbol is real. `None` when a part can't be
-/// written, like `{$ln(i x)$}`.
+/// written, like `{$sqrt(i x)$}`.
 pub(super) fn split(f: &Complex) -> Option<(Expr, Expr)> {
     split_with(f, None)
 }
@@ -66,6 +66,41 @@ pub(super) fn split_with(
             split_fun(function.get_ident(), &parts)?
         }
     })
+}
+
+/// Whether `f` has no symbols other than builtin constants, so that its parts are those of [`split`] (in plain
+/// normalization, symbols aren't assumed real: `{$re(x)$}` stays unevaluated).
+pub(super) fn is_constant(f: &Complex) -> bool {
+    f.symbols().into_iter().all(Context::is_builtin_constant)
+}
+
+/// `{$re z$}`, `{$im z$}`, `{$overline(z)$}` or `{$|z|$}` for a constant `z`, computed from its parts (`{$|z|$}` only when
+/// `z` isn't real, since the real `abs` would come back here).
+pub(super) fn constant_part(ident: Symbol, z: &Complex) -> Option<Complex> {
+    if !is_constant(z) {
+        return None;
+    }
+    let (u, v) = split(z)?;
+    match ident {
+        Context::RE => join(&u, &zero()),
+        Context::IM => join(&v, &zero()),
+        Context::CONJ => join(&u, &-v),
+        Context::ABS if !v.is_zero() => join(&modulus(&u, &v), &zero()),
+        _ => None,
+    }
+}
+
+/// The principal logarithm `{$ln z = ln|z| + i arg z$}` of a constant `z` which isn't a positive real number.
+pub(super) fn principal_ln(z: &Complex) -> Option<Complex> {
+    if !is_constant(z) {
+        return None;
+    }
+    let (u, v) = split(z)?;
+    if !is_complex_ln(&u, &v) {
+        return None;
+    }
+    let (a, b) = split_ln(&u, &v)?;
+    join(&a, &b)
 }
 
 /// `{$u + i v$}` as a complex expression, simplified when it is small (simplifying sums of several
@@ -163,22 +198,63 @@ fn split_pow(
     {
         return integer_pow((u, v), &n);
     }
-    if !v.is_zero() {
-        return None;
-    }
     let e = split_with(exponant, var)?;
-    // `{$b^(a + i c) = e^((a + i c) ln b)$}` for `{$b > 0$}`
-    let positive =
-        u == variable(Context::E) || sign(&u, SignMode::APPROXIMATE) == Some(Ordering::Greater);
-    if e.1.is_zero() {
-        // Real powers of negative constants aren't real
-        return (positive || !matches!(u, Term::Value(_))).then(|| (u.pow(&e.0), zero()));
+    if !is_complex_ln(&u, &v) {
+        // `{$b^(a + i c) = e^((a + i c) ln b)$}` for `{$b > 0$}`
+        let positive =
+            u == variable(Context::E) || sign(&u, SignMode::APPROXIMATE) == Some(Ordering::Greater);
+        if e.1.is_zero() {
+            return Some((u.pow(&e.0), zero()));
+        }
+        if !positive {
+            return None;
+        }
+        let ln = fun(Context::LN, u);
+        return split_fun(Context::EXP, &[(&e.0 * &ln, &e.1 * &ln)]);
     }
-    if !positive {
-        return None;
+    // The principal power `{$z^w = e^(w ln z)$}`
+    let ln = split_ln(&u, &v)?;
+    split_fun(Context::EXP, &[product(&e, &ln)])
+}
+
+/// Whether `{$ln(u + i v)$}` isn't real: `v` is non-zero, or `u` is negative.
+fn is_complex_ln(u: &Expr, v: &Expr) -> bool {
+    !v.is_zero() || sign(u, SignMode::APPROXIMATE) == Some(Ordering::Less)
+}
+
+/// The parts of the principal logarithm `{$ln(u + i v) = ln|z| + i arg z$}`, `None` when the argument can't be
+/// found.
+fn split_ln(u: &Expr, v: &Expr) -> Option<(Expr, Expr)> {
+    let arg = expr::arg(u, v)?;
+    if v.is_zero() {
+        return Some((fun(Context::LN, -u), arg));
     }
-    let ln = fun(Context::LN, u);
-    split_fun(Context::EXP, &[(&e.0 * &ln, &e.1 * &ln)])
+    let norm = norm(u, v);
+    // `{$ln|z|$}` when the root of the norm is simplified, like `{$ln|3 + 4 i| = ln 5$}`, else `{$ln(|z|^2)/2$}`
+    let modulus = norm.pow(&half());
+    let ln = if matches!(modulus, Term::Pow(_)) {
+        fun(Context::LN, norm) * half()
+    } else {
+        fun(Context::LN, modulus)
+    };
+    Some((ln, arg))
+}
+
+/// `{$u^2 + v^2$}`, simplified when it is small, so that `{$cos^2 a + sin^2 a = 1$}` and `{$ln(e^i) = i$}`.
+fn norm(u: &Expr, v: &Expr) -> Expr {
+    /// Size above which it isn't simplified.
+    const MAX_SIMPLIFIED: usize = 40;
+    let norm = u * u + v * v;
+    if size(&norm) <= MAX_SIMPLIFIED {
+        fun(Context::SIMPLIFY, norm)
+    } else {
+        norm
+    }
+}
+
+/// `{$|u + i v| = sqrt(u^2 + v^2)$}`.
+fn modulus(u: &Expr, v: &Expr) -> Expr {
+    norm(u, v).pow(&half())
 }
 
 /// The parts of `{$f(z_1, ..., z_n)$}`.
@@ -187,10 +263,8 @@ fn split_fun(ident: Symbol, args: &[(Expr, Expr)]) -> Option<(Expr, Expr)> {
         (Context::RE, [(u, _)]) => Some((u.clone(), zero())),
         (Context::IM, [(_, v)]) => Some((v.clone(), zero())),
         (Context::CONJ, [(u, v)]) => Some((u.clone(), -v)),
-        (Context::ABS, [(u, v)]) if !v.is_zero() => Some((
-            (u * u + v * v).pow(&value(Rational::from_signeds(1, 2))),
-            zero(),
-        )),
+        (Context::ABS, [(u, v)]) if !v.is_zero() => Some((modulus(u, v), zero())),
+        (Context::LN, [(u, v)]) if is_complex_ln(u, v) => split_ln(u, v),
         _ if args.iter().all(|(_, v)| v.is_zero()) => {
             let args = args.iter().map(|(u, _)| u.clone()).collect();
             Some((

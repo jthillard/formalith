@@ -198,23 +198,29 @@ pub static BUILTIN_DOCS: [BuiltinDoc; Context::BUILTIN_NAMES.len()] = [
         Complex,
         "re(z)",
         "Real part of a complex number.",
-        "Symbols are assumed real.",
-        &[ex_in("C", "re(3 + 4*i)", "3")],
+        "Linear over sums and constant factors; constants are split into their parts (re(x) stays unevaluated).",
+        &[
+            ex_in("C", "re(3 + 4*i)", "3"),
+            ex_in("C", "re(exp(i))", "cos(1)"),
+        ],
     ),
     doc(
         Context::IM,
         Complex,
         "im(z)",
         "Imaginary part of a complex number.",
-        "Symbols are assumed real.",
-        &[ex_in("C", "im(3 + 4*i)", "4")],
+        "Linear over sums and constant factors; constants are split into their parts (im(x) stays unevaluated).",
+        &[
+            ex_in("C", "im(3 + 4*i)", "4"),
+            ex_in("C", "im(exp(1 + i))", "e sin(1)"),
+        ],
     ),
     doc(
         Context::CONJ,
         Complex,
         "conj(z)",
         "Complex conjugate.",
-        "Symbols are assumed real.",
+        "Over sums and products; constants are split into their parts (conj(x) stays unevaluated).",
         &[ex_in("C", "conj(3 + 4*i)", "3 - 4 i")],
     ),
     doc(
@@ -349,11 +355,17 @@ pub static BUILTIN_DOCS: [BuiltinDoc; Context::BUILTIN_NAMES.len()] = [
         Algebra,
         "approx(x, [digits])",
         "Numerical approximation to a number of significant digits (15 by default).",
-        "Integrals are approximated by double exponential quadrature.",
+        "Integrals are approximated by double exponential quadrature. In C, the real and imaginary parts of \
+         constants are approximated.",
         &[
             ex("approx(pi)", "3.14159265358979"),
             ex("approx(sqrt(2), 30)", "1.41421356237309504880168872421"),
             ex("approx(integrate(exp(-x^2), x, 0, 1))", "0.746824132812427"),
+            ex_in(
+                "C",
+                "approx(exp(i))",
+                "0.54030230586814 + 0.841470984807897 i",
+            ),
         ],
     ),
     doc(
@@ -373,8 +385,14 @@ pub static BUILTIN_DOCS: [BuiltinDoc; Context::BUILTIN_NAMES.len()] = [
         Elementary,
         "ln(x)",
         "Natural logarithm.",
-        "",
-        &[ex("ln(e^3)", "3"), ex("ln(1/2)", "-ln(2)")],
+        "In C, the principal value ln|z| + i arg(z) of constants other than positive numbers, the argument being \
+         in (-pi, pi].",
+        &[
+            ex("ln(e^3)", "3"),
+            ex("ln(1/2)", "-ln(2)"),
+            ex_in("C", "ln(-1)", "i pi"),
+            ex_in("C", "ln(1 + i)", "ln(2)/2 + (i pi)/4"),
+        ],
     ),
     doc(
         Context::SIN,

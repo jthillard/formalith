@@ -2,9 +2,11 @@
 //! arithmetic done in the test, and functions `f = g + i h` built with their real and imaginary parts (so `g` and
 //! `h` are known) against `g` and `h` in `R`: values at points, derivatives and definite integrals.
 //!
-//! `approx`, `re` and `im` don't evaluate transcendental values in `C`, so a result `F` is read as `A + i B` by
-//! replacing `i` by a symbol `chk_i` in `R` (`A` is `F` at `chk_i = 0`, `B` the difference at `chk_i = 1`), after
-//! checking that it is affine in `chk_i`.
+//! Principal logarithms and powers of constants are checked against `f64` polar forms.
+//!
+//! So as not to rely on `approx`, `re` and `im` of `C`, a result `F` is read as `A + i B` by replacing `i` by a
+//! symbol `chk_i` in `R` (`A` is `F` at `chk_i = 0`, `B` the difference at `chk_i = 1`), after checking that it is
+//! affine in `chk_i`.
 mod common;
 
 use common::{
@@ -259,6 +261,46 @@ fn calculus(input: &str) -> Verdict {
     }
 }
 
+/// Check the principal logarithm and powers of the constant `a + b i` (`a; b`) against its `f64` polar form.
+fn principal(input: &str) -> Verdict {
+    let parts: Vec<_> = input.split(';').map(str::trim).collect();
+    let real = Environment::new();
+    let (Some(a), Some(b)) = (number(&real, parts[0]), number(&real, parts[1])) else {
+        return Verdict::Wrong(format!("`{input}` isn't a pair of numbers"));
+    };
+    let z = format!("({}) + ({})*i", parts[0], parts[1]);
+    let (modulus, theta) = (a.hypot(b), b.atan2(a));
+    let cbrt = modulus.cbrt();
+    for (expr, (re, im)) in [
+        (format!("ln({z})"), (modulus.ln(), theta)),
+        (format!("approx(ln({z}))"), (modulus.ln(), theta)),
+        (
+            format!("re(ln({z})) + i*im(ln({z}))"),
+            (modulus.ln(), theta),
+        ),
+        (format!("approx(exp(ln({z})))"), (a, b)),
+        (
+            format!("approx(({z})^(1/3))"),
+            (cbrt * (theta / 3.).cos(), cbrt * (theta / 3.).sin()),
+        ),
+        (format!("approx(abs(exp({z})))"), (a.exp(), 0.)),
+    ] {
+        let output = match eval_in(SetChoice::C, &mut Environment::new(), &expr) {
+            Ok(output) => output,
+            Err(e) => return Verdict::Wrong(format!("`{expr}`: {e}")),
+        };
+        let Some((u, v)) = split(&real, &output) else {
+            return Verdict::Wrong(format!("`{expr}` = `{output}` isn't evaluated"));
+        };
+        if !close(u, re, 1e-9) || !close(v, im, 1e-9) {
+            return Verdict::Wrong(format!(
+                "`{expr}` = `{output}` = {u} + {v} i, expected {re} + {im} i"
+            ));
+        }
+    }
+    Verdict::Pass
+}
+
 /// An environment of `R` where `x := x0`.
 fn env_with_x(x0: &str) -> Environment {
     let mut env = Environment::new();
@@ -308,8 +350,29 @@ fn complex_functions() {
             "conj(exp(i*x)); cos(x); -sin(x)",
             "exp(i*x)*exp(i*x); cos(2*x); sin(2*x)",
             "(x + i)^2; x^2 - 1; 2*x",
+            "ln(x + i); ln(x^2 + 1)/2; pi/2 - atan(x)",
+            "ln(x - 2*i); ln(x^2 + 4)/2; atan(x/2) - pi/2",
         ],
         calculus,
+    );
+}
+
+#[test]
+fn principal_values() {
+    check_all(
+        "principal values",
+        &[
+            "1; 1",
+            "-1; 0",
+            "0; 1",
+            "0; -1",
+            "-3; 4",
+            "-1; -1",
+            "2; -5",
+            "-1/2; 1/3",
+            "7; 0",
+        ],
+        principal,
     );
 }
 

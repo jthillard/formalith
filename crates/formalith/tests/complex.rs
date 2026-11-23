@@ -269,3 +269,54 @@ fn argument() {
     );
     assert_eq!(line(&parse!("arg(-x)", R, &env)), "pi");
 }
+
+#[test]
+fn principal_logarithm() {
+    for (input, expected) in [
+        ("ln(-1)", "i*pi"),
+        ("ln(i)", "1/2*i*pi"),
+        ("ln(-i)", "-1/2*i*pi"),
+        ("ln(-2)", "i*pi+ln(2)"),
+        ("ln(1+i)", "1/4*i*pi+1/2*ln(2)"),
+        ("ln(3+4*i)", "i*atan(4/3)+ln(5)"),
+        ("ln(exp(i))", "i"),
+        ("ln(exp(2+3*i))", "2+3*i"),
+        ("ln(2)", "ln(2)"),
+        ("ln(x)", "ln(x)"),
+    ] {
+        assert_eq!(eval(input), line(&parse!(expected, C)), "{input}");
+    }
+}
+
+#[test]
+fn parts_of_constants() {
+    for (input, expected) in [
+        ("re(exp(i))", "cos(1)"),
+        ("im(exp(1+i))", "exp(1)*sin(1)"),
+        ("conj(exp(i))", "cos(1)-i*sin(1)"),
+        ("abs(exp(i))", "1"),
+        ("re(ln(-1))", "0"),
+        ("re(x)", "re(x)"),
+    ] {
+        assert_eq!(eval(input), line(&parse!(expected, C)), "{input}");
+    }
+}
+
+#[test]
+fn approximations() {
+    for (input, expected) in [
+        ("approx(exp(1+i))", "1.46869393991589+2.28735528717884*i"),
+        ("approx(1/3+i/7)", "0.333333333333333+0.142857142857143*i"),
+        ("approx(ln(i))", "1.5707963267949*i"),
+        ("approx(sqrt(i))", "0.707106781186548+0.707106781186548*i"),
+        ("approx((-8)^(1/3))", "1.0+1.73205080756888*i"),
+        ("approx(exp(i), 5)", "0.5403+0.84147*i"),
+        ("approx(2)", "2.0"),
+    ] {
+        assert_eq!(eval(input), expected, "{input}");
+    }
+    assert_eq!(
+        eval("approx(x+exp(i))"),
+        "x+0.54030230586814+0.841470984807897*i"
+    );
+}
