@@ -14,7 +14,7 @@ use crate::{
         Group, Ring, TryExprFrom,
         real::{
             R,
-            expr::{Expr, Real, fun, one, value, variable, zero},
+            expr::{Expr, Real, fun, one, size, value, variable, zero},
             sign::{SignMode, sign},
         },
     },
@@ -68,9 +68,17 @@ pub(super) fn split_with(
     })
 }
 
-/// `{$u + i v$}` as a complex expression, simplified.
+/// `{$u + i v$}` as a complex expression, simplified when it is small (simplifying sums of several
+/// exponentials and trigonometric functions may not finish).
 pub(super) fn join(u: &Expr, v: &Expr) -> Option<Complex> {
-    let res = (to_complex(u)? + Term::Value(Value::new(C.i(), C)) * to_complex(v)?).simplify();
+    /// Size of the parts above which they are only normalized.
+    const MAX_SIMPLIFIED: usize = 40;
+    let res = to_complex(u)? + Term::Value(Value::new(C.i(), C)) * to_complex(v)?;
+    let res = if size(u) + size(v) <= MAX_SIMPLIFIED {
+        res.simplify()
+    } else {
+        res.normalize()
+    };
     // `{$c/d = 1/(d/c)$}` for a non-real constant `c`, so `{$-i/(2 pi t - i) = 1/(2 i pi t + 1)$}`
     if let Term::Mul(mul) = &res
         && mul.coefficient[1] != 0
