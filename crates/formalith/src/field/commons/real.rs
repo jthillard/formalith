@@ -218,6 +218,41 @@ impl Ring for R<Rational> {
                     let rest = mul.iter().fold(self.value(Rational::ONE), |res, f| res * f);
                     return self.value(mul.coefficient.clone()).pow(exponant) * rest.pow(exponant);
                 }
+                (Term::Add(add), Term::Value(value))
+                    if value.value.denominator_ref().odd()
+                        && value.value.denominator_ref() != &1u32
+                        && add.iter().all(|term| match term {
+                            Term::Mul(mul) => mul.coefficient < 0,
+                            Term::Value(v) => v.value < 0,
+                            _ => false,
+                        }) =>
+                {
+                    // The same for sums of negative terms, `{$(-x^3 - x)^(1/3) = -(x^3 + x)^(1/3)$}` (not for others,
+                    // `{$(1 - x)^(1/3)$}` staying a root of a positive base near 0)
+                    let sign = if value.value.numerator_ref().odd() {
+                        Rational::NEGATIVE_ONE
+                    } else {
+                        Rational::ONE
+                    };
+                    // Term by term, `{$-1 dot (...)$}` being turned back into this sum by the rule below
+                    let positive = add
+                        .iter()
+                        .fold(self.value(Rational::ZERO), |res, term| res - term);
+                    return self.value(sign) * positive.pow(exponant);
+                }
+                (Term::Mul(mul), Term::Value(value))
+                    if mul.coefficient < 0 && value.value.denominator_ref().odd() =>
+                {
+                    // `{$(-u)^(p/q) = (-1)^p u^(p/q)$}` for odd `q`, roots of odd order being real, so that
+                    // `{$(-x)^(1/3) = -x^(1/3)$}`
+                    let sign = if value.value.numerator_ref().odd() {
+                        Rational::NEGATIVE_ONE
+                    } else {
+                        Rational::ONE
+                    };
+                    let positive = -Term::Mul(mul.clone());
+                    return self.value(sign) * positive.pow(exponant);
+                }
                 (Term::Add(add), Term::Value(exponant))
                     if exponant.value == Rational::from_signeds(1, 2)
                         && let Some(res) = self.denest(add) =>

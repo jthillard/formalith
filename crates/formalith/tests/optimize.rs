@@ -43,7 +43,11 @@ fn intervals() {
     assert_eq!(argmin("argmin(x^2, x, 1, oo)"), solved("x = 1, x"));
     assert_eq!(argmin("argmax(sin(x), x, 0, 4)"), solved("x = pi/2, x"));
     assert_eq!(argmin("argmin(1/x, x, 1, 2)"), solved("x = 2, x"));
-    assert!(argmin("argmin(x^2, x, 2, 1)").is_err());
+    assert!(
+        argmin("argmin(x^2, x, 2, 1)")
+            .unwrap_err()
+            .contains("lower bound must be below")
+    );
 }
 
 #[test]

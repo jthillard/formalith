@@ -125,14 +125,18 @@ impl<'a> Analysis<'a> {
             return Err(error("`floor`, `ceil` and `piecewise` aren't supported"));
         }
         let (lower, upper) = (finite(&a), finite(&b));
-        if let (Some(a), Some(b)) = (lower, upper)
-            && compare(a, b) != Some(Ordering::Less)
-        {
-            return Err(error(format!(
-                "can't check that `{}` is below `{}`",
-                plain(a),
-                plain(b)
-            )));
+        if let (Some(a), Some(b)) = (lower, upper) {
+            match compare(a, b) {
+                Some(Ordering::Less) => {}
+                Some(_) => return Err(error("the lower bound must be below the upper bound")),
+                None => {
+                    return Err(error(format!(
+                        "can't check that `{}` is below `{}`",
+                        plain(a),
+                        plain(b)
+                    )));
+                }
+            }
         }
         let derivative = f.derivative(x).normalize();
         let mut conditions = vec![];

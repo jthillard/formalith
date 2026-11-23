@@ -757,3 +757,24 @@ fn leading_minus_of_scalars() {
     assert_eq!(m("-2*x*y"), m("(-2)*x*y"));
     assert_eq!(m("-2*I(2) + [[1, 2], [3, 4]]"), m("[[-1, 2], [3, 2]]"));
 }
+
+#[test]
+fn scalar_builtins_evaluated_in_m() {
+    let m = |input: &str| {
+        SetChoice::M
+            .eval(input, false, &mut Environment::new())
+            .unwrap()
+    };
+    assert_eq!(m("trace([[1, 2], [3, 4]])"), "5");
+    assert_eq!(m("rank([[1, 2], [2, 4]])"), "1");
+    assert_eq!(m("charpoly([[1, 2], [3, 4]], y)"), m("y^2 - 5*y - 2"));
+    assert_eq!(m("charpoly([[1, 2], [3, 4]])"), m("x^2 - 5*x - 2"));
+    assert_eq!(m("det([[x, 1], [1, x]])"), m("x^2 - 1"));
+    // Scalars times matrices, inverses and division by a scalar
+    assert_eq!(
+        m("trace([[x, 1], [1, y]])*[[1, 0], [0, 1]]"),
+        m("[[x + y, 0], [0, x + y]]")
+    );
+    assert_eq!(m("[[x, 1], [0, x]]^-1"), m("[[1/x, -1/x^2], [0, 1/x]]"));
+    assert_eq!(m("[[1, 2], [3, 4]]/2"), m("[[1/2, 1], [3/2, 2]]"));
+}

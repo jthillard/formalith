@@ -391,6 +391,9 @@ fn global_extrema() {
             "extrema(x^2 + y^2 - 2*x, x, y)",
             "extrema(-x^2 - (y - 1)^2, x, y)",
             "extrema((x - y)^2, x, y)",
+            "extrema(x^(1/3)*(x - 4), x)",
+            "extrema(acosh(x) - x/2, x)",
+            "extrema(tan(x) - 2*x, x, -1, 1); exists",
         ],
         optimize,
     );
@@ -416,6 +419,9 @@ fn local_extrema() {
             "localextrema(-x^2 - y^2 + 2*y, x, y)",
             "localextrema(exp(x^2 + y^2), x, y)",
             "localextrema((x - y)^2, x, y)",
+            "localextrema(atanh(x) - 2*x, x)",
+            "localextrema(tan(x) - 2*x, x, -1, 1)",
+            "localextrema(x^(1/3)*(x - 4), x)",
         ],
         optimize,
     );

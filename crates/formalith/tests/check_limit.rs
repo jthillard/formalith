@@ -125,6 +125,46 @@ fn limits() {
     );
 }
 
+/// Limits of oscillating functions, through the bounds of terms with angles (`limit/bounds.rs`).
+#[test]
+fn oscillating_limits() {
+    check_all(
+        "oscillating limits",
+        &[
+            "exp(sin(x))/x; oo",
+            "sin(x)/(x*(2 + cos(x))); oo",
+            "1/(2 + sin(x)*cos(x)); oo",
+            "1/(x*(2 + sin(x))^2); oo",
+            "ln(2 + sin(x))/x; oo",
+            "sqrt(2 + sin(x))/x; oo",
+            "1/(x*(2 + abs(sin(x)))); oo",
+            "(3 + sin(x))^(-2)/x; oo",
+            "x/(2 + sin(x)); oo",
+            "1/(x*(1 + exp(sin(x)))); oo",
+            "sin(x)^3/x; oo",
+            "x*(2 + sin(x))^(1/3); oo",
+        ],
+        limit,
+    );
+}
+
+/// Roots of odd order of negative values are real: `{$(-x)^(1/3) = -x^(1/3)$}` at `{$-oo$}` and on the left of 0.
+#[test]
+fn odd_roots() {
+    check_all(
+        "odd roots",
+        &[
+            "x^(5/3); -oo",
+            "(x - 4)*x^(1/3); -oo",
+            "x^(2/3); -oo",
+            "x^(1/3); 0; -1",
+            "x^(1/3)/x; 0; -1",
+            "(x^3 + x)^(1/3) - x; -oo",
+        ],
+        limit,
+    );
+}
+
 /// A random limit with a removable or known singularity.
 fn limit_case(rng: &mut Rng) -> String {
     let a = rng.range(-2, 2);

@@ -119,6 +119,29 @@ fn antiderivatives() {
     );
 }
 
+/// Integrals in towers of logarithms and exponentials, through the Risch differential equations (`risch/rde.rs`).
+#[test]
+fn risch_towers() {
+    check_all(
+        "risch towers",
+        &[
+            "exp(x^2)*(2*x*ln(x) + 1/x)",
+            "exp(x)*(ln(x) + 1/x)",
+            "exp(x)*(ln(x)^2 + 2*ln(x)/x)",
+            "exp(2*x)*(2*ln(x)^2 + 2*ln(x)/x)",
+            "exp(x)*x*ln(x) + exp(x)*(ln(x) + 1)",
+            "exp(ln(x)^2)*2*ln(x)/x",
+            "exp(x)/(exp(x) + 1)^2",
+            "exp(x)*(x - 1)/x^2",
+            "exp(-x)*(1 - x*ln(x))/x",
+            "x*exp(x)*ln(x)",
+            "exp(x)*(1 + x*ln(x))/x",
+            "exp(x)*(x^2 + 1)/(x + 1)^2",
+        ],
+        antiderivative,
+    );
+}
+
 #[test]
 fn definite_integrals() {
     check_all(

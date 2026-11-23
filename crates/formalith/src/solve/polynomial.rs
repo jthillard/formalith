@@ -21,6 +21,7 @@ use malachite::{
     Integer, Natural, Rational,
     base::{
         num::{
+            arithmetic::traits::Parity,
             basic::traits::{One, Zero},
             conversion::traits::RoundingFrom,
         },
@@ -761,7 +762,21 @@ fn approximate(term: &Term<R<Rational>>) -> Option<f64> {
         Term::Mul(mul) => {
             rational(&mul.coefficient) * mul.iter().map(approximate).product::<Option<f64>>()?
         }
-        Term::Pow(pow) => approximate(&pow.base)?.powf(approximate(&pow.exponant)?),
+        Term::Pow(pow) => {
+            let base = approximate(&pow.base)?;
+            match &**pow.exponant {
+                // Roots of odd order of negative numbers are real, `{$(-8)^(1/3) = -2$}`
+                Term::Value(e) if base < 0. && e.value.denominator_ref().odd() => {
+                    let power = (-base).powf(rational(&e.value));
+                    if e.value.numerator_ref().odd() {
+                        -power
+                    } else {
+                        power
+                    }
+                }
+                _ => base.powf(approximate(&pow.exponant)?),
+            }
+        }
         Term::Symbol(_) | Term::Fun(_) => return None,
     };
     // Even roots of negative numbers
