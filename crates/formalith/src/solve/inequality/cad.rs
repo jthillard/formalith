@@ -89,6 +89,32 @@ fn values(solution: Solution<R<Rational>>) -> Vec<Expr> {
     }
 }
 
+/// The polynomial `p` in `x` with its coefficients equal to zero replaced by 0.
+///
+/// Over a section, the coefficients are expressions of roots of the projection, which vanish there without
+/// simplifying to 0, like `{$x_0^3 - 3 x_0 + 1$}` for a root `{$x_0 = 2 cos(2 pi / 9)$}`: the roots of
+/// `{$y^2 - (x_0^3 - 3 x_0 + 1)$}` would be square roots of a value approximated as slightly negative.
+/// A coefficient is zero when its approximation at the maximum precision is.
+fn without_vanishing_coefficients(p: &Expr, x: Symbol) -> Result<Expr, SolveError> {
+    let form = polynomial_form(p, x)?;
+    if form
+        .iter()
+        .all(|c| matches!(c, Term::Value(_)) || approximate(c, DIGITS) != Some(Rational::ZERO))
+    {
+        return Ok(p.clone());
+    }
+    Ok(form
+        .into_iter()
+        .enumerate()
+        .filter(|(_, c)| {
+            matches!(c, Term::Value(_)) || approximate(c, DIGITS) != Some(Rational::ZERO)
+        })
+        .fold(zero(), |res, (degree, c)| {
+            res + c * variable(x).pow(&value(Rational::from(degree)))
+        })
+        .expand())
+}
+
 /// The real roots of the polynomial `p` in `x`, whose coefficients are constants, approximated.
 fn real_roots(p: &Expr, x: Symbol) -> Result<Vec<Root>, SolveError> {
     if !depends(p, x) {
@@ -138,7 +164,16 @@ fn simplest(lo: &Rational, hi: &Rational) -> Rational {
 }
 
 /// The simplest rational between the bounds `lo` and `hi`, `None` at infinity.
+///
+/// The bounds are approximations of roots, maybe on the wrong side of them (`{$-4/3$}` is approximated by
+/// `{$-1.333...3 > -4/3$}`), so the interval is first shrunk by more than their error, else the root itself may be
+/// the simplest rational of the interval and a sector would be sampled at a section.
 fn simplest_between(lo: Option<&Rational>, hi: Option<&Rational>) -> Rational {
+    let margin =
+        |bound: &Rational| ((bound).abs() + Rational::ONE) / Rational::from(10u32).pow(35u64);
+    let lo = lo.map(|lo| lo + margin(lo));
+    let hi = hi.map(|hi| hi - margin(hi));
+    let (lo, hi) = (lo.as_ref(), hi.as_ref());
     match (lo, hi) {
         (None, None) => Rational::ZERO,
         (Some(lo), None) if *lo < 0 => Rational::ZERO,
@@ -527,7 +562,10 @@ impl<'a> Cad<'a> {
         // The roots of the factors of this level over the sample point, sorted, with the factors vanishing there
         let mut roots: Vec<(Root, Vec<usize>)> = vec![];
         for id in (0..self.factors.len()).filter(|id| self.levels[*id] == level) {
-            let p = self.substitute(&self.factors[id], &point).expand();
+            let mut p = self.substitute(&self.factors[id], &point).expand();
+            if sample.sections.iter().any(|section| *section) {
+                p = without_vanishing_coefficients(&p, x)?;
+            }
             if p.is_zero() {
                 return Err(SolveError::Inequality(format!(
                     "`{}` vanishes identically on a part of the solutions",

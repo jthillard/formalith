@@ -562,6 +562,13 @@ fn inequalities_in_several_unknowns() {
         solve("x + y = 1, x != y"),
         ok("x in (-oo, frac(1, 2)), y = -x+1 \\ x in (frac(1, 2), oo), y = -x+1")
     );
+    // The lines cross at `{$x = -4/3$}`, sampling must not land on it
+    assert_eq!(
+        solve("y < -2*x - 3, y < x + 1"),
+        ok(
+            "x in (-oo, -frac(4, 3)], y in (-oo, x+1) \\ x in (-frac(4, 3), oo), y in (-oo, -2 x-3)"
+        )
+    );
     // The unknowns in the given order
     assert_eq!(solve("solve(x > 0, x, y)"), ok("x in (0, oo), y in RR"));
     assert_eq!(
