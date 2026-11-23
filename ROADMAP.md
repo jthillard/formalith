@@ -25,6 +25,22 @@ Ideas and known gaps, roughly by area. `AGENTS.md` describes what exists; this f
   - printing `4^k` rather than `2^(2k)`.
 - `exp(a ln u)` with a symbolic `a` is slow in the series engine: `series((1 + x)^a, x, 0, 8)` doesn't finish.
 
+## Parsing
+
+- `1e-20` silently evaluates to `e - 20`: reject it or read it as a decimal.
+- `x^(1/2)` is accepted in `Z/n`, where rational exponents mean nothing; it should be an error.
+
+## Approximation
+
+- `approx` underflows to `0.0` below about `1e-1385` (`approx(1/factorial(700))`): the fixed-point precision
+  should follow the magnitude of the result.
+- `gamma` and `polygamma` of very large arguments are slow (`approx(gamma(10^6 + 1/3))` takes minutes in a
+  debug build).
+
+## Complex numbers
+
+- `approx`, `re` and `im` don't evaluate transcendental values in `C` (`approx(exp(1 + i))`, `re(exp(i))`).
+
 ## Limits
 
 - `gamma(g)` with `g -> -oo`.
@@ -47,7 +63,8 @@ Ideas and known gaps, roughly by area. `AGENTS.md` describes what exists; this f
 - Inequalities: parameters, more than 3 unknowns or 40 polynomials.
 - `argmin` / `argmax`:
   - periodic special points, `floor`, `ceil` and `piecewise`;
-  - several variables beyond rational functions without parameters.
+  - several variables beyond rational functions without parameters;
+  - extrema of two variables whose values come from Cardano's formula are slow.
 
 ## Sums
 
@@ -63,6 +80,12 @@ Ideas and known gaps, roughly by area. `AGENTS.md` describes what exists; this f
 
 - Eigenvalues when the characteristic polynomial has non-real roots (currently unevaluated), and matrices over
   `C`.
+- `simplify`, `expand` and `diff` of matrix literals don't parse in `M` (`simplify([[x, 1], [0, x]])`).
+
+## Other sets
+
+- `N` has no arithmetic and its normalization is `todo!()`: `integrate(x, x)` in `N` panics (caught by sessions)
+  instead of returning an error.
 
 ## GUI
 
@@ -72,3 +95,13 @@ Ideas and known gaps, roughly by area. `AGENTS.md` describes what exists; this f
 ## Tooling
 
 - `cargo clippy` hangs on the crate's recursive types.
+- `cargo llvm-cov` doesn't find the objects in the nightly build directory layout
+  (`target/llvm-cov-target/debug/build/<crate>/<hash>/out/`); coverage needs merging the profiles with the
+  toolchain's `llvm-profdata` and calling `llvm-cov report` on the test binaries by hand.
+- Self-checks not written yet: random identities of `gamma` / `polygamma` (reflection, duplication, recurrence),
+  sums with a symbolic upper bound checked at several `n`, integrals with symbolic bounds checked by
+  substitution, random constant-coefficient ODEs with conditions (`check_gamma`, `check_sum`, `check_integrate`,
+  `check_dsolve`).
+- Ignored tests for future work: definite integrals without elementary antiderivatives (Dirichlet, `ln(sin)`,
+  `tests/integrate.rs`) and numerical integration of oscillating integrands on infinite intervals
+  (`tests/approx.rs`).

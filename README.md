@@ -74,5 +74,18 @@ and intersections of the selected curve. `./dev gui-web` builds it for the brows
 cargo test --workspace
 ```
 
+The files `crates/formalith/tests/check_*.rs` check results against their definition rather than against
+hand-written outputs (derivatives of antiderivatives, substituted solutions, sampled regions and extrema, partial
+sums, `approx` against floating point...). Their random fuzzers are ignored by default:
+
+```sh
+cargo test --release -p formalith -- --ignored fuzz
+FORMALITH_FUZZ_CASES=500 FORMALITH_SEED=42 cargo test -p formalith --test check_optimize -- --ignored
+```
+
+A failure prints the seed and the failing inputs. `FORMALITH_SHOW_SKIPPED=1` lists skipped cases,
+`FORMALITH_TIMES=1` prints the time of each case and `FORMALITH_WORKERS` sets the number of threads.
+
 CI runs `cargo fmt --all --check` and `cargo test --workspace` on pushes and pull requests. A pre-commit hook formatting the
-staged Rust files is enabled with `git config core.hooksPath .githooks`.
+staged Rust files is enabled with `git config core.hooksPath .githooks`. The fuzzers run every night with a new seed
+(`.github/workflows/fuzz.yml`, also started by hand with a number of cases and a seed).
