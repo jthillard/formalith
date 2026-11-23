@@ -1031,6 +1031,11 @@ impl R<Rational> {
             (Context::COSH, [x]) if x.is_zero() => Some(value(Rational::ONE)),
             (Context::ACOSH, [x]) if x.is_one() => Some(value(Rational::ZERO)),
             (Context::ASIN | Context::ACOS | Context::ATAN, [x]) => {
+                if ident == Context::ATAN
+                    && let Some(res) = self.eval_atan_of_tan(x)
+                {
+                    return Some(res);
+                }
                 self.eval_inverse_trig(ident, x)
             }
             (Context::COT, [x]) => {
@@ -1438,6 +1443,38 @@ impl R<Rational> {
                 (!cos_value.is_zero()).then(|| sin_value.map(|s| s / cos_value))?
             }
         }
+    }
+
+    /// `{$atan(tan theta) = theta - k pi$}` for a constant `{$theta$}`, `k` being the integer nearest to
+    /// `{$theta / pi$}`, so `{$"arg"(e^(i theta))$}` is `{$theta$}` reduced into `{$(-pi, pi]$}`.
+    fn eval_atan_of_tan(self, x: &Term<Self>) -> Option<Term<Self>> {
+        let theta = match (x, expr::unary(x)) {
+            (_, Some((Context::TAN, theta))) => theta.clone(),
+            (Term::Mul(mul), _) => {
+                let theta = mul.iter().find_map(|factor| match expr::unary(factor) {
+                    Some((Context::SIN, theta)) => Some(theta.clone()),
+                    _ => None,
+                })?;
+                if *x
+                    != self.fun(Context::SIN, theta.clone()) / self.fun(Context::COS, theta.clone())
+                {
+                    return None;
+                }
+                theta
+            }
+            _ => return None,
+        };
+        let pi = Term::Symbol(SymbolTerm::new(Context::PI, self));
+        // `{$theta/pi + 1/2$}` is never an integer since `{$cos theta != 0$}`, but must be far enough from one to
+        // round with an approximation
+        let shifted =
+            approx::approximate_fixed(&(&theta / &pi), 64)? + Rational::from_signeds(1, 2);
+        let k = Rational::from((&shifted).floor());
+        let margin = Rational::from_signeds(1, 1_i64 << 32);
+        if &shifted - &k < margin || &k + Rational::ONE - &shifted < margin {
+            return None;
+        }
+        Some(theta - Term::Value(Value::new(k, self)) * pi)
     }
 
     /// Evaluate `asin`, `acos` or `atan` at the classic values, like `{$asin(1/2) = pi/6$}`.

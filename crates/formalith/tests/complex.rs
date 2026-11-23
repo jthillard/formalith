@@ -252,6 +252,10 @@ fn argument() {
         ("arg(1+3^(1/2)*i)", "1/3*pi"),
         ("arg(-1-3^(1/2)*i)", "-2/3*pi"),
         ("arg(x+i*y)", "arg(x+i*y)"),
+        ("arg(exp(i))", "1"),
+        ("arg(exp(2*i))", "2"),
+        ("arg(exp(4*i))", "-2*pi+4"),
+        ("arg(3*exp(-5*i))", "2*pi-5"),
     ] {
         assert_eq!(eval(input), expected, "{input}");
     }

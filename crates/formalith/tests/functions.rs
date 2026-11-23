@@ -171,6 +171,16 @@ fn inverse_trigonometric_values() {
 }
 
 #[test]
+fn arctangent_of_tangent() {
+    assert_eq!(parse!("atan(tan(1))", R), parse!("1", R));
+    assert_eq!(parse!("atan(tan(4))", R), parse!("4 - pi", R));
+    assert_eq!(parse!("atan(tan(-3))", R), parse!("-(3 - pi)", R));
+    assert_eq!(parse!("atan(sin(4)/cos(4))", R), parse!("4 - pi", R));
+    assert_eq!(parse!("atan(tan(x))", R), parse!("atan(tan(x))", R));
+    assert!(matches!(parse!("atan(tan(x))", R), Term::Fun(_)));
+}
+
+#[test]
 fn hyperbolic_values() {
     assert_eq!(parse!("sinh(0)", R), parse!("0", R));
     assert_eq!(parse!("cosh(0)", R), parse!("1", R));
