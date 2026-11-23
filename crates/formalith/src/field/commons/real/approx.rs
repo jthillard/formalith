@@ -402,22 +402,17 @@ impl Fixed {
     }
 
     /// The shift `N` such that the asymptotic series of the Gamma family at `{$y = x + N >= Y$}` reach the precision,
-    /// their smallest term being about `{$e^(-2 pi Y)$}`, and the product `{$x (x + 1) ... (x + N - 1)$}`.
-    /// `None` at the poles, non-positive integers.
-    fn gamma_shift(self, x: &Rational, extra: u64) -> Option<(u64, Rational)> {
+    /// their smallest term being about `{$e^(-2 pi Y)$}`. `None` at the poles, non-positive integers.
+    fn gamma_shift(self, x: &Rational, extra: u64) -> Option<u64> {
         if *x <= 0 && *x.denominator_ref() == 1 {
             return None;
         }
         let target = Rational::from(self.bits / 8 + 16 + extra);
-        let n = if *x >= target {
-            0
+        if *x >= target {
+            Some(0)
         } else {
-            u64::try_from(&(&target - x).ceiling()).ok()?
-        };
-        let product = (0..n).fold(Rational::ONE, |product, k| {
-            product * (x + Rational::from(k))
-        });
-        Some((n, product))
+            u64::try_from(&(&target - x).ceiling()).ok()
+        }
     }
 
     /// Sum the asymptotic series `{$sum_(k >= 1) c_k y^(-2 k)$}` scaled by `{$y^"shift"$}`, `{$c_k$}` given by
@@ -458,11 +453,13 @@ impl Fixed {
             return None;
         }
         let extra = u64::try_from(&s.ceiling()).ok()?;
-        let (n, _) = self.gamma_shift(x, extra)?;
-        let mut sum = Rational::ZERO;
+        let n = self.gamma_shift(x, extra)?;
+        // In fixed point: the exact terms have different denominators, whose sum grows with each one
+        let mut sum = Integer::ZERO;
         for k in 0..n {
-            sum += self.pow(&(x + Rational::from(k)), &-s)?;
+            sum += self.from_rational(&self.pow(&(x + Rational::from(k)), &-s)?);
         }
+        let sum = self.to_rational(sum);
         let y = x + Rational::from(n);
         let power = self.pow(&y, &-s)?;
         let tail = &power * &y / (s - Rational::ONE) + &power / Rational::from(2);
@@ -478,10 +475,11 @@ impl Fixed {
     /// The digamma function `{$psi(x) = psi(x + N) - sum_(k < N) 1/(x + k)$}`, with
     /// `{$psi(y) ~ ln y - 1/(2 y) - sum_k B_(2 k) / (2 k y^(2 k))$}`.
     fn digamma(self, x: &Rational) -> Option<Rational> {
-        let (n, _) = self.gamma_shift(x, 0)?;
-        let shift = (0..n).fold(Rational::ZERO, |sum, k| {
-            sum + (x + Rational::from(k)).reciprocal()
-        });
+        let n = self.gamma_shift(x, 0)?;
+        // In fixed point: exact sums of `x` with many digits have huge denominators
+        let shift = self.to_rational((0..n).fold(Integer::ZERO, |sum, k| {
+            sum + self.from_rational(&(x + Rational::from(k)).reciprocal())
+        }));
         let y = x + Rational::from(n);
         let series = self.asymptotic_sum(&y, &Rational::ONE, |k, b| -b / Rational::from(2 * k));
         Some(self.to_rational(self.ln(&y) + series) - (&y * Rational::from(2)).reciprocal() - shift)
@@ -506,7 +504,11 @@ impl Fixed {
         {
             return Some(Rational::from(Natural::factorial(n - 1)));
         }
-        let (n, product) = self.gamma_shift(x, 0)?;
+        let n = self.gamma_shift(x, 0)?;
+        // `{$x (x + 1) ... (x + N - 1)$}`
+        let product = (0..n).fold(Rational::ONE, |product, k| {
+            product * (x + Rational::from(k))
+        });
         let y = x + Rational::from(n);
         let half = Rational::from_signeds(1, 2);
         let two_pi = Rational::from(self.pi() << 1_u64) >> self.bits;
@@ -956,7 +958,12 @@ pub(crate) fn approximate(term: &Term<Real>, digits: u64) -> Option<Rational> {
     loop {
         let value = Fixed { bits }.evaluate(term)?;
         if value == 0 {
-            return Some(value);
+            // Maybe below the precision, like `{$e^(-70) < 2^(-100)$}`
+            if bits >= max_bits {
+                return Some(value);
+            }
+            bits = (2 * bits).min(max_bits);
+            continue;
         }
         // The evaluation is accurate to about `{$2^(-"bits")$}`, check the number of significant bits
         let significant = i64::try_from(bits).ok()? + (&(&value).abs()).floor_log_base_2();

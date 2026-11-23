@@ -454,10 +454,12 @@ fn erfi(x: f64) -> f64 {
 }
 
 /// `{$"Si"(x)$}`, `{$"Ci"(x)$}` or `{$"Ei"(x)$}`, by their power series for small `|x|` (whose terms cancel up to
-/// `{$e^|x|$}`), and their asymptotic series otherwise. `NaN` for `{$"Ci"(x)$}` with `{$x <= 0$}`.
+/// `{$e^|x|$}`), by continued fractions of `{$E_1$}` for `{$"Si"$}`, `{$"Ci"$}` and `{$"Ei"$}` of negative
+/// arguments otherwise, and by the asymptotic series for `{$"Ei"$}` of large positive arguments. `NaN` for
+/// `{$"Ci"(x)$}` with `{$x <= 0$}`.
 fn exponential_integral(fun: NumFn, x: f64) -> f64 {
-    /// Below this bound, the power series loses at most 7 digits.
-    const SERIES_BOUND: f64 = 16.;
+    /// Below this bound, the power series loses at most 2 digits; above it, the continued fractions converge fast.
+    const SERIES_BOUND: f64 = 4.;
     if x.is_nan() || (fun == NumFn::Ci && x <= 0.) {
         return f64::NAN;
     }
@@ -478,11 +480,11 @@ fn exponential_integral(fun: NumFn, x: f64) -> f64 {
             _ => 0.,
         };
     }
-    // `{$"Ei"$}` has no cancellation for positive `x`
-    let bound = if fun == NumFn::Ei && x > 0. {
-        40.
-    } else {
-        SERIES_BOUND
+    // `{$"Ei"$}` has no cancellation for positive `x`, and `{$"Ei"(x) = -E_1(-x)$}` converges fast from 1
+    let bound = match fun {
+        NumFn::Ei if x > 0. => 40.,
+        NumFn::Ei => 1.,
+        _ => SERIES_BOUND,
     };
     if x.abs() < bound {
         let mut sum = 0.;
@@ -519,28 +521,81 @@ fn exponential_integral(fun: NumFn, x: f64) -> f64 {
             sum + EULER_GAMMA + x.abs().ln()
         };
     }
-    // Terms `{$t_k = (k - 1)! / x^k$}` while they decrease, with the signs of `f` and `g` for `{$"Si"$}` and `{$"Ci"$}`
-    let (mut f, mut g, mut ei) = (0., 0., 0.);
+    match fun {
+        NumFn::Si | NumFn::Ci => {
+            // `{$E_1(i x) = -"Ci"(x) + i ("Si"(x) - pi/2)$}`
+            let (re, im) = e1_imaginary(x);
+            return if fun == NumFn::Si {
+                std::f64::consts::FRAC_PI_2 + im
+            } else {
+                -re
+            };
+        }
+        _ if x < 0. => return -e1(-x),
+        _ => {}
+    }
+    // `{$"Ei"(x) ~ e^x sum (k - 1)! / x^k$}`, while the terms decrease
+    let mut ei = 0.;
     let mut term = 1. / x;
     for k in 1..200 {
         ei += term;
-        let signed = if (k - 1) % 4 < 2 { term } else { -term };
-        if k % 2 == 1 {
-            f += signed;
-        } else {
-            g += signed;
-        }
         let next = term * f64::from(k) / x;
         if next.abs() >= term.abs() {
             break;
         }
         term = next;
     }
-    match fun {
-        NumFn::Si => std::f64::consts::FRAC_PI_2 - f * x.cos() - g * x.sin(),
-        NumFn::Ci => f * x.sin() - g * x.cos(),
-        _ => x.exp() * ei,
+    x.exp() * ei
+}
+
+/// `{$E_1(x) = integral_x^oo e^(-t) / t dif t$}` for `{$x >= 1$}`, by its continued fraction (modified Lentz's
+/// method).
+fn e1(x: f64) -> f64 {
+    let tiny = 1e-300;
+    let mut b = x + 1.;
+    let mut c = 1. / tiny;
+    let mut d = 1. / b;
+    let mut h = d;
+    for i in 1..200 {
+        let a = -f64::from(i) * f64::from(i);
+        b += 2.;
+        d = 1. / (a * d + b);
+        c = b + a / c;
+        let delta = c * d;
+        h *= delta;
+        if (delta - 1.).abs() < 1e-16 {
+            break;
+        }
     }
+    h * (-x).exp()
+}
+
+/// `{$E_1(i x)$}` for `{$x >= 2$}` as its real and imaginary parts, by its continued fraction (modified Lentz's
+/// method, as `cisi` in Numerical Recipes).
+fn e1_imaginary(x: f64) -> (f64, f64) {
+    let mul = |(a, b): (f64, f64), (c, d): (f64, f64)| (a * c - b * d, a * d + b * c);
+    let inv = |(a, b): (f64, f64)| {
+        let n = a * a + b * b;
+        (a / n, -b / n)
+    };
+    let tiny = 1e-300;
+    let mut b = (1., x);
+    let mut c = (1. / tiny, 0.);
+    let mut d = inv(b);
+    let mut h = d;
+    for i in 2..200 {
+        let a = -f64::from(i - 1) * f64::from(i - 1);
+        b.0 += 2.;
+        d = inv((a * d.0 + b.0, a * d.1 + b.1));
+        let a_over_c = mul((a, 0.), inv(c));
+        c = (b.0 + a_over_c.0, b.1 + a_over_c.1);
+        let delta = mul(c, d);
+        h = mul(h, delta);
+        if (delta.0 - 1.).abs() + delta.1.abs() < 1e-16 {
+            break;
+        }
+    }
+    mul((x.cos(), -x.sin()), h)
 }
 
 /// The principal branch `{$W_0(x)$}` of the Lambert W function, by Halley's iteration.
@@ -645,6 +700,33 @@ mod tests {
             -9.835_525_290_649_882e-11 * 1e10,
         );
         assert!(eval("Ci(x)", -1.).is_nan());
+    }
+
+    #[test]
+    fn test_exponential_integrals_to_full_precision() {
+        // On both sides of the switch from the power series to the continued fractions
+        let precise = |a: f64, b: f64| {
+            assert!((a - b).abs() <= 1e-13 * b.abs(), "{a} != {b}");
+        };
+        for (x, si, ci) in [
+            (0.5, 0.493_107_418_043_067, -0.177_784_078_806_613),
+            (3.9, 1.776_501_360_447_81, -0.123_499_349_207_815),
+            (4.1, 1.738_743_626_491_77, -0.156_165_391_828_121),
+            (10., 1.658_347_594_218_87, -0.045_456_433_004_455_4),
+            (16.67, 1.607_755_678_174_73, -0.046_855_141_548_840_4),
+            (30., 1.566_756_540_030_35, -0.033_032_417_282_071_1),
+        ] {
+            precise(eval("Si(x)", x), si);
+            precise(eval("Ci(x)", x), ci);
+        }
+        for (x, ei) in [
+            (-0.5, -0.559_773_594_776_161),
+            (-1.5, -0.100_019_582_406_633),
+            (-5., -0.001_148_295_591_275_33),
+            (-30., -3.021_552_010_688_81e-15),
+        ] {
+            precise(eval("Ei(x)", x), ei);
+        }
     }
 
     #[test]

@@ -47,6 +47,9 @@ fn approx_functions() {
 #[test]
 fn approx_keeps_significant_digits() {
     assert_eq!(approx("approx(exp(-50))"), "1.92874984796392e-22");
+    // Below the first working precision
+    assert_eq!(approx("approx(exp(-70))"), "3.97544973590865e-31");
+    assert_eq!(approx("approx(e^(-100))"), "3.72007597602084e-44");
     assert_eq!(approx("approx(exp(100))"), "2.68811714181614e43");
     assert_eq!(approx("approx(10^20/7)"), "1.42857142857143e19");
     assert_eq!(approx("approx(1/7, 3)"), "0.143");
