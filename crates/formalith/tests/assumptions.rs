@@ -1,5 +1,8 @@
 //! Assumptions on symbols with `assume`, like `a > 0` or `n integer`.
-use formalith::{dynamic::SetChoice, field::real::R, parse, parser::environment::Environment};
+use formalith::{
+    context::assumptions::Assumptions, dynamic::SetChoice, field::real::R, parse,
+    parser::environment::Environment,
+};
 
 mod common;
 use common::{eval_statements, line};
@@ -156,6 +159,25 @@ fn definitions_and_assumptions() {
     formalith::dynamic::clear_definitions(&mut env, "a").unwrap();
     assert_eq!(formalith::dynamic::definitions(&env), "b := 2");
     assert!(formalith::dynamic::clear_definitions(&mut env, "a").is_err());
+}
+
+#[test]
+fn default_assumptions() {
+    let mut env = Environment::with_default_assumptions(Assumptions::defaults());
+    assert_eq!(line(&parse!("cos(2*n*pi)", R, &env)), "1");
+    env.eval("assume(x > 0, n >= 0)", R).unwrap();
+    assert_eq!(
+        formalith::dynamic::definitions(&env),
+        "assume(n >= 0, n integer, x > 0)"
+    );
+    formalith::dynamic::clear_definitions(&mut env, "n").unwrap();
+    assert_ne!(line(&parse!("cos(2*n*pi)", R, &env)), "1");
+    // Clearing restores the defaults, and only them
+    env.clear();
+    assert_eq!(env.assumptions(), &Assumptions::defaults());
+    assert_eq!(line(&parse!("cos(2*n*pi)", R, &env)), "1");
+    assert_eq!(line(&parse!("sqrt(x^2)", R, &env)), "abs(x)");
+    assert_eq!(formalith::dynamic::definitions(&env), "");
 }
 
 #[test]

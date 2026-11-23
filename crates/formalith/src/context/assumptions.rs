@@ -235,6 +235,29 @@ impl Assumptions {
         Self::default()
     }
 
+    /// The assumptions sessions start with: `k`, `m` and `n` are integers.
+    #[must_use]
+    pub fn defaults() -> Self {
+        Self(
+            ["k", "m", "n"]
+                .into_iter()
+                .map(|name| (Symbol::new(name), Assumption::INTEGER))
+                .collect(),
+        )
+    }
+
+    /// The assumptions of `self` that aren't in `other`, or differ from those of `other`.
+    #[must_use]
+    pub fn difference(&self, other: &Self) -> Self {
+        Self(
+            self.0
+                .iter()
+                .filter(|(symbol, assumption)| other.0.get(symbol) != Some(assumption))
+                .map(|(symbol, assumption)| (*symbol, *assumption))
+                .collect(),
+        )
+    }
+
     /// The assumption on `symbol`.
     #[must_use]
     pub fn get(&self, symbol: Symbol) -> Assumption {

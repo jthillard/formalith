@@ -40,16 +40,23 @@ pub use formalith;
 pub use formalith::dynamic::{Coefficients, SetChoice, sets_help};
 pub use formalith::parser::environment::Environment;
 use formalith::{
-    context::docs::{self, Category},
+    context::{
+        assumptions::Assumptions,
+        docs::{self, Category},
+    },
     dynamic::{self, Evaluated, StatementKind},
     printer::PrintOptions,
 };
 use graph::Graph;
 
 /// The commands of a session, with their description.
-pub const COMMANDS: [(&str, &str); 8] = [
-    (":defs", "list definitions and assumptions"),
-    (":clear [name]", "remove a definition, or all of them"),
+pub const COMMANDS: [(&str, &str); 9] = [
+    (":defs", "list definitions and assumptions made"),
+    (":assumptions", "list every assumption, defaults included"),
+    (
+        ":clear [name]",
+        "remove a definition or assumptions, or reset all",
+    ),
     (":set", "show the current set"),
     (":set <name>", "evaluate in another set"),
     (":typst", "toggle Typst math output"),
@@ -74,12 +81,13 @@ impl Default for Session {
 }
 
 impl Session {
-    /// A session in `R`, without definitions, printing on one line.
+    /// A session in `R`, without definitions, with the default assumptions (`k`, `m`, `n` integers), printing on
+    /// one line.
     #[must_use]
     pub fn new() -> Self {
         Self {
             set: SetChoice::R,
-            env: Environment::new(),
+            env: Environment::with_default_assumptions(Assumptions::defaults()),
             typst: false,
         }
     }
@@ -120,7 +128,8 @@ impl Session {
              Define variables and functions with `a := x^2` or `f(x, y) := x*y`.\n\
              Solve systems with `x + y = 3, x*y = 2` (one solution per line), or `solve(a*x^2 = 1, x)` for chosen \
              unknowns.\n\
-             Declare assumptions with `assume(a > 0, b != 0, n integer)`, like `sqrt(a^2) = a`.\n\
+             Declare assumptions with `assume(a > 0, b != 0, n integer)`, like `sqrt(a^2) = a`. `k`, `m` and `n` \
+             are integers by default (`:clear n` drops it).\n\
              commands:",
         );
         for (command, description) in COMMANDS {
@@ -156,6 +165,7 @@ impl Session {
                 };
                 (Output::Message(definitions), false)
             }
+            ":assumptions" => (Output::Message(dynamic::assumptions(&self.env)), false),
             _ => {
                 if let Some(name) =
                     command_argument(line, "help").or_else(|| command_argument(line, ":help"))

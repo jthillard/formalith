@@ -634,7 +634,8 @@ pub static BUILTIN_DOCS: [BuiltinDoc; Context::BUILTIN_NAMES.len()] = [
         "Declares assumptions on symbols, like a > 0, b != 0, c <= 0 or n integer.",
         "Each comparison compares a symbol with 0. Assumptions simplify expressions (sqrt(a^2) = a when a > 0), \
          and are used by integrals, limits and solving. assume(a) shows the assumptions on a, :clear a removes \
-         them.",
+         them. Sessions start with k, m and n assumed integer: :assumptions lists every assumption, defaults \
+         included, and :clear restores the defaults.",
         &[
             ex("assume(a > 0)", "a > 0"),
             ex("assume(n integer)", "n in ZZ"),

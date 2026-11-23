@@ -126,6 +126,7 @@ pub(crate) fn head(name: Symbol, params: &[Symbol]) -> String {
 pub struct Environment {
     definitions: BTreeMap<Symbol, Rc<Definition>>,
     assumptions: Assumptions,
+    defaults: Assumptions,
 }
 
 impl Environment {
@@ -133,6 +134,17 @@ impl Environment {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Create an environment without definitions, with the assumptions `defaults`, restored by
+    /// [`Environment::clear`].
+    #[must_use]
+    pub fn with_default_assumptions(defaults: Assumptions) -> Self {
+        Self {
+            definitions: BTreeMap::new(),
+            assumptions: defaults.clone(),
+            defaults,
+        }
     }
 
     /// Return the definition of `name`, if any.
@@ -153,16 +165,22 @@ impl Environment {
         self.definitions.remove(&Symbol::new(name)).is_some()
     }
 
-    /// Remove every definition and assumption.
+    /// Remove every definition, and restore the default assumptions.
     pub fn clear(&mut self) {
         self.definitions.clear();
-        self.assumptions.clear();
+        self.assumptions.clone_from(&self.defaults);
     }
 
     /// The assumptions on symbols, made with `assume(...)`, used while parsing with this environment.
     #[must_use]
     pub const fn assumptions(&self) -> &Assumptions {
         &self.assumptions
+    }
+
+    /// The assumptions the environment started with, see [`Environment::with_default_assumptions`].
+    #[must_use]
+    pub const fn default_assumptions(&self) -> &Assumptions {
+        &self.defaults
     }
 
     /// Add an assumption on `symbol`.

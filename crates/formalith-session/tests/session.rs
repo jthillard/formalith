@@ -54,6 +54,45 @@ fn definitions() {
 }
 
 #[test]
+fn default_assumptions() {
+    let mut session = Session::new();
+    assert_eq!(run(&mut session, "sin(n*pi)").0, "0");
+    assert_eq!(run(&mut session, "floor(k + m)").0, "k+m");
+    assert_eq!(
+        run(&mut session, ":assumptions"),
+        (
+            "k integer (default)\nm integer (default)\nn integer (default)".to_owned(),
+            false
+        )
+    );
+    assert_eq!(run(&mut session, ":defs").0, "no definitions");
+
+    run(&mut session, "assume(a > 0, n > 0)");
+    assert_eq!(
+        run(&mut session, ":assumptions").0,
+        "a > 0\nk integer (default)\nm integer (default)\nn > 0, n integer"
+    );
+    assert_eq!(
+        run(&mut session, ":defs").0,
+        "assume(a > 0, n > 0, n integer)"
+    );
+
+    assert_eq!(run(&mut session, ":clear n"), (String::new(), true));
+    assert_ne!(run(&mut session, "sin(n*pi)").0, "0");
+    assert_eq!(
+        run(&mut session, ":assumptions").0,
+        "a > 0\nk integer (default)\nm integer (default)"
+    );
+
+    run(&mut session, ":clear");
+    assert_eq!(run(&mut session, "sin(n*pi)").0, "0");
+    run(&mut session, ":clear k");
+    run(&mut session, ":clear m");
+    run(&mut session, ":clear n");
+    assert_eq!(run(&mut session, ":assumptions").0, "no assumptions");
+}
+
+#[test]
 fn replay() {
     let mut session = Session::new();
     let lines = ["a := 2", ":set Z/5", "b := a + 4", "1/0", "b*3"];

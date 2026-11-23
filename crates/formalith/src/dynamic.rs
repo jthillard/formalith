@@ -511,18 +511,46 @@ fn print_statement<E: SetParseExpression>(
     }
 }
 
-/// The definitions of `env`, one per line, then its assumptions as an `assume` statement.
+/// The definitions of `env`, one per line, then its assumptions other than the defaults as an `assume` statement.
 #[must_use]
 pub fn definitions(env: &Environment) -> String {
     let mut lines: Vec<_> = env.definitions().map(ToString::to_string).collect();
-    if !env.assumptions().is_empty() {
-        lines.push(format!("assume({})", env.assumptions()));
+    let assumptions = env.assumptions().difference(env.default_assumptions());
+    if !assumptions.is_empty() {
+        lines.push(format!("assume({assumptions})"));
     }
     lines.join("\n")
 }
 
-/// Remove the definition and assumptions of `name` from `env`, or every definition and assumption if `name` is
-/// empty.
+/// Every assumption of `env`, one symbol per line sorted by name, like `a > 0` or `n integer (default)` for a
+/// default assumption, or `no assumptions`.
+#[must_use]
+pub fn assumptions(env: &Environment) -> String {
+    let mut symbols: Vec<_> = env.assumptions().iter().collect();
+    if symbols.is_empty() {
+        return "no assumptions".to_owned();
+    }
+    symbols.sort_by_key(|(symbol, _)| symbol.name());
+    let defaults = env.default_assumptions();
+    let lines: Vec<String> = symbols
+        .into_iter()
+        .map(|(symbol, assumption)| {
+            let line = assumption.describe(symbol.name(), false).join(", ");
+            let is_default = defaults
+                .iter()
+                .any(|default| default == (symbol, assumption));
+            if is_default {
+                format!("{line} (default)")
+            } else {
+                line
+            }
+        })
+        .collect();
+    lines.join("\n")
+}
+
+/// Remove the definition and assumptions of `name` from `env`, or every definition if `name` is empty, the
+/// assumptions going back to the defaults.
 ///
 /// # Errors
 /// Returns an error message if `name` is neither defined nor has assumptions.

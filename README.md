@@ -51,7 +51,9 @@ In the REPL, `:set <name>` changes the set, `:typst` toggles Typst output, `f(x)
 `:defs` lists definitions and `:clear [name]` removes them, `help builtins` lists the builtin functions and
 `help <name>` documents one. Systems are solved with `x + y = 3, x - y = 1`.
 Assumptions on symbols are declared with `assume(a > 0, b != 0, n integer)`, giving `sqrt(a^2) = a`,
-`integrate(1/a, a) = ln(a)`, `cos(2 n pi) = 1` or `lim(exp(a x), x, oo) = oo`.
+`integrate(1/a, a) = ln(a)`, `cos(2 n pi) = 1` or `lim(exp(a x), x, oo) = oo`. Sessions start with `k`, `m` and
+`n` assumed integer: `:assumptions` lists every assumption, defaults included, `:clear n` drops one and `:clear`
+restores the defaults.
 
 ## Web
 
