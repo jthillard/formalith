@@ -273,10 +273,17 @@ impl<T: Group> Term<T> {
                 .then_with(|| p1.exponant.cmp(&p2.exponant)),
             (_, Self::Value(_)) | (Self::Pow(_), _) => Ordering::Less,
             (_, Self::Pow(_)) => Ordering::Greater,
+            // The coefficients last, else `{$-4 x - 3$}` and `{$-3 x - 3$}` would be equal and keep the order in
+            // which they were built
             (Self::Mul(m1), Self::Mul(m2)) => m1
                 .len()
                 .cmp(&m2.len())
-                .then_with(|| iter::cmp_by(m1.iter(), m2.iter(), Self::cmp)),
+                .then_with(|| iter::cmp_by(m1.iter(), m2.iter(), Self::cmp))
+                .then_with(|| {
+                    m1.set
+                        .get_coefficient_set()
+                        .total_cmp(&m1.coefficient, &m2.coefficient)
+                }),
             (Self::Mul(_), _) => Ordering::Less,
             (_, Self::Mul(_)) => Ordering::Greater,
             (Self::Add(a1), Self::Add(a2)) => a1

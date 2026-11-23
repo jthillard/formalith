@@ -499,6 +499,12 @@ where
         )?;
         let node = node.or_else(|| self.parse_symbol(set));
         let node = node.map_or_else(|| self.parse_group(set), |n| Ok(Some(n)))?;
+        // The literal of the coefficient set is the same node only if it spans the same tokens: for `{$-2 x + 7$}`
+        // in `M`, the scalar is `{$-2 x + 7$}` but the node `{$-2$}`, an operand of `{$-2 x + 7$}`
+        let node_in_coefficient_set = match node_in_coefficient_set {
+            Ok(Some(_)) if self_in_coefficient_set.start_span != self.start_span => Ok(None),
+            other => other,
+        };
 
         match (node, node_in_coefficient_set) {
             (None, Err(_) | Ok(None)) => Ok(None),

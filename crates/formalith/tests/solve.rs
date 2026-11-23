@@ -317,7 +317,7 @@ fn quadratic_with_symbolic_coefficients() {
     assert_eq!(
         solve("solve(x^2 + p*x + q = 0, x)"),
         ok(
-            "x = -frac(1, 2) p+frac(1, 2) sqrt(p^2-4 q) \\ x = -frac(1, 2) p-frac(1, 2) sqrt(p^2-4 q)"
+            "x = -frac(1, 2) p-frac(1, 2) sqrt(p^2-4 q) \\ x = -frac(1, 2) p+frac(1, 2) sqrt(p^2-4 q)"
         )
     );
 }
@@ -457,7 +457,7 @@ fn cyclotomic_polynomials() {
     assert_eq!(
         solve_in("C", "x^4 - x^3 + x^2 - x + 1 = 0"),
         ok(
-            "x = -frac(1, 4) i sqrt(-2 sqrt(5)+10)+frac(1, 4) sqrt(5)+frac(1, 4) \\ x = -frac(1, 4) i sqrt(2 sqrt(5)+10)-frac(1, 4) sqrt(5)+frac(1, 4) \\ x = frac(1, 4) i sqrt(-2 sqrt(5)+10)+frac(1, 4) sqrt(5)+frac(1, 4) \\ x = frac(1, 4) i sqrt(2 sqrt(5)+10)-frac(1, 4) sqrt(5)+frac(1, 4)"
+            "x = -frac(1, 4) i sqrt(-2 sqrt(5)+10)+frac(1, 4) sqrt(5)+frac(1, 4) \\ x = frac(1, 4) i sqrt(-2 sqrt(5)+10)+frac(1, 4) sqrt(5)+frac(1, 4) \\ x = -frac(1, 4) i sqrt(2 sqrt(5)+10)-frac(1, 4) sqrt(5)+frac(1, 4) \\ x = frac(1, 4) i sqrt(2 sqrt(5)+10)-frac(1, 4) sqrt(5)+frac(1, 4)"
         )
     );
     assert_eq!(solve("x^4 - x^3 + x^2 - x + 1 = 0"), ok("\"no solution\""));

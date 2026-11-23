@@ -318,7 +318,7 @@ fn whole_series() {
     // Irrational poles, Fibonacci numbers by Binet's formula
     assert_eq!(
         whole("1/(1 - x - x^2), x, 0"),
-        "sum((1/10*(5^(1/2)+5)*((1/2*(5^(1/2))+1/2)^k)+1/10*((-1/2*(5^(1/2))+1/2)^k)*(-(5^(1/2))+5))*(x^k), k, 0, oo)"
+        "sum((1/10*(5^(1/2)+5)*((1/2*(5^(1/2))+1/2)^k)+1/10*(-(5^(1/2))+5)*((-1/2*(5^(1/2))+1/2)^k))*(x^k), k, 0, oo)"
     );
     // Complex poles without a period
     assert_eq!(

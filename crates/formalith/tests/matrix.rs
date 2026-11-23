@@ -1,4 +1,5 @@
 //! Generic matrices and the matrix set `M`.
+use formalith::{dynamic::SetChoice, parser::environment::Environment};
 use formalith::{
     field::{integer::Z, matrix::M, modular::Zn, real::R},
     matrix::{Matrix, MatrixError},
@@ -743,4 +744,16 @@ fn factorint() {
     let mz = M::new(TermSet::new(Z));
     assert_eq!(line(&parse!("factorint(-12)", mz)), "[[-1,1],[2,2],[3,1]]");
     assert_eq!(line(&parse!("factorint(0)", M)), "factorint(0)");
+}
+
+#[test]
+fn leading_minus_of_scalars() {
+    let m = |input: &str| {
+        SetChoice::M
+            .eval(input, false, &mut Environment::new())
+            .unwrap()
+    };
+    assert_eq!(m("-72*x + 7"), m("7 - 72*x"));
+    assert_eq!(m("-2*x*y"), m("(-2)*x*y"));
+    assert_eq!(m("-2*I(2) + [[1, 2], [3, 4]]"), m("[[-1, 2], [3, 2]]"));
 }
