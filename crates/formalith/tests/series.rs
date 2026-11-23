@@ -301,6 +301,11 @@ fn whole_series() {
         whole("exp(x) + x^40, x, 0"),
         "x^40+sum((x^k)*(factorial(k)^-1), k, 0, oo)"
     );
+    // Rational terms of a sum split into partial fractions, and a polynomial factor distributed
+    assert!(!whole("-sin(x) + 1/((4 - x)*(3 + x)), x, 0").contains("series"));
+    assert!(!whole("(x/2 + 1)*atan(2*x), x, 0").contains("series"));
+    // Without a common recurrence, the guess over parameters (here `{$sqrt(pi)$}`) fails fast
+    assert!(!whole("erf(x) + exp(x), x, 0").contains("series"));
     // Finite series, and series without a hypergeometric general term
     assert_eq!(whole("x^2 + 1, x, 0"), "x^2+1");
     assert_eq!(whole("tan(x), x, 0"), "series(tan(x), x, 0, oo)");

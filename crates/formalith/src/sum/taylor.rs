@@ -41,7 +41,7 @@ use crate::{
     matrix::eigen,
     polynom::{
         dense::{Coefficient, Poly},
-        fraction::{EPoly, Elem, solve_linear_unique},
+        fraction::{EPoly, Elem, sample_points, solve_linear, solve_linear_unique},
     },
     term::{Expand, Fun, Normalize, Term},
 };
@@ -278,17 +278,22 @@ fn split_series(
     if !split || whole == Err(LimitError::Undefined) {
         return whole;
     }
-    let parts = if is_rational_function(f) && f.symbols().len() == 1 && whole.is_err() {
+    let rational = |f: &Expr| is_rational_function(f) && f.symbols().len() == 1;
+    let parts = if rational(f) && whole.is_err() {
         f.apart(x).unwrap_or_else(|| f.clone())
+    } else if matches!(f, Term::Mul(_)) && whole.is_err() {
+        // A polynomial factor distributed, `{$(x + 1) arctan x = x arctan x + arctan x$}`
+        f.expand()
     } else {
         f.clone()
     };
     let Term::Add(add) = &parts else {
         return whole;
     };
+    // Rational terms of other sums are split into their partial fractions too
     let split = add
         .iter()
-        .map(|term| whole_series(term, x, point, direction, k, false))
+        .map(|term| whole_series(term, x, point, direction, k, !rational(f) && rational(term)))
         .collect::<LimitResult<Vec<_>>>()
         .map(|parts| merge_sums(&parts, x));
     // The one with the fewest sums, like `{$sum x^k/k! + sum (-1)^k x^(2k+1)/(2k+1)!$}` for `{$e^x + sin x$}`
@@ -712,6 +717,9 @@ fn guess_with(c: &[Elem], m: usize, d: usize) -> Option<Recurrence> {
     if rows.len() < unknowns + CHECKS {
         return None;
     }
+    if !consistent_at_sample(&rows, unknowns) {
+        return None;
+    }
     let solution = solve_linear_unique(rows, unknowns)?;
     let mut p: Vec<Elem> = solution[..d].to_vec();
     p.push(Elem::one());
@@ -757,6 +765,31 @@ fn guess_with(c: &[Elem], m: usize, d: usize) -> Option<Recurrence> {
         p,
         q,
     })
+}
+
+/// Whether the system `rows` over `{$QQ(t_1, ..., t_n)$}` may have a solution, by solving it over ℚ at a sample
+/// point first, which is much faster when it has none (sums of functions without a common recurrence). A solution
+/// gives one at the point, unless one of its denominators vanishes there.
+fn consistent_at_sample(rows: &[Vec<Elem>], unknowns: usize) -> bool {
+    let levels = rows.iter().flatten().map(Elem::level).max().unwrap_or(0);
+    if levels == 0 {
+        return true;
+    }
+    let point = sample_points(levels)
+        .next()
+        .expect("There are infinitely many points");
+    let Some(specialized) = rows
+        .iter()
+        .map(|row| {
+            row.iter()
+                .map(|e| e.eval(&point))
+                .collect::<Option<Vec<_>>>()
+        })
+        .collect::<Option<Vec<_>>>()
+    else {
+        return true;
+    };
+    solve_linear(specialized, unknowns).is_some()
 }
 
 /// The general term tidied: powers of values split ([`split_powers`]), factorials merged, also with the
