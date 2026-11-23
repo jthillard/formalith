@@ -28,7 +28,6 @@ Ideas and known gaps, roughly by area. `AGENTS.md` describes what exists; this f
 ## Limits
 
 - `gamma(g)` with `g -> -oo`.
-- `lim((-1)^x, x, oo)` is wrongly 0 (worked around in sums).
 
 ## Integration
 

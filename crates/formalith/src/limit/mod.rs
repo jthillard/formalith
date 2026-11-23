@@ -47,9 +47,9 @@ use crate::{
         R,
         approx::approximate,
         expr::{
-            DIGITS, Expr, Real, depends, fun, gamma_pole, half, has_special_constant,
-            hyperbolic_as_exp, infinity, infinity_sign, one, polygamma, polygamma_args, sqrt,
-            try_map_operands, unary, value, variable,
+            DIGITS, Expr, Real, constant_sign, depends, fun, gamma_pole, half,
+            has_special_constant, hyperbolic_as_exp, infinity, infinity_sign, one, polygamma,
+            polygamma_args, sqrt, try_map_operands, unary, value, variable,
         },
         sign::{SignMode, sign},
     },
@@ -289,8 +289,8 @@ pub(crate) fn prepare(
     if depends(point, x) || has_special_constant(f) {
         return Err(LimitError::Unsupported);
     }
-    let f = exp_log_form(f, x)?;
     let infinite = infinity_sign(point);
+    let f = exp_log_form(f, x, infinite.is_some())?;
     if infinite.is_some() && direction != Direction::Both
         || infinite.is_none() && has_special_constant(point)
     {
@@ -352,18 +352,29 @@ fn only_symbols(term: &Expr, allowed: &[Symbol]) -> bool {
         .all(|symbol| Context::is_builtin_constant(*symbol) || allowed.contains(symbol))
 }
 
-/// Rewrite powers with an exponent depending on `x` as `{$b^g = exp(g ln b)$}`, `{$tan u$}` as
+/// Rewrite powers with an exponent depending on `x` as `{$b^g = exp(g ln b)$}` (`{$|b|^g cos(pi g)$}` for a
+/// negative constant `b` at an infinite point, its value at integers `g`, unsupported at a finite point where
+/// it isn't continuous), `{$tan u$}` as
 /// `{$sin u / cos u$}`, `{$sign u$}` as `{$u / |u|$}`, `min` and `max` with `abs`, hyperbolic functions and their
 /// inverses with `exp` and `ln`, and `asin` and `acos` with `atan`.
-fn exp_log_form(term: &Expr, x: Symbol) -> LimitResult<Expr> {
+fn exp_log_form(term: &Expr, x: Symbol, infinite: bool) -> LimitResult<Expr> {
     if !depends(term, x) {
         return Ok(term.clone());
     }
     Ok(match term {
         Term::Pow(pow) => {
-            let base = exp_log_form(&pow.base, x)?;
-            let exponant = exp_log_form(&pow.exponant, x)?;
-            if depends(&exponant, x) {
+            let base = exp_log_form(&pow.base, x, infinite)?;
+            let exponant = exp_log_form(&pow.exponant, x, infinite)?;
+            if depends(&exponant, x)
+                && !depends(&base, x)
+                && constant_sign(&base) == Some(Ordering::Less)
+            {
+                if !infinite {
+                    return Err(LimitError::Unsupported);
+                }
+                fun(Context::EXP, &exponant * &fun(Context::LN, -base))
+                    * fun(Context::COS, variable(Context::PI) * exponant)
+            } else if depends(&exponant, x) {
                 fun(Context::EXP, exponant * fun(Context::LN, base))
             } else {
                 base.pow(&exponant)
@@ -374,7 +385,7 @@ fn exp_log_form(term: &Expr, x: Symbol) -> LimitResult<Expr> {
                 .get_args::<Real>()
                 .ok_or(LimitError::Unsupported)?
                 .iter()
-                .map(|arg| exp_log_form(arg, x))
+                .map(|arg| exp_log_form(arg, x, infinite))
                 .collect::<LimitResult<Vec<_>>>()?;
             match (f.get_ident(), args.as_slice()) {
                 (Context::TAN, [u]) => fun(Context::SIN, u.clone()) / fun(Context::COS, u.clone()),
@@ -420,7 +431,7 @@ fn exp_log_form(term: &Expr, x: Symbol) -> LimitResult<Expr> {
                 (ident, _) => Term::Fun(Box::new(Fun::new(ident, args, R))).normalize(),
             }
         }
-        _ => try_map_operands(term, |operand| exp_log_form(operand, x))?,
+        _ => try_map_operands(term, |operand| exp_log_form(operand, x, infinite))?,
     })
 }
 

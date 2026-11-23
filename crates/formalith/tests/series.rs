@@ -136,6 +136,8 @@ fn unsupported_series_stay_unevaluated() {
     assert_eq!(series("series(exp(1/x), x, 0)"), "series(exp(x^-1), x, 0)");
     assert_eq!(series("series(floor(x), x, 0)"), "series(floor(x), x, 0)");
     assert_eq!(series("series(x^2, x+1, 0)"), "series(x^2, x+1, 0)");
+    // Not continuous, a negative base is only real at some rational exponents
+    assert_eq!(series("series((-1)^x, x, 0)"), "series((-1)^x, x, 0)");
 }
 
 #[test]

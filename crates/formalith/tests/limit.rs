@@ -139,6 +139,21 @@ fn undefined_limits() {
 }
 
 #[test]
+fn limits_of_powers_of_negative_constants() {
+    // `{$c^g$}` behaves like `{$|c|^g cos(pi g)$}`, not `{$exp(g ln c)$}` with `{$ln c$}` taken as real
+    assert_eq!(lim("lim((-1)^x, x, oo)"), "undefined");
+    assert_eq!(lim("lim((-1)^x, x, -oo)"), "undefined");
+    assert_eq!(lim("lim((-2)^x, x, oo)"), "undefined");
+    assert_eq!(lim("lim(x*(-1)^x, x, oo)"), "undefined");
+    assert_eq!(lim("lim((-1)^(2*x), x, oo)"), "undefined");
+    assert_eq!(lim("lim((-1/2)^x, x, oo)"), "0");
+    assert_eq!(lim("lim((-2)^x, x, -oo)"), "0");
+    assert_eq!(lim("lim((-1)^x/x, x, oo)"), "0");
+    // Not continuous at finite points
+    assert_eq!(lim("lim((-1)^x, x, 0)"), "lim((-1)^x, x, 0)");
+}
+
+#[test]
 fn limits_left_unevaluated() {
     // Unbounded near the zeros of `sin`, or several independent oscillations
     assert_eq!(

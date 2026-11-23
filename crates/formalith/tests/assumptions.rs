@@ -113,6 +113,10 @@ fn limits() {
     assert_eq!(eval(&["assume(a > 0)", "lim(a*x, x, oo)"]), "oo");
     assert_eq!(eval(&["assume(a < 0)", "lim(a*x, x, oo)"]), "-oo");
     assert_eq!(eval(&["lim(a*x, x, oo)"]), expr("sign(a)*oo"));
+    assert_eq!(
+        eval(&["assume(a < 0)", "lim(a^x, x, oo)"]),
+        "lim(a^x, x, oo)"
+    );
 }
 
 #[test]
