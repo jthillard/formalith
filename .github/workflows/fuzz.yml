@@ -1,0 +1,37 @@
+name: Fuzz
+
+# Runs the fuzzers of the self-checking tests (`crates/formalith/tests/check_*.rs`, ignored by `cargo test`) every
+# night with a new seed. A failure prints the seed and the failing inputs; rerun locally with
+# `FORMALITH_SEED=<seed> cargo test -p formalith --test <file> -- --ignored`.
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+    inputs:
+      cases:
+        description: "Cases per fuzzer"
+        default: "300"
+      seed:
+        description: "Seed (empty for a new one)"
+        default: ""
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  fuzz:
+    name: Fuzz
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup show
+      - uses: Swatinem/rust-cache@v2
+      - name: Run the fuzzers
+        env:
+          FORMALITH_FUZZ_CASES: ${{ inputs.cases || '300' }}
+        run: |
+          seed="${{ inputs.seed }}"
+          seed="${seed:-$(date +%s)}"
+          echo "FORMALITH_SEED=$seed"
+          FORMALITH_SEED="$seed" cargo test --release -p formalith --no-fail-fast -- --ignored fuzz
