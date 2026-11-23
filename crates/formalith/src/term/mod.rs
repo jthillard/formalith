@@ -1249,10 +1249,23 @@ impl<T: Ring> Term<T> {
 impl<T: Ring<ExponantSet: Ring>> Term<T> {
     fn normalize_in_ring_with_ring_exponant(&self) -> Self {
         let normalized = self.normalize_in_ring();
-        if let Self::Pow(pow) = &normalized
-            && pow.exponant.is_one()
-        {
-            return *pow.base.clone();
+        if let Self::Pow(pow) = &normalized {
+            if pow.exponant.is_one() {
+                return *pow.base.clone();
+            }
+            // `{$(b^m)^n = b^(m n)$}` for positive integers, in every ring
+            if let Self::Pow(inner) = &*pow.base
+                && inner.exponant.to_i64().is_some_and(|m| m > 0)
+                && pow.exponant.to_i64().is_some_and(|n| n > 0)
+            {
+                let exponant = ((**inner.exponant).clone() * (**pow.exponant).clone()).normalize();
+                return Self::Pow(Pow::new(
+                    inner.base.clone(),
+                    Box::new(exponant),
+                    self.get_set(),
+                ))
+                .normalize();
+            }
         }
         normalized
     }

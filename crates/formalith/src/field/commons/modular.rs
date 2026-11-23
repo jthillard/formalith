@@ -139,10 +139,15 @@ impl Zn {
 
     /// Factor a univariate polynomial expression into irreducible factors, when the modulus is prime.
     pub(crate) fn factor(self, term: &Term<Self>) -> Option<Term<Self>> {
+        let expanded = term.expand();
+        // A constant, like a polynomial whose other coefficients are multiples of `n`
+        if let Term::Value(_) = expanded {
+            return Some(expanded);
+        }
         if !self.is_field() {
             return None;
         }
-        let (variable, coefficients) = self.univariate(&term.expand())?;
+        let (variable, coefficients) = self.univariate(&expanded)?;
         let leading_coefficient = *coefficients.last()?;
         let x = Term::Symbol(SymbolTerm::new(variable, self));
         Some(

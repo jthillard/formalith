@@ -1,5 +1,7 @@
 //! Expressions over the integers modulo `n`.
-use formalith::{field::modular::Zn, parse, try_parse};
+use formalith::{
+    dynamic::SetChoice, field::modular::Zn, parse, parser::environment::Environment, try_parse,
+};
 
 mod common;
 use common::{line, typst};
@@ -126,4 +128,22 @@ fn irreducible_polynomials_modulo_p() {
 #[should_panic(expected = "The modulus must be between 2 and 2^63")]
 fn modulus_one_is_rejected() {
     let _ = Zn::new(1);
+}
+
+#[test]
+fn powers_of_powers() {
+    let eval = |input: &str| SetChoice::Zn(7).eval(input, false, &mut Environment::new());
+    assert_eq!(eval("(x^3)^4 - x^12"), Ok("0".to_owned()));
+    assert_eq!(eval("(x^2)^2"), eval("x^4"));
+    assert_eq!(
+        SetChoice::Z.eval("((x + 1)^2)^3 - (x + 1)^6", false, &mut Environment::new()),
+        Ok("0".to_owned())
+    );
+}
+
+#[test]
+fn factor_of_constants() {
+    let eval = |input: &str| SetChoice::Zn(7).eval(input, false, &mut Environment::new());
+    assert_eq!(eval("factor(6)"), Ok("6".to_owned()));
+    assert_eq!(eval("factor(7*x^2 + 3)"), Ok("3".to_owned()));
 }
