@@ -706,8 +706,51 @@ mod tests {
             };
             assert_eq!([x.eval(&[]), y.eval(&[])], point);
         }
+        // Parts with only a numerical form
+        for (line, z, value) in [
+            (
+                "zeta(z)",
+                [2., 1.],
+                [1.150_355_703_254_9, -0.437_530_865_919_608],
+            ),
+            (
+                "gamma(z)",
+                [1., 1.],
+                [0.498_015_668_118_356, -0.154_949_828_301_811],
+            ),
+            ("ln(z)", [3., 4.], [5f64.ln(), 0.927_295_218_001_612]),
+            ("sqrt(z)", [-3., 4.], [1., 2.]),
+            ("z^i", [0., 1.], [(-std::f64::consts::FRAC_PI_2).exp(), 0.]),
+        ] {
+            let (_, graph) = evaluate_complex(line, &mut env).unwrap();
+            let Some(GraphKind::ComplexMap { re, im }) = graph.map(|graph| graph.kind) else {
+                panic!("Expected a complex map for {line}");
+            };
+            let (u, v) = (re.eval(&z), im.eval(&z));
+            assert!(
+                (u - value[0]).abs() < 1e-9 && (v - value[1]).abs() < 1e-9,
+                "{line} at {z:?}: {u} + {v} i"
+            );
+        }
+        let (_, graph) = evaluate_complex("zeta(1/2 + i*x)", &mut env).unwrap();
+        let Some(GraphKind::ComplexCurve { re, im, .. }) = graph.map(|graph| graph.kind) else {
+            panic!("Expected a complex curve for zeta(1/2 + i x)");
+        };
+        let at_zero = [
+            re.eval(&[14.134_725_141_734_693]),
+            im.eval(&[14.134_725_141_734_693]),
+        ];
+        assert!(at_zero.iter().all(|part| part.abs() < 1e-9), "{at_zero:?}");
         let mut session = crate::Session::new();
         session.run(":set C");
+        // Symbolic results don't use the numerical parts
+        assert_eq!(
+            session
+                .run("re(zeta(2 + i))")
+                .output
+                .print(PrintOptions::plain()),
+            "re(zeta(2+i))"
+        );
         let (response, graph) = session.graph("(z + i)^2");
         assert!(matches!(graph.unwrap().kind, GraphKind::ComplexMap { .. }));
         assert_eq!(

@@ -347,6 +347,15 @@ impl Context {
         *HELD_SUM
     }
 
+    /// The internal function `@zetare(a, b)`, `@zetaim`, `@gammare` or `@gammaim` (`function` being
+    /// [`Self::ZETA`] or [`Self::GAMMA`]): the real or imaginary part of `{$f(a + i b)$}`, which only has a numerical
+    /// form, written in graphs of complex functions.
+    pub(crate) fn complex_part(function: Symbol, imaginary: bool) -> Symbol {
+        static PARTS: LazyLock<[Symbol; 4]> =
+            LazyLock::new(|| ["@zetare", "@zetaim", "@gammare", "@gammaim"].map(Symbol::new));
+        PARTS[usize::from(function == Self::GAMMA) * 2 + usize::from(imaginary)]
+    }
+
     /// Return `true` if `symbol` is a builtin constant, like `{$pi$}`, which is not a function.
     #[must_use]
     pub const fn is_builtin_constant(symbol: Symbol) -> bool {

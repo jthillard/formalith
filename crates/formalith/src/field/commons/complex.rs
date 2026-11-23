@@ -707,7 +707,10 @@ pub type Complex = C<R<Rational>>;
 pub const C: C<R<Rational>> = C::new(R);
 
 /// The real and imaginary parts `{$(u, v)$}` of `{$f(a + i b) = u + i v$}`, as functions of the real symbols `a`
-/// and `b`, the other symbols of `f` being assumed real. `None` when a part can't be written, like `{$ln(z)$}`.
+/// and `b`, the other symbols of `f` being assumed real, for graphs. Parts may only have a numerical form: `{$zeta$}`
+/// and `{$Gamma$}` of non-real arguments are internal functions evaluated by
+/// [`Numeric`](crate::field::real::numeric::Numeric), and the principal argument of `{$ln$}` and powers is
+/// `{$2 atan(v / (|z| + u))$}` when the signs of the parts are unknown. `None` when a part can't be written.
 ///
 /// ```
 /// use formalith::{field::{complex::{C, parts}, real::R}, parse, symbol};
@@ -718,11 +721,18 @@ pub const C: C<R<Rational>> = C::new(R);
 /// ```
 #[must_use]
 pub fn parts(f: &Term<Complex>, z: Symbol, a: Symbol, b: Symbol) -> Option<(Expr, Expr)> {
-    parts::split_with(f, Some((z, &(variable(a), variable(b)))))
+    let var = (variable(a), variable(b));
+    parts::split_with(
+        f,
+        parts::Split {
+            var: Some((z, &var)),
+            numeric: true,
+        },
+    )
 }
 
-/// The real and imaginary parts `{$(u, v)$}` of `{$f = u + i v$}`, every symbol of `f` being assumed real. `None`
-/// when a part can't be written, like `{$sqrt(i x)$}`.
+/// The real and imaginary parts `{$(u, v)$}` of `{$f = u + i v$}`, every symbol of `f` being assumed real, for
+/// graphs: parts may only have a numerical form, like in [`parts`]. `None` when a part can't be written.
 ///
 /// ```
 /// use formalith::{field::{complex::{C, real_parts}, real::R}, parse};
@@ -733,5 +743,11 @@ pub fn parts(f: &Term<Complex>, z: Symbol, a: Symbol, b: Symbol) -> Option<(Expr
 /// ```
 #[must_use]
 pub fn real_parts(f: &Term<Complex>) -> Option<(Expr, Expr)> {
-    parts::split(f)
+    parts::split_with(
+        f,
+        parts::Split {
+            var: None,
+            numeric: true,
+        },
+    )
 }

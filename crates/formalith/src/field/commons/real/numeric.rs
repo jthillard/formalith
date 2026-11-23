@@ -74,6 +74,14 @@ pub enum NumFn {
     Si,
     Ci,
     Ei,
+    /// `{$"Re" zeta(a + i b)$}` of `(a, b)`
+    ZetaRe,
+    /// `{$"Im" zeta(a + i b)$}` of `(a, b)`
+    ZetaIm,
+    /// `{$"Re" Gamma(a + i b)$}` of `(a, b)`
+    GammaRe,
+    /// `{$"Im" Gamma(a + i b)$}` of `(a, b)`
+    GammaIm,
     /// `piecewise(c1, v1, c2, v2, ..., default)`
     Piecewise,
     /// A comparison of its two arguments, 1 if it holds, 0 otherwise.
@@ -88,6 +96,19 @@ pub enum NumFn {
 impl NumFn {
     /// The function of a builtin with its number of arguments.
     fn from_builtin(ident: Symbol, arity: usize) -> Option<Self> {
+        if arity == 2 {
+            let parts = [
+                (Context::ZETA, false, Self::ZetaRe),
+                (Context::ZETA, true, Self::ZetaIm),
+                (Context::GAMMA, false, Self::GammaRe),
+                (Context::GAMMA, true, Self::GammaIm),
+            ];
+            if let Some(&(.., part)) = parts.iter().find(|(function, imaginary, _)| {
+                Context::complex_part(*function, *imaginary) == ident
+            }) {
+                return Some(part);
+            }
+        }
         let fun = match ident {
             Context::EXP => Self::Exp,
             Context::LN => Self::Ln,
@@ -178,6 +199,10 @@ impl NumFn {
             Self::Binomial => binomial(x, y),
             Self::LambertW => lambert_w(x),
             Self::Si | Self::Ci | Self::Ei => exponential_integral(self, x),
+            Self::ZetaRe => complex_zeta((x, y)).0,
+            Self::ZetaIm => complex_zeta((x, y)).1,
+            Self::GammaRe => complex_gamma((x, y)).0,
+            Self::GammaIm => complex_gamma((x, y)).1,
             Self::Piecewise => args
                 .chunks(2)
                 .find_map(|chunk| match chunk {
@@ -405,6 +430,137 @@ fn zeta(s: f64) -> f64 {
         let k = f64::from(k);
         rising *= (s + 2. * k - 1.) * (s + 2. * k);
         factorial *= (2. * k + 1.) * (2. * k + 2.);
+    }
+    sum
+}
+
+/// A complex number `(re, im)`, for the numerical forms of complex functions.
+type Complex = (f64, f64);
+
+fn c_add((a, b): Complex, (c, d): Complex) -> Complex {
+    (a + c, b + d)
+}
+
+fn c_mul((a, b): Complex, (c, d): Complex) -> Complex {
+    (a.mul_add(c, -b * d), a.mul_add(d, b * c))
+}
+
+fn c_div((a, b): Complex, (c, d): Complex) -> Complex {
+    let norm = c.mul_add(c, d * d);
+    (a.mul_add(c, b * d) / norm, b.mul_add(c, -a * d) / norm)
+}
+
+fn c_exp((a, b): Complex) -> Complex {
+    let r = a.exp();
+    (r * b.cos(), r * b.sin())
+}
+
+/// `{$sin(pi z)$}`, the real part of `z` reduced modulo 2 first.
+fn c_sin_pi((a, b): Complex) -> Complex {
+    let pi = std::f64::consts::PI;
+    let a = a - 2. * (a / 2.).floor();
+    (
+        (pi * a).sin() * (pi * b).cosh(),
+        (pi * a).cos() * (pi * b).sinh(),
+    )
+}
+
+/// `{$c^z$}` for a positive `c`.
+fn c_real_pow(c: f64, (a, b): Complex) -> Complex {
+    let ln = c.ln();
+    c_exp((a * ln, b * ln))
+}
+
+/// `{$Gamma(z)$}`, by Lanczos' approximation for `{$"Re" z >= 1/2$}` and the reflection formula
+/// `{$Gamma(z) Gamma(1 - z) = pi / sin(pi z)$}` otherwise.
+fn complex_gamma(z: Complex) -> Complex {
+    const LANCZOS: [f64; 8] = [
+        676.520_368_121_885_1,
+        -1_259.139_216_722_402_8,
+        771.323_428_777_653_1,
+        -176.615_029_162_140_6,
+        12.507_343_278_686_905,
+        -0.138_571_095_265_720_12,
+        9.984_369_578_019_572e-6,
+        1.505_632_735_149_311_6e-7,
+    ];
+    if z.1 == 0. {
+        return (gamma(z.0), 0.);
+    }
+    if !z.0.is_finite() || !z.1.is_finite() {
+        return (f64::NAN, f64::NAN);
+    }
+    if z.0 < 0.5 {
+        let pi = std::f64::consts::PI;
+        let denominator = c_mul(c_sin_pi(z), complex_gamma((1. - z.0, -z.1)));
+        return c_div((pi, 0.), denominator);
+    }
+    let z = (z.0 - 1., z.1);
+    let mut sum = (0.999_999_999_999_809_9, 0.);
+    for (k, c) in (1..).zip(LANCZOS) {
+        sum = c_add(sum, c_div((c, 0.), (z.0 + f64::from(k), z.1)));
+    }
+    // `{$sqrt(2 pi) t^(z + 1/2) e^(-t) sum$}` with `{$t = z + 7.5$}`
+    let t = (z.0 + 7.5, z.1);
+    let ln_t = (t.0.hypot(t.1).ln(), t.1.atan2(t.0));
+    let exponent = c_add(c_mul((z.0 + 0.5, z.1), ln_t), (-t.0, -t.1));
+    let res = c_mul(c_exp(exponent), sum);
+    let scale = (2. * std::f64::consts::PI).sqrt();
+    (scale * res.0, scale * res.1)
+}
+
+/// `{$zeta(s)$}`, by Euler-Maclaurin summation for `{$"Re" s >= 1/2$}` (with more terms for large `{$|"Im" s|$}`)
+/// and the functional equation otherwise.
+fn complex_zeta(s: Complex) -> Complex {
+    /// The largest number of summed terms, so that the evaluation stays fast.
+    const MAX_TERMS: f64 = 4096.;
+    if s.1 == 0. {
+        return (zeta(s.0), 0.);
+    }
+    if !s.0.is_finite() || !s.1.is_finite() {
+        return (f64::NAN, f64::NAN);
+    }
+    if s.0 < 0.5 {
+        // `{$zeta(s) = 2^s pi^(s-1) sin(pi s / 2) Gamma(1 - s) zeta(1 - s)$}`
+        let pi = std::f64::consts::PI;
+        let one_minus = (1. - s.0, -s.1);
+        let factors = [
+            c_real_pow(2., s),
+            c_real_pow(pi, (s.0 - 1., s.1)),
+            c_sin_pi((s.0 / 2., s.1 / 2.)),
+            complex_gamma(one_minus),
+            complex_zeta(one_minus),
+        ];
+        return factors.into_iter().fold((1., 0.), c_mul);
+    }
+    let n = (12. + s.1.abs().ceil()).min(MAX_TERMS);
+    let neg = (-s.0, -s.1);
+    let mut sum = (0., 0.);
+    let mut k = 1.;
+    while k < n {
+        sum = c_add(sum, c_real_pow(k, neg));
+        k += 1.;
+    }
+    let power = c_real_pow(n, neg);
+    sum = c_add(sum, c_div(c_mul(power, (n, 0.)), (s.0 - 1., s.1)));
+    sum = c_add(sum, (0.5 * power.0, 0.5 * power.1));
+    // `{$sum_k B_(2k) / (2k)! s (s+1) ... (s+2k-2) N^(-s-2k+1)$}`
+    let mut rising = s;
+    let mut factorial = 2.;
+    let mut power = c_mul(power, (1. / n, 0.));
+    for (k, bernoulli) in (1..).zip(BERNOULLI) {
+        let term = c_mul(rising, power);
+        sum = c_add(
+            sum,
+            (
+                bernoulli / factorial * term.0,
+                bernoulli / factorial * term.1,
+            ),
+        );
+        let k = f64::from(k);
+        rising = c_mul(rising, c_mul((s.0 + 2. * k - 1., s.1), (s.0 + 2. * k, s.1)));
+        factorial *= (2. * k + 1.) * (2. * k + 2.);
+        power = c_mul(power, (1. / (n * n), 0.));
     }
     sum
 }
@@ -679,6 +835,71 @@ mod tests {
         assert_close(eval("erfi(x)", 1.), 1.650_425_758_797_542_9);
         assert_close(eval("erfi(x)", 6.), 4.112_751_455_828_239e14);
         assert_close(eval("erfi(x)", 4.9), 3_149_283_850.004_450_8);
+    }
+
+    #[test]
+    fn test_complex_parts() {
+        let parts = |input: &str, a: f64, b: f64| {
+            let vars = [symbol!("x"), symbol!("y")];
+            let (re, im) = crate::field::complex::parts(
+                &parse!(input, crate::field::complex::C),
+                symbol!("z"),
+                vars[0],
+                vars[1],
+            )
+            .unwrap();
+            let (re, im) = (Numeric::compile(&re, &vars), Numeric::compile(&im, &vars));
+            (re.eval(&[a, b]), im.eval(&[a, b]))
+        };
+        let close = |(a, b): (f64, f64), (c, d): (f64, f64)| {
+            assert!(
+                (a - c).abs() <= 1e-9 * (1. + c.abs()) && (b - d).abs() <= 1e-9 * (1. + d.abs()),
+                "{a} + {b} i != {c} + {d} i"
+            );
+        };
+        close(
+            parts("zeta(z)", 2., 1.),
+            (1.150_355_703_254_9, -0.437_530_865_919_608),
+        );
+        close(parts("zeta(z)", 0.5, 14.134_725_141_734_693), (0., 0.));
+        close(
+            parts("zeta(z)", -2., 3.),
+            (0.132_971_155_879_299, 0.123_053_300_404_588),
+        );
+        close(
+            parts("zeta(z)", 0.3, -5.),
+            (0.675_648_998_116_023, -0.254_144_786_554_677),
+        );
+        close(
+            parts("zeta(z)", 3., 20.),
+            (0.988_261_484_704_106, -0.132_044_790_271_081),
+        );
+        close(
+            parts("gamma(z)", 1., 1.),
+            (0.498_015_668_118_356, -0.154_949_828_301_811),
+        );
+        close(
+            parts("gamma(z)", -0.5, 1.),
+            (-0.460_252_150_450_761, -0.070_568_542_035_275_1),
+        );
+        close(
+            parts("gamma(z)", -3.3, -0.2),
+            (0.269_757_578_774_662, -0.205_980_125_997_441),
+        );
+        close(
+            parts("factorial(z)", 3., 7.),
+            (0.012_329_549_545_154_5, -0.041_838_378_771_838_4),
+        );
+        close(
+            parts("ln(z)", 3., 4.),
+            (1.609_437_912_434_1, 0.927_295_218_001_612),
+        );
+        close(
+            parts("ln(z)", -3., -4.),
+            (1.609_437_912_434_1, -2.214_297_435_588_181),
+        );
+        let (re, im) = parts("sqrt(z)", -4., 0.);
+        assert!(re.is_nan() || im.is_nan(), "sqrt on the branch cut");
     }
 
     #[test]

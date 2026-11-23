@@ -30,15 +30,23 @@ const MAX_EXPONANT: u64 = 16;
 /// The parts `{$(u, v)$}` of `{$f = u + i v$}`, assuming every symbol is real. `None` when a part can't be
 /// written, like `{$sqrt(i x)$}`.
 pub(super) fn split(f: &Complex) -> Option<(Expr, Expr)> {
-    split_with(f, None)
+    split_with(f, Split::default())
 }
 
-/// The parts `{$(u, v)$}` of `{$f = u + i v$}` like [`split`], the symbol `z` of `var = (z, (a, b))` being
-/// `{$a + i b$}`.
-pub(super) fn split_with(
-    f: &Complex,
-    var: Option<(Symbol, &(Expr, Expr))>,
-) -> Option<(Expr, Expr)> {
+/// How [`split_with`] splits a term.
+#[derive(Clone, Copy, Default)]
+pub(super) struct Split<'a> {
+    /// The symbol `z` of `(z, (a, b))` being `{$a + i b$}`.
+    pub var: Option<(Symbol, &'a (Expr, Expr))>,
+    /// Whether parts which only have a numerical form may be written, for graphs: `{$zeta$}` and `{$Gamma$}` of
+    /// non-real arguments as internal functions (see [`Context::complex_part`]), and the principal argument as
+    /// `{$2 atan(v / (|z| + u))$}` when the signs of the parts are unknown.
+    pub numeric: bool,
+}
+
+/// The parts `{$(u, v)$}` of `{$f = u + i v$}` like [`split`], with the options `split`.
+pub(super) fn split_with(f: &Complex, split: Split) -> Option<(Expr, Expr)> {
+    let var = split.var;
     Some(match f {
         Term::Value(z) => (value(z.value[0].clone()), value(z.value[1].clone())),
         Term::Symbol(s) => match var {
@@ -46,24 +54,24 @@ pub(super) fn split_with(
             _ => (variable(s.symbol), zero()),
         },
         Term::Add(add) => add.iter().try_fold((zero(), zero()), |(u, v), term| {
-            let (a, b) = split_with(term, var)?;
+            let (a, b) = split_with(term, split)?;
             Some((u + a, v + b))
         })?,
         Term::Mul(mul) => {
             let c = &mul.coefficient;
             mul.iter()
                 .try_fold((value(c[0].clone()), value(c[1].clone())), |z, factor| {
-                    Some(product(&z, &split_with(factor, var)?))
+                    Some(product(&z, &split_with(factor, split)?))
                 })?
         }
-        Term::Pow(pow) => split_pow(&pow.base, &pow.exponant, var)?,
+        Term::Pow(pow) => split_pow(&pow.base, &pow.exponant, split)?,
         Term::Fun(function) => {
             let args = function.get_args::<C<R<Rational>>>()?;
             let parts = args
                 .iter()
-                .map(|arg| split_with(arg, var))
+                .map(|arg| split_with(arg, split))
                 .collect::<Option<Vec<_>>>()?;
-            split_fun(function.get_ident(), &parts)?
+            split_fun(function.get_ident(), &parts, split.numeric)?
         }
     })
 }
@@ -99,7 +107,7 @@ pub(super) fn principal_ln(z: &Complex) -> Option<Complex> {
     if !is_complex_ln(&u, &v) {
         return None;
     }
-    let (a, b) = split_ln(&u, &v)?;
+    let (a, b) = split_ln(&u, &v, false)?;
     join(&a, &b)
 }
 
@@ -186,19 +194,15 @@ fn integer_pow((u, v): (Expr, Expr), n: &Integer) -> Option<(Expr, Expr)> {
 }
 
 /// The parts of `{$b^e$}`.
-fn split_pow(
-    base: &Complex,
-    exponant: &Complex,
-    var: Option<(Symbol, &(Expr, Expr))>,
-) -> Option<(Expr, Expr)> {
-    let (u, v) = split_with(base, var)?;
+fn split_pow(base: &Complex, exponant: &Complex, split: Split) -> Option<(Expr, Expr)> {
+    let (u, v) = split_with(base, split)?;
     if let Term::Value(e) = exponant
         && e.value[1] == 0
         && let Ok(n) = Integer::try_from(&e.value[0])
     {
         return integer_pow((u, v), &n);
     }
-    let e = split_with(exponant, var)?;
+    let e = split_with(exponant, split)?;
     if !is_complex_ln(&u, &v) {
         // `{$b^(a + i c) = e^((a + i c) ln b)$}` for `{$b > 0$}`
         let positive =
@@ -210,11 +214,11 @@ fn split_pow(
             return None;
         }
         let ln = fun(Context::LN, u);
-        return split_fun(Context::EXP, &[(&e.0 * &ln, &e.1 * &ln)]);
+        return split_fun(Context::EXP, &[(&e.0 * &ln, &e.1 * &ln)], split.numeric);
     }
     // The principal power `{$z^w = e^(w ln z)$}`
-    let ln = split_ln(&u, &v)?;
-    split_fun(Context::EXP, &[product(&e, &ln)])
+    let ln = split_ln(&u, &v, split.numeric)?;
+    split_fun(Context::EXP, &[product(&e, &ln)], split.numeric)
 }
 
 /// Whether `{$ln(u + i v)$}` isn't real: `v` is non-zero, or `u` is negative.
@@ -223,9 +227,14 @@ fn is_complex_ln(u: &Expr, v: &Expr) -> bool {
 }
 
 /// The parts of the principal logarithm `{$ln(u + i v) = ln|z| + i arg z$}`, `None` when the argument can't be
-/// found.
-fn split_ln(u: &Expr, v: &Expr) -> Option<(Expr, Expr)> {
-    let arg = expr::arg(u, v)?;
+/// found. With `numeric`, an argument depending on unknown signs is `{$2 atan(v / (|z| + u))$}`, undefined on the
+/// branch cut.
+fn split_ln(u: &Expr, v: &Expr, numeric: bool) -> Option<(Expr, Expr)> {
+    let arg = match expr::arg(u, v) {
+        Some(arg) => arg,
+        None if numeric => value(Rational::from(2)) * fun(Context::ATAN, v / &(modulus(u, v) + u)),
+        None => return None,
+    };
     if v.is_zero() {
         return Some((fun(Context::LN, -u), arg));
     }
@@ -257,14 +266,14 @@ fn modulus(u: &Expr, v: &Expr) -> Expr {
     norm(u, v).pow(&half())
 }
 
-/// The parts of `{$f(z_1, ..., z_n)$}`.
-fn split_fun(ident: Symbol, args: &[(Expr, Expr)]) -> Option<(Expr, Expr)> {
+/// The parts of `{$f(z_1, ..., z_n)$}`, with numerical forms when `numeric` (see [`Split::numeric`]).
+fn split_fun(ident: Symbol, args: &[(Expr, Expr)], numeric: bool) -> Option<(Expr, Expr)> {
     match (ident, args) {
         (Context::RE, [(u, _)]) => Some((u.clone(), zero())),
         (Context::IM, [(_, v)]) => Some((v.clone(), zero())),
         (Context::CONJ, [(u, v)]) => Some((u.clone(), -v)),
         (Context::ABS, [(u, v)]) if !v.is_zero() => Some((modulus(u, v), zero())),
-        (Context::LN, [(u, v)]) if is_complex_ln(u, v) => split_ln(u, v),
+        (Context::LN, [(u, v)]) if is_complex_ln(u, v) => split_ln(u, v, numeric),
         _ if args.iter().all(|(_, v)| v.is_zero()) => {
             let args = args.iter().map(|(u, _)| u.clone()).collect();
             Some((
@@ -290,6 +299,26 @@ fn split_fun(ident: Symbol, args: &[(Expr, Expr)]) -> Option<(Expr, Expr)> {
                 (cos * cosh, -(sin * sinh))
             })
         }
+        (Context::ZETA | Context::GAMMA, [(a, b)]) if numeric => Some(numeric_parts(ident, a, b)),
+        // `{$z! = Gamma(z + 1)$}`
+        (Context::FACTORIAL, [(a, b)]) if numeric => {
+            Some(numeric_parts(Context::GAMMA, &(a + &one()), b))
+        }
         _ => None,
     }
+}
+
+/// The parts of `{$f(a + i b)$}` as the internal functions of [`Context::complex_part`], which only have a
+/// numerical form.
+fn numeric_parts(ident: Symbol, a: &Expr, b: &Expr) -> (Expr, Expr) {
+    let part = |imaginary| {
+        let args = vec![a.clone(), b.clone()];
+        Term::Fun(Box::new(Fun::new(
+            Context::complex_part(ident, imaginary),
+            args,
+            R,
+        )))
+        .normalize()
+    };
+    (part(false), part(true))
 }

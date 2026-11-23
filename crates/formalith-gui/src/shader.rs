@@ -116,11 +116,19 @@ impl Emitter<'_> {
                 }
                 return value;
             }
-            NumFn::Polygamma | NumFn::Binomial => {
-                let name = if fun == NumFn::Polygamma {
-                    "nf_polygamma"
-                } else {
-                    "nf_binomial"
+            NumFn::Polygamma
+            | NumFn::Binomial
+            | NumFn::ZetaRe
+            | NumFn::ZetaIm
+            | NumFn::GammaRe
+            | NumFn::GammaIm => {
+                let name = match fun {
+                    NumFn::Polygamma => "nf_polygamma",
+                    NumFn::Binomial => "nf_binomial",
+                    NumFn::ZetaRe => "nf_zeta_re",
+                    NumFn::ZetaIm => "nf_zeta_im",
+                    NumFn::GammaRe => "nf_gamma_re",
+                    _ => "nf_gamma_im",
                 };
                 return self.bind(&format!("{name}({}, {})", arg(0), arg(1)));
             }
@@ -317,7 +325,13 @@ pub fn analysis(curves: &AnalysisCurves<'_>) -> String {
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use formalith_session::formalith::{field::real::R, parse, symbol};
+    use formalith_session::formalith::{
+        field::{
+            complex::{C, parts},
+            real::R,
+        },
+        parse, symbol,
+    };
 
     use super::*;
 
@@ -387,6 +401,16 @@ pub(crate) mod tests {
         for input in EXPRESSIONS {
             validate(&grid(&compile(input), &compile("x*y")));
         }
+        // Parts of complex functions with only a numerical form
+        let (x, y) = (symbol!("x"), symbol!("y"));
+        let f = parse!("zeta(z) + gamma(z) + ln(z)", C);
+        let (re, im) = parts(&f, symbol!("z"), x, y).unwrap();
+        let (re, im) = (
+            Numeric::compile(&re, &[x, y]),
+            Numeric::compile(&im, &[x, y]),
+        );
+        assert_eq!(re.unsupported(), None);
+        validate(&grid(&re, &im));
     }
 
     #[test]

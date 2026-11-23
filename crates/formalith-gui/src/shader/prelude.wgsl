@@ -548,6 +548,125 @@ fn nf_zeta(s: f32) -> f32 {
     return pow(2.0, s) * pow(PI, s - 1.0) * sin(PI * r * 0.5) * nf_gamma(1.0 - s) * nf_zeta_right(1.0 - s);
 }
 
+// Complex numbers `(re, im)`, for the parts of complex functions.
+fn nf_cmul(a: vec2<f32>, b: vec2<f32>) -> vec2<f32> {
+    return vec2<f32>(a.x * b.x - a.y * b.y, a.x * b.y + a.y * b.x);
+}
+
+fn nf_cdiv(a: vec2<f32>, b: vec2<f32>) -> vec2<f32> {
+    return vec2<f32>(a.x * b.x + a.y * b.y, a.y * b.x - a.x * b.y) / dot(b, b);
+}
+
+fn nf_cexp(a: vec2<f32>) -> vec2<f32> {
+    return exp(a.x) * vec2<f32>(cos(a.y), sin(a.y));
+}
+
+// `c^z` for a positive `c`.
+fn nf_creal_pow(c: f32, z: vec2<f32>) -> vec2<f32> {
+    return nf_cexp(z * log(c));
+}
+
+// `sin(pi z)`, the real part of `z` reduced modulo 2 first.
+fn nf_csin_pi(z: vec2<f32>) -> vec2<f32> {
+    let a = z.x - 2.0 * floor(z.x * 0.5);
+    return vec2<f32>(sin(PI * a) * cosh(PI * z.y), cos(PI * a) * sinh(PI * z.y));
+}
+
+// `Gamma(z)` for `Re z >= 1/2`, by Lanczos' approximation.
+fn nf_cgamma_right(z0: vec2<f32>) -> vec2<f32> {
+    let z = z0 - vec2<f32>(1.0, 0.0);
+    var a = vec2<f32>(0.99999999999980993, 0.0);
+    a += nf_cdiv(vec2<f32>(676.5203681218851, 0.0), z + vec2<f32>(1.0, 0.0));
+    a += nf_cdiv(vec2<f32>(-1259.1392167224028, 0.0), z + vec2<f32>(2.0, 0.0));
+    a += nf_cdiv(vec2<f32>(771.32342877765313, 0.0), z + vec2<f32>(3.0, 0.0));
+    a += nf_cdiv(vec2<f32>(-176.61502916214059, 0.0), z + vec2<f32>(4.0, 0.0));
+    a += nf_cdiv(vec2<f32>(12.507343278686905, 0.0), z + vec2<f32>(5.0, 0.0));
+    a += nf_cdiv(vec2<f32>(-0.13857109526572012, 0.0), z + vec2<f32>(6.0, 0.0));
+    a += nf_cdiv(vec2<f32>(9.9843695780195716e-6, 0.0), z + vec2<f32>(7.0, 0.0));
+    a += nf_cdiv(vec2<f32>(1.5056327351493116e-7, 0.0), z + vec2<f32>(8.0, 0.0));
+    // `sqrt(2 pi) t^(z + 1/2) e^(-t) a` with `t = z + 7.5`
+    let t = z + vec2<f32>(7.5, 0.0);
+    let ln_t = vec2<f32>(log(length(t)), atan2(t.y, t.x));
+    let exponent = nf_cmul(z + vec2<f32>(0.5, 0.0), ln_t) - t;
+    return 2.5066282746310002 * nf_cmul(nf_cexp(exponent), a);
+}
+
+// `Gamma(a + i b)`, with the reflection formula `Gamma(z) Gamma(1 - z) = pi / sin(pi z)` for `Re z < 1/2`.
+fn nf_cgamma(a: f32, b: f32) -> vec2<f32> {
+    if nf_undef(a) || nf_undef(b) || !nf_finite(a) || !nf_finite(b) {
+        return vec2<f32>(nf_nan(), nf_nan());
+    }
+    if b == 0.0 {
+        return vec2<f32>(nf_gamma(a), 0.0);
+    }
+    let z = vec2<f32>(a, b);
+    if a >= 0.5 {
+        return nf_cgamma_right(z);
+    }
+    let one = vec2<f32>(1.0, 0.0);
+    return nf_cdiv(vec2<f32>(PI, 0.0), nf_cmul(nf_csin_pi(z), nf_cgamma_right(one - z)));
+}
+
+fn nf_gamma_re(a: f32, b: f32) -> f32 {
+    return nf_cgamma(a, b).x;
+}
+
+fn nf_gamma_im(a: f32, b: f32) -> f32 {
+    return nf_cgamma(a, b).y;
+}
+
+// `zeta(s)` for `Re s >= -2`, by Euler-Maclaurin summation with more terms for large `|Im s|`.
+fn nf_czeta_right(s: vec2<f32>) -> vec2<f32> {
+    let n = min(12.0 + ceil(abs(s.y)), 64.0);
+    let neg = -s;
+    var sum = vec2<f32>(0.0, 0.0);
+    for (var k = 1.0; k < n; k += 1.0) {
+        sum += nf_creal_pow(k, neg);
+    }
+    var power = nf_creal_pow(n, neg);
+    sum += nf_cdiv(power * n, s - vec2<f32>(1.0, 0.0)) + 0.5 * power;
+    // `sum_k B_(2k) / (2k)! s (s+1) ... (s+2k-2) N^(-s-2k+1)`
+    var rising = s;
+    var factorial = 2.0;
+    power /= n;
+    for (var k = 1u; k <= 7u; k++) {
+        sum += nf_bernoulli(k) / factorial * nf_cmul(rising, power);
+        let kf = f32(k);
+        rising = nf_cmul(rising, nf_cmul(s + vec2<f32>(2.0 * kf - 1.0, 0.0), s + vec2<f32>(2.0 * kf, 0.0)));
+        factorial *= (2.0 * kf + 1.0) * (2.0 * kf + 2.0);
+        power /= n * n;
+    }
+    return sum;
+}
+
+// `zeta(a + i b)`, with the functional equation for `Re s < -2` like `nf_zeta`.
+fn nf_czeta(a: f32, b: f32) -> vec2<f32> {
+    if nf_undef(a) || nf_undef(b) || !nf_finite(a) || !nf_finite(b) {
+        return vec2<f32>(nf_nan(), nf_nan());
+    }
+    if b == 0.0 {
+        return vec2<f32>(nf_zeta(a), 0.0);
+    }
+    let s = vec2<f32>(a, b);
+    if a >= -2.0 {
+        return nf_czeta_right(s);
+    }
+    // `zeta(s) = 2^s pi^(s-1) sin(pi s / 2) Gamma(1 - s) zeta(1 - s)`
+    let one_minus = vec2<f32>(1.0, 0.0) - s;
+    var res = nf_cmul(nf_creal_pow(2.0, s), nf_creal_pow(PI, s - vec2<f32>(1.0, 0.0)));
+    res = nf_cmul(res, nf_csin_pi(s * 0.5));
+    res = nf_cmul(res, nf_cgamma_right(one_minus));
+    return nf_cmul(res, nf_czeta_right(one_minus));
+}
+
+fn nf_zeta_re(a: f32, b: f32) -> f32 {
+    return nf_czeta(a, b).x;
+}
+
+fn nf_zeta_im(a: f32, b: f32) -> f32 {
+    return nf_czeta(a, b).y;
+}
+
 // The principal branch `W_0(x)` of the Lambert W function, by Halley's iteration.
 fn nf_lambertw(x: f32) -> f32 {
     let branch = -0.36787944117144233;
