@@ -147,6 +147,9 @@ impl Inverter {
         if kernels.is_empty() {
             return roots(&numerator, self.x).ok_or_else(unsolvable);
         }
+        if let Some(factor) = self.exponential_factor(&numerator, &kernels) {
+            return self.solve(&(numerator / factor), depth + 1);
+        }
         if let Some((kernel, polynomial, s)) = self.as_polynomial(&numerator, &kernels, depth) {
             let values = roots(&polynomial, s).ok_or_else(unsolvable)?;
             let mut res = vec![];
@@ -197,6 +200,38 @@ impl Inverter {
             return None;
         }
         Some((kernel_power(base, &m), res.expand(), s))
+    }
+
+    /// A factor `{$e^(m u)$}` of every term of `expression`, which never vanishes, when its kernels are powers of
+    /// a single exponential `{$e^u$}`: `{$x^2 e^(2x) - e^(2x)$}` is `{$e^(2x) (x^2 - 1)$}`.
+    fn exponential_factor(&self, expression: &Expr, kernels: &[Kernel]) -> Option<Expr> {
+        let base = &kernels[0].base;
+        if kernels.iter().any(|kernel| {
+            kernel.base != *base || unary(&kernel.term).is_none_or(|(f, _)| f != Context::EXP)
+        }) {
+            return None;
+        }
+        let terms = match expression {
+            Term::Add(add) => add.iter().collect(),
+            _ => vec![expression],
+        };
+        // The exponent of the kernel in each term, 0 without it
+        let mut m: Option<Rational> = None;
+        for term in terms {
+            let mut found = vec![];
+            collect_kernels(term, self.x, &mut found);
+            let exponent = match &found[..] {
+                [] => Rational::from(0),
+                [kernel] => kernel.exponent.clone(),
+                _ => return None,
+            };
+            m = Some(m.map_or(
+                exponent.clone(),
+                |m| if exponent < m { exponent } else { m },
+            ));
+        }
+        let m = m.filter(|m| *m != 0)?;
+        Some(kernel_power(base, &m))
     }
 
     /// The equations `u = v` equivalent to `{$g = c$}`, `g` being a function of `u`.

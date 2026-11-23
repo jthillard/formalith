@@ -37,17 +37,22 @@
 mod multivariate;
 mod univariate;
 
+use malachite::{
+    Rational,
+    base::num::arithmetic::traits::{Abs, Pow, Sign},
+};
 use std::{cmp::Ordering, fmt};
 
 use crate::{
     context::{
-        Symbol,
+        Context, Symbol,
         assumptions::{Assumption, Assumptions},
     },
     field::{
         Set,
         real::{
             Real,
+            approx::approximate_fixed,
             expr::{Expr, constant_sign, depends, size, subs, zero},
         },
     },
@@ -344,9 +349,26 @@ fn error(reason: impl Into<String>) -> SolveError {
 
 /// Compare `p` and `q`, exactly when their difference is zero once expanded, otherwise from its sign (structure,
 /// assumptions, then approximation of constants). `None` when it is unknown.
+///
+/// A constant difference far from zero is compared by a single approximation first, since expanding differences
+/// of nested radicals (roots of quartics) may not finish.
 fn compare(p: &Expr, q: &Expr) -> Option<Ordering> {
+    /// Bits of the quick approximation, accurate to about `{$2^(-BITS)$}`.
+    const BITS: u64 = 64;
     let difference = (p.clone() - q.clone()).normalize();
-    if difference.is_zero() || difference.expand().is_zero() {
+    if difference.is_zero() {
+        return Some(Ordering::Equal);
+    }
+    if difference
+        .symbols()
+        .iter()
+        .all(|symbol| Context::is_builtin_constant(*symbol))
+        && let Some(approximation) = approximate_fixed(&difference, BITS)
+        && (&approximation).abs() > Rational::from(2).pow(-(BITS as i64 / 2))
+    {
+        return Some(approximation.sign());
+    }
+    if difference.expand().is_zero() {
         return Some(Ordering::Equal);
     }
     constant_sign(&difference)

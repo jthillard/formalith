@@ -632,6 +632,9 @@ fn exponential_and_logarithmic_equations() {
     assert_eq!(solve("atan(x) = 2"), ok("\"no solution\""));
     assert_eq!(solve("abs(x) = 1"), ok("x = -1 \\ x = 1"));
     assert_eq!(solve("2^x = 1"), ok("x = 0"));
+    // A polynomial times an exponential, which never vanishes
+    assert_eq!(solve("x^2*exp(2*x) - exp(2*x) = 0"), ok("x = -1 \\ x = 1"));
+    assert_eq!(solve("x^2*exp(-x) = 4*exp(-x)"), ok("x = -2 \\ x = 2"));
 }
 
 #[test]

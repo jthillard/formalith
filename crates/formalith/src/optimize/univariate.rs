@@ -409,13 +409,17 @@ impl<'a> Analysis<'a> {
                 .collect();
             let mut signs = vec![];
             for cut in cuts.windows(2) {
-                let at = subs(&piece.derivative, x, &sample((cut[0], cut[1]))).expand();
-                signs.push(match constant_sign(&at) {
-                    Some(sign @ (Ordering::Less | Ordering::Greater)) => sign,
-                    _ => {
-                        return Err(error(format!("can't find the sign of `{}`", plain(&at))));
-                    }
-                });
+                // Not zero between consecutive critical points, so its approximation decides, expanding only
+                // when it fails (expanding at points made of nested radicals is slow)
+                let at = subs(&piece.derivative, x, &sample((cut[0], cut[1])));
+                let strict = |at: &Expr| {
+                    constant_sign(at)
+                        .filter(|sign| matches!(sign, Ordering::Less | Ordering::Greater))
+                };
+                let sign = strict(&at).or_else(|| strict(&at.expand()));
+                signs.push(sign.ok_or_else(|| {
+                    error(format!("can't find the sign of `{}`", plain(&at.expand())))
+                })?);
             }
             for (i, point) in piece.critical.iter().enumerate() {
                 if signs[i] == Ordering::Less && signs[i + 1] == Ordering::Greater {

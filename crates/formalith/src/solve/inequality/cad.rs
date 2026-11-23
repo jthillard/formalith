@@ -31,7 +31,7 @@ use crate::{
     },
     field::real::{
         R,
-        approx::approximate,
+        approx::{approximate, approximate_fixed},
         expr::{Expr, depends, subs, value, variable, zero},
     },
     solve::{
@@ -48,6 +48,9 @@ const MAX_UNKNOWNS: usize = 3;
 
 /// Maximum number of polynomials of the decomposition.
 const MAX_FACTORS: usize = 40;
+
+/// Bits of the approximations of bounds compared by [`close`], accurate to about `{$2^(-116) < 10^(-34)$}`.
+const SAME_BOUND_BITS: u64 = 116;
 
 /// Whether the approximations `a` and `b` are the same point.
 fn close(a: &Rational, b: &Rational) -> bool {
@@ -649,7 +652,11 @@ impl<'a> Cad<'a> {
         match (a, b) {
             (None, None) => true,
             (Some(a), Some(b)) => {
-                match (self.approximate_at(a, point), self.approximate_at(b, point)) {
+                // `close` only needs an absolute accuracy, and a bound may vanish at the point, where `approximate`
+                // would raise its precision up to its maximum
+                let approximate_at =
+                    |term: &Expr| approximate_fixed(&self.substitute(term, point), SAME_BOUND_BITS);
+                match (approximate_at(a), approximate_at(b)) {
                     (Some(a), Some(b)) => close(&a, &b),
                     _ => false,
                 }

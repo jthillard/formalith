@@ -28,7 +28,7 @@ use crate::{
         plain,
     },
     sum::is_rational_function,
-    term::{Expand, Normalize, relation::Relation},
+    term::{Expand, Normalize, Term, relation::Relation},
 };
 
 /// The kind of a critical point, from its Hessian matrix.
@@ -178,12 +178,21 @@ fn at(term: &Expr, assignments: &Assignments<Real>) -> Expr {
 
 /// Whether `{$f op m$}` has no solution: `m` is a lower bound of `f` for [`Relation::Less`], an upper bound for
 /// [`Relation::Greater`].
+///
+/// `m` must be rational: the cylindrical algebraic decomposition factors over ℚ, and with radicals (values at
+/// roots of cubics) it fails or doesn't finish.
 fn is_bound(
     f: &Expr,
     unknowns: &[Symbol],
     m: &Expr,
     relation: Relation,
 ) -> Result<bool, SolveError> {
+    if !matches!(m, Term::Value(_)) {
+        return Err(error(format!(
+            "can't compare the function with the irrational value `{}`",
+            plain(m)
+        )));
+    }
     let inequality = Inequality::new(f.clone(), relation, m.clone());
     Ok(R.solve_inequalities(&[inequality], unknowns)?
         .cells
