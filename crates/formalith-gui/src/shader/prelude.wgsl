@@ -396,6 +396,29 @@ fn nf_gamma_right(z0: f32) -> f32 {
     return 2.5066282746310002 * nf_exp((z + 0.5) * log(t) - t) * a;
 }
 
+// `sin(pi x)` with a relative precision near the integers: `x` reduced exactly into `[-1/2, 1/2]` (`1 - r` by
+// Sterbenz's lemma), then a Taylor polynomial, since WGSL's `sin` only has an absolute error bound (about 2^-11)
+// and `Gamma` near its poles divides by it.
+fn nf_sin_pi(x: f32) -> f32 {
+    var r = x - 2.0 * round(x * 0.5);
+    if r > 0.5 {
+        r = 1.0 - r;
+    } else if r < -0.5 {
+        r = -1.0 - r;
+    }
+    let t = PI * r;
+    let t2 = t * t;
+    // Terms up to `t^13 / 13!`, below 6e-8 for `|t| <= pi/2`
+    var p = 1.0 / 6227020800.0;
+    p = p * -t2 + 1.0 / 39916800.0;
+    p = p * -t2 + 1.0 / 362880.0;
+    p = p * -t2 + 1.0 / 5040.0;
+    p = p * -t2 + 1.0 / 120.0;
+    p = p * -t2 + 1.0 / 6.0;
+    p = p * -t2 + 1.0;
+    return t * p;
+}
+
 // `Gamma(x)`, NaN at its poles.
 fn nf_gamma(x: f32) -> f32 {
     if nf_undef(x) || (x <= 0.0 && fract(x) == 0.0) || x == -nf_inf() {
@@ -407,13 +430,12 @@ fn nf_gamma(x: f32) -> f32 {
         }
         return nf_gamma_right(x);
     }
-    // `Gamma(x) = pi / (sin(pi x) Gamma(1 - x))`, `sin(pi x)` reduced first
-    let r = x - 2.0 * floor(x * 0.5);
+    // `Gamma(x) = pi / (sin(pi x) Gamma(1 - x))`
     let g = nf_gamma_right(1.0 - x);
     if !nf_finite(g) {
         return 0.0;
     }
-    return PI / (sin(PI * r) * g);
+    return PI / (nf_sin_pi(x) * g);
 }
 
 fn nf_factorial(x: f32) -> f32 {
