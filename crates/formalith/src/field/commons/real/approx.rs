@@ -583,6 +583,25 @@ impl Fixed {
                     -(&one >> 4_u64)
                 };
         }
+        if !principal && x_float >= -0.25 {
+            // `{$w + ln(-w) = ln(-x)$}`: `{$w e^w = x$}` loses `x` to the absolute precision when it is tiny, while
+            // `{$W_(-1)$}` depends on its relative precision
+            let target = self.ln(&-x);
+            for _ in 0..self.bits + 64 {
+                let ln = self.ln(&self.to_rational(-&w));
+                let step = self.div(&self.mul(&w, &(&w + &ln - &target)), &(&w + &one));
+                let next = &w - &step;
+                w = if in_branch(&next) {
+                    next
+                } else {
+                    (&w + &minus_one) >> 1_u64
+                };
+                if step.unsigned_abs() <= 1u32 {
+                    break;
+                }
+            }
+            return Some(self.to_rational(w));
+        }
         for _ in 0..self.bits + 64 {
             let exp = self.exp(&w)?;
             let derivative = self.mul(&exp, &(&w + &one));
@@ -655,6 +674,11 @@ impl Fixed {
     fn exp_rational(self, x: &Rational) -> Option<Rational> {
         if x.abs() > MAX_EXP_ARGUMENT {
             return None;
+        }
+        // `{$e^x = 1 / e^(-x)$}`, as small values lose their relative precision in fixed point
+        if *x < 0 {
+            let exp = self.to_rational(self.exp(&self.from_rational(&-x))?);
+            return (exp != 0).then(|| exp.reciprocal());
         }
         Some(self.to_rational(self.exp(&self.from_rational(x))?))
     }

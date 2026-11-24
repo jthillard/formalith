@@ -7,14 +7,23 @@
 //! These are solved by inverting the function of `g`, then solving for the unknown in its argument, recursively.
 //! Periodic functions have one solution per period: `{$sin u = c$}` gives `{$u = arcsin c + 2 k pi$}` and
 //! `{$u = pi - arcsin c + 2 k pi$}`, `k` being a new integer parameter (`k`, `k_1`, `k_2`... for nested ones,
-//! skipping the names of the equation). Equations `{$(alpha x + beta) e^(gamma x + delta) = c$}` are solved with
-//! the Lambert W function, with both branches `{$W_0$}` and `{$W_(-1)$}` when its argument is in `{$(-1/e, 0)$}`.
+//! skipping the names of the equation). Powers of perfect powers share their base (`{$4^x = (2^x)^2$}`), and
+//! hyperbolic functions mixed with other kernels are written with exponentials.
+//!
+//! Other forms: `sin`, `cos` and `tan` of multiples of a common angle are polynomials in its sine and cosine (see
+//! [`trig`]); `{$t_1 = t_2$}` with powers whose exponents depend on the unknown is solved by taking logarithms
+//! (`{$2^x = 3^(x + 1)$}`, `{$x^x = 2$}`); and `{$(alpha x + beta) e^u = c$}`, `{$a e^u + alpha x + beta = 0$}`,
+//! `{$a ln u + alpha x + beta = 0$}` and `{$b u ln u = c$}` with a linear `u` are solved with the Lambert W
+//! function, with both branches `{$W_0$}` and `{$W_(-1)$}` when its argument is in `{$(-1/e, 0)$}`.
 
 use std::{cmp::Ordering, collections::BTreeSet};
 
 use malachite::{
     Integer, Rational,
-    base::num::arithmetic::traits::{Gcd, Lcm, Reciprocal},
+    base::num::{
+        arithmetic::traits::{CheckedRoot, Gcd, Lcm, Reciprocal},
+        logic::traits::SignificantBits,
+    },
 };
 
 use crate::{
@@ -23,13 +32,18 @@ use crate::{
         Ring,
         real::{
             R,
-            expr::{Expr, constant_sign, depends, fun, map_tree, subs, unary, value, variable},
+            expr::{
+                Expr, constant_sign, depends, fun, hyperbolic_as_exp, map_tree, subs, unary, value,
+                variable,
+            },
         },
     },
     term::{Expand, Fun, Normalize, Term},
 };
 
 use super::{Equation, Solution, Solve, SolveError, plain};
+
+mod trig;
 
 /// Maximum number of nested inversions.
 const MAX_DEPTH: usize = 16;
@@ -142,6 +156,10 @@ impl Inverter {
         let numerator = numerator.expand();
         let mut kernels = vec![];
         if !collect_kernels(&numerator, self.x, &mut kernels) {
+            // `{$x^x = 2$}`
+            if let Some(res) = self.logarithms(&numerator, depth) {
+                return res;
+            }
             return Err(SolveError::NotPolynomial(plain(&numerator)));
         }
         if kernels.is_empty() {
@@ -160,8 +178,17 @@ impl Inverter {
             }
             return Ok(res);
         }
+        if let Some(rewritten) = hyperbolic_as_exponentials(&numerator, &kernels) {
+            return self.solve(&rewritten, depth + 1);
+        }
+        if let Some(res) = self.trigonometric(&numerator, &kernels, depth) {
+            return res;
+        }
         if let Some(res) = self.lambert(&numerator, &kernels) {
             return Ok(res);
+        }
+        if let Some(res) = self.logarithms(&numerator, depth) {
+            return res;
         }
         Err(SolveError::NotPolynomial(plain(&numerator)))
     }
@@ -380,18 +407,22 @@ impl Inverter {
         }
     }
 
-    /// The solutions of `{$(alpha x + beta) e^(gamma x + delta) + r = 0$}`,
-    /// `{$x = W(a) / gamma - beta / alpha$}` with `{$a = -r gamma e^(gamma beta / alpha - delta) / alpha$}`, if the
-    /// expression has this form: none for `{$a < -1/e$}`, `{$W = -1$}` for `{$a = -1/e$}`, both branches
-    /// `{$W_0(a)$}` and `{$W_(-1)(a)$}` for `{$-1/e < a < 0$}`, and only `{$W_0(a)$}` otherwise (or when the sign
-    /// of `a` is unknown).
+    /// The solutions of an equation with a single kernel solved with the Lambert W function, if it has one of
+    /// these forms, `u` being linear in `x`:
+    /// - `{$(alpha x + beta) e^u + r = 0$}`, `{$x = W(a) / gamma - beta / alpha$}` with
+    ///   `{$a = -r gamma e^(gamma beta / alpha - delta) / alpha$}` for `{$u = gamma x + delta$}`;
+    /// - `{$a e^u + alpha x + beta = 0$}`, `{$x = -W(A) / gamma - beta / alpha$}` with
+    ///   `{$A = gamma a e^(delta - gamma beta / alpha) / alpha$}`;
+    /// - `{$a ln u + alpha x + beta = 0$}`, `{$u = W(p e^(-q)) / p$}` with `{$p = alpha / (gamma a)$}` and
+    ///   `{$q = (beta - alpha delta / gamma) / a$}`;
+    /// - `{$b u ln u + r = 0$}`, `{$u = c / W(c)$}` with `{$c = -r / b$}`, and `{$u = 1$}` for `{$c = 0$}`.
+    ///
+    /// Exponentials may be powers `{$b^u = e^(u ln b)$}` of a constant base.
     fn lambert(&self, expression: &Expr, kernels: &[Kernel]) -> Option<Vec<Expr>> {
         let [kernel] = kernels else {
             return None;
         };
-        let (Context::EXP, q) = unary(&kernel.term)? else {
-            return None;
-        };
+        let x = self.x;
         let s = Symbol::new("@w");
         let replaced = map_tree(expression, &|term| {
             (*term == kernel.term).then(|| variable(s))
@@ -399,36 +430,174 @@ impl Inverter {
         // `{$p s + r$}`, linear in `s`
         let p = replaced.derivative(s);
         let r = subs(&replaced, s, &value(Rational::from(0)));
-        if depends(&p, s) || depends(&r, self.x) {
+        if depends(&p, s) {
             return None;
         }
-        let x = self.x;
-        let (alpha, gamma) = (p.derivative(x), q.derivative(x));
-        if [&alpha, &gamma]
-            .iter()
-            .any(|c| c.is_zero() || depends(c, x))
-        {
-            return None;
-        }
-        let zero = value(Rational::from(0));
-        let (beta, delta) = (subs(&p, x, &zero), subs(q, x, &zero));
-        let shift = &beta / &alpha;
-        let argument = -(&r * &gamma) * fun(Context::EXP, &gamma * &shift - delta) / &alpha;
-        let solution = |w: Expr| &w / &gamma - &shift;
-        let branch_point =
-            constant_sign(&(&argument + &fun(Context::EXP, value(Rational::from(-1)))));
-        Some(match branch_point {
-            Some(Ordering::Less) => vec![],
-            Some(Ordering::Equal) => vec![solution(value(Rational::from(-1)))],
-            _ => {
-                let mut res = vec![solution(fun(Context::LAMBERTW, argument.clone()))];
-                if branch_point.is_some() && constant_sign(&argument) == Some(Ordering::Less) {
-                    res.push(solution(fun(Context::lambertw_m1(), argument)));
+        if let Some((Context::LN, u)) = unary(&kernel.term) {
+            let (gamma, delta) = linear(u, x)?;
+            let from_u = |u: Expr| (u - &delta) / &gamma;
+            if !depends(&p, x) {
+                // `{$a ln u + alpha x + beta = 0$}`
+                let (alpha, beta) = linear(&r, x)?;
+                if alpha.is_zero() {
+                    return None;
                 }
-                res
+                let p_ = &alpha / &(&gamma * &p);
+                let q = (&beta - &(&alpha * &delta / &gamma)) / &p;
+                let argument = &p_ * &fun(Context::EXP, -q);
+                return Some(lambert_branches(&argument, |w| from_u(w / &p_)));
             }
-        })
+            // `{$b u ln u + r = 0$}`
+            let b = (&p / u).normalize();
+            if depends(&b, x) || depends(&r, x) {
+                return None;
+            }
+            let c = -(r / b);
+            if c.is_zero() {
+                return Some(vec![from_u(value(Rational::from(1)))]);
+            }
+            return Some(lambert_branches(&c, |w| from_u(&c / &w)));
+        }
+        // The exponent `q` of `{$e^q$}`
+        let q = match (unary(&kernel.term), &kernel.term) {
+            (Some((Context::EXP, q)), _) => q.clone(),
+            (_, Term::Pow(pow)) if !depends(&pow.base, x) && depends(&pow.exponant, x) => {
+                &**pow.exponant * &fun(Context::LN, (*pow.base).clone())
+            }
+            _ => return None,
+        };
+        let (gamma, delta) = linear(&q, x)?;
+        if gamma.is_zero() {
+            return None;
+        }
+        if !depends(&r, x) {
+            // `{$(alpha x + beta) e^(gamma x + delta) + r = 0$}`
+            let (alpha, beta) = linear(&p, x)?;
+            if alpha.is_zero() {
+                return None;
+            }
+            let shift = &beta / &alpha;
+            let argument = -(&r * &gamma) * fun(Context::EXP, &gamma * &shift - delta) / &alpha;
+            return Some(lambert_branches(&argument, |w| &w / &gamma - &shift));
+        }
+        // `{$a e^(gamma x + delta) + alpha x + beta = 0$}`
+        if depends(&p, x) {
+            return None;
+        }
+        let (alpha, beta) = linear(&r, x)?;
+        if alpha.is_zero() || p.is_zero() {
+            return None;
+        }
+        let shift = &beta / &alpha;
+        let argument = &gamma * &p * fun(Context::EXP, delta - &gamma * &shift) / &alpha;
+        Some(lambert_branches(&argument, |w| -(&w / &gamma) - &shift))
     }
+
+    /// The solutions of `{$t_1 + t_2 = 0$}` found by taking logarithms, when `{$-t_1 / t_2 = c product b_i^(e_i)$}`
+    /// with `c` constant and exponents `e_i` depending on the unknown: `{$2^x = 3^(x + 1)$}` is
+    /// `{$x ln 2 - (x + 1) ln 3 = 0$}`, `{$x^x = 2$}` is `{$x ln x = ln 2$}`. There is no solution when `c` isn't
+    /// positive, powers with a variable exponent being positive.
+    fn logarithms(&self, expression: &Expr, depth: usize) -> Option<Result<Vec<Expr>, SolveError>> {
+        let x = self.x;
+        let Term::Add(add) = expression else {
+            return None;
+        };
+        let [t1, t2] = add.iter().collect::<Vec<_>>()[..] else {
+            return None;
+        };
+        let ratio = (-(t1 / t2)).normalize();
+        let factors: Vec<Expr> = match &ratio {
+            Term::Mul(mul) => std::iter::once(value(mul.coefficient.clone()))
+                .chain(mul.iter().cloned())
+                .collect(),
+            _ => vec![ratio.clone()],
+        };
+        let mut constant = value(Rational::from(1));
+        let mut logarithm = value(Rational::from(0));
+        for factor in factors {
+            if !depends(&factor, x) {
+                constant = constant * factor;
+                continue;
+            }
+            logarithm = logarithm
+                + match (unary(&factor), &factor) {
+                    (Some((Context::EXP, u)), _) => u.clone(),
+                    (_, Term::Pow(pow)) if depends(&pow.exponant, x) => {
+                        &**pow.exponant * &fun(Context::LN, (*pow.base).clone())
+                    }
+                    _ => return None,
+                };
+        }
+        if logarithm.is_zero() {
+            return None;
+        }
+        if matches!(
+            constant_sign(&constant),
+            Some(Ordering::Less | Ordering::Equal)
+        ) {
+            return Some(Ok(vec![]));
+        }
+        Some(self.solve(&(logarithm + fun(Context::LN, constant)), depth + 1))
+    }
+}
+
+/// The solutions `{$"solution"(W(a))$}` of an equation solved with the Lambert W function: none for
+/// `{$a < -1/e$}`, `{$W = -1$}` for `{$a = -1/e$}`, both branches `{$W_0(a)$}` and `{$W_(-1)(a)$}` for
+/// `{$-1/e < a < 0$}`, and only `{$W_0(a)$}` otherwise (or when the sign of `a` is unknown).
+fn lambert_branches(argument: &Expr, solution: impl Fn(Expr) -> Expr) -> Vec<Expr> {
+    let branch_point = constant_sign(&(argument + &fun(Context::EXP, value(Rational::from(-1)))));
+    match branch_point {
+        Some(Ordering::Less) => vec![],
+        Some(Ordering::Equal) => vec![solution(value(Rational::from(-1)))],
+        _ => {
+            let mut res = vec![solution(fun(Context::LAMBERTW, argument.clone()))];
+            if branch_point.is_some() && constant_sign(argument) == Some(Ordering::Less) {
+                res.push(solution(fun(Context::lambertw_m1(), argument.clone())));
+            }
+            res
+        }
+    }
+}
+
+/// `u` as `{$a x + b$}`, if it is linear in `x`.
+fn linear(u: &Expr, x: Symbol) -> Option<(Expr, Expr)> {
+    let slope = u.derivative(x).normalize();
+    if depends(&slope, x) {
+        return None;
+    }
+    Some((slope, subs(u, x, &value(Rational::from(0)))))
+}
+
+/// `expression` with its hyperbolic functions written with exponentials, when they are mixed with other kernels
+/// (`{$sinh x = 2 cosh x - 2$}`).
+fn hyperbolic_as_exponentials(expression: &Expr, kernels: &[Kernel]) -> Option<Expr> {
+    let hyperbolic = |kernel: &Kernel| {
+        unary(&kernel.term)
+            .is_some_and(|(f, _)| matches!(f, Context::SINH | Context::COSH | Context::TANH))
+    };
+    if kernels.len() < 2 || !kernels.iter().any(hyperbolic) {
+        return None;
+    }
+    Some(map_tree(expression, &|term| {
+        let (ident, u) = unary(term)?;
+        hyperbolic_as_exp(ident, u)
+    }))
+}
+
+/// `q` as `{$r^j$}` with the largest natural `j`, for a positive rational `q`.
+fn perfect_power(q: &Rational) -> (Expr, u64) {
+    if *q > 0u32 && *q != 1u32 {
+        let bits = q
+            .numerator_ref()
+            .significant_bits()
+            .max(q.denominator_ref().significant_bits());
+        for j in (2..=bits.min(64)).rev() {
+            if let Some(root) = q.checked_root(i64::try_from(j).expect("j is small")) {
+                return (value(root), j);
+            }
+        }
+    }
+    (value(q.clone()), 1)
 }
 
 /// `{$g^m$}` for a kernel `g`, written as a function when `g` is an exponential (`{$e^(m u)$}`) or a power with
@@ -476,10 +645,14 @@ fn collect_kernels(term: &Expr, x: Symbol, kernels: &mut Vec<Kernel>) -> bool {
             }
             Term::Value(e) => push(term, one(), (*pow.base).clone(), e.value.clone()),
             exponent if !depends(&pow.base, x) => {
-                // `{$b^(n u + c) = b^c (b^u)^n$}`
+                // `{$b^(n u + c) = b^c (b^u)^n$}`, and `{$(r^j)^(n u) = (r^u)^(n j)$}` for a perfect power
                 let (c, exponent) = split_constant(exponent, x);
                 let (n, u) = split_coefficient(&exponent);
-                push(term, pow.base.pow(&c), pow.base.pow(&u), n)
+                let (root, j) = match &*pow.base {
+                    Term::Value(b) => perfect_power(&b.value),
+                    _ => ((*pow.base).clone(), 1),
+                };
+                push(term, pow.base.pow(&c), root.pow(&u), n * Rational::from(j))
             }
             _ => false,
         },

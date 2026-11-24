@@ -266,6 +266,26 @@ fn transcendental(rng: &mut Rng) -> String {
     }
 }
 
+/// A random equation in `x` mixing kernels, with a known solution `x0`: `sin` and `cos` of multiples of `x`,
+/// powers of two bases, or a logarithm or an exponential with a linear term (solved with Lambert W).
+fn mixed_transcendental(rng: &mut Rng) -> String {
+    let (p, q) = rng.rational_in(0.2, 2.0);
+    let x0 = format!("({p}/{q})");
+    let (a, b) = (rng.nonzero(3), rng.nonzero(3));
+    let (n, m) = (rng.range(1, 3), rng.range(1, 3));
+    let (b1, b2) = (rng.range(2, 5), rng.range(2, 5));
+    let shape = *rng.pick(&[0, 1, 2, 3, 4]);
+    let side = |x: &str| match shape {
+        0 => format!("{a}*sin({n}*{x}) + {b}*cos({m}*{x})"),
+        1 => format!("{a}*sin({n}*{x})*cos({m}*{x}) + {b}*cos({m}*{x})^2"),
+        2 => format!("{b1}^({a}*{x} + {b}) * {b2}^(-{x})"),
+        3 => format!("{a}*ln({n}*{x} + {m}) + {b}*{x}"),
+        _ => format!("{a}*exp({n}*{x}) + {b}*{x}"),
+    };
+    let (lhs, rhs) = (side("x"), side(&x0));
+    format!("R; {lhs} = {rhs}; x = {x0}")
+}
+
 #[test]
 #[ignore = "fuzz: random polynomial systems, run with --ignored"]
 fn fuzz_polynomial_systems() {
@@ -290,6 +310,17 @@ fn fuzz_transcendental() {
     fuzz("fuzz transcendental equations", 60, transcendental, solve);
 }
 
+#[test]
+#[ignore = "fuzz: random equations mixing kernels, run with --ignored"]
+fn fuzz_mixed_transcendental() {
+    fuzz(
+        "fuzz mixed transcendental equations",
+        60,
+        mixed_transcendental,
+        solve,
+    );
+}
+
 fn regression(input: &str) {
     assert_pass(input, Duration::from_secs(60), solve);
 }
@@ -302,4 +333,10 @@ fn bug_solve_irrational_roots_in_c_panic() {
 #[test]
 fn bug_solve_shifted_exponential_kernel() {
     regression("R; exp(2*x - 2) - exp(x - 1) = 2; x = 1 + ln(2)");
+}
+
+#[test]
+fn bug_solve_lambert_tiny_argument() {
+    // The branch `{$W_(-1)$}` of a tiny argument was approximated with its absolute precision
+    regression("R; 3*exp(2*x) + -3*x = 3*exp(2*(45/23)) + -3*(45/23); x = (45/23)");
 }

@@ -485,7 +485,7 @@ fn cyclotomic_polynomials() {
 fn non_polynomial_equations_are_rejected() {
     for system in [
         "sin(x) = x",
-        "sin(x) = cos(x)",
+        "x + sin(x) = 1",
         "exp(x) = x^2",
         "x + y = 1, sin(x) = y",
     ] {
@@ -671,6 +671,83 @@ fn lambert_equations() {
     assert_eq!(solve("x*exp(x) = -1"), ok("\"no solution\""));
     assert_eq!(solve("lambertw(x, -1) = -2"), ok("x = -2 exp(-2)"));
     assert_eq!(solve("lambertw(x, -1) = 2"), ok("\"no solution\""));
+}
+
+#[test]
+fn trigonometric_equations_of_a_common_angle() {
+    // Homogeneous in `{$sin x$}` and `{$cos x$}`: a polynomial in `{$tan x$}`
+    assert_eq!(
+        solve("sin(x) = cos(x)"),
+        ok("x = frac(1, 4) pi+pi k \\ k in ZZ")
+    );
+    assert_eq!(
+        solve("solve(sin(x) = a*cos(x), x)"),
+        ok("x = arctan(a)+pi k \\ k in ZZ")
+    );
+    // `{$1 = sin^2 x + cos^2 x$}` makes it homogeneous, `{$cos x = 0$}` is a solution too
+    assert_eq!(
+        solve("sin(x)^2 + sin(x)*cos(x) = 1"),
+        ok(
+            "x = -frac(1, 2) pi+2 pi k \\ x = frac(1, 4) pi+pi k \\ x = frac(1, 2) pi+2 pi k \\ k in ZZ"
+        )
+    );
+    // Linear: `{$R sin(x + phi) = c$}`
+    assert_eq!(
+        solve("sin(x) + cos(x) = 1"),
+        ok("x = 2 pi k \\ x = frac(1, 2) pi+2 pi k \\ k in ZZ")
+    );
+    assert_eq!(
+        solve("2*sin(x) - 3*cos(x) = 1"),
+        ok(
+            "x = arcsin(frac(1, 13) sqrt(13))+arctan(frac(3, 2))+2 pi k \\ x = pi-arcsin(frac(1, 13) sqrt(13))+arctan(frac(3, 2))+2 pi k \\ k in ZZ"
+        )
+    );
+    assert_eq!(solve("sin(x) + cos(x) = 2"), ok("\"no solution\""));
+    // Multiple angles, with only even powers of `{$cos x$}`: a polynomial in `{$sin x$}`
+    assert_eq!(
+        solve("cos(2*x) = sin(x)"),
+        ok(
+            "x = -frac(1, 2) pi+2 pi k \\ x = frac(1, 6) pi+2 pi k \\ x = frac(5, 6) pi+2 pi k \\ k in ZZ"
+        )
+    );
+    assert_eq!(
+        solve("sin(x/2) = cos(x)"),
+        ok("x = -pi+4 pi k \\ x = frac(1, 3) pi+4 pi k \\ x = frac(5, 3) pi+4 pi k \\ k in ZZ")
+    );
+    assert_eq!(
+        solve("tan(2*x) = 1"),
+        ok("x = frac(1, 8) pi+frac(1, 2) pi k \\ k in ZZ")
+    );
+    // Zeros of the cosines dividing `tan` are excluded
+    assert_eq!(
+        solve("tan(x) = 2*sin(x)"),
+        ok(
+            "x = 2 pi k \\ x = -frac(1, 3) pi+2 pi k \\ x = frac(1, 3) pi+2 pi k \\ x = pi+2 pi k \\ k in ZZ"
+        )
+    );
+    assert_eq!(solve("tan(x)*cos(x) = 1"), ok("\"no solution\""));
+}
+
+#[test]
+fn exponentials_of_several_bases_and_logarithms() {
+    // Perfect powers share their base
+    assert_eq!(solve("4^x - 3*2^x + 2 = 0"), ok("x = 0 \\ x = 1"));
+    assert_eq!(solve("8^x = 4"), ok("x = frac(2, 3)"));
+    // Taking logarithms
+    assert_eq!(solve("2^x = 3^(x+1)"), ok("x = frac(ln(3), (ln(2)-ln(3)))"));
+    assert_eq!(solve("e^x = 2^x"), ok("x = 0"));
+    assert_eq!(solve("2^x = -3^x"), ok("\"no solution\""));
+    assert_eq!(solve("x^x = 2"), ok("x = frac(ln(2), W(ln(2)))"));
+    // Hyperbolic functions as exponentials
+    assert_eq!(solve("sinh(x) = 2*cosh(x) - 2"), ok("x = ln(3) \\ x = 0"));
+    // Lambert W
+    assert_eq!(
+        solve("2^x = 3*x"),
+        ok("x = -frac(W(-frac(1, 3) ln(2)), ln(2)) \\ x = -frac(W_(-1)(-frac(1, 3) ln(2)), ln(2))")
+    );
+    assert_eq!(solve("exp(x) + x = 0"), ok("x = -W(1)"));
+    assert_eq!(solve("ln(x) = 2 - x"), ok("x = W(exp(2))"));
+    assert_eq!(solve("x*ln(x) = 0"), ok("x = 1"));
 }
 
 #[test]

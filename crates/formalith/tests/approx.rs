@@ -256,3 +256,18 @@ fn approx_keeps_singular_values() {
     // Evaluated exactly before being approximated
     assert_eq!(approx("approx(binomial(1/2, 2))"), "-0.125");
 }
+
+#[test]
+fn tiny_intermediate_values_keep_their_precision() {
+    // `{$e^(-90)$}` used to be evaluated in fixed point, losing its relative precision
+    assert_eq!(
+        approx("approx(ln(2*exp(-90)), 25)"),
+        "-89.30685281944005469058277"
+    );
+    // `{$W_(-1)$}` of tiny arguments depends on their relative precision
+    assert_eq!(
+        approx("approx(lambertw(-2*exp(-90), -1), 25)"),
+        "-93.84853497203679093594952"
+    );
+    assert_eq!(approx("approx(exp(-2000))"), "2.57653587296115e-869");
+}

@@ -350,6 +350,11 @@ pub static BUILTIN_DOCS: [BuiltinDoc; Context::BUILTIN_NAMES.len()] = [
             ),
             ex("solve(x^2 = 2, x)", "x = sqrt(2) \\ x = -sqrt(2)"),
             ex("solve(x^2 > 1, x)", "x in (-oo, -1) union (1, oo)"),
+            ex(
+                "solve(sin(x) = cos(x), x)",
+                "x = frac(1, 4) pi + pi k \\ k in ZZ",
+            ),
+            ex("solve(2^x = 3^(x + 1), x)", "x = ln(3)/(ln(2) - ln(3))"),
         ],
     ),
     doc(
