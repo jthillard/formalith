@@ -80,7 +80,6 @@ Ideas and known gaps, roughly by area. `AGENTS.md` describes what exists; this f
 
 - Higher orders with non-constant coefficients, like the Airy equation `y'' + x y = 0`. The holonomic engine
   could give their power series solutions.
-- Constant solutions of separable equations aren't listed.
 - Implicit solutions only take `y(a) = b` conditions.
 
 ## Matrices

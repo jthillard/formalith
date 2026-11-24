@@ -15,7 +15,7 @@ use crate::{
     },
     solve::{Equation, Solution, Solve},
     sum::is_rational_function,
-    term::Term,
+    term::{Expand, Term},
 };
 
 use super::{OdeBranch, OdeError, OdeResult, integrate, placeholder, tidy};
@@ -72,9 +72,36 @@ fn solve_explicit(f: &Expr, x: Symbol, y: Symbol, c: Symbol) -> OdeResult<Vec<Od
         ));
     };
     // `{$integral dy / q(y) = integral p(x) dx + c$}`
-    let g = integrate(&(one() / q), y)?;
+    let g = integrate(&(one() / &q), y)?;
     let h = integrate(&p, x)?;
-    Ok(invert(&g, &h, y, c))
+    let mut res = invert(&g, &h, y, c);
+    for root in constant_solutions(&q, x, y) {
+        // Skip the roots already given by a constant `{$c = 0$}`
+        let covered = res.iter().any(|branch| match branch {
+            OdeBranch::Explicit(f) => (subs(f, c, &zero()) - &root).expand().is_zero(),
+            OdeBranch::Implicit(_) => false,
+        });
+        if !covered {
+            res.push(OdeBranch::Explicit(tidy(&root)));
+        }
+    }
+    Ok(res)
+}
+
+/// The constant solutions `{$y = r$}` of a separable equation `{$y' = p(x) q(y)$}`, `r` being the roots of `q`.
+fn constant_solutions(q: &Expr, x: Symbol, y: Symbol) -> Vec<Expr> {
+    let branches = match R.solve_for(&[Equation::new(q.clone(), zero())], &[y]) {
+        Ok(Solution::Assignments(assignments)) => vec![assignments],
+        Ok(Solution::Alternatives(branches)) => branches,
+        _ => vec![],
+    };
+    let mut roots: Vec<Expr> = vec![];
+    for (_, root) in branches.into_iter().filter_map(|a| a.into_iter().next()) {
+        if !depends(&root, x) && !depends(&root, y) && !roots.contains(&root) {
+            roots.push(root);
+        }
+    }
+    roots
 }
 
 /// Solve the linear equation `{$y' = a(x) y + b(x)$}` with the integrating factor `{$e^(-A)$}`, `{$A = integral a$}`:

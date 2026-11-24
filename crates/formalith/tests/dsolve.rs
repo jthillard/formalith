@@ -43,8 +43,19 @@ fn first_order_linear() {
 
 #[test]
 fn separable() {
-    assert_eq!(dsolve("dsolve(y' = y^2)"), ok("y(x) = -1/(x + c_1)"));
-    assert_eq!(dsolve("dsolve(y' = x*y^2)"), ok("y(x) = -2/(x^2 + 2*c_1)"));
+    assert_eq!(
+        dsolve("dsolve(y' = y^2)"),
+        ok("y(x) = -1/(x + c_1) \\ y(x) = 0")
+    );
+    assert_eq!(
+        dsolve("dsolve(y' = x*y^2)"),
+        ok("y(x) = -2/(x^2 + 2*c_1) \\ y(x) = 0")
+    );
+    // `{$y = 1$}` is the solution with `{$c_1 = 0$}`, so only `{$y = -1$}` is added
+    assert_eq!(
+        dsolve("dsolve(y' = y^2 - 1)"),
+        ok("y(x) = (c_1*exp(2x) + 1)/(1 - c_1*exp(2x)) \\ y(x) = -1")
+    );
     assert_eq!(
         dsolve("dsolve(y' = exp(x - y))"),
         ok("y(x) = ln(c_1 + exp(x))")
@@ -56,7 +67,7 @@ fn separable() {
     // Logarithms are combined, `{$ln|y| - ln|y - 1| = x + c$}`
     assert_eq!(
         dsolve("dsolve(y' = y*(1 - y))"),
-        ok("y(x) = -c_1*exp(x)/(1 - c_1*exp(x))")
+        ok("y(x) = -c_1*exp(x)/(1 - c_1*exp(x)) \\ y(x) = 1")
     );
     // Kept implicit
     assert_eq!(
@@ -134,6 +145,8 @@ fn initial_conditions() {
         dsolve("dsolve(y' = y^2, y(0) = 1)"),
         ok("y(x) = -1/(x - 1)")
     );
+    // Only the constant solution satisfies the condition
+    assert_eq!(dsolve("dsolve(y' = y^2, y(0) = 0)"), ok("y(x) = 0"));
     // A single condition for an equation of order 2
     assert_eq!(
         dsolve("dsolve(y'' + y = 0, y(0) = 3)"),
@@ -155,7 +168,7 @@ fn function_and_variable() {
     // The variable is found in `y(t)`
     assert_eq!(
         dsolve("dsolve(diff(y(t), t) = y(t)^2)"),
-        ok("y(t) = -1/(c_1 + t)")
+        ok("y(t) = -1/(c_1 + t) \\ y(t) = 0")
     );
     assert_eq!(dsolve("dsolve(f' = f, f, x)"), ok("f(x) = c_1*exp(x)"));
     // Constants already used in the equation are skipped
