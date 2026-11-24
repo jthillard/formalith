@@ -271,3 +271,20 @@ fn tiny_intermediate_values_keep_their_precision() {
     );
     assert_eq!(approx("approx(exp(-2000))"), "2.57653587296115e-869");
 }
+
+#[test]
+fn approx_rootof() {
+    assert_eq!(approx("approx(rootof(x^5 - x - 1, 1))"), "1.16730397826142");
+    assert_eq!(
+        approx("approx(rootof(x^5 - x - 1, 1), 50)"),
+        "1.1673039782614186842560458998548421807205603715255"
+    );
+    assert_eq!(
+        approx("approx(rootof(x^5 - 5*x + 1, 1))"),
+        "-1.54165168410452"
+    );
+    assert_eq!(
+        approx("approx(rootof(x^5 - x - 1, 1)^2 + 1)"),
+        "2.36259857766493"
+    );
+}

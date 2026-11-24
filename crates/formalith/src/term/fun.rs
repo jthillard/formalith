@@ -12,6 +12,7 @@ use crate::{
     field::{
         Derivable, Monoid, Ring, Set,
         matrix::{M, MatrixEntries, VectorSpaceElement},
+        real::{Real, rootof},
     },
     iter,
     printer::{PrettyPrint, PrettyPrinter, Print, PrintOptions},
@@ -155,6 +156,9 @@ impl<From: Set, T> Flags for Fun<From, T> {
 
 impl<From: Set, T: Set> Print for Fun<From, T> {
     fn print(&self, options: &PrintOptions, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Some(display) = self.real_root_display() {
+            return display.print(options, f);
+        }
         let mut args: Vec<_> = self.args.iter().collect();
         if let (Some(relation), [lhs, rhs]) = (Relation::from_symbol(self.ident), args.as_slice()) {
             // A condition `lhs < rhs`
@@ -360,6 +364,9 @@ impl<From: Set, T: Set> Print for Fun<From, T> {
 }
 impl<From: Set, T: Set> PrettyPrint for Fun<From, T> {
     fn pretty_print(&self, options: &PrintOptions) -> crate::printer::PrettyPrinter {
+        if let Some(display) = self.real_root_display() {
+            return display.pretty_print(options);
+        }
         if self.ident == Context::INTEGRATE
             && let [fun, x, bounds @ ..] = self.args.as_slice()
             && matches!(bounds.len(), 0 | 2)
@@ -429,6 +436,15 @@ impl<From: Set, T: Set> PrettyPrint for Fun<From, T> {
 }
 
 impl<From: Set, T: Set> Fun<From, T> {
+    /// `rootof(p, k)` for the internal function `@rootof(j, c_0, ..., c_n)`, printed so to be parsed back.
+    fn real_root_display(&self) -> Option<Term<Real>> {
+        if self.ident != Context::real_root() {
+            return None;
+        }
+        let fun = (self as &dyn std::any::Any).downcast_ref::<Fun<Real, Real>>()?;
+        rootof::display(&fun.args)
+    }
+
     /// Pretty print the builtins drawn with their own notation, like `{$n!$}`, `{$floor(x)$}` or `{$binom(n, k)$}`.
     fn pretty_print_special(&self, options: PrintOptions) -> Option<PrettyPrinter> {
         let pretty = |term: &Term<From>| term.pretty_print(&options);

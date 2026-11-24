@@ -61,9 +61,9 @@ fn other_sets() {
 fn errors() {
     assert!(solve("abs(x) = y").unwrap_err().contains("not polynomial"));
     assert!(solve("2^x = y").unwrap_err().contains("not polynomial"));
-    // Irreducible quartic over the rationals, and not a polynomial in `x^k`
+    // Irrational coefficients, without radical roots
     assert!(
-        solve("x^4 + x + 1 = 0")
+        solve("x^5 + sqrt(2)*x + 1 = 0")
             .unwrap_err()
             .contains("can't solve")
     );
@@ -494,12 +494,31 @@ fn non_polynomial_equations_are_rejected() {
             "{system}"
         );
     }
-    // Quintic without radical roots
-    assert!(
-        solve("x^5 - x - 1 = 0")
-            .unwrap_err()
-            .contains("can't solve")
+}
+
+#[test]
+fn polynomials_without_radical_roots() {
+    assert_eq!(
+        solve("x^5 - x - 1 = 0"),
+        ok("x = op(\"rootof\")(-x+x^5-1, 1)")
     );
+    assert_eq!(
+        solve("x^5 - 5*x + 1 = 0"),
+        ok(
+            "x = op(\"rootof\")(-5 x+x^5+1, 1) \\ x = op(\"rootof\")(-5 x+x^5+1, 2) \\ \
+            x = op(\"rootof\")(-5 x+x^5+1, 3)"
+        )
+    );
+    assert_eq!(
+        solve("(x^2 - 2)*(x^5 - x - 1) = 0"),
+        ok("x = sqrt(2) \\ x = -sqrt(2) \\ x = op(\"rootof\")(-x+x^5-1, 1)")
+    );
+    assert_eq!(
+        solve("x^6 = x + 1, x > 0"),
+        ok("x = op(\"rootof\")(-x+x^6-1, 2)")
+    );
+    // Irreducible quartic over the rationals without real root, whose radicals aren't found
+    assert_eq!(solve("x^4 + x + 1 = 0"), ok("\"no solution\""));
 }
 
 #[test]

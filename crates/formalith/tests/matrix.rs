@@ -730,6 +730,22 @@ fn roots() {
     assert_eq!(line(&parse!("roots(x^2 + 1)", M)), "roots(x^2+1)");
     assert_eq!(line(&parse!("roots(5)", M)), "roots(5)");
     assert_eq!(line(&parse!("roots(sin(x))", M)), "roots(sin(x))");
+    // Without radicals
+    assert_eq!(
+        line(&parse!("roots((x^5 - x - 1)^2*(x - 1))", M)),
+        "[[rootof(-x+x^5-1, 1)],[rootof(-x+x^5-1, 1)],[1]]"
+    );
+    let companion = "[[0,0,0,0,-1],[1,0,0,0,-4],[0,1,0,0,0],[0,0,1,0,5],[0,0,0,1,0]]";
+    assert_eq!(
+        line(&parse!(&format!("eigenvalues({companion})"), M)),
+        format!(
+            "[{}]",
+            (1..=5)
+                .map(|k| format!("[rootof(4*x-5*(x^3)+x^5+1, {k})]"))
+                .collect::<Vec<_>>()
+                .join(",")
+        )
+    );
 }
 
 #[test]

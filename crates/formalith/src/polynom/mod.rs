@@ -3,6 +3,7 @@
 pub(crate) mod dense;
 pub mod factor;
 pub(crate) mod fraction;
+pub(crate) mod real_roots;
 
 use std::{
     cmp::Ordering,

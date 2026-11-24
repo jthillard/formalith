@@ -284,6 +284,10 @@ impl Numeric {
             }
             // The remainder of a series is left out, so that its terms can be drawn
             Term::Fun(fun) if fun.get_ident() == Context::LITTLE_O => Self::Const(0.),
+            // A real root of a polynomial, a constant
+            Term::Fun(fun) if fun.get_ident() == Context::real_root() => {
+                Self::Const(super::approx::approximate(term, 17).map_or(f64::NAN, |x| to_f64(&x)))
+            }
             Term::Fun(fun) => {
                 let name = || Self::Unsupported(fun.get_ident_as_str().to_owned());
                 let Some(args) = fun.get_args::<Real>() else {

@@ -4,6 +4,7 @@ pub(crate) mod approx;
 pub(crate) mod expr;
 pub mod numeric;
 mod rewrite;
+pub(crate) mod rootof;
 pub(crate) mod sign;
 pub(crate) mod special;
 
@@ -249,6 +250,14 @@ impl Semiring for R<Rational> {
                 {
                     // `{$(2 pi)^(1/2) = 2^(1/2) pi^(1/2)$}`, a single form for roots of positive constants
                     return Term::distribute_pow(mul, exponant);
+                }
+                (Term::Fun(fun), Term::Value(n))
+                    if fun.get_ident() == Context::real_root()
+                        && let Some(args) = fun.get_args::<Self>()
+                        && let Some(res) = rootof::reduce_power(base, args, &n.value) =>
+                {
+                    // `{$alpha^n$}` reduced modulo the polynomial of a root `{$alpha$}`
+                    return res;
                 }
                 (Term::Fun(fun), _) if fun.get_ident() == Context::EXP => {
                     // `{$(exp u)^c = exp(c u)$}`, `{$exp u$}` being positive
@@ -1097,6 +1106,7 @@ impl R<Rational> {
                 self.eval_lambertw(x, false)
             }
             (Context::PIECEWISE, args) => self.eval_piecewise(args),
+            (Context::ROOTOF, args) => rootof::eval_rootof(args),
             (Context::FACTORIAL, [Term::Value(n)]) => self.eval_factorial(&n.value),
             (Context::BINOMIAL, [n, Term::Value(k)]) if k.value == 0 || k.value == 1 => {
                 Some(if k.value == 0 {

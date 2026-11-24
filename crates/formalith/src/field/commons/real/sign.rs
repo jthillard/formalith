@@ -127,6 +127,10 @@ fn structural_sign(term: &Expr, mode: SignMode) -> SignSet {
                 _ => SignSet::ANY,
             }
         }
+        Term::Fun(fun) if fun.get_ident() == Context::real_root() => fun
+            .get_args::<Real>()
+            .and_then(|args| super::rootof::sign(args))
+            .map_or(SignSet::NONZERO, SignSet::from_ordering),
         Term::Fun(_) => {
             let Some((ident, arg)) = unary(term) else {
                 return SignSet::ANY;

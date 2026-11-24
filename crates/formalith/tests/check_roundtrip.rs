@@ -70,6 +70,7 @@ fn curated_roundtrips() {
             "R; floor(x/2) + ceil(-x) + sign(x)",
             "R; lambertw(x) + erf(x) - Si(x)",
             "R; lambertw(x, -1) + lambertw(x)",
+            "R; x*rootof(x^5 - 5*x + 1, 2) - rootof(x^5 - x - 1, 1)^2",
             "R; -(-(-x))",
             "R; 2^(x + 1) - 3^(-x)",
             "Z; (x - 3)^2*(x + y)",

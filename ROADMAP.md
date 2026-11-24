@@ -21,10 +21,12 @@ Ideas and known gaps, roughly by area. `AGENTS.md` describes what exists; this f
 
 ## Solving
 
-- **Polynomials without radical roots** (`x^5 - x - 1 = 0` is "can't solve"): real roots isolated by Sturm
-  sequences or Descartes' rule, refined with `approx`'s fixed-point arithmetic, as numerical roots or a `RootOf`-like
-  value. An `nsolve` builtin for other equations (`cos(x) = x`) could share it, and the inequality CAD and `argmin`
-  could use it where radicals stall.
+- **`nsolve`** for equations without closed form (`cos(x) = x`), explicitly numerical: bracketing and refinement in
+  `approx`'s fixed-point arithmetic, like `rootof` does for polynomials (`polynom/real_roots.rs`).
+- **Non-real `rootof`**: polynomials without radical roots in `C` (`x^5 = 2` is "can't solve" there), and
+  polynomials with irrational or symbolic coefficients (`x^5 + sqrt(2) x + 1`).
+- `rootof` arithmetic only reduces powers of a single root: sums and products of different roots aren't simplified,
+  and denominators like `1/(α + 1)` aren't rationalized.
 - **Transcendental equations** still unsupported: kernels mixed with polynomial parts (`x + sin(x) = 1`,
   `x sin(x) = 1`), trigonometric functions of unrelated angles (`sin(x) = cos(x^2)`), more than two exponential
   terms of different bases (`2^x + 3^x = 5`), and trigonometric polynomials whose degree is too high for radicals

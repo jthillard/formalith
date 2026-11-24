@@ -58,6 +58,8 @@ impl<T: Derivable<ExponantSet = T, ProductCoefficientSet = T>> Term<T> {
                 // `{$(b^e)' = e b^(e-1) b'$}`
                 exponant * &pow.base.pow(&(exponant - &Self::one(set))) * pow.base.derivative(x)
             }
+            // A real root of a polynomial, a constant
+            Self::Fun(fun) if fun.get_ident() == Context::real_root() => Self::zero(set),
             Self::Fun(fun) => {
                 // `{$d/dx integral f dif x = f$}`
                 if fun.get_ident() == Context::INTEGRATE

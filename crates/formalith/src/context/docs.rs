@@ -1204,6 +1204,23 @@ pub static BUILTIN_DOCS: [BuiltinDoc; Context::BUILTIN_NAMES.len()] = [
             ex("3*x*o(x^2)", "o(x^3)"),
         ],
     ),
+    doc(
+        Context::ROOTOF,
+        Algebra,
+        "rootof(p, [x], k)",
+        "The k-th real root of a polynomial with rational coefficients, by increasing order.",
+        "x may be omitted when p has a single symbol. Roots of linear and quadratic factors are written with \
+         radicals, the others stay rootof of their irreducible factor, which solve gives for polynomials without \
+         radical roots. Powers of a root are reduced by its polynomial, and approx refines its isolating interval.",
+        &[
+            ex("rootof(x^3 - 2*x^2 - 2*x, 1)", "1 - sqrt(3)"),
+            ex(
+                "rootof(x^5 - x - 1, 1)^5",
+                "op(\"rootof\")(-x + x^5 - 1, 1) + 1",
+            ),
+            ex("approx(rootof(x^5 - x - 1, 1))", "1.16730397826142"),
+        ],
+    ),
 ];
 
 #[cfg(test)]

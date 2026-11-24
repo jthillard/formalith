@@ -651,3 +651,46 @@ fn exponential_integrals() {
     assert_eq!(parse!("diff(Ci(2*x), x)", R), parse!("cos(2*x)/x", R));
     assert_eq!(parse!("diff(Ei(x), x)", R), parse!("exp(x)/x", R));
 }
+
+#[test]
+fn rootof() {
+    let root = |input: &str| line(&parse!(input, R));
+    assert_eq!(root("rootof(x^5 - x - 1, 1)"), "rootof(-x+x^5-1, 1)");
+    assert_eq!(root("rootof(t^5 - t - 1, t, 1)"), "rootof(-x+x^5-1, 1)");
+    // Roots of linear and quadratic factors are written with radicals
+    assert_eq!(root("rootof(2*x^3 - 4*x, 3)"), "2^(1/2)");
+    assert_eq!(root("rootof(2*x^3 - 4*x, 2)"), "0");
+    assert_eq!(
+        parse!("rootof(x^4 - 3*x^2 + 1, 1)", R),
+        parse!("-sqrt(5)/2 - 1/2", R)
+    );
+    // Powers are reduced by the polynomial
+    assert_eq!(root("rootof(x^5 - x - 1, 1)^5"), "rootof(-x+x^5-1, 1)+1");
+    assert_eq!(root("1/rootof(x^5 - x - 1, 1)"), "rootof(-x+x^5-1, 1)^4-1");
+    assert_eq!(
+        root("rootof(x^5 - x - 1, 1)^5 - rootof(x^5 - x - 1, 1) - 1"),
+        "0"
+    );
+    assert_eq!(
+        // `{$alpha^6 = alpha^2 + alpha$}`
+        root("expand((rootof(x^5 - x - 1, 1)^3 + 1)^2)"),
+        line(&parse!(
+            "2*rootof(x^5 - x - 1, 1)^3 + rootof(x^5 - x - 1, 1)^2 + rootof(x^5 - x - 1, 1) + 1",
+            R
+        ))
+    );
+    // Signs come from the isolating intervals
+    assert_eq!(root("sign(rootof(x^5 - 5*x + 1, 1))"), "-1");
+    assert_eq!(
+        root("abs(rootof(x^5 - 5*x + 1, 1))"),
+        "-rootof(-5*x+x^5+1, 1)"
+    );
+    assert_eq!(
+        root("diff(x^2*rootof(x^5 - x - 1, 1), x)"),
+        "2*x*rootof(-x+x^5-1, 1)"
+    );
+    // Out of range, or not a polynomial with rational coefficients
+    assert_eq!(root("rootof(x^5 - x - 1, 2)"), "rootof(-x+x^5-1, 2)");
+    assert_eq!(root("rootof(x^2 + 1, 1)"), "rootof(x^2+1, 1)");
+    assert_eq!(root("rootof(x^5 - x*y, 1)"), "rootof(x^5-x*y, 1)");
+}

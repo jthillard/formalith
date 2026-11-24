@@ -888,6 +888,9 @@ impl Fixed {
                             _ => (cos != 0).then(|| self.to_rational(self.div(&sin, &cos))),
                         }
                     }
+                    (ident, args) if ident == Context::real_root() => {
+                        super::rootof::approximate(args, self.bits)
+                    }
                     (Context::LAMBERTW, [x]) => self.lambert_w(&self.evaluate(x)?, true),
                     (Context::LAMBERTW, [x, k]) => match self.evaluate(k)? {
                         k if k == 0 => self.lambert_w(&self.evaluate(x)?, true),

@@ -324,9 +324,11 @@ impl Context {
     pub const ARG: Symbol = Symbol(100);
     /// Little-o `{$o(u)$}`, the remainder of a series, negligible compared to `u`
     pub const LITTLE_O: Symbol = Symbol(101);
+    /// Real root `rootof(p, x, k)`, the `k`-th real root of the polynomial `p` by increasing order
+    pub const ROOTOF: Symbol = Symbol(102);
 
     #[rustfmt::skip]
-    const BUILTIN_NAMES: [&'static str; 102] = [
+    const BUILTIN_NAMES: [&'static str; 103] = [
         "abs", "det", "expand", "factor", "simplify", "re", "im", "conj", "sqrt", "root", "sign",
         "floor", "ceil", "min", "max", "gcd", "lcm", "quo", "rem", "diff", "solve", "approx",
         "exp", "ln", "sin", "cos", "tan", "pi", "e", "lim", "oo", "undefined",
@@ -338,7 +340,7 @@ impl Context {
         "I", "degree", "argmin", "argmax", "localmin",
         "localmax", "extrema", "localextrema", "subs", "numer", "denom", "roots", "resultant",
         "discriminant", "erfc", "round", "trunc", "isprime", "factorint", "zeros", "diag", "Si", "Ci",
-        "Ei", "arg", "o",
+        "Ei", "arg", "o", "rootof",
     ];
 
     /// The internal function `@sum(f, k, a, b)`, a sum which isn't evaluated, printed like `sum`: the result of
@@ -353,6 +355,14 @@ impl Context {
     pub(crate) fn lambertw_m1() -> Symbol {
         static LAMBERTW_M1: LazyLock<Symbol> = LazyLock::new(|| Symbol::new("@lambertwm1"));
         *LAMBERTW_M1
+    }
+
+    /// The internal function `@rootof(j, c_0, ..., c_n)`, the `j`-th real root (from 0, by increasing order) of the
+    /// polynomial `{$c_0 + c_1 x + ... + c_n x^n$}` of degree at least 3, irreducible over `{$QQ$}`, primitive over
+    /// `{$ZZ$}` with `{$c_n > 0$}`, written `rootof(p, k)`.
+    pub(crate) fn real_root() -> Symbol {
+        static REAL_ROOT: LazyLock<Symbol> = LazyLock::new(|| Symbol::new("@rootof"));
+        *REAL_ROOT
     }
 
     /// The internal function `@zetare(a, b)`, `@zetaim`, `@gammare` or `@gammaim` (`function` being
@@ -433,7 +443,7 @@ impl Context {
             | Self::APART
             | Self::DEGREE => Some((1, 2)),
             Self::SUBS => Some((3, 3)),
-            Self::RESULTANT | Self::DIFF => Some((2, 3)),
+            Self::RESULTANT | Self::DIFF | Self::ROOTOF => Some((2, 3)),
             Self::PIECEWISE => Some((2, usize::MAX)),
             Self::LIM => Some((3, 4)),
             Self::SERIES => Some((3, 5)),

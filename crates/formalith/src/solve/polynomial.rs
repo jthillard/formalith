@@ -40,7 +40,7 @@ use crate::{
         integer::Z,
         modular::Zn,
         real::{
-            R,
+            R, rootof,
             sign::{SignMode, sign_set},
         },
     },
@@ -179,8 +179,10 @@ where
 
 impl PolynomialRoots for R<Rational> {
     /// Polynomials of degree one or two, and polynomials of these degrees in `{$x^k$}`, like `{$x^4 - x^2 - 1$}`
-    /// or `{$x^3 - 2$}`, are solved with radicals, as well as cubics with rational coefficients (see [`cubic_roots`]).
-    /// Signs of radicals are found by approximating them. Roots of other polynomials aren't computed.
+    /// or `{$x^3 - 2$}`, are solved with radicals, as well as cubics and quartics with rational coefficients (see
+    /// [`cubic_roots`] and [`quartic_roots`]). Signs of radicals are found by approximating them. Other polynomials
+    /// with rational coefficients have their real roots as `rootof` ([`rootof::real_roots`]), roots of polynomials
+    /// with other coefficients aren't computed.
     fn roots(coefficients: &[Term<Self>]) -> Option<Vec<Term<Self>>> {
         let value = |value: i64| Term::constant(Rational::from(value), R);
         // A polynomial in `x^k`
@@ -208,11 +210,18 @@ impl PolynomialRoots for R<Rational> {
                 })
             }
             [_, _, _, _] => cubic_roots(&values(coefficients)?),
-            [_, _, _, _, _] => quartic_roots(&values(coefficients)?, Some, Self::roots),
-            _ => {
-                // Primitive `{$n$}`-th roots of unity aren't real for `{$n > 2$}`
+            [_, _, _, _, _] => {
                 let coefficients = values(coefficients)?;
-                cyclotomic_order(&coefficients).map(|_| vec![])
+                quartic_roots(&coefficients, Some, Self::roots)
+                    .or_else(|| Some(rootof::real_roots(&Poly::new(coefficients))))
+            }
+            _ => {
+                let coefficients = values(coefficients)?;
+                // Primitive `{$n$}`-th roots of unity aren't real for `{$n > 2$}`
+                Some(
+                    cyclotomic_order(&coefficients)
+                        .map_or_else(|| rootof::real_roots(&Poly::new(coefficients)), |_| vec![]),
+                )
             }
         }
     }
