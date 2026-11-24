@@ -800,9 +800,45 @@ fn consistent_at_sample(rows: &[Vec<Elem>], unknowns: usize) -> bool {
 fn tidy_term(term: &Expr, k: Symbol) -> Expr {
     let term = combine_factorials(&split_powers(term, k));
     let term = combine_factorials(&split_powers(&half_gammas(&duplicate_gammas(&term)), k));
-    tidy(&absorb_coefficients(&clear_denominators(&binomials(
-        &term, k,
-    ))))
+    tidy(&merge_powers(
+        &absorb_coefficients(&clear_denominators(&binomials(&term, k))),
+        k,
+    ))
+}
+
+/// Powers of values whose exponent is a multiple of `k` merged into a power of a larger value, like
+/// `{$2^(2k + 1) = 2 dot 4^k$}` and `{$3^(-2k) = 9^(-k)$}`.
+fn merge_powers(term: &Expr, k: Symbol) -> Expr {
+    map_tree(term, &|t| {
+        let Term::Pow(pow) = t else { return None };
+        let Term::Value(base) = &*pow.base else {
+            return None;
+        };
+        let exponent = &**pow.exponant;
+        if base.value == 0
+            || base.value == 1
+            || base.value == -1
+            || !is_integer_exponent(exponent, k)
+        {
+            return None;
+        }
+        let at = |n: i64| match subs(exponent, k, &value(Rational::from(n))) {
+            Term::Value(c) => Some(c.value),
+            _ => None,
+        };
+        let s = at(0)?;
+        let r = Integer::try_from(at(1)? - &s).ok()?;
+        let r_abs = i64::try_from(&(&r).abs()).ok()?;
+        if r_abs < 2 {
+            return None;
+        }
+        let s = i64::try_from(&Integer::try_from(s).ok()?).ok()?;
+        let sign = if r > 0 { one() } else { -one() };
+        Some(
+            value((&base.value).pow(r_abs)).pow(&(sign * variable(k)))
+                * value((&base.value).pow(s)),
+        )
+    })
 }
 
 /// Whether the exponent is an integer for every integer `k`: `{$c_0 + c_1 k$}` with integers `{$c_0, c_1$}`.

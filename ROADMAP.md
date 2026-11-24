@@ -21,8 +21,7 @@ Ideas and known gaps, roughly by area. `AGENTS.md` describes what exists; this f
   (`special::bernoulli`).
 - **Held sums**:
   - derivatives and integrals term by term, so that `diff(series(...), x)` evaluates;
-  - partial sums for `approx` and for graphs (`Numeric` doesn't support them);
-  - printing `4^k` rather than `2^(2k)`.
+  - partial sums for `approx` and for graphs (`Numeric` doesn't support them).
 - `exp(a ln u)` with a symbolic `a` is slow in the series engine: `series((1 + x)^a, x, 0, 8)` doesn't finish.
 
 ## Solving
