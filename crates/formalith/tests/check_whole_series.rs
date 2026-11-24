@@ -77,11 +77,15 @@ fn partial_sums(env: &Environment, sum: &HeldSum) -> Option<Vec<f64>> {
     Some(partial)
 }
 
-/// Check the whole series of `input`: `f; a`.
+/// Check the whole series of `input`: `f; a`, or `f; a; side` for a one-sided series.
 fn whole_series(input: &str) -> Verdict {
     let parts: Vec<_> = input.split(';').map(str::trim).collect();
     let (f, a) = (parts[0], parts[1]);
-    let output = match eval(&mut Environment::new(), &format!("series({f}, x, {a}, oo)")) {
+    let side = parts.get(2).map_or_else(String::new, |s| format!(", {s}"));
+    let output = match eval(
+        &mut Environment::new(),
+        &format!("series({f}, x, {a}, oo{side})"),
+    ) {
         Ok(output) => output,
         Err(e) => return Verdict::Skip(e),
     };
@@ -206,6 +210,11 @@ fn whole_series_examples() {
             "asinh(x); 0",
             "exp(x)*sin(x); 0",
             "Si(x); 0",
+            "sqrt(1 + sqrt(1 + x)); 0",
+            "1/sqrt(1 + sqrt(1 + x)); 0",
+            "sqrt(1 + sqrt(x)); 0; 1",
+            "sqrt(x + x^2); 0; 1",
+            "sqrt(x)*exp(x); 0; 1",
         ],
         whole_series,
     );

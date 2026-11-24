@@ -1,9 +1,10 @@
 //! The differential equation of an expression in `w`, by closure properties of D-finite functions.
 //!
-//! Rational functions, `{$exp(u)$}`, `{$sin(u)$}`, `{$cos(u)$}`, `{$sinh(u)$}`, `{$cosh(u)$}` of rational `u`,
-//! constant powers of functions of order 1 (like `{$(1 + w)^a$}`), integrals of D-finite functions (`atan`,
-//! `asin`, `ln`, `erf`...), sums and products. Every rule gives an exact operator, and the functions it accepts
-//! are meromorphic at `{$w = 0$}`: non-integer powers need a base which is analytic and non-zero there.
+//! Rational functions, algebraic functions (nested radicals, in the tower of [`algebraic`]), `{$exp(u)$}`,
+//! `{$sin(u)$}`, `{$cos(u)$}`, `{$sinh(u)$}`, `{$cosh(u)$}` of rational `u`, constant powers of functions of order 1
+//! (like `{$(1 + w)^a$}`), integrals of D-finite functions (`atan`, `asin`, `ln`, `erf`...), sums and products.
+//! Every rule gives an exact operator, and the functions it accepts are meromorphic at `{$w = 0$}`: non-integer
+//! powers need a base which is analytic and non-zero there.
 
 use malachite::Rational;
 
@@ -17,6 +18,7 @@ use crate::{
 };
 
 use super::{
+    algebraic,
     ore::{Kind, MAX_ORDER, Operator},
     ratfun::RatFun,
 };
@@ -63,6 +65,9 @@ fn annihilator_at(f: &Expr, w: Symbol, params: &mut Params, depth: usize) -> Opt
         } else {
             Operator::first_order(Kind::Differential, &r.derivative().divide(&r))
         });
+    }
+    if let Some(op) = algebraic::annihilator(f, w, params) {
+        return Some(op);
     }
     let recurse = |t: &Expr, params: &mut Params| annihilator_at(t, w, params, depth + 1);
     match f {
@@ -158,7 +163,7 @@ fn power_of_first_order(op: &Operator, c: &Elem) -> Operator {
 }
 
 /// Whether `g` is analytic and non-zero at `{$w = 0^+$}`: its series starts with a non-zero constant.
-fn analytic_non_zero(g: &Expr, w: Symbol) -> bool {
+pub(super) fn analytic_non_zero(g: &Expr, w: Symbol) -> bool {
     let zero = Term::zero(crate::field::real::R);
     matches!(
         series_terms(g, w, &zero, &Rational::from(1), Direction::Right),
@@ -210,6 +215,11 @@ mod tests {
             "sin(w) + exp(w)",
             "cos(w)^2",
             "Si(w)",
+            "sqrt(1 + sqrt(1 + w))",
+            "1/sqrt(1 + sqrt(1 + w))",
+            "(1 + w)^(1/3) + sqrt(1 - w)",
+            "sqrt(1 + w)*(1 + w^2)^(1/3)",
+            "exp(w)*sqrt(1 + sqrt(1 + w))",
         ] {
             let f = parse!(f, R);
             let mut params = Params::default();

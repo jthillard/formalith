@@ -286,6 +286,11 @@ fn whole_series() {
         // Laurent series, and at infinity
         ("exp(x)/x, x, 0", "sum((x^k)*((k+1)!^-1), k, -1, oo)"),
         ("1/(x - 1), x, oo", "sum(x^(-k), k, 1, oo)"),
+        // Nested radicals, by the differential equation of the algebraic function
+        (
+            "sqrt(1 + sqrt(1 + x)), x, 0",
+            "sum(-((4*k-1)^-1)*(x^k)*((2*k)!^-2)*(4*k)!*((-1)^k)*(2^(-4*k+1/2)), k, 0, oo)",
+        ),
     ];
     for (f, expected) in cases {
         assert_eq!(whole(f), expected, "{f}");
@@ -299,6 +304,11 @@ fn whole_series() {
     assert_eq!(
         whole("exp(x) + x^40, x, 0"),
         "x^40+sum((x^k)*(k!^-1), k, 0, oo)"
+    );
+    // A Puiseux series with nested radicals, proven in the tower of its radicals
+    assert_eq!(
+        line(&parse!("series(sqrt(1 + sqrt(x)), x, 0, oo, 1)", R)),
+        "sum(-((2*k-1)^-1)*(x^(1/2*k))*(2*k)!*(k!^-2)*((-1)^k)*(4^(-k)), k, 0, oo)"
     );
     // Rational terms of a sum split into partial fractions, and a polynomial factor distributed
     assert!(!whole("-sin(x) + 1/((4 - x)*(3 + x)), x, 0").contains("series"));

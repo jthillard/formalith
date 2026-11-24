@@ -4,14 +4,9 @@ Ideas and known gaps, roughly by area. `AGENTS.md` describes what exists; this f
 
 ## Series
 
-- **Algebraic functions in the holonomic engine.** Every algebraic function is D-finite: from its polynomial
-  `P(x, f) = 0`, reduce the derivatives of `f` modulo `P` and find a linear dependency. `sqrt(1 + sqrt(1 + x))`
-  (`f^4 - 2 f^2 - x = 0`) and other nested radicals would then be proven by their recurrence. Today they reach
-  the fallback, whose zero test fails.
-- **Algebraic zero test for the verified fallback.** Replace each radical by a symbol with its defining relation
-  (`u^2 = 1 + x`, `v^2 = 1 + u`), then reduce the numerator level by level. A zero remainder proves the identity;
-  a non-zero one only makes the test inconclusive. `simplify` treats radicals as independent and is too slow
-  above about 80 nodes.
+- **Relations between radical bases.** The tower of `holonomic/algebraic.rs` has one independent generator per
+  base, so proportional or otherwise related bases (`sqrt(2 + 2x)` next to `sqrt(1 + x)`, `sqrt(x^2 + 2x + 1)`)
+  only make its zero test inconclusive, and towers above dimension 16 are rejected.
 - **Petkovšek's *Hyper*** for recurrences without a two-term form, with exact arithmetic over algebraic numbers.
   Today only rational functions with simple real poles are handled, by partial fractions.
 - **Real forms for complex poles.** `1/(1 - x + 2 x^2)` could give `r^k cos(k θ)` / `sin(k θ)` terms, like

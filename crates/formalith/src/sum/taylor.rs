@@ -29,7 +29,10 @@ use malachite::{
 use std::convert::Infallible;
 
 use crate::{
-    context::{Context, Symbol},
+    context::{
+        Context, Symbol,
+        assumptions::{Assumption, Assumptions, SignSet},
+    },
     field::real::{
         R, approx,
         expr::{
@@ -518,6 +521,15 @@ fn verify_by_ode(
     let Ok(q) = u64::try_from(&coefficients.q) else {
         return false;
     };
+    // `{$t > 0$}`, so that `{$sqrt(t^2) = t$}` keeps radicals of `{$x = t^q$}` algebraic
+    let mut assumptions = Assumptions::current();
+    if assumptions
+        .assume(t, Assumption::sign(SignSet::POSITIVE))
+        .is_err()
+    {
+        return false;
+    }
+    let _guard = assumptions.enter();
     let q_term = value(Rational::from(q));
     let Some(f_t) = f.substitute(
         x,
@@ -551,7 +563,8 @@ fn verify_by_ode(
 const MAX_SIMPLIFY_SIZE: usize = 80;
 
 /// Whether `e`, a function of `{$t > 0$}` near 0, is zero: rejected quickly when it isn't zero at a few sample
-/// points, then proven zero by expansion or simplification. Undecided expressions aren't zero.
+/// points, then proven zero in the tower of its radicals (see [`holonomic::algebraic`]), by expansion or by
+/// simplification. Undecided expressions aren't zero.
 fn is_identically_zero(e: &Expr, t: Symbol) -> bool {
     let samples = [(1, 7), (2, 13), (1, 29)];
     let tiny = Rational::from_signeds(1, 1i64 << 40).pow(3u64);
@@ -562,7 +575,8 @@ fn is_identically_zero(e: &Expr, t: Symbol) -> bool {
     if nonzero {
         return false;
     }
-    e.expand().is_zero()
+    holonomic::algebraic::is_zero(e, t)
+        || e.expand().is_zero()
         || (size(e) <= MAX_SIMPLIFY_SIZE && fun(Context::SIMPLIFY, e.clone()).is_zero())
 }
 
