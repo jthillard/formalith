@@ -169,8 +169,12 @@ fn product((a, b): &(Expr, Expr), (c, d): &(Expr, Expr)) -> (Expr, Expr) {
     (a * c - b * d, a * d + b * c)
 }
 
-/// The parts of `{$z^n$}` for an integer `n`, by repeated squaring.
+/// The parts of `{$z^n$}` for an integer `n`, by repeated squaring. `None` for a non-real `z` and `{$|n|$}` above
+/// [`MAX_EXPONANT`].
 fn integer_pow((u, v): (Expr, Expr), n: &Integer) -> Option<(Expr, Expr)> {
+    if v.is_zero() {
+        return Some((u.pow(&value(Rational::from(n))), zero()));
+    }
     let mut k = u64::try_from(&n.unsigned_abs()).ok()?;
     if k > MAX_EXPONANT {
         return None;
@@ -199,8 +203,9 @@ fn split_pow(base: &Complex, exponant: &Complex, split: Split) -> Option<(Expr, 
     if let Term::Value(e) = exponant
         && e.value[1] == 0
         && let Ok(n) = Integer::try_from(&e.value[0])
+        && let Some(parts) = integer_pow((u.clone(), v.clone()), &n)
     {
-        return integer_pow((u, v), &n);
+        return Some(parts);
     }
     let e = split_with(exponant, split)?;
     if !is_complex_ln(&u, &v) {

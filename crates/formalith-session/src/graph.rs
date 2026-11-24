@@ -690,6 +690,20 @@ mod tests {
         assert!(evaluate_complex("x + z", &mut env).unwrap().1.is_none());
         let (_, graph) = evaluate_complex("sin(x)", &mut env).unwrap();
         assert!(matches!(graph.unwrap().kind, GraphKind::Function { .. }));
+        // Large powers: of a real base directly, of `z` in polar form
+        let (_, graph) = evaluate_complex("x^17", &mut env).unwrap();
+        let Some(GraphKind::Function { expr, .. }) = graph.map(|graph| graph.kind) else {
+            panic!("Expected a function");
+        };
+        assert_eq!(expr.eval(&[-2., f64::NAN]), -131_072.);
+        let (_, graph) = evaluate_complex("z^17", &mut env).unwrap();
+        let Some(GraphKind::ComplexMap { re, im }) = graph.map(|graph| graph.kind) else {
+            panic!("Expected a complex map");
+        };
+        // `(1 + i)^17 = 256 + 256 i`
+        assert!(
+            (re.eval(&[1., 1.]) - 256.).abs() < 1e-9 && (im.eval(&[1., 1.]) - 256.).abs() < 1e-9
+        );
         for line in ["exp(i*x)", "f(t) := exp(i*t)"] {
             let (_, graph) = evaluate_complex(line, &mut env).unwrap();
             let Some(GraphKind::ComplexCurve { re, im, .. }) = graph.map(|graph| graph.kind) else {
