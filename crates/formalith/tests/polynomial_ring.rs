@@ -17,6 +17,7 @@ fn polynomials_are_expanded() {
     assert_eq!(eval("(x+1)*(x-1)"), eval("x^2-1"));
     assert_eq!(eval("x*x-x^2"), "0");
     assert_eq!(eval("(x^2+1)/2"), eval("1/2*x^2+1/2"));
+    assert_eq!(eval("expand((3*x*y)^3)"), eval("27*x^3*y^3"));
 }
 
 #[test]

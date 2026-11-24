@@ -43,6 +43,10 @@ fn symbols() {
     assert_eq!(eval("x+x+x", 3), "0");
     assert_eq!(eval("expand((x+1)^2)", 2), eval("x^2+1", 2));
     assert_eq!(eval("expand((x+1)^3)", 3), eval("x^3+1", 3));
+    // Powers of products are distributed, so `{$(3 x)^2 = 9 x^2$}` merges with `{$x^2$}`
+    assert_eq!(eval("expand((3*x)^2)", 5), eval("4*x^2", 5));
+    assert_eq!(eval("expand(-(x^2) - (3*x)^2)", 5), "0");
+    assert_eq!(eval("expand((x^2+3*x+3)^2)", 5), eval("x^4+x^3+3*x+4", 5));
 }
 
 #[test]

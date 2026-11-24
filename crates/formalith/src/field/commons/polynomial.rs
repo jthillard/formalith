@@ -14,7 +14,7 @@ use crate::{
     parser::{Parser, lexer::TokenKind},
     polynom::MultivariatePolynomial,
     printer::{PrettyPrint, PrettyPrinter, Print, PrintOptions},
-    term::{self, Add, Function, SymbolTerm, Term, TermSet, flags::Flags},
+    term::{self, Add, Expand, Function, Normalize, SymbolTerm, Term, TermSet, flags::Flags},
 };
 
 /// A polynomial of [`Poly`], with coefficients in `K` and integer exponants.
@@ -301,7 +301,16 @@ impl<K: Ring> Semiring for Poly<K> {
             && let Ok(n) = usize::try_from(&exponant.value)
             && n > 1
         {
-            return Term::expand_sum_power(add, n, |n| self.constant(self.integer(&n)));
+            // Its terms may be powers of products, `{$(3 x)^2$}`
+            return Term::expand_sum_power(add, n, |n| self.constant(self.integer(&n)))
+                .normalize()
+                .expand();
+        }
+        // `{$(c x)^n = c^n x^n$}`, exponants being integers
+        if let Term::Pow(term::Pow { base, exponant, .. }) = &a
+            && let (Term::Mul(mul), Term::Value(_)) = (&**base, &***exponant)
+        {
+            return Term::distribute_pow(mul, exponant);
         }
         a
     }

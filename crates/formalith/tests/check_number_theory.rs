@@ -266,7 +266,14 @@ fn curated_number_theory() {
     );
     check_all(
         "factor mod p",
-        &["7; x^3 + 1", "2; x^4 + x + 1", "5; x^4 - 1", "3; x^6 - 1"],
+        &[
+            "7; x^3 + 1",
+            "2; x^4 + x + 1",
+            "5; x^4 - 1",
+            "3; x^6 - 1",
+            // `{$-(x^2 + 3 x + 3)^2$}`, whose expansion has `{$(3 x)^2$}`
+            "5; 9*x^4 + 9*x^3 + 7*x - 4",
+        ],
         factor_mod,
     );
 }

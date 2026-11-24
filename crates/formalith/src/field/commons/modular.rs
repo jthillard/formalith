@@ -24,7 +24,7 @@ use crate::{
     parser::Parser,
     polynom::factor::modular::{factor_with_multiplicities, is_prime},
     printer::{PrettyPrinter, PrintOptions},
-    term::{self, Expand, SymbolTerm, Term, TermSet},
+    term::{self, Expand, Normalize, SymbolTerm, Term, TermSet},
 };
 
 /// The ring of integers modulo `n`, `{$ZZ\/n ZZ$}`, which is a field when `n` is prime.
@@ -285,7 +285,16 @@ impl Semiring for Zn {
             && let Ok(n) = usize::try_from(&exponant.value)
             && n > 1
         {
-            return Term::expand_sum_power(add, n, |n| self.reduce(&n));
+            // Its terms may be powers of products, `{$(3 x)^2$}`
+            return Term::expand_sum_power(add, n, |n| self.reduce(&n))
+                .normalize()
+                .expand();
+        }
+        // `{$(c x)^n = c^n x^n$}`, exponants being integers
+        if let Term::Pow(term::Pow { base, exponant, .. }) = &a
+            && let (Term::Mul(mul), Term::Value(_)) = (&**base, &***exponant)
+        {
+            return Term::distribute_pow(mul, exponant);
         }
         a
     }
