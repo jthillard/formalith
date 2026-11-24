@@ -39,7 +39,9 @@ use crate::{
         sign::is_integer,
     },
     limit::{Direction, LimitError},
-    solve::{Equation, Solution, Solve, SolveError, is_integer_parameter, plain},
+    solve::{
+        Equation, Solution, Solve, SolveError, is_integer_parameter, is_natural_parameter, plain,
+    },
     term::{Expand, Normalize, Term},
 };
 
@@ -533,7 +535,7 @@ fn parameters(f: &Expr, point: &Expr) -> Vec<Symbol> {
     point
         .symbols()
         .into_iter()
-        .filter(|s| is_integer_parameter(*s) && !used.contains(s))
+        .filter(|s| (is_integer_parameter(*s) || is_natural_parameter(*s)) && !used.contains(s))
         .collect()
 }
 

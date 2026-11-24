@@ -770,6 +770,83 @@ fn exponentials_of_several_bases_and_logarithms() {
 }
 
 #[test]
+fn sums_of_exponentials_of_several_bases() {
+    // At most one root by Descartes' rule of signs, found exactly
+    assert_eq!(solve("2^x + 3^x = 5"), ok("x = 1"));
+    assert_eq!(solve("2^x + 3^x + 6^x = 3"), ok("x = 0"));
+    assert_eq!(solve("exp(x) + 2^x = 2"), ok("x = 0"));
+    assert_eq!(solve("2^x + 3^(x+1) = 11"), ok("x = 1"));
+    // No sign change
+    assert_eq!(solve("2^x + 3^x = -1"), ok("\"no solution\""));
+    // The root isn't rational, there is no exact form
+    assert!(solve("2^x + 3^x = 7").unwrap_err().contains("can't solve"));
+}
+
+#[test]
+fn unrelated_angles() {
+    // `{$sin x - sin(x^2 + pi/2) = 2 cos((x^2 + x + pi/2)/2) sin((x - x^2 - pi/2)/2)$}`
+    assert_eq!(
+        solve("sin(x) = cos(x^2)"),
+        ok(
+            "x = -frac(1, 4) sqrt(8 pi+64 pi n+4)-frac(1, 2) \\ x = frac(1, 4) sqrt(8 pi+64 pi n+4)-frac(1, 2) \\ \
+            x = -frac(1, 4) sqrt(24 pi+64 pi n+4)+frac(1, 2) \\ x = frac(1, 4) sqrt(24 pi+64 pi n+4)+frac(1, 2) \\ \
+            x = -frac(1, 4) sqrt(40 pi+64 pi n+4)-frac(1, 2) \\ x = frac(1, 4) sqrt(40 pi+64 pi n+4)-frac(1, 2) \\ \
+            x = -frac(1, 4) sqrt(56 pi+64 pi n+4)+frac(1, 2) \\ x = frac(1, 4) sqrt(56 pi+64 pi n+4)+frac(1, 2) \\ \
+            n in NN"
+        )
+    );
+    assert_eq!(
+        solve("cos(x) + cos(x^2) = 0").map(|s| s.matches(" \\ ").count()),
+        Ok(8)
+    );
+    // Unrelated `tan` and coefficients of different sizes are unsupported
+    assert!(solve("sin(x) = 2*cos(x^2)").is_err());
+    assert!(solve("tan(x) = tan(x^2)").is_err());
+}
+
+#[test]
+fn ranges_of_integer_parameters() {
+    // `{$x^2 = pi/6 + 2 k pi$}` needs `{$k >= 0$}`
+    assert_eq!(
+        solve("sin(x^2) = 1/2"),
+        ok(
+            "x = sqrt(frac(1, 6) pi+2 pi n) \\ x = sqrt(frac(5, 6) pi+2 pi n) \\ \
+            x = -sqrt(frac(1, 6) pi+2 pi n) \\ x = -sqrt(frac(5, 6) pi+2 pi n) \\ n in NN"
+        )
+    );
+    // `{$sqrt(x) = pi/6 + 2 k pi$}` too, though its square is always real
+    assert_eq!(
+        solve("sin(sqrt(x)) = 1/2"),
+        ok("x = frac(1, 36) pi^2+frac(2, 3) pi^2 n+4 pi^2 n^2 \\ \
+            x = frac(25, 36) pi^2+frac(10, 3) pi^2 n+4 pi^2 n^2 \\ n in NN")
+    );
+    // An upper bound
+    assert_eq!(
+        solve("sin(-x^2) = 1/2"),
+        ok(
+            "x = sqrt(frac(7, 6) pi+2 pi n) \\ x = sqrt(frac(11, 6) pi+2 pi n) \\ \
+            x = -sqrt(frac(7, 6) pi+2 pi n) \\ x = -sqrt(frac(11, 6) pi+2 pi n) \\ n in NN"
+        )
+    );
+    // Odd roots need no condition
+    assert!(solve("cos(x^(1/3)) = 0").unwrap().ends_with("k in ZZ"));
+}
+
+#[test]
+fn trigonometric_polynomials_without_radical_roots() {
+    // A sextic in `{$tan(x/2)$}`
+    assert_eq!(
+        solve("sin(3*x) + cos(x) = 1/3"),
+        ok(
+            "x = 2 arctan(op(\"rootof\")(-9 x+30 x^3+3 x^4-9 x^5+2 x^6-1, 1))+2 pi k \\ \
+            x = 2 arctan(op(\"rootof\")(-9 x+30 x^3+3 x^4-9 x^5+2 x^6-1, 2))+2 pi k \\ \
+            x = 2 arctan(op(\"rootof\")(-9 x+30 x^3+3 x^4-9 x^5+2 x^6-1, 3))+2 pi k \\ \
+            x = 2 arctan(op(\"rootof\")(-9 x+30 x^3+3 x^4-9 x^5+2 x^6-1, 4))+2 pi k \\ k in ZZ"
+        )
+    );
+}
+
+#[test]
 fn fractional_powers_terminate() {
     // The polynomial solver used to loop on `{$x + sqrt(x)$}` while factoring it
     for (set, system) in [("R", "x + sqrt(x) = 0, y = 1"), ("C", "x + sqrt(x) = 0")] {

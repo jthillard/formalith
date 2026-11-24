@@ -22,7 +22,7 @@ use crate::{
     solve::{
         Equation, Solution, Solve,
         inequality::{Inequality, Region, SolveInequality},
-        is_integer_parameter, plain,
+        is_integer_parameter, is_natural_parameter, plain,
     },
     term::{Normalize, Term, relation::Relation},
 };
@@ -309,13 +309,13 @@ pub enum Statement<E: Set> {
     },
 }
 
-/// The integer parameters `k`, `k_1`... of the periodic solutions of `equations` (see `solve::inverse`), the
-/// symbols of `solution` named like them which aren't in the equations.
+/// The integer parameters `k`, `k_1`... and natural parameters `n`, `n_1`... of the periodic solutions of
+/// `equations` (see `solve::inverse`), the symbols of `solution` named like them which aren't in the equations.
 fn integer_parameters<E: Set>(equations: &[Equation<E>], solution: &Solution<E>) -> Vec<Symbol> {
     new_integer_parameters(equations, solution.symbols())
 }
 
-/// The integer parameters among `symbols` which aren't in `equations`.
+/// The integer and natural parameters among `symbols` which aren't in `equations`.
 fn new_integer_parameters<E: Set>(
     equations: &[Equation<E>],
     symbols: BTreeSet<Symbol>,
@@ -327,19 +327,34 @@ fn new_integer_parameters<E: Set>(
         .collect();
     symbols
         .into_iter()
-        .filter(|symbol| !used.contains(symbol) && is_integer_parameter(*symbol))
+        .filter(|symbol| {
+            !used.contains(symbol)
+                && (is_integer_parameter(*symbol) || is_natural_parameter(*symbol))
+        })
         .collect()
 }
 
-/// The line `k, k_1 ∈ ℤ` stating that `integers` are integers, `k, k_1 in ZZ` in Typst.
+/// The line `k, k_1 ∈ ℤ, n ∈ ℕ` stating that `integers` are integers, natural parameters being natural numbers,
+/// `k, k_1 in ZZ, n in NN` in Typst.
 #[must_use]
 pub fn integers_line(integers: &[Symbol], typst: bool) -> String {
-    let names: Vec<_> = integers.iter().map(|symbol| symbol.name()).collect();
-    if typst {
-        format!("{} in ZZ", names.join(", "))
+    let (naturals, integers): (Vec<Symbol>, Vec<Symbol>) = integers
+        .iter()
+        .partition(|symbol| is_natural_parameter(**symbol));
+    let (zz, nn) = if typst {
+        ("in ZZ", "in NN")
     } else {
-        format!("{} ∈ ℤ", names.join(", "))
-    }
+        ("∈ ℤ", "∈ ℕ")
+    };
+    [(integers, zz), (naturals, nn)]
+        .into_iter()
+        .filter(|(symbols, _)| !symbols.is_empty())
+        .map(|(symbols, set)| {
+            let names: Vec<_> = symbols.iter().map(|symbol| symbol.name()).collect();
+            format!("{} {set}", names.join(", "))
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// An expression, or a relation `lhs op rhs`, in a list of equations.

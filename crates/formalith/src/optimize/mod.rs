@@ -46,7 +46,7 @@ use std::{cmp::Ordering, fmt};
 use crate::{
     context::{
         Context, Symbol,
-        assumptions::{Assumption, Assumptions},
+        assumptions::{Assumption, Assumptions, SignSet},
     },
     field::{
         Set,
@@ -57,7 +57,9 @@ use crate::{
         },
     },
     printer::{PrettyPrint, PrettyPrinter, Print, PrintOptions},
-    solve::{Assignments, Equation, Solution, SolveError, is_integer_parameter},
+    solve::{
+        Assignments, Equation, Solution, SolveError, is_integer_parameter, is_natural_parameter,
+    },
     symbol,
     term::{Expand, Normalize, SymbolTerm, Term},
 };
@@ -317,15 +319,24 @@ impl Optimize for Real {
     }
 }
 
-/// The value of `f` at `point`, its integer parameters `k`, `k_1`... being assumed integers: the smaller of the
+/// The value of `f` at `point`, its integer parameters `k`, `k_1`... being assumed integers and its natural
+/// parameters `n`, `n_1`... non-negative integers: the smaller of the
 /// substituted term and its expansion.
 fn value_at(f: &Expr, point: &Assignments<Real>) -> Result<Expr, SolveError> {
     let used = f.symbols();
     let mut assumptions = Assumptions::current();
     for (_, value) in point {
         for k in value.symbols() {
-            if is_integer_parameter(k) && !used.contains(&k) {
+            if used.contains(&k) {
+                continue;
+            }
+            if is_integer_parameter(k) {
                 assumptions.assume(k, Assumption::INTEGER).map_err(error)?;
+            } else if is_natural_parameter(k) {
+                let natural = Assumption::INTEGER
+                    .and(Assumption::sign(SignSet::NONNEGATIVE))
+                    .expect("They are compatible");
+                assumptions.assume(k, natural).map_err(error)?;
             }
         }
     }

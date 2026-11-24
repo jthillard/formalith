@@ -96,6 +96,8 @@ fn solve(input: &str) -> Verdict {
             for s in &free {
                 let v = if s == "k" || s.starts_with("k_") || s.starts_with("t_") {
                     rng.range(-3, 3).to_string()
+                } else if (s == "n" || s.starts_with("n_")) && output.contains('ℕ') {
+                    rng.range(0, 5).to_string()
                 } else if let SetChoice::Zn(n) = set {
                     rng.range(0, n as i64 - 1).to_string()
                 } else if set == SetChoice::Z {
@@ -198,6 +200,13 @@ fn systems() {
             "R; x^5 - x - 1 = 0",
             "R; x^5 - 5*x + 1 = 0",
             "R; (x^2 - 2)*(x^5 - x - 1) = 0",
+            "R; sin(x) = cos(x^2)",
+            "R; cos(x) + cos(x^2) = 0",
+            "R; sin(x^2) = 1/2",
+            "R; sin(sqrt(x)) = 1/2",
+            "R; 2^x + 3^x = 5",
+            "R; 2^x + 3^x + 6^x = 3",
+            "R; sin(3*x) + cos(x) = 1/3",
             "R; x^5 - x = y, y = 1",
             "R; x^2 = 4, y = x + 1; x = 2, y = 3",
         ],

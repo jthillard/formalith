@@ -27,10 +27,13 @@ Ideas and known gaps, roughly by area. `AGENTS.md` describes what exists; this f
   polynomials with irrational or symbolic coefficients (`x^5 + sqrt(2) x + 1`).
 - `rootof` arithmetic only reduces powers of a single root: sums and products of different roots aren't simplified,
   and denominators like `1/(α + 1)` aren't rationalized.
-- **Transcendental equations** still unsupported: kernels mixed with polynomial parts (`x + sin(x) = 1`,
-  `x sin(x) = 1`), trigonometric functions of unrelated angles (`sin(x) = cos(x^2)`), more than two exponential
-  terms of different bases (`2^x + 3^x = 5`), and trigonometric polynomials whose degree is too high for radicals
-  (`sin(3x) + cos(x) = c` gives a sextic in `tan(x/2)`).
+- **Transcendental equations** without closed form, for `nsolve`: kernels mixed with polynomial parts
+  (`x + sin(x) = 1`, `x sin(x) = 1`) and exponential sums with irrational roots (`2^x + 3^x = 7`).
+- Unrelated angles beyond `a sin u ± a sin v`: `tan` (`tan(x) = tan(x^2)`, whose excluded points `cos = 0` would
+  have to be removed from whole families), coefficients of different sizes (`sin(x) = 2 cos(x^2)`).
+- Ranges of integer parameters are only found for conditions affine in a single parameter; others (`sqrt(k^2 - 2)`,
+  nested parameters) leave the solution unchecked. Trigonometric polynomials with irrational or symbolic
+  coefficients still need radicals (`sin(3x) + cos(x) = sqrt(2)`).
 
 ## Simplification
 

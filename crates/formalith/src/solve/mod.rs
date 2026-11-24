@@ -38,7 +38,7 @@ use crate::{
 };
 
 use inverse::Transcendental;
-pub(crate) use inverse::is_integer_parameter;
+pub(crate) use inverse::{is_integer_parameter, is_natural_parameter};
 use polynomial::Assumed;
 
 /// An equation `lhs = rhs`.

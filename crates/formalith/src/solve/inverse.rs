@@ -14,7 +14,12 @@
 //! [`trig`]); `{$t_1 = t_2$}` with powers whose exponents depend on the unknown is solved by taking logarithms
 //! (`{$2^x = 3^(x + 1)$}`, `{$x^x = 2$}`); and `{$(alpha x + beta) e^u = c$}`, `{$a e^u + alpha x + beta = 0$}`,
 //! `{$a ln u + alpha x + beta = 0$}` and `{$b u ln u = c$}` with a linear `u` are solved with the Lambert W
-//! function, with both branches `{$W_0$}` and `{$W_(-1)$}` when its argument is in `{$(-1/e, 0)$}`.
+//! function, with both branches `{$W_0$}` and `{$W_(-1)$}` when its argument is in `{$(-1/e, 0)$}`. Sines and
+//! cosines of unrelated angles are solved by the sum-to-product formulas (see [`angles`]), and sums of
+//! exponentials of different bases by their exact rational roots (see [`exponential`]).
+//!
+//! The integer parameters of the solutions are restricted to the values for which they are real (see [`ranges`]):
+//! `{$sin x^2 = 1/2$}` gives `{$x = plus.minus sqrt(pi/6 + 2 n pi)$}` with a natural `n`.
 
 use std::{cmp::Ordering, collections::BTreeSet};
 
@@ -43,7 +48,12 @@ use crate::{
 
 use super::{Equation, Solution, Solve, SolveError, plain};
 
+mod angles;
+mod exponential;
+mod ranges;
 mod trig;
+
+pub use ranges::is_natural_parameter;
 
 /// Maximum number of nested inversions.
 const MAX_DEPTH: usize = 16;
@@ -99,7 +109,7 @@ impl Transcendental for R<Rational> {
             x: *x,
             used: expression.symbols(),
         };
-        let values = inverter.solve(expression, 0)?;
+        let values = ranges::restrict(inverter.solve(expression, 0)?, &inverter.used);
         Ok(Solution::from_branches(
             values.into_iter().map(|value| vec![(*x, value)]).collect(),
         ))
@@ -184,10 +194,16 @@ impl Inverter {
         if let Some(res) = self.trigonometric(&numerator, &kernels, depth) {
             return res;
         }
+        if let Some(res) = self.unrelated_angles(&numerator, depth) {
+            return res;
+        }
         if let Some(res) = self.lambert(&numerator, &kernels) {
             return Ok(res);
         }
         if let Some(res) = self.logarithms(&numerator, depth) {
+            return res;
+        }
+        if let Some(res) = self.exponential_sum(&numerator, &kernels, depth) {
             return res;
         }
         Err(SolveError::NotPolynomial(plain(&numerator)))
@@ -261,8 +277,31 @@ impl Inverter {
         Some(kernel_power(base, &m))
     }
 
-    /// The equations `u = v` equivalent to `{$g = c$}`, `g` being a function of `u`.
+    /// The equations `u = v` equivalent to `{$g = c$}`, `g` being a function of `u`. The integer parameters of
+    /// `c` are restricted to the values for which `c` is in the range of the function (see [`ranges`]).
     fn invert(&self, g: &Expr, c: &Expr, depth: usize) -> Result<Vec<(Expr, Expr)>, SolveError> {
+        let conditions = range_conditions(g, c);
+        let parameters = c
+            .symbols()
+            .into_iter()
+            .any(|s| is_integer_parameter(s) && !self.used.contains(&s));
+        if conditions.is_empty() || !parameters {
+            return self.invert_value(g, c, depth);
+        }
+        let mut res = vec![];
+        for c in ranges::restrict_with(c.clone(), conditions, &self.used) {
+            res.extend(self.invert_value(g, &c, depth)?);
+        }
+        Ok(res)
+    }
+
+    /// The equations `u = v` equivalent to `{$g = c$}`, `g` being a function of `u`.
+    fn invert_value(
+        &self,
+        g: &Expr,
+        c: &Expr,
+        depth: usize,
+    ) -> Result<Vec<(Expr, Expr)>, SolveError> {
         let pi = variable(Context::PI);
         let int = |n: i64| value(Rational::from(n));
         let k = || self.parameter(depth);
@@ -537,6 +576,44 @@ impl Inverter {
             return Some(Ok(vec![]));
         }
         Some(self.solve(&(logarithm + fun(Context::LN, constant)), depth + 1))
+    }
+}
+
+/// The conditions `{$u >= 0$}` (`{$u > 0$}` when strict) for `c` to be in the range of the function `g`, like
+/// `{$c >= 0$}` for `{$g = sqrt u$}`.
+fn range_conditions(g: &Expr, c: &Expr) -> Vec<(Expr, bool)> {
+    let int = |n: i64| value(Rational::from(n));
+    let half_pi = variable(Context::PI) / int(2);
+    // `{$a <= c <= b$}`, or `{$a < c < b$}` when strict
+    let between = |a: Expr, b: Expr, strict: bool| vec![(c - &a, strict), (b - c, strict)];
+    if let Term::Pow(pow) = g {
+        return match &**pow.exponant {
+            // `{$b^(p/q)$}` is non-negative for an even `p` or `q`, and positive for a negative `p`
+            Term::Value(e)
+                if e.value.denominator_ref() % malachite::Natural::from(2u32) == 0u32
+                    || e.value.numerator_ref() % malachite::Natural::from(2u32) == 0u32 =>
+            {
+                vec![(c.clone(), e.value < 0)]
+            }
+            Term::Value(_) => vec![],
+            _ => vec![(c.clone(), true)],
+        };
+    }
+    let Some((ident, _)) = unary(g) else {
+        return vec![];
+    };
+    match ident {
+        Context::SIN | Context::COS => between(int(-1), int(1), false),
+        Context::TANH => between(int(-1), int(1), true),
+        Context::EXP => vec![(c.clone(), true)],
+        Context::COSH => vec![(c - &int(1), false)],
+        Context::ACOSH | Context::ABS => vec![(c.clone(), false)],
+        Context::ASIN => between(-&half_pi, half_pi, false),
+        Context::ATAN => between(-&half_pi, half_pi, true),
+        Context::ACOS => between(int(0), variable(Context::PI), false),
+        Context::LAMBERTW => vec![(c + &int(1), false)],
+        ident if ident == Context::lambertw_m1() => vec![(-(c + &int(1)), false)],
+        _ => vec![],
     }
 }
 
