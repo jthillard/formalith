@@ -9,8 +9,8 @@ use eframe::{
     egui_wgpu,
 };
 use egui_plot::{
-    HoverPosition, MarkerShape, Plot, PlotBounds, PlotGeometry, PlotItem, PlotItemBase, PlotPoint,
-    PlotTransform, Points,
+    GridInput, HLine, HoverPosition, MarkerShape, Plot, PlotBounds, PlotGeometry, PlotItem,
+    PlotItemBase, PlotPoint, PlotTransform, Points, VLine,
 };
 use formalith_session::{
     formalith::field::real::numeric::Numeric,
@@ -77,6 +77,16 @@ const DEFAULT_VIEW: View = View {
 
 /// The width of lines, in points.
 const LINE_WIDTH: f32 = 2.5;
+
+/// The width of the axes, in points.
+const AXIS_WIDTH: f32 = 1.5;
+
+/// The spacing in points between the ticks of a step, along x and y, under which their labels are hidden and over
+/// which they are opaque (egui_plot's defaults for its axes).
+const TICK_SPACING: [(f32, f32); 2] = [(60., 80.), (20., 30.)];
+
+/// The distance in points between a tick label and its axis, or the edge of the plot.
+const TICK_GAP: f32 = 4.;
 
 /// The period of dashes of strict boundaries, in points.
 const DASH_PERIOD: f32 = 10.;
@@ -182,6 +192,8 @@ impl Plotter {
             .allow_double_click_reset(false)
             // The vertical scroll zooms (below) instead of panning.
             .allow_scroll([true, false])
+            // The tick labels are drawn next to the axes (`paint_ticks`).
+            .show_axes(false)
             .label_formatter(|position| match position {
                 HoverPosition::NearDataPoint {
                     plot_name,
@@ -194,6 +206,13 @@ impl Plotter {
             plot = plot.data_aspect(1.);
         }
         let reset = std::mem::take(&mut self.reset);
+        // The grid is drawn with the text color, dim in dark mode: the axes take the strong one there
+        let visuals = ui.visuals();
+        let axis = if visuals.dark_mode {
+            visuals.strong_text_color().gamma_multiply(0.7)
+        } else {
+            visuals.text_color().gamma_multiply(0.6)
+        };
         let response = plot.show(ui, |plot_ui| {
             if reset {
                 plot_ui.set_plot_bounds(PlotBounds::from_min_max(
@@ -213,6 +232,19 @@ impl Plotter {
             if !(bounds.width() > 0. && bounds.height() > 0.) {
                 return None;
             }
+            // The axes, stronger than the grid lines at 0, below the graphs
+            plot_ui.hline(
+                HLine::new("", 0.)
+                    .color(axis)
+                    .width(AXIS_WIDTH)
+                    .allow_hover(false),
+            );
+            plot_ui.vline(
+                VLine::new("", 0.)
+                    .color(axis)
+                    .width(AXIS_WIDTH)
+                    .allow_hover(false),
+            );
             for drawable in drawables {
                 self.draw(plot_ui, drawable);
             }
@@ -237,6 +269,7 @@ impl Plotter {
             }
             hovered
         });
+        paint_ticks(ui, &response.transform);
         if let Some((name, [x, y])) = response.inner {
             response
                 .response
@@ -512,6 +545,62 @@ fn color(color: Color32, linear: bool) -> [f32; 4] {
         egui::Rgba::from(color).to_array()
     } else {
         color.to_normalized_gamma_f32()
+    }
+}
+
+/// Paint the labels of the ticks of the grid next to the axes, x below and y on the left, or along the edge of the plot
+/// when an axis is out of view.
+fn paint_ticks(ui: &egui::Ui, transform: &PlotTransform) {
+    let frame = *transform.frame();
+    let painter = ui.painter_at(frame);
+    let font = egui::TextStyle::Body.resolve(ui.style());
+    let bounds = transform.bounds();
+    let origin = transform.position_from_point(&PlotPoint::new(0., 0.));
+    for (axis, (hidden, opaque)) in TICK_SPACING.into_iter().enumerate() {
+        let marks = egui_plot::log_grid_spacer(10)(GridInput {
+            bounds: (bounds.min()[axis], bounds.max()[axis]),
+            base_step_size: transform.dvalue_dpos()[axis].abs() * f64::from(hidden),
+        });
+        let scale = transform.dpos_dvalue()[axis].abs();
+        for mark in marks {
+            // The origin is labeled once, by y
+            let zero = mark.value.abs() < mark.step_size / 2.;
+            if zero && axis == 0 {
+                continue;
+            }
+            let spacing = (scale * mark.step_size) as f32;
+            if spacing <= hidden {
+                continue;
+            }
+            let strength = egui::emath::remap_clamp(spacing, hidden..=opaque, 0.0..=1.);
+            let color = egui_plot::color_from_strength(ui, strength);
+            let decimals = (-mark.step_size.log10().round()).max(0.) as usize;
+            let text = egui::emath::format_with_decimals_in_range(mark.value, decimals..=decimals);
+            let galley = painter.layout_no_wrap(text, font.clone(), color);
+            let size = galley.size();
+            if spacing < size[axis] + TICK_GAP {
+                continue;
+            }
+            // Below the x axis and left of the y axis
+            let below = (origin.y + TICK_GAP)
+                .clamp(frame.top() + TICK_GAP, frame.bottom() - size.y - TICK_GAP);
+            let left = (origin.x - TICK_GAP - size.x)
+                .clamp(frame.left() + TICK_GAP, frame.right() - size.x - TICK_GAP);
+            let position = if axis == 0 {
+                egui::pos2(
+                    transform.position_from_point_x(mark.value) - size.x / 2.,
+                    below,
+                )
+            } else if zero {
+                egui::pos2(left, below)
+            } else {
+                egui::pos2(
+                    left,
+                    transform.position_from_point_y(mark.value) - size.y / 2.,
+                )
+            };
+            painter.galley(position, galley, color);
+        }
     }
 }
 
