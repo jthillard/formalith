@@ -154,6 +154,8 @@ fn page() -> String {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Formalith documentation</title>
   <meta name="description" content="The builtin functions of the Formalith computer algebra system, with examples">
+  <!-- Theme chosen with the button (docs.js), applied before the page is drawn -->
+  <script>try {{ const theme = localStorage.getItem('formalith-theme'); if (theme) document.documentElement.dataset.theme = theme; }} catch {{}}</script>
   <link rel="stylesheet" href="style.css">
   <!-- Typst compiler and renderer, used to render results as math -->
   <script type="module"
@@ -164,6 +166,7 @@ fn page() -> String {
   <header>
     <a class="title" href="./">Formalith</a>
     <nav><a href="../repl/">REPL</a><a href="../gui/">Graphing calculator</a></nav>
+    <button id="theme" type="button" aria-label="Toggle light/dark theme"></button>
   </header>
   <div class="layout">
     <aside>

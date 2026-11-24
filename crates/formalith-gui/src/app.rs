@@ -286,6 +286,15 @@ impl App {
         ui.horizontal(|ui| {
             ui.heading("Formalith");
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                // Saved with egui's memory by eframe. Half circles, since the default fonts have no sun or moon
+                // without the emoji fonts: only the monospace font, Hack, has these
+                let (icon, hover, other) = match ui.ctx().theme() {
+                    egui::Theme::Dark => ("◑", "Switch to the light theme", egui::Theme::Light),
+                    egui::Theme::Light => ("◐", "Switch to the dark theme", egui::Theme::Dark),
+                };
+                if ui.add(egui::Button::new(RichText::new(icon).monospace()).frame(false)).on_hover_text(hover).clicked() {
+                    ui.ctx().set_theme(other);
+                }
                 let response = ui.add(TextEdit::singleline(&mut self.state.set).desired_width(70.).hint_text("R"));
                 if response.changed() {
                     self.edit();

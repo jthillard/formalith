@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Formalith</title>
   <meta name="description" content="Formalith computer algebra system, running in the browser">
+  <!-- Theme chosen with the button (main.js), applied before the page is drawn -->
+  <script>try { const theme = localStorage.getItem('formalith-theme'); if (theme) document.documentElement.dataset.theme = theme; } catch {}</script>
   <link rel="stylesheet" href="style.css">
   <!-- Typst compiler and renderer, used to render results as math -->
   <script type="module"
@@ -12,6 +14,7 @@
   <script type="module" src="main.js"></script>
 </head>
 <body>
+  <button id="theme" type="button" aria-label="Toggle light/dark theme"></button>
   <main id="terminal">
     <div id="log" aria-live="polite"></div>
     <form id="prompt" autocomplete="off">

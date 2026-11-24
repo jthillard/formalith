@@ -1,27 +1,23 @@
 /* Documentation pages, written by `cargo run -p formalith-session --example builtin_docs`. Colors follow the
    REPL (crates/formalith-web/www/style.css). */
 :root {
-  --bg: #fbfbfa;
-  --fg: #1f2328;
-  --muted: #6e7781;
-  --accent: #0969da;
-  --hover: #eff1f3;
-  --border: #d8dee4;
-  --code: #f0f1f3;
+  --bg: light-dark(#fbfbfa, #15171c);
+  --fg: light-dark(#1f2328, #e6e8eb);
+  --muted: light-dark(#6e7781, #8b949e);
+  --accent: light-dark(#0969da, #58a6ff);
+  --hover: light-dark(#eff1f3, #22262e);
+  --border: light-dark(#d8dee4, #30363d);
+  --code: light-dark(#f0f1f3, #1f232a);
+  color-scheme: light dark;
+}
+
+/* Theme chosen with the button, otherwise the system one */
+:root[data-theme="light"] {
   color-scheme: light;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #15171c;
-    --fg: #e6e8eb;
-    --muted: #8b949e;
-    --accent: #58a6ff;
-    --hover: #22262e;
-    --border: #30363d;
-    --code: #1f232a;
-    color-scheme: dark;
-  }
+:root[data-theme="dark"] {
+  color-scheme: dark;
 }
 
 * {
@@ -236,4 +232,20 @@ td {
   main {
     padding-top: 8px;
   }
+}
+
+#theme {
+  margin-left: auto;
+  padding: 2px 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+#theme:hover {
+  background: var(--hover);
+  color: var(--fg);
 }

@@ -51,6 +51,34 @@ function scrollToPrompt() {
   form.scrollIntoView({ block: 'end' });
 }
 
+// Theme: the one chosen with the button (also read by the inline script of the page, so it applies before the page
+// is drawn), otherwise the system one. Typst results use `currentColor`, so they follow it.
+
+const THEME_KEY = 'formalith-theme';
+const themeButton = document.getElementById('theme');
+const systemDark = matchMedia('(prefers-color-scheme: dark)');
+
+function currentTheme() {
+  return document.documentElement.dataset.theme ?? (systemDark.matches ? 'dark' : 'light');
+}
+
+function showThemeButton() {
+  const dark = currentTheme() === 'dark';
+  themeButton.textContent = dark ? '☀' : '☾';
+  themeButton.title = dark ? 'Switch to the light theme' : 'Switch to the dark theme';
+}
+
+themeButton.addEventListener('click', () => {
+  const theme = currentTheme() === 'dark' ? 'light' : 'dark';
+  document.documentElement.dataset.theme = theme;
+  try {
+    localStorage.setItem(THEME_KEY, theme);
+  } catch {}
+  showThemeButton();
+});
+systemDark.addEventListener('change', showThemeButton);
+showThemeButton();
+
 // Typst rendering
 
 let typstReady = false;
