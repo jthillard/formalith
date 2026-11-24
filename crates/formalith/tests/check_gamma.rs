@@ -16,6 +16,7 @@ fn identity(input: &str) -> Verdict {
         "neg" => Domain::Range(-3.9, -0.1),
         "unit" => Domain::Range(0.05, 0.95),
         "w" => Domain::Range(-0.36, 5.0),
+        "wm1" => Domain::Range(-0.36, -0.01),
         other => panic!("unknown domain {other}"),
     };
     let env = env_with(&[]);
@@ -56,6 +57,7 @@ fn functional_equations() {
             "polygamma(3, x + 1) - polygamma(3, x); -6/x^4; neg",
             "digamma(1 - x) - digamma(x); pi/tan(pi*x); unit",
             "lambertw(x)*exp(lambertw(x)); x; w",
+            "lambertw(x, -1)*exp(lambertw(x, -1)); x; wm1",
             "binomial(x, 2); x*(x - 1)/2; pos",
             // Euler-Maclaurin with 200 terms
             "zeta(x + 2); sum(1/k^(x + 2), k, 1, 200) + 1/((x + 1)*200^(x + 1)) - 1/(2*200^(x + 2)) + (x + 2)/(12*200^(x + 3)); pos",
@@ -90,6 +92,8 @@ fn exact_values() {
             "lambertw(x); e",
             "lambertw(x); 2*exp(2)",
             "lambertw(x); -exp(-1)/2",
+            "lambertw(x, -1); -2*exp(-2)",
+            "lambertw(x, -1); -exp(-1)",
             "binomial(x, 3); 7/2",
             "beta(x, 1/2); 3/2",
         ],

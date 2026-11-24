@@ -458,6 +458,8 @@ fn square_root_of_tangent() {
 #[test]
 fn rational_function_with_cyclotomic_denominator() {
     check("1/(x^5+1)");
+    // Roots of `{$Phi_7$}` aren't radicals
+    check("1/(x^7-1)");
 }
 
 #[test]

@@ -80,6 +80,68 @@ impl<T: Set> RationalSet for TermSet<T> {
     }
 }
 
+/// Sets whose expressions are factored as expressions over `{$QQ$}`, like `{$ZZ$}`, whose polynomial algorithms would
+/// need divisions.
+///
+/// Auto implemented, returning `None` for other sets.
+pub trait FactorThroughRationals: Ring {
+    /// Factor `term` over `{$QQ$}` and convert the factors back, if the set factors this way.
+    fn factor_through_rationals(term: &Term<Self>) -> Option<Term<Self>>;
+}
+
+impl<T: Ring> FactorThroughRationals for T {
+    default fn factor_through_rationals(_term: &Term<Self>) -> Option<Term<Self>> {
+        None
+    }
+}
+
+impl FactorThroughRationals for Z<Integer> {
+    /// By Gauss's lemma, the factors over `{$QQ$}`, primitive with integer coefficients, are the factors over `{$ZZ$}`,
+    /// and the remaining constant is the content, an integer.
+    ///
+    /// Expressions with functions, or whose factorization over `{$QQ$}` has non-integer coefficients, are kept.
+    fn factor_through_rationals(term: &Term<Self>) -> Option<Term<Self>> {
+        let rational = convert_term(term, R, &|n: &Integer| Some(Rational::from(n)))?;
+        let factored = rational.factor();
+        Some(
+            convert_term(&factored, Z, &|q: &Rational| Integer::try_from(q).ok())
+                .unwrap_or_else(|| term.clone()),
+        )
+    }
+}
+
+/// Convert an expression between `{$ZZ$}` and `{$QQ$}` (both their own exponent and coefficient sets), mapping
+/// values with `f`, normalizing the result. Returns `None` for functions or values `f` rejects.
+fn convert_term<From, To>(
+    term: &Term<From>,
+    set: To,
+    f: &impl Fn(&From::Element) -> Option<To::Element>,
+) -> Option<Term<To>>
+where
+    From: Ring<ExponantSet = From, ProductCoefficientSet = From>,
+    To: Ring<ExponantSet = To, ProductCoefficientSet = To>,
+{
+    use crate::term::{Normalize, SymbolTerm, Value};
+    Some(
+        match term {
+            Term::Value(value) => Term::Value(Value::new(f(&value.value)?, set)),
+            Term::Symbol(symbol) => Term::Symbol(SymbolTerm::new(symbol.symbol, set)),
+            Term::Add(add) => add.iter().try_fold(Term::zero(set), |res, term| {
+                Some(res + convert_term(term, set, f)?)
+            })?,
+            Term::Mul(mul) => mul.iter().try_fold(
+                Term::Value(Value::new(f(&mul.coefficient)?, set)),
+                |res, factor| Some(res * convert_term(factor, set, f)?),
+            )?,
+            Term::Pow(pow) => {
+                convert_term(&pow.base, set, f)?.pow(&convert_term(&pow.exponant, set, f)?)
+            }
+            Term::Fun(_) => return None,
+        }
+        .normalize(),
+    )
+}
+
 /// Sets whose elements can be Gaussian rationals `{$a + b i$}`, allowing factorization over `{$QQ(i)$}`.
 ///
 /// Auto implemented, returning `None` for sets without Gaussian rationals.

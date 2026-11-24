@@ -700,6 +700,40 @@ fn nf_lambertw(x: f32) -> f32 {
     return w;
 }
 
+// The branch `W_-1(x)` of the Lambert W function for `-1/e <= x < 0`, by Halley's iteration kept below -1.
+fn nf_lambertwm1(x: f32) -> f32 {
+    let branch = -0.36787944117144233;
+    if nf_undef(x) || x < branch || x >= 0.0 {
+        return nf_nan();
+    }
+    var w: f32;
+    if x < -0.25 {
+        let p = sqrt(max(2.0 * (2.718281828459045 * x + 1.0), 0.0));
+        w = -1.0 - p - p * p / 3.0;
+    } else {
+        let l1 = log(-x);
+        let l2 = log(-l1);
+        w = l1 - l2 + l2 / l1;
+    }
+    for (var i = 0; i < 30; i++) {
+        let e = exp(w);
+        let f = w * e - x;
+        let denominator = e * (w + 1.0) - (w + 2.0) * f / (2.0 * w + 2.0);
+        if denominator == 0.0 || !nf_finite(denominator) {
+            break;
+        }
+        var next = w - f / denominator;
+        if next >= -1.0 {
+            next = (w - 1.0) * 0.5;
+        }
+        if abs(next - w) <= 1e-7 * (1.0 + abs(next)) {
+            return next;
+        }
+        w = next;
+    }
+    return w;
+}
+
 // `Si(x)` (kind 0), `Ci(x)` (kind 1) or `Ei(x)` (kind 2): power series for small `|x|`, whose terms cancel up to
 // `e^|x|`, and asymptotic series otherwise. `Ci(x)` is undefined for `x <= 0`.
 fn nf_expint(kind: i32, x0: f32) -> f32 {

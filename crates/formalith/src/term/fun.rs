@@ -181,6 +181,22 @@ impl<From: Set, T: Set> Print for Fun<From, T> {
             }
             return Self::operator("!", options, f);
         }
+        if self.ident == Context::lambertw_m1()
+            && let [u] = args.as_slice()
+        {
+            // `{$W_(-1)(u)$}`, printed `lambertw(u, -1)` to be parsed back
+            if options.typst {
+                f.write_str("W_(-1)(")?;
+                u.print(options, f)?;
+                return f.write_str(")");
+            }
+            Self::fg::<Cyan>(Context::LAMBERTW.name(), options, f)?;
+            Self::group_delim("(", options, f)?;
+            u.print(options, f)?;
+            Self::delimiter(", ", options, f)?;
+            f.write_str("-1")?;
+            return Self::group_delim(")", options, f);
+        }
         if options.typst && self.ident == Context::PIECEWISE {
             // `{$cases(v_1 & "if" c_1, ..., d & "otherwise")$}`
             f.write_str("cases(")?;
@@ -403,6 +419,7 @@ impl<From: Set, T: Set> PrettyPrint for Fun<From, T> {
             Context::BETA => "B".into(),
             Context::ZETA => "ζ".into(),
             Context::LAMBERTW => "W".into(),
+            ident if ident == Context::lambertw_m1() => "W₋₁".into(),
             _ => crate::printer::pretty_name(self.get_ident_as_str()),
         };
         let mut fun = PrettyPrinter::from(name.into_owned());

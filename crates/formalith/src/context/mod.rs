@@ -259,7 +259,8 @@ impl Context {
     pub const SMITH: Symbol = Symbol(69);
     /// Partial fraction decomposition `apart(f, x)` of a rational function, in its only symbol by default
     pub const APART: Symbol = Symbol(70);
-    /// Principal branch `{$W_0$}` of the Lambert W function, the inverse of `{$x e^x$}` on `{$[-1, oo)$}`
+    /// Principal branch `{$W_0$}` of the Lambert W function, the inverse of `{$x e^x$}` on `{$[-1, oo)$}`, or
+    /// with a second argument `-1` the branch `{$W_(-1)$}` ([`Self::lambertw_m1`])
     pub const LAMBERTW: Symbol = Symbol(71);
     /// Piecewise function `piecewise(c_1, v_1, c_2, v_2, ..., default)`, the value of the first true condition
     pub const PIECEWISE: Symbol = Symbol(72);
@@ -347,6 +348,13 @@ impl Context {
         *HELD_SUM
     }
 
+    /// The internal function `@lambertwm1(x)`, the branch `{$W_(-1)$}` of the Lambert W function, the inverse of
+    /// `{$x e^x$}` on `{$(-oo, -1]$}`, written `lambertw(x, -1)`.
+    pub(crate) fn lambertw_m1() -> Symbol {
+        static LAMBERTW_M1: LazyLock<Symbol> = LazyLock::new(|| Symbol::new("@lambertwm1"));
+        *LAMBERTW_M1
+    }
+
     /// The internal function `@zetare(a, b)`, `@zetaim`, `@gammare` or `@gammaim` (`function` being
     /// [`Self::ZETA`] or [`Self::GAMMA`]): the real or imaginary part of `{$f(a + i b)$}`, which only has a numerical
     /// form, written in graphs of complex functions.
@@ -414,7 +422,7 @@ impl Context {
             | Self::LOCALMAX
             | Self::EXTREMA
             | Self::LOCALEXTREMA => Some((1, usize::MAX)),
-            Self::APPROX | Self::LOG | Self::CHARPOLY => Some((1, 2)),
+            Self::APPROX | Self::LOG | Self::CHARPOLY | Self::LAMBERTW => Some((1, 2)),
             Self::SUBS => Some((3, 3)),
             Self::RESULTANT => Some((2, 3)),
             Self::ROOTS | Self::DISCRIMINANT | Self::ZEROS => Some((1, 2)),

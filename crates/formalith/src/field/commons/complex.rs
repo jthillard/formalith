@@ -731,6 +731,12 @@ pub fn parts(f: &Term<Complex>, z: Symbol, a: Symbol, b: Symbol) -> Option<(Expr
     )
 }
 
+/// The exact real and imaginary parts `{$(u, v)$}` of `{$f = u + i v$}`, every symbol of `f` being assumed real.
+/// `None` when a part can't be written.
+pub(crate) fn exact_parts(f: &Term<Complex>) -> Option<(Expr, Expr)> {
+    parts::split(f)
+}
+
 /// The real and imaginary parts `{$(u, v)$}` of `{$f = u + i v$}`, every symbol of `f` being assumed real, for
 /// graphs: parts may only have a numerical form, like in [`parts`]. `None` when a part can't be written.
 ///

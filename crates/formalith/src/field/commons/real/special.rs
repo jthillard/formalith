@@ -105,19 +105,23 @@ impl R<Rational> {
         }
     }
 
-    /// Exact values of the Lambert W function: `{$W(0) = 0$}`, `{$W(e) = 1$}` and `{$W(c e^c) = c$}` for a
-    /// rational `{$c >= -1$}`, like `{$W(-1/e) = -1$}`.
-    pub(super) fn eval_lambertw(self, x: &Term<Self>) -> Option<Term<Self>> {
-        if x.is_zero() {
+    /// Exact values of the Lambert W function: `{$W_0(0) = 0$}`, `{$W_0(e) = 1$}` and `{$W_0(c e^c) = c$}` for a
+    /// rational `{$c >= -1$}`, like `{$W_0(-1/e) = -1$}`, or with `principal` false, `{$W_(-1)(c e^c) = c$}` for a
+    /// rational `{$c <= -1$}`.
+    pub(super) fn eval_lambertw(self, x: &Term<Self>, principal: bool) -> Option<Term<Self>> {
+        if principal && x.is_zero() {
             return Some(Term::zero(self));
         }
         let c = match x {
-            Term::Symbol(s) if s.symbol == Context::E => return Some(Term::one(self)),
+            Term::Symbol(s) if principal && s.symbol == Context::E => {
+                return Some(Term::one(self));
+            }
             Term::Mul(mul) => mul.coefficient.clone(),
             _ => return None,
         };
         let c_term = Term::constant(c.clone(), self);
-        (c >= -1 && &(&c_term * &self.call(Context::EXP, vec![c_term.clone()])) == x)
+        let in_branch = if principal { c >= -1 } else { c <= -1 };
+        (in_branch && &(&c_term * &self.call(Context::EXP, vec![c_term.clone()])) == x)
             .then_some(c_term)
     }
 

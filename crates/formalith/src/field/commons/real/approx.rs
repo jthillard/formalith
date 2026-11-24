@@ -519,19 +519,38 @@ impl Fixed {
         Some(self.to_rational(self.exp(&ln_gamma)?) / product)
     }
 
-    /// `{$W_0(x)$}` for `{$x >= -1/e$}`, by Newton's iteration on `{$w e^w = x$}` from a float approximation.
-    fn lambert_w(self, x: &Rational) -> Option<Rational> {
+    /// `{$W_0(x)$}` for `{$x >= -1/e$}`, or with `principal` false `{$W_(-1)(x)$}` for `{$-1/e <= x < 0$}`, by
+    /// Newton's iteration on `{$w e^w = x$}` from a float approximation, kept in the branch (`{$w >= -1$}` or
+    /// `{$w <= -1$}`).
+    fn lambert_w(self, x: &Rational, principal: bool) -> Option<Rational> {
         if *x == 0 {
-            return Some(Rational::ZERO);
+            return principal.then_some(Rational::ZERO);
+        }
+        if !principal && *x > 0 {
+            return None;
         }
         // `{$e x + 1 >= 0$}`
         let branch = self.exp_rational(&Rational::ONE)? * x + Rational::ONE;
         if branch < 0 {
             return None;
         }
+        if branch == 0 {
+            return Some(Rational::from(-1));
+        }
         let float = |x: &Rational| f64::rounding_from(x, RoundingMode::Nearest).0;
         let x_float = float(x);
-        let guess = if x_float < 1. {
+        let guess = if !principal {
+            if x_float < -0.25 {
+                // Series at the branch point `{$-1/e$}`, `{$p$}` changing sign
+                let p = -(2. * float(&branch)).sqrt();
+                p.mul_add(1. - p / 3. + 11. / 72. * p * p, -1.)
+            } else {
+                // `{$W_(-1)(x) ~ L_1 - L_2 + L_2 / L_1$}`, `{$L_1 = ln(-x)$}`, `{$L_2 = ln(-L_1)$}`
+                let l1 = (-x_float).ln();
+                let l2 = (-l1).ln();
+                l1 - l2 + l2 / l1
+            }
+        } else if x_float < 1. {
             // Series at the branch point `{$-1/e$}`
             let p = (2. * float(&branch)).sqrt();
             p.mul_add(1. - p / 3. + 11. / 72. * p * p, -1.)
@@ -548,6 +567,22 @@ impl Fixed {
         let target = self.from_rational(x);
         let mut w = self.from_rational(&Rational::try_from(guess).ok()?);
         let one = self.one();
+        let minus_one = -&one;
+        let in_branch = |w: &Integer| {
+            if principal {
+                *w > minus_one
+            } else {
+                *w < minus_one
+            }
+        };
+        if !in_branch(&w) {
+            w = &minus_one
+                + if principal {
+                    &one >> 4_u64
+                } else {
+                    -(&one >> 4_u64)
+                };
+        }
         for _ in 0..self.bits + 64 {
             let exp = self.exp(&w)?;
             let derivative = self.mul(&exp, &(&w + &one));
@@ -555,7 +590,13 @@ impl Fixed {
                 break;
             }
             let step = self.div(&(self.mul(&w, &exp) - &target), &derivative);
-            w -= &step;
+            let next = &w - &step;
+            // Newton's step may cross the branch point, halve the distance to it instead
+            w = if in_branch(&next) {
+                next
+            } else {
+                (&w + &minus_one) >> 1_u64
+            };
             if step.unsigned_abs() <= 1u32 {
                 break;
             }
@@ -822,7 +863,15 @@ impl Fixed {
                             _ => (cos != 0).then(|| self.to_rational(self.div(&sin, &cos))),
                         }
                     }
-                    (Context::LAMBERTW, [x]) => self.lambert_w(&self.evaluate(x)?),
+                    (Context::LAMBERTW, [x]) => self.lambert_w(&self.evaluate(x)?, true),
+                    (Context::LAMBERTW, [x, k]) => match self.evaluate(k)? {
+                        k if k == 0 => self.lambert_w(&self.evaluate(x)?, true),
+                        k if k == -1 => self.lambert_w(&self.evaluate(x)?, false),
+                        _ => None,
+                    },
+                    (ident, [x]) if ident == Context::lambertw_m1() => {
+                        self.lambert_w(&self.evaluate(x)?, false)
+                    }
                     (Context::GAMMA, [x]) => self.gamma(&self.evaluate(x)?),
                     (Context::FACTORIAL, [x]) => self.gamma(&(self.evaluate(x)? + Rational::ONE)),
                     (Context::BINOMIAL, [n, k]) => {

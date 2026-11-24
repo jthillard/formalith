@@ -173,6 +173,9 @@ impl<T: Derivable<ExponantSet = T, ProductCoefficientSet = T>> Term<T> {
                         Context::FACTORIAL => Some(self * &digamma(u.clone() + one.clone())),
                         // `{$W'(u) = W(u) / (u (1 + W(u)))$}`
                         Context::LAMBERTW => Some(self / &(u * &(&one + self))),
+                        ident if ident == Context::lambertw_m1() => {
+                            Some(self / &(u * &(&one + self)))
+                        }
                         // `{$|u|' = sign(u) u'$}`, except at 0
                         Context::ABS => Some(apply(Context::SIGN)),
                         // `{$sign' = 0$}`, except at 0

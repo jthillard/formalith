@@ -1085,7 +1085,17 @@ impl R<Rational> {
                 | Context::ZETA,
                 args,
             ) => self.eval_gamma_family(ident, args),
-            (Context::LAMBERTW, [x]) if !x.is_approximate() => self.eval_lambertw(x),
+            (Context::LAMBERTW, [x]) if !x.is_approximate() => self.eval_lambertw(x, true),
+            // `lambertw(x, k)` for the branches `{$k = 0$}` and `{$k = -1$}`, an internal function
+            (Context::LAMBERTW, [x, Term::Value(k)]) if k.value == 0 => {
+                Some(self.fun(Context::LAMBERTW, x.clone()))
+            }
+            (Context::LAMBERTW, [x, Term::Value(k)]) if k.value == -1 => {
+                Some(self.fun(Context::lambertw_m1(), x.clone()))
+            }
+            (ident, [x]) if ident == Context::lambertw_m1() && !x.is_approximate() => {
+                self.eval_lambertw(x, false)
+            }
             (Context::PIECEWISE, args) => self.eval_piecewise(args),
             (Context::FACTORIAL, [Term::Value(n)]) => self.eval_factorial(&n.value),
             (Context::BINOMIAL, [n, Term::Value(k)]) if k.value == 0 || k.value == 1 => {

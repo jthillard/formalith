@@ -161,6 +161,8 @@ fn structural_sign(term: &Expr, mode: SignMode) -> SignSet {
                 Context::GAMMA if structural_sign(arg, mode).is_subset(SignSet::POSITIVE) => {
                     SignSet::POSITIVE
                 }
+                // `{$W_(-1)(u) <= -1$}`
+                ident if ident == Context::lambertw_m1() => SignSet::NEGATIVE,
                 Context::FACTORIAL
                     if structural_sign(arg, mode).is_subset(SignSet::NONNEGATIVE) =>
                 {

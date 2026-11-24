@@ -68,3 +68,31 @@ fn integer_builtins() {
     assert_eq!(line(&parse!("lcm(4, 6)", Z)), "12");
     assert_eq!(line(&parse!("factorial(5)", Z)), "120");
 }
+
+#[test]
+fn factor() {
+    assert_eq!(
+        parse!("factor(2*x^2 + 3*x + 1)", Z),
+        parse!("(2*x + 1)*(x + 1)", Z)
+    );
+    assert_eq!(
+        parse!("factor(6*x^2 - 6)", Z),
+        parse!("6*(x - 1)*(x + 1)", Z)
+    );
+    assert_eq!(
+        parse!("factor(3*x^3 + 6*x^2)", Z),
+        parse!("3*x^2*(x + 2)", Z)
+    );
+    assert_eq!(
+        parse!("factor(4*x^2 + 12*x + 9)", Z),
+        parse!("(2*x + 3)^2", Z)
+    );
+    assert_eq!(
+        parse!("factor(4*x^2*y - y)", Z),
+        parse!("y*(2*x - 1)*(2*x + 1)", Z)
+    );
+    assert_eq!(
+        parse!("factor(2*x*y + 2*x + 3*y + 3)", Z),
+        parse!("(2*x + 3)*(y + 1)", Z)
+    );
+}

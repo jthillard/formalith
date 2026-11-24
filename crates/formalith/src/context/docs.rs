@@ -175,9 +175,11 @@ pub static BUILTIN_DOCS: [BuiltinDoc; Context::BUILTIN_NAMES.len()] = [
         Algebra,
         "factor(f)",
         "Factors a polynomial.",
-        "Over the rationals in R, modulo a prime in Z/p for univariate polynomials.",
+        "Over the rationals in R, over the integers in Z (the content first), modulo a prime in Z/p for univariate polynomials. Powers with fractional exponents are factored as polynomials in a root of their base.",
         &[
             ex("factor(x^4 - 1)", "(x^2 + 1) (x - 1) (x + 1)"),
+            ex_in("Z", "factor(6x^2 + 3x)", "3 x (2 x + 1)"),
+            ex("factor(x + sqrt(x))", "sqrt(x) (sqrt(x) + 1)"),
             ex_in("Z/7", "factor(x^3 + 1)", "(x + 1) (x + 2) (x + 4)"),
         ],
     ),
@@ -842,10 +844,14 @@ pub static BUILTIN_DOCS: [BuiltinDoc; Context::BUILTIN_NAMES.len()] = [
     doc(
         Context::LAMBERTW,
         Special,
-        "lambertw(x)",
-        "Principal branch W_0 of the Lambert W function, the inverse of x e^x on [-1, oo).",
-        "",
-        &[ex("lambertw(e)", "1"), ex("lambertw(0)", "0")],
+        "lambertw(x, [k])",
+        "Lambert W function, the inverse of x e^x: the principal branch W_0 on [-1, oo), or W_-1 on (-oo, -1] for k = -1.",
+        "W_0 is defined for x >= -1/e, W_-1 for -1/e <= x < 0, where x e^x = c has two solutions.",
+        &[
+            ex("lambertw(e)", "1"),
+            ex("lambertw(0)", "0"),
+            ex("lambertw(-2exp(-2), -1)", "-2"),
+        ],
     ),
     doc(
         Context::PIECEWISE,

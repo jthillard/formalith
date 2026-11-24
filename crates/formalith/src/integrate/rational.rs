@@ -18,7 +18,11 @@ use malachite::{
 
 use crate::{
     context::{Context, Symbol},
-    field::{TryExprFrom, complex::C, real::R},
+    field::{
+        TryExprFrom,
+        complex::{C, exact_parts},
+        real::R,
+    },
     solve::polynomial::{PolynomialRoots, split_complex},
     term::{Expand, Normalize, Term},
 };
@@ -122,8 +126,14 @@ fn log_part(q: &Poly, p: &Poly, x: Symbol) -> Option<Expr> {
             Ordering::Less => {}
             Ordering::Equal => res += alpha * ln_abs(&(variable(x) - u), x),
             Ordering::Greater => {
-                let shifted = variable(x) - u;
-                let norm = (&shifted * &shifted + &v * &v).expand();
+                let shifted = variable(x) - &u;
+                let mut modulus = (&u * &u + &v * &v).expand();
+                // Roots with trigonometric parts, like `{$cos((2 pi) / 7) + i sin((2 pi) / 7)$}`
+                if split_complex(root).is_none() {
+                    modulus = fun(Context::SIMPLIFY, modulus);
+                }
+                let norm = (variable(x) * (variable(x) - value(Rational::from(2)) * &u) + modulus)
+                    .expand();
                 res += alpha * fun(Context::LN, norm)
                     - value(Rational::from(2)) * beta * fun(Context::ATAN, shifted / v);
             }
@@ -132,15 +142,17 @@ fn log_part(q: &Poly, p: &Poly, x: Symbol) -> Option<Expr> {
     Some(res)
 }
 
-/// The real and imaginary parts of a complex expression made of real radicals.
+/// The real and imaginary parts of a complex constant, made of real radicals or of real functions like
+/// `{$cos((2 pi) / 7)$}`.
 pub(crate) fn split(t: &Term<Complex>) -> Option<(Expr, Expr)> {
     let real = |t: Term<Complex>| {
         TryExprFrom::<Complex>::try_from_expr(&R, t)
             .ok()
             .map(|t| t.normalize())
     };
-    let (re, im) = split_complex(t)?;
-    Some((real(re)?, real(im)?))
+    split_complex(t)
+        .and_then(|(re, im)| Some((real(re)?, real(im)?)))
+        .or_else(|| exact_parts(t))
 }
 
 /// The distinct rational roots of a non-zero polynomial, and whether it is a product of linear factors.

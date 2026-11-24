@@ -71,6 +71,8 @@ pub enum NumFn {
     Factorial,
     Binomial,
     LambertW,
+    /// The branch `{$W_(-1)$}` of the Lambert W function
+    LambertWm1,
     Si,
     Ci,
     Ei,
@@ -136,6 +138,7 @@ impl NumFn {
             Context::ZETA => Self::Zeta,
             Context::FACTORIAL => Self::Factorial,
             Context::LAMBERTW => Self::LambertW,
+            ident if ident == Context::lambertw_m1() => Self::LambertWm1,
             Context::SI => Self::Si,
             Context::CI => Self::Ci,
             Context::EI => Self::Ei,
@@ -198,6 +201,7 @@ impl NumFn {
             Self::Zeta => zeta(x),
             Self::Binomial => binomial(x, y),
             Self::LambertW => lambert_w(x),
+            Self::LambertWm1 => lambert_w_m1(x),
             Self::Si | Self::Ci | Self::Ei => exponential_integral(self, x),
             Self::ZetaRe => complex_zeta((x, y)).0,
             Self::ZetaIm => complex_zeta((x, y)).1,
@@ -786,6 +790,40 @@ fn lambert_w(x: f64) -> f64 {
     w
 }
 
+/// The branch `{$W_(-1)(x)$}` of the Lambert W function for `{$-1/e <= x < 0$}`, by Halley's iteration kept
+/// below `{$-1$}`.
+fn lambert_w_m1(x: f64) -> f64 {
+    let branch = -1. / std::f64::consts::E;
+    if x.is_nan() || x < branch || x >= 0. {
+        return f64::NAN;
+    }
+    let mut w = if x < -0.25 {
+        let p = (2. * (std::f64::consts::E * x + 1.)).max(0.).sqrt();
+        -1. - p - p * p / 3.
+    } else {
+        let l1 = (-x).ln();
+        let l2 = (-l1).ln();
+        l1 - l2 + l2 / l1
+    };
+    for _ in 0..50 {
+        let e = w.exp();
+        let f = w * e - x;
+        let denominator = e * (w + 1.) - (w + 2.) * f / (2. * w + 2.);
+        if denominator == 0. || !denominator.is_finite() {
+            break;
+        }
+        let mut next = w - f / denominator;
+        if next >= -1. {
+            next = f64::midpoint(w, -1.);
+        }
+        if (next - w).abs() <= 1e-15 * (1. + next.abs()) {
+            return next;
+        }
+        w = next;
+    }
+    w
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -831,6 +869,12 @@ mod tests {
         assert_close(eval("lambertw(x)", 1.), 0.567_143_290_409_783_8);
         assert_close(eval("lambertw(x)", -0.2), -0.259_171_101_819_073_7);
         assert_close(eval("lambertw(x)", 100.), 3.385_630_140_290_050_4);
+        assert_close(eval("lambertw(x, -1)", -0.2), -2.542_641_357_773_526_4);
+        assert_close(eval("lambertw(x, -1)", -0.01), -6.472_775_124_394_005);
+        assert_close(
+            eval("lambertw(x, -1)", -0.367_879),
+            -1.001_549_495_191_247_4,
+        );
         assert_close(eval("erf(x)", 1.), 0.842_700_792_949_714_9);
         assert_close(eval("erfi(x)", 1.), 1.650_425_758_797_542_9);
         assert_close(eval("erfi(x)", 6.), 4.112_751_455_828_239e14);

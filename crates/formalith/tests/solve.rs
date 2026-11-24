@@ -467,8 +467,18 @@ fn cyclotomic_polynomials() {
             .map(|s| s.matches(" \\ ").count() + 1),
         Ok(8)
     );
-    // `{$Phi_7$}` has no real radical values
-    assert!(solve_in("C", "x^6 + x^5 + x^4 + x^3 + x^2 + x + 1 = 0").is_err());
+    // `{$Phi_7$}` has no real radical values, its roots are written with `sin` and `cos`
+    assert_eq!(
+        solve_in("C", "x^6 + x^5 + x^4 + x^3 + x^2 + x + 1 = 0"),
+        ok(
+            "x = -i sin(frac(2, 7) pi)+cos(frac(2, 7) pi) \\ x = i sin(frac(2, 7) pi)+cos(frac(2, 7) pi) \\ x = -i sin(frac(4, 7) pi)+cos(frac(4, 7) pi) \\ x = i sin(frac(4, 7) pi)+cos(frac(4, 7) pi) \\ x = -i sin(frac(6, 7) pi)+cos(frac(6, 7) pi) \\ x = i sin(frac(6, 7) pi)+cos(frac(6, 7) pi)"
+        )
+    );
+    assert_eq!(
+        solve_in("C", "x^7 = 1").map(|s| s.matches(" \\ ").count() + 1),
+        Ok(7)
+    );
+    assert_eq!(solve("x^7 = 1"), ok("x = 1"));
 }
 
 #[test]
@@ -652,4 +662,33 @@ fn lambert_equations() {
         ok("x = frac(1, 3) W(frac(15, 2))")
     );
     assert_eq!(solve("lambertw(x) = 2"), ok("x = 2 exp(2)"));
+    // Both branches for arguments in `{$(-1/e, 0)$}`
+    assert_eq!(
+        solve("x*exp(x) = -1/(2*e)"),
+        ok("x = W(-frac(1, 2) exp(-1)) \\ x = W_(-1)(-frac(1, 2) exp(-1))")
+    );
+    assert_eq!(solve("x*exp(x) = -exp(-1)"), ok("x = -1"));
+    assert_eq!(solve("x*exp(x) = -1"), ok("\"no solution\""));
+    assert_eq!(solve("lambertw(x, -1) = -2"), ok("x = -2 exp(-2)"));
+    assert_eq!(solve("lambertw(x, -1) = 2"), ok("\"no solution\""));
+}
+
+#[test]
+fn fractional_powers_terminate() {
+    // The polynomial solver used to loop on `{$x + sqrt(x)$}` while factoring it
+    for (set, system) in [("R", "x + sqrt(x) = 0, y = 1"), ("C", "x + sqrt(x) = 0")] {
+        assert!(
+            solve_in(set, system)
+                .unwrap_err()
+                .contains("not polynomial"),
+            "{system}"
+        );
+    }
+    assert_eq!(solve("x + sqrt(x) = 0"), ok("x = 0"));
+}
+
+#[test]
+fn integer_equations_are_factored() {
+    assert_eq!(solve_in("Z", "2*x^2 - 5*x - 3 = 0"), ok("x = 3"));
+    assert_eq!(solve_in("Z", "(2*x - 1)*(x + y) = 0"), ok("x = -y"));
 }

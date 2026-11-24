@@ -9,7 +9,7 @@ use std::{
     fmt::{Debug, Display},
 };
 
-use malachite::Integer;
+use malachite::{Integer, Rational, base::num::arithmetic::traits::Lcm};
 
 use crate::{
     combinatorics::{Combinatorics, CompositionIterator},
@@ -20,7 +20,10 @@ use crate::{
     },
     iter,
     matrix::MatrixResult,
-    polynom::{MultivariatePolynomial, ToTerm},
+    polynom::{
+        MultivariatePolynomial, ToTerm,
+        factor::{FactorThroughRationals, RationalSet},
+    },
     printer::{PrettyPrint, PrettyPrinter, Print, PrintOptions},
 };
 
@@ -903,6 +906,12 @@ impl<T: Ring<ExponantSet: Ring, ProductCoefficientSet = T>> Term<T> {
         <Self as TryFrom<Term<T::ExponantSet>>>::Error: Debug,
     {
         profile_scope!("factor");
+        if let Some(res) = T::factor_through_rationals(self) {
+            return res;
+        }
+        if let Some(res) = self.factor_non_integer_powers() {
+            return res;
+        }
         let poly = self.to_polynomial();
         let factors = poly.factor();
         let mut res = Self::one(self.get_set());
@@ -913,6 +922,136 @@ impl<T: Ring<ExponantSet: Ring, ProductCoefficientSet = T>> Term<T> {
             ));
         }
         res.with_opposite_factors_merged()
+    }
+
+    /// Factor an expression with powers whose exponents aren't integers, which polynomial algorithms don't
+    /// support (they may not terminate). Powers with symbolic exponents, like `{$x^n$}`, are new variables, and
+    /// those with rational non-integer exponents, like `{$x + sqrt(x)$}`, are written as powers of
+    /// `{$t = b^(1 / L)$}` for each base `b`, `L` being the common denominator of its exponents:
+    /// `{$x + sqrt(x) = sqrt(x) (sqrt(x) + 1)$}`, `{$x^n y + y = y (x^n + 1)$}`. Returns `None` without such powers,
+    /// and the expression itself when they can't all be replaced.
+    fn factor_non_integer_powers(&self) -> Option<Self>
+    where
+        TermSet<T>: TryElementFrom<TermSet<T::ExponantSet>>,
+        Self: TryFrom<Term<T::ExponantSet>>,
+        <Self as TryFrom<Term<T::ExponantSet>>>::Error: Debug,
+    {
+        let (mut atoms, mut bases) = (vec![], vec![]);
+        self.non_integer_powers(&mut atoms, &mut bases);
+        if atoms.is_empty() && bases.is_empty() {
+            return None;
+        }
+        let set = self.get_set();
+        let exponant_set = set.get_exponant_set();
+        let exponant =
+            |q: Rational| Some(Term::constant(exponant_set.from_rational(q)?, exponant_set));
+        let symbol = |prefix: &str, i: usize| Symbol::new(&format!("@{prefix}{i}"));
+        let factor = || {
+            let mut replaced = self.clone();
+            for (i, atom) in atoms.iter().enumerate() {
+                let s = Self::Symbol(SymbolTerm::new(symbol("a", i), set));
+                replaced = replaced.replace_atom(atom, &s);
+            }
+            for (i, (base, denominator)) in bases.iter().enumerate() {
+                let t = Self::Symbol(SymbolTerm::new(symbol("f", i), set));
+                replaced =
+                    replaced.replace_fractional_power(base, &t, &Rational::from(*denominator))?;
+            }
+            let mut res = replaced.factor();
+            for (i, (base, denominator)) in bases.iter().enumerate() {
+                let root = base.pow(&exponant(Rational::from_unsigneds(1, *denominator))?);
+                res = res.substitute(symbol("f", i), &root)?;
+            }
+            for (i, atom) in atoms.iter().enumerate() {
+                res = res.substitute(symbol("a", i), atom)?;
+            }
+            Some(res)
+        };
+        Some(factor().unwrap_or_else(|| self.clone()))
+    }
+
+    /// The powers with exponents which aren't rational values (`atoms`), and the bases of the powers with rational
+    /// non-integer exponents with the least common multiple of the denominators of their exponents (`bases`), in
+    /// the polynomial structure of the expression.
+    fn non_integer_powers(&self, atoms: &mut Vec<Self>, bases: &mut Vec<(Self, u64)>) {
+        match self {
+            Self::Add(add) => add
+                .iter()
+                .for_each(|term| term.non_integer_powers(atoms, bases)),
+            Self::Mul(mul) => mul
+                .iter()
+                .for_each(|factor| factor.non_integer_powers(atoms, bases)),
+            Self::Pow(pow) => {
+                let q = match &**pow.exponant {
+                    Term::Value(e) => self.get_set().get_exponant_set().to_rational(&e.value),
+                    _ => None,
+                };
+                let Some(q) = q else {
+                    if !atoms.contains(self) {
+                        atoms.push(self.clone());
+                    }
+                    return;
+                };
+                let Ok(d) = u64::try_from(q.denominator_ref()) else {
+                    return;
+                };
+                if d == 1 {
+                    return;
+                }
+                match bases.iter_mut().find(|(base, _)| *base == *pow.base) {
+                    Some((_, l)) => *l = l.lcm(d),
+                    None => bases.push(((*pow.base).clone(), d)),
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Replace `atom` by `s` in the polynomial structure of the expression.
+    fn replace_atom(&self, atom: &Self, s: &Self) -> Self {
+        if self == atom {
+            return s.clone();
+        }
+        let set = self.get_set();
+        match self {
+            Self::Add(add) => add.iter().fold(Self::zero(set), |res, term| {
+                res + term.replace_atom(atom, s)
+            }),
+            Self::Mul(mul) => mul.iter().fold(
+                Self::Value(Value::new(mul.coefficient.clone(), set)),
+                |res, factor| res * factor.replace_atom(atom, s),
+            ),
+            _ => self.clone(),
+        }
+    }
+
+    /// Replace the powers of `base` by powers of `{$t = "base"^(1 / L)$}`, and `base` itself by `{$t^L$}` when it
+    /// isn't a value (values are coefficients of polynomials).
+    fn replace_fractional_power(&self, base: &Self, t: &Self, l: &Rational) -> Option<Self> {
+        let set = self.get_set();
+        let exponant_set = set.get_exponant_set();
+        let exponant =
+            |q: Rational| Some(Term::constant(exponant_set.from_rational(q)?, exponant_set));
+        if self == base && !matches!(self, Self::Value(_)) {
+            return Some(t.pow(&exponant(l.clone())?));
+        }
+        Some(match self {
+            Self::Add(add) => add.iter().try_fold(Self::zero(set), |res, term| {
+                Some(res + term.replace_fractional_power(base, t, l)?)
+            })?,
+            Self::Mul(mul) => mul.iter().try_fold(
+                Self::Value(Value::new(mul.coefficient.clone(), set)),
+                |res, factor| Some(res * factor.replace_fractional_power(base, t, l)?),
+            )?,
+            Self::Pow(pow) if *pow.base == *base => {
+                let Term::Value(e) = &**pow.exponant else {
+                    return None;
+                };
+                let q = exponant_set.to_rational(&e.value)?;
+                t.pow(&exponant(q * l)?)
+            }
+            _ => self.clone(),
+        })
     }
 
     /// Write the sum bases of a product with a positive leading term, so that opposite factors like `a - b` and

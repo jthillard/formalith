@@ -8,7 +8,7 @@
 //! Periodic functions have one solution per period: `{$sin u = c$}` gives `{$u = arcsin c + 2 k pi$}` and
 //! `{$u = pi - arcsin c + 2 k pi$}`, `k` being a new integer parameter (`k`, `k_1`, `k_2`... for nested ones,
 //! skipping the names of the equation). Equations `{$(alpha x + beta) e^(gamma x + delta) = c$}` are solved with
-//! the principal branch of the Lambert W function.
+//! the Lambert W function, with both branches `{$W_0$}` and `{$W_(-1)$}` when its argument is in `{$(-1/e, 0)$}`.
 
 use std::{cmp::Ordering, collections::BTreeSet};
 
@@ -161,7 +161,7 @@ impl Inverter {
             return Ok(res);
         }
         if let Some(res) = self.lambert(&numerator, &kernels) {
-            return Ok(vec![res]);
+            return Ok(res);
         }
         Err(SolveError::NotPolynomial(plain(&numerator)))
     }
@@ -367,6 +367,10 @@ impl Inverter {
                 Some(Ordering::Less) => none(),
                 _ => single(c * &f(Context::EXP, c.clone())),
             },
+            ident if ident == Context::lambertw_m1() => match cmp(-1) {
+                Some(Ordering::Greater) => none(),
+                _ => single(c * &f(Context::EXP, c.clone())),
+            },
             Context::ABS => match cmp(0) {
                 Some(Ordering::Less) => none(),
                 Some(Ordering::Equal) => single(int(0)),
@@ -376,10 +380,12 @@ impl Inverter {
         }
     }
 
-    /// The solution of `{$(alpha x + beta) e^(gamma x + delta) + r = 0$}`,
-    /// `{$x = W(-r gamma e^(gamma beta / alpha - delta) / alpha) / gamma - beta / alpha$}`, if the expression has
-    /// this form.
-    fn lambert(&self, expression: &Expr, kernels: &[Kernel]) -> Option<Expr> {
+    /// The solutions of `{$(alpha x + beta) e^(gamma x + delta) + r = 0$}`,
+    /// `{$x = W(a) / gamma - beta / alpha$}` with `{$a = -r gamma e^(gamma beta / alpha - delta) / alpha$}`, if the
+    /// expression has this form: none for `{$a < -1/e$}`, `{$W = -1$}` for `{$a = -1/e$}`, both branches
+    /// `{$W_0(a)$}` and `{$W_(-1)(a)$}` for `{$-1/e < a < 0$}`, and only `{$W_0(a)$}` otherwise (or when the sign
+    /// of `a` is unknown).
+    fn lambert(&self, expression: &Expr, kernels: &[Kernel]) -> Option<Vec<Expr>> {
         let [kernel] = kernels else {
             return None;
         };
@@ -408,7 +414,20 @@ impl Inverter {
         let (beta, delta) = (subs(&p, x, &zero), subs(q, x, &zero));
         let shift = &beta / &alpha;
         let argument = -(&r * &gamma) * fun(Context::EXP, &gamma * &shift - delta) / &alpha;
-        Some(fun(Context::LAMBERTW, argument) / gamma - shift)
+        let solution = |w: Expr| &w / &gamma - &shift;
+        let branch_point =
+            constant_sign(&(&argument + &fun(Context::EXP, value(Rational::from(-1)))));
+        Some(match branch_point {
+            Some(Ordering::Less) => vec![],
+            Some(Ordering::Equal) => vec![solution(value(Rational::from(-1)))],
+            _ => {
+                let mut res = vec![solution(fun(Context::LAMBERTW, argument.clone()))];
+                if branch_point.is_some() && constant_sign(&argument) == Some(Ordering::Less) {
+                    res.push(solution(fun(Context::lambertw_m1(), argument)));
+                }
+                res
+            }
+        })
     }
 }
 

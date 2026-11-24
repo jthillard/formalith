@@ -364,17 +364,34 @@ fn has_function(term: &Term<R<Rational>>) -> bool {
 }
 
 /// The roots of the cyclotomic polynomial `{$Phi_n$}`, `{$cos((2 pi j) / n) + i sin((2 pi j) / n)$}` for
-/// `{$j$}` coprime with `{$n$}`, if their values are radicals.
-fn roots_of_unity(n: usize) -> Option<Vec<Term<C<R<Rational>>>>> {
+/// `{$j$}` coprime with `{$n$}`, with radicals when they are, otherwise left as `sin` and `cos` (`{$Phi_7$}`), with
+/// conjugate roots written with angles in `{$(0, pi)$}`.
+fn roots_of_unity(n: usize) -> Vec<Term<C<R<Rational>>>> {
     let i = Term::constant(C.i(), C);
+    let trig = |ident: Symbol, q: &Rational| {
+        let pi = Term::Symbol(SymbolTerm::new(Context::PI, C));
+        let angle = Term::constant([q.clone(), Rational::ZERO], C) * pi;
+        Term::Fun(Box::new(Fun::new(ident, vec![angle], C))).normalize()
+    };
     (0..n)
         .filter(|j| gcd(*j, n) == 1)
         .map(|j| {
             let q = Rational::from_unsigneds(2 * j as u64, n as u64);
             let convert = |t| C.try_from_expr(t).ok().map(|t| t.normalize());
-            let re = convert(trig_radical(Context::COS, &q)?)?;
-            let im = convert(trig_radical(Context::SIN, &q)?)?;
-            Some((re + &i * &im).expand())
+            let radicals = || {
+                let re = convert(trig_radical(Context::COS, &q)?)?;
+                let im = convert(trig_radical(Context::SIN, &q)?)?;
+                Some((re + &i * &im).expand())
+            };
+            radicals().unwrap_or_else(|| {
+                // `{$cos(2 pi - a) = cos(a)$}`, `{$sin(2 pi - a) = -sin(a)$}`
+                if q > 1 {
+                    let q = Rational::from(2) - q;
+                    trig(Context::COS, &q) - &i * &trig(Context::SIN, &q)
+                } else {
+                    trig(Context::COS, &q) + &i * &trig(Context::SIN, &q)
+                }
+            })
         })
         .collect()
 }
@@ -474,7 +491,7 @@ impl PolynomialRoots for C<R<Rational>> {
                     .map(|c| c / coefficients.last().expect("The degree is at least one"))
                     .collect();
                 if let Some(n) = cyclotomic_order(&monic) {
-                    return roots_of_unity(n);
+                    return Some(roots_of_unity(n));
                 }
                 if coefficients.len() == 5 {
                     let convert =
@@ -525,11 +542,6 @@ impl PolynomialRoots for Zn {
 }
 
 impl PolynomialRoots for Z<Integer> {
-    // Factoring isn't supported in `Z`
-    fn factor_term(_: &Term<Self>) -> Option<Term<Self>> {
-        None
-    }
-
     /// Integer roots divide the constant coefficient, once the roots `0` are removed.
     fn roots(coefficients: &[Term<Self>]) -> Option<Vec<Term<Self>>> {
         let mut coefficients = values(coefficients)?;

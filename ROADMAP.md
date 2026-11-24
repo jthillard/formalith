@@ -43,13 +43,6 @@ Ideas and known gaps, roughly by area. `AGENTS.md` describes what exists; this f
 - Irrational residues above `QQ(x)` in Rothstein-Trager.
 - `Ci` only for positive arguments.
 
-## Solving
-
-- Cyclotomic polynomials whose roots aren't classic radicals (`Φ_7`).
-- The `W_-1` branch of `lambertw`.
-- The polynomial solver hangs on `x + sqrt(x)` (worked around by `solve/inverse.rs`).
-- `Term::factor` hangs over `Z`.
-
 ## Inequalities and optimization
 
 - Inequalities: parameters, more than 3 unknowns or 40 polynomials.

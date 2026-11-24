@@ -609,6 +609,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {{
             "gamma(x)",
             "factorial(x)",
             "lambertw(x)",
+            "lambertw(x, -1)",
             "polygamma(0, x)",
             "polygamma(1, x)",
             "polygamma(2, x)",

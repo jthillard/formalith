@@ -177,6 +177,7 @@ impl Semiring for Z<Integer> {
                         let prime = Natural::try_from(&n.value).is_ok_and(|n| primes::is_prime(&n));
                         return Term::Value(Value::new(Integer::from(u8::from(prime)), *self));
                     }
+                    (Context::FACTOR, Some([arg])) => return arg.factor(),
                     (Context::FACTORIAL, Some([Term::Value(n)])) => {
                         if let Ok(n) = u64::try_from(&n.value)
                             && n <= MAX_FACTORIAL

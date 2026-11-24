@@ -173,6 +173,7 @@ fn special_functions() {
             "zeta(x + 2)",
             "lambertw(x)",
             "lambertw(-x/10)",
+            "lambertw(-x/10, -1)",
             "erf(x)",
             "erfi(x)",
             "erf(x) + erf(-x/2)",

@@ -69,6 +69,7 @@ fn curated_roundtrips() {
             "R; piecewise(x < 0, -x, x^2)",
             "R; floor(x/2) + ceil(-x) + sign(x)",
             "R; lambertw(x) + erf(x) - Si(x)",
+            "R; lambertw(x, -1) + lambertw(x)",
             "R; -(-(-x))",
             "R; 2^(x + 1) - 3^(-x)",
             "Z; (x - 3)^2*(x + y)",

@@ -8,6 +8,9 @@ use formalith::{
     try_parse,
 };
 
+mod common;
+use common::line;
+
 #[test]
 fn expand() {
     assert_eq!(parse!("expand((x+1)^2)", R), parse!("x^2+2*x+1", R));
@@ -498,6 +501,18 @@ fn lambert_w() {
         parse!("lambertw(x)/(x*(1 + lambertw(x)))", R)
     );
     assert_eq!(parse!("sign(lambertw(2))", R), parse!("1", R));
+    // The branch `{$W_(-1)$}`
+    assert_eq!(parse!("lambertw(x, 0)", R), parse!("lambertw(x)", R));
+    assert_eq!(parse!("lambertw(-2*exp(-2), -1)", R), parse!("-2", R));
+    assert_eq!(parse!("lambertw(-exp(-1), -1)", R), parse!("-1", R));
+    // `{$W_0(-2 e^(-2)) != -2$}`
+    assert!(matches!(parse!("lambertw(-2*exp(-2))", R), Term::Fun(_)));
+    assert_eq!(
+        parse!("diff(lambertw(x, -1), x)", R),
+        parse!("lambertw(x, -1)/(x*(1 + lambertw(x, -1)))", R)
+    );
+    assert_eq!(parse!("sign(lambertw(x, -1))", R), parse!("-1", R));
+    assert_eq!(line(&parse!("lambertw(x, -1)", R)), "lambertw(x, -1)");
 }
 
 #[test]

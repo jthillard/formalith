@@ -671,6 +671,14 @@ fn collect_conditions(term: &Expr, x: Symbol, res: &mut Vec<(Expr, Condition)>) 
                     (u.clone() + fun(Context::EXP, -one())).normalize(),
                     Condition::NonNegative,
                 )),
+                // `{$-1/e <= u < 0$}`
+                ident if ident == Context::lambertw_m1() => {
+                    res.push((
+                        (u.clone() + fun(Context::EXP, -one())).normalize(),
+                        Condition::NonNegative,
+                    ));
+                    res.push(((-u.clone()).normalize(), Condition::Positive));
+                }
                 _ => {}
             }
         }
