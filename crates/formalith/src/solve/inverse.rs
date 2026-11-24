@@ -363,6 +363,10 @@ impl Inverter {
                         single(if sin { half_pi } else { int(0) } + period)
                     }
                     (_, Some(Ordering::Equal)) => single(if sin { -half_pi } else { pi } + period),
+                    // The two classes modulo `{$2 pi$}` merged into one modulo `pi`
+                    _ if cmp(0) == Some(Ordering::Equal) => {
+                        single(if sin { int(0) } else { half_pi } + pi * k())
+                    }
                     _ if sin => {
                         let asin = f(Context::ASIN, c.clone());
                         Ok(vec![

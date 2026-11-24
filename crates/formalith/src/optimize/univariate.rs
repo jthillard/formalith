@@ -9,7 +9,8 @@
 //! the lowest value isn't reached when there is no such point.
 //!
 //! Periodic critical points `{$c(k)$}`, `k` being an integer parameter, are listed on finite intervals, and kept
-//! over ℝ when `{$f(c(k))$}` doesn't depend on `k` (limits at infinity then don't exist, as `f` oscillates).
+//! over ℝ when `{$f(c(k))$}` doesn't depend on `k` (limits at infinity then don't exist, as `f` oscillates), after
+//! splitting them into classes of `k` modulo a small `m` when that makes it so (`{$pi k$}` for `{$cos x$}`).
 //!
 //! Local minima, relative to the domain, use the same [`Analysis`]: a critical point is one when the derivative
 //! goes from negative to positive (signs sampled between the sorted critical points of each interval), a special
@@ -34,7 +35,7 @@ use crate::{
         approx::approximate,
         expr::{
             DIGITS, Expr, constant_sign, depends, fun, half, has_special_constant, infinity,
-            infinity_sign, is_infinite, one, subs, try_map_operands, value, zero,
+            infinity_sign, is_infinite, one, subs, try_map_operands, value, variable, zero,
         },
         sign::is_integer,
     },
@@ -167,7 +168,8 @@ impl<'a> Analysis<'a> {
         let (critical, families) = if steps.is_empty() {
             let equation = Equation::new(derivative.clone(), zero());
             let critical = roots(R.solve_for(&[equation], &[x])?, x)?;
-            periodic(critical, &parameters, lower, upper)?
+            let (critical, families) = periodic(critical, &parameters, lower, upper)?;
+            (critical, split_classes(f, x, families)?)
         } else {
             (vec![], vec![])
         };
@@ -537,6 +539,42 @@ fn parameters(f: &Expr, point: &Expr) -> Vec<Symbol> {
         .into_iter()
         .filter(|s| (is_integer_parameter(*s) || is_natural_parameter(*s)) && !used.contains(s))
         .collect()
+}
+
+/// The periodic points `families`, each `{$c(k)$}` split into the classes `{$c(m k + r)$}` of `k` modulo the
+/// smallest `m` such that the value of `f` and its second derivative there don't depend on `k`, like `{$pi k$}` for
+/// `{$cos x$}` into `{$2 pi k$}` and `{$pi + 2 pi k$}` (unsplit when there is none up to 4).
+fn split_classes(f: &Expr, x: Symbol, families: Vec<Expr>) -> Result<Vec<Expr>, SolveError> {
+    let second = f.derivative(x).normalize().derivative(x).normalize();
+    let mut res = vec![];
+    for point in families {
+        let [k] = parameters(f, &point)[..] else {
+            res.push(point);
+            continue;
+        };
+        let mut assumptions = Assumptions::current();
+        assumptions.assume(k, Assumption::INTEGER).map_err(error)?;
+        let _guard = assumptions.enter();
+        let constant = |point: &Expr| {
+            [f, &second]
+                .into_iter()
+                .all(|g| !depends(&subs(g, x, point).expand(), k))
+        };
+        let classes = (1..=4).find_map(|m: i64| {
+            let classes: Vec<Expr> = (0..m)
+                .map(|r| {
+                    let index = value(Rational::from(m)) * variable(k) + value(Rational::from(r));
+                    subs(&point, k, &index).expand()
+                })
+                .collect();
+            classes.iter().all(constant).then_some(classes)
+        });
+        match classes {
+            Some(classes) => res.extend(classes),
+            None => res.push(point),
+        }
+    }
+    Ok(res)
 }
 
 /// `Some(bound)` for a finite bound.

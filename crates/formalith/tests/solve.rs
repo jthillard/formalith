@@ -629,10 +629,7 @@ fn trigonometric_equations() {
         solve("sin(x) = 1/2"),
         ok("x = frac(1, 6) pi+2 pi k \\ x = frac(5, 6) pi+2 pi k \\ k in ZZ")
     );
-    assert_eq!(
-        solve("cos(x) = 0"),
-        ok("x = -frac(1, 2) pi+2 pi k \\ x = frac(1, 2) pi+2 pi k \\ k in ZZ")
-    );
+    assert_eq!(solve("cos(x) = 0"), ok("x = frac(1, 2) pi+pi k \\ k in ZZ"));
     assert_eq!(solve("cos(x) = 1"), ok("x = 2 pi k \\ k in ZZ"));
     assert_eq!(
         solve("tan(2*x) = 1"),
@@ -706,9 +703,7 @@ fn trigonometric_equations_of_a_common_angle() {
     // `{$1 = sin^2 x + cos^2 x$}` makes it homogeneous, `{$cos x = 0$}` is a solution too
     assert_eq!(
         solve("sin(x)^2 + sin(x)*cos(x) = 1"),
-        ok(
-            "x = -frac(1, 2) pi+2 pi k \\ x = frac(1, 4) pi+pi k \\ x = frac(1, 2) pi+2 pi k \\ k in ZZ"
-        )
+        ok("x = frac(1, 4) pi+pi k \\ x = frac(1, 2) pi+pi k \\ k in ZZ")
     );
     // Linear: `{$R sin(x + phi) = c$}`
     assert_eq!(
@@ -740,9 +735,7 @@ fn trigonometric_equations_of_a_common_angle() {
     // Zeros of the cosines dividing `tan` are excluded
     assert_eq!(
         solve("tan(x) = 2*sin(x)"),
-        ok(
-            "x = 2 pi k \\ x = -frac(1, 3) pi+2 pi k \\ x = frac(1, 3) pi+2 pi k \\ x = pi+2 pi k \\ k in ZZ"
-        )
+        ok("x = pi k \\ x = -frac(1, 3) pi+2 pi k \\ x = frac(1, 3) pi+2 pi k \\ k in ZZ")
     );
     assert_eq!(solve("tan(x)*cos(x) = 1"), ok("\"no solution\""));
 }
@@ -788,16 +781,14 @@ fn unrelated_angles() {
     assert_eq!(
         solve("sin(x) = cos(x^2)"),
         ok(
-            "x = -frac(1, 4) sqrt(8 pi+64 pi n+4)-frac(1, 2) \\ x = frac(1, 4) sqrt(8 pi+64 pi n+4)-frac(1, 2) \\ \
-            x = -frac(1, 4) sqrt(24 pi+64 pi n+4)+frac(1, 2) \\ x = frac(1, 4) sqrt(24 pi+64 pi n+4)+frac(1, 2) \\ \
-            x = -frac(1, 4) sqrt(40 pi+64 pi n+4)-frac(1, 2) \\ x = frac(1, 4) sqrt(40 pi+64 pi n+4)-frac(1, 2) \\ \
-            x = -frac(1, 4) sqrt(56 pi+64 pi n+4)+frac(1, 2) \\ x = frac(1, 4) sqrt(56 pi+64 pi n+4)+frac(1, 2) \\ \
+            "x = -frac(1, 4) sqrt(8 pi+32 pi n+4)-frac(1, 2) \\ x = frac(1, 4) sqrt(8 pi+32 pi n+4)-frac(1, 2) \\ \
+            x = -frac(1, 4) sqrt(24 pi+32 pi n+4)+frac(1, 2) \\ x = frac(1, 4) sqrt(24 pi+32 pi n+4)+frac(1, 2) \\ \
             n in NN"
         )
     );
     assert_eq!(
         solve("cos(x) + cos(x^2) = 0").map(|s| s.matches(" \\ ").count()),
-        Ok(8)
+        Ok(4)
     );
     // Unrelated `tan` and coefficients of different sizes are unsupported
     assert!(solve("sin(x) = 2*cos(x^2)").is_err());
