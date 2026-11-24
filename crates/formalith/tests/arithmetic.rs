@@ -6,8 +6,7 @@ use formalith::{
 };
 use malachite::Rational;
 
-mod common;
-use common::line;
+use crate::common::line;
 
 fn rational(num: i64, den: i64) -> Term<R<Rational>> {
     Rational::from_signeds(num, den).into()

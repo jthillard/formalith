@@ -1,9 +1,8 @@
 //! Inequalities checked against their definition: points sampled in the region of the result satisfy every
 //! relation, and random points are in the region exactly when they satisfy every relation (away from the
 //! boundaries, where rounding decides).
-mod common;
 
-use common::{
+use crate::common::{
     harness::{Verdict, assert_pass, case_rng, check_all, fuzz},
     numeric::{Domain, decimal, eval, number, split_top, symbols},
     random,

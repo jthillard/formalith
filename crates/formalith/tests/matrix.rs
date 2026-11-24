@@ -9,8 +9,7 @@ use formalith::{
 };
 use malachite::{Integer, Rational};
 
-mod common;
-use common::{line, pretty};
+use crate::common::{line, pretty};
 
 fn matrix(height: usize, width: usize, data: &[i64]) -> Matrix<R<Rational>> {
     assert_eq!(data.len(), height * width);

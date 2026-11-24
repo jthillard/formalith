@@ -1,8 +1,7 @@
 //! Integration checked against its definition: the derivative of an antiderivative is the integrand, and definite
 //! integrals agree with a numerical quadrature.
-mod common;
 
-use common::{
+use crate::common::{
     harness::{Verdict, assert_pass, case_rng, check_all, fuzz},
     numeric::{Domain, Function, close, decimal, env_with, eval, number},
     random,

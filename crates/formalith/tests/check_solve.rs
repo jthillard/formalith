@@ -1,9 +1,8 @@
 //! Equation solving checked against its definition: every alternative of the solution, substituted in every
 //! equation, satisfies it (at random values of the free unknowns, parameters and integers `k`), and a known
 //! solution of a generated system is among the alternatives.
-mod common;
 
-use common::{
+use crate::common::{
     harness::{Verdict, assert_pass, case_rng, check_all, fuzz},
     numeric::{close, eval_in, number, parse_number, split_top, symbols},
     random,
@@ -22,7 +21,7 @@ fn value(set: SetChoice, env: &Environment, expr: &str) -> Option<String> {
         number(env, expr).map(|v| v.to_string())
     } else {
         let mut env = env.clone();
-        common::guard::no_panic(|| eval_in(set, &mut env, expr)).and_then(Result::ok)
+        crate::common::guard::no_panic(|| eval_in(set, &mut env, expr)).and_then(Result::ok)
     }
 }
 
@@ -103,7 +102,7 @@ fn solve(input: &str) -> Verdict {
                 } else if set == SetChoice::Z {
                     rng.range(-5, 5).to_string()
                 } else {
-                    common::numeric::Domain::Any.sample(&mut rng)
+                    crate::common::numeric::Domain::Any.sample(&mut rng)
                 };
                 eval_in(set, &mut env, &format!("{s} := {v}")).unwrap();
                 point.push(format!("{s} = {v}"));

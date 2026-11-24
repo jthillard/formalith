@@ -3,8 +3,7 @@ use formalith::{
     dynamic::SetChoice, field::real::R, parse, parser::environment::Environment, try_parse,
 };
 
-mod common;
-use common::{line, pretty, typst};
+use crate::common::{line, pretty, typst};
 
 fn approx(input: &str) -> String {
     line(&parse!(input, R))

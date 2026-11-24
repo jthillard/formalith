@@ -5,8 +5,7 @@ use formalith::{
     printer::{Print, PrintOptions},
 };
 
-mod common;
-use common::{line, pretty, typst};
+use crate::common::{line, pretty, typst};
 
 #[test]
 fn print_values() {

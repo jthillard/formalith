@@ -4,8 +4,7 @@ use formalith::{
     parser::environment::Environment,
 };
 
-mod common;
-use common::{eval_statements, line};
+use crate::common::{eval_statements, line};
 
 /// Evaluate the statements in `R` with shared definitions and assumptions, returning the last result: an
 /// expression on one line, or the printed statement, without trailing spaces.

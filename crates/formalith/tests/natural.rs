@@ -7,8 +7,7 @@ use formalith::{
 };
 use malachite::Natural;
 
-mod common;
-use common::line;
+use crate::common::line;
 
 #[test]
 fn constants() {

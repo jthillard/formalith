@@ -8,8 +8,7 @@ use formalith::{
     try_parse,
 };
 
-mod common;
-use common::line;
+use crate::common::line;
 
 #[test]
 fn expand() {

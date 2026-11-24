@@ -1,9 +1,8 @@
 //! `approx` checked against an independent evaluation and against itself: at rational points, `approx(f, 40)`
 //! agrees with the f64 evaluation of `Numeric` (libm and its own special functions), and `approx(f, 15)` is
 //! `approx(f, 40)` rounded to 15 significant digits.
-mod common;
 
-use common::{
+use crate::common::{
     harness::{Verdict, assert_pass, case_rng, check_all, fuzz},
     numeric::{Domain, eval},
     rng::Rng,
@@ -56,7 +55,8 @@ fn to_f64(value: &Rational) -> f64 {
 fn approx_at(f: &str, point: &str, digits: u64) -> Option<Rational> {
     let mut env = Environment::new();
     eval(&mut env, &format!("x := {point}")).ok()?;
-    let output = common::guard::no_panic(|| eval(&mut env, &format!("approx({f}, {digits})")))?;
+    let output =
+        crate::common::guard::no_panic(|| eval(&mut env, &format!("approx({f}, {digits})")))?;
     parse_decimal(output.ok()?.trim())
 }
 
@@ -68,7 +68,7 @@ fn approx(input: &str) -> Verdict {
         (Some(lo), Some(hi)) => Domain::Range(lo.parse().unwrap(), hi.parse().unwrap()),
         _ => Domain::Range(0.2, 3.0),
     };
-    let Some(term) = common::guard::no_panic(|| try_parse!(f, R).ok()).flatten() else {
+    let Some(term) = crate::common::guard::no_panic(|| try_parse!(f, R).ok()).flatten() else {
         return Verdict::Skip(format!("can't parse `{f}`"));
     };
     let numeric = Numeric::compile(&term, &[symbol!("x")]);

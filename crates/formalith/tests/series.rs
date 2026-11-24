@@ -1,8 +1,7 @@
 //! Series expansions with `series`, computed with the series of the Gruntz algorithm.
 use formalith::{field::real::R, parse};
 
-mod common;
-use common::{line, split_remainder};
+use crate::common::{line, split_remainder};
 
 /// The terms of a series, without its remainder.
 fn series(input: &str) -> String {

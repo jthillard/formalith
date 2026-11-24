@@ -1,8 +1,7 @@
 //! Sums and products with `sum` and `product`: closed forms, Gosper's algorithm, infinite sums and products.
 use formalith::{dynamic::SetChoice, field::real::R, parse};
 
-mod common;
-use common::{eval_statements, line, typst};
+use crate::common::{eval_statements, line, typst};
 
 fn eval(input: &str) -> String {
     line(&parse!(input, R))
@@ -159,7 +158,8 @@ fn printing() {
         "sum_(k = 1)^(n) k^k"
     );
     assert_eq!(
-        typst(&parse!("product(x + k, k, 1, oo)", R)),
-        "product_(k = 1)^(oo) (k+x)"
+        // One symbol: the order of the terms of `x + k` depends on the symbol the process interned first
+        typst(&parse!("product(k^2 + 1, k, 1, n)", R)),
+        "product_(k = 1)^(n) (k^2+1)"
     );
 }

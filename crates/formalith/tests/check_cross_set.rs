@@ -1,8 +1,7 @@
 //! The same integer expression evaluated in `Z`, `R`, `C` and `Z/n` gives compatible values: equal in `Z`, `R`
 //! and `C`, and the `Z` value reduced modulo `n` in `Z/n`.
-mod common;
 
-use common::{
+use crate::common::{
     harness::{Verdict, check_all, fuzz},
     numeric::eval_in,
     random,

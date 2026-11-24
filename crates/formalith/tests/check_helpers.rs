@@ -1,7 +1,6 @@
 //! Sanity checks of the self-checking helpers in `common`.
-mod common;
 
-use common::{
+use crate::common::{
     harness::case_rng,
     numeric::{Check, Domain, env_with, equivalent, number},
     random,
@@ -36,7 +35,7 @@ fn assumptions_restrict_sampling() {
     assert_eq!(Domain::assumed(&env, "x"), Domain::Positive);
     assert!(matches!(Domain::assumed(&env, "n"), Domain::Integer(..)));
     let mut rng = case_rng("assumed");
-    let vars = common::numeric::assumed_vars(&env, &["x"]);
+    let vars = crate::common::numeric::assumed_vars(&env, &["x"]);
     assert!(matches!(
         equivalent(&env, "sqrt(x^2)", "x", &vars, &mut rng),
         Check::Equal

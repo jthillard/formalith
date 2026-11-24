@@ -4,8 +4,7 @@ use formalith::{
     parse, symbol,
 };
 
-mod common;
-use common::{line, typst};
+use crate::common::{line, typst};
 
 fn eval(input: &str) -> String {
     line(&parse!(input, R.get_polynomial_ring(symbol!("x"))))

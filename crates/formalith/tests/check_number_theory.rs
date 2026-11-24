@@ -2,9 +2,8 @@
 //! a deterministic Miller-Rabin test, `factorint` by multiplying its rows back with prime bases, `gcd` and `lcm`
 //! against Euclid's algorithm, inverses modulo `n` by multiplying back, and `factor` modulo a prime by expanding
 //! its result back.
-mod common;
 
-use common::{
+use crate::common::{
     harness::{Verdict, check_all, fuzz},
     numeric::{eval_in, split_top},
     random,

@@ -1,9 +1,8 @@
 //! Ordinary differential equations with `dsolve`.
-mod common;
 
 /// Evaluate `statement` in `set`, printed as Typst so that the output doesn't depend on colors.
 fn dsolve_in(set: &str, statement: &str) -> Result<String, String> {
-    common::eval_statements(set.parse().unwrap(), &[statement], true)
+    crate::common::eval_statements(set.parse().unwrap(), &[statement], true)
 }
 
 fn dsolve(statement: &str) -> Result<String, String> {

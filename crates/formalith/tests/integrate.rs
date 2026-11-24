@@ -9,8 +9,7 @@ use formalith::{
     term::{Fun, Normalize, Term},
 };
 
-mod common;
-use common::line;
+use crate::common::line;
 
 fn integrate(input: &str) -> String {
     line(&parse!(input, R))

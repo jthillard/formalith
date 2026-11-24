@@ -1,8 +1,7 @@
 //! Series checked numerically: the difference between `f` and `series(f, x, a, n)` is `O((x - a)^n)`, so its
 //! ratio to `h^n` stays bounded as `h -> 0` (at infinity, the ratio to `x^-n` as `x -> oo`).
-mod common;
 
-use common::{
+use crate::common::{
     harness::{Verdict, check_all, fuzz},
     numeric::{Function, env_with, eval},
     random,

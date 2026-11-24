@@ -7,9 +7,8 @@
 //! So as not to rely on `approx`, `re` and `im` of `C`, a result `F` is read as `A + i B` by replacing `i` by a
 //! symbol `chk_i` in `R` (`A` is `F` at `chk_i = 0`, `B` the difference at `chk_i = 1`), after checking that it is
 //! affine in `chk_i`.
-mod common;
 
-use common::{
+use crate::common::{
     harness::{Verdict, assert_pass, case_rng, check_all, fuzz},
     numeric::{close, eval, eval_in, number},
     rng::Rng,
@@ -197,7 +196,7 @@ fn calculus(input: &str) -> Verdict {
     let mut rng = case_rng(input);
     let mut checked = 0;
     let c = |env: &mut Environment, s: &str| {
-        common::guard::no_panic(|| eval_in(SetChoice::C, env, s)).and_then(Result::ok)
+        crate::common::guard::no_panic(|| eval_in(SetChoice::C, env, s)).and_then(Result::ok)
     };
     // Values and derivatives at points
     for _ in 0..3 {

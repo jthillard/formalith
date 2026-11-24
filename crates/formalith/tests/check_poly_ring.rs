@@ -1,9 +1,8 @@
 //! Polynomial rings `K[x]` checked against the definitions of their operations: `p = quo(p, q) q + rem(p, q)` with
 //! `degree(rem(p, q)) < degree(q)`, `gcd(p, q)` divides `p` and `q` and leaves coprime cofactors, and
 //! `gcd(p, q) lcm(p, q)` is `p q` up to a constant factor.
-mod common;
 
-use common::{
+use crate::common::{
     harness::{Verdict, check_all, fuzz},
     numeric::eval_in,
     random,

@@ -1,9 +1,8 @@
 //! The Gamma family checked against functional equations at random points, and exact values (at integers,
 //! half-integers, even zeta arguments...) against the numerical algorithm at a point moved by `10^-25`, where no
 //! exact rule applies.
-mod common;
 
-use common::{
+use crate::common::{
     harness::{Verdict, case_rng, check_all},
     numeric::{Domain, close, env_with, equivalent, number},
 };

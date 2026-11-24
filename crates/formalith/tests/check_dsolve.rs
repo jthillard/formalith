@@ -1,9 +1,8 @@
 //! Differential equations checked against their definition: each solution `y(x) = g`, substituted in the
 //! equation, makes it vanish for random values of `x` and of the constants `c_1, c_2...`, and satisfies the
 //! initial conditions.
-mod common;
 
-use common::{
+use crate::common::{
     harness::{Verdict, assert_pass, case_rng, check_all, fuzz},
     numeric::{Domain, Function, close, env_with, equivalent, eval},
     random,
@@ -85,11 +84,11 @@ fn dsolve(input: &str) -> Verdict {
         vars.extend(names.iter().map(|c| (c.as_str(), Domain::Range(-2.0, 2.0))));
         let mut rng = case_rng(input);
         match equivalent(&env, &l, &r, &vars, &mut rng) {
-            common::numeric::Check::Differ(why) => {
+            crate::common::numeric::Check::Differ(why) => {
                 return Verdict::Wrong(format!("y(x) = {g} doesn't satisfy the equation: {why}"));
             }
-            common::numeric::Check::Equal => checked += 1,
-            common::numeric::Check::Inconclusive(_) => {}
+            crate::common::numeric::Check::Equal => checked += 1,
+            crate::common::numeric::Check::Inconclusive(_) => {}
         }
         for condition in &conditions {
             // `y'(a) = b`
@@ -102,7 +101,7 @@ fn dsolve(input: &str) -> Verdict {
             };
             let (Some(got), Some(want)) = (
                 d.at(&[point.to_owned()]),
-                common::numeric::number(&env, value),
+                crate::common::numeric::number(&env, value),
             ) else {
                 continue;
             };

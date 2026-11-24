@@ -3,8 +3,7 @@ use formalith::{
     dynamic::SetChoice, field::modular::Zn, parse, parser::environment::Environment, try_parse,
 };
 
-mod common;
-use common::{line, typst};
+use crate::common::{line, typst};
 
 fn eval(input: &str, n: u64) -> String {
     line(&parse!(input, Zn::new(n)))

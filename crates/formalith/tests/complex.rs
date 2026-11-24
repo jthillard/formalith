@@ -6,8 +6,7 @@ use formalith::{
     term::Expand,
 };
 
-mod common;
-use common::{line, pretty};
+use crate::common::{line, pretty};
 
 fn eval(input: &str) -> String {
     line(&parse!(input, C))

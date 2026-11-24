@@ -82,7 +82,7 @@ sums, `approx` against floating point...). Their random fuzzers are ignored by d
 
 ```sh
 cargo test --release -p formalith -- --ignored fuzz
-FORMALITH_FUZZ_CASES=500 FORMALITH_SEED=42 cargo test -p formalith --test check_optimize -- --ignored
+FORMALITH_FUZZ_CASES=500 FORMALITH_SEED=42 cargo test -p formalith --test integration check_optimize:: -- --ignored
 ```
 
 A failure prints the seed and the failing inputs. `FORMALITH_SHOW_SKIPPED=1` lists skipped cases,

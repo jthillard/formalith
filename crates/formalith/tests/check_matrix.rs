@@ -1,9 +1,8 @@
 //! Matrix builtins checked against their definitions: `A v = λ v` for eigenvectors, `A K = 0` with `n - rank`
 //! columns for `kernel`, `det` and `trace` against the eigenvalues, `charpoly(A)` vanishing at `A`
 //! (Cayley-Hamilton), `A A^-1 = I`, and the shape properties of `hermite` and `smith` over `Z`.
-mod common;
 
-use common::{
+use crate::common::{
     harness::{Verdict, check_all, fuzz},
     numeric::{env_with, eval, eval_in, number, split_top},
     random,
@@ -345,7 +344,7 @@ fn bug_matrix_sum_of_scalar_multiple_and_power() {
 }
 
 fn regression(input: &str, check: fn(&str) -> Verdict) {
-    common::harness::assert_pass(input, std::time::Duration::from_secs(60), check);
+    crate::common::harness::assert_pass(input, std::time::Duration::from_secs(60), check);
 }
 
 #[test]

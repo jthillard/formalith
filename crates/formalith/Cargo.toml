@@ -8,6 +8,12 @@ license-file.workspace = true
 readme = "../../README.md"
 keywords = ["mathematics", "symbolic", "algebra"]
 categories = ["mathematics", "science"]
+# The files of `tests/` are modules of the single binary `integration` (see `tests/main.rs`)
+autotests = false
+
+[[test]]
+name = "integration"
+path = "tests/main.rs"
 
 [dependencies]
 append-only-vec = "0.1"

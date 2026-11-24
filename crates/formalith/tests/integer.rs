@@ -1,8 +1,7 @@
 //! Expressions over the integers `Z`.
 use formalith::{field::integer::Z, parse, try_parse};
 
-mod common;
-use common::line;
+use crate::common::line;
 
 #[test]
 fn constants() {

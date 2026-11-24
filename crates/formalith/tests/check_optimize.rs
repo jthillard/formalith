@@ -1,9 +1,8 @@
 //! Extrema checked against their definition: the value of `f` printed with each point is `f` at that point, the
 //! point lies in the domain, no sampled point beats a global extremum, and no point of a small neighborhood beats a
 //! local one (the difference being computed exactly by `approx`, so that degenerate extrema like `x^4` count).
-mod common;
 
-use common::{
+use crate::common::{
     harness::{Verdict, assert_pass, case_rng, check_all, fuzz},
     numeric::{Domain, Function, close, env_with, eval, number, split_top, symbols},
     random,

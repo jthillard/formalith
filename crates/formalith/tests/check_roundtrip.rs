@@ -1,9 +1,8 @@
 //! Printing and parsing checked against each other: in every set, the plain printed result of an expression parses
 //! back to the same result (the printer writes what the parser reads, and normalization is idempotent), and the
 //! pretty and Typst printers don't panic.
-mod common;
 
-use common::{
+use crate::common::{
     guard::no_panic,
     harness::{Verdict, assert_pass, check_all, fuzz},
     numeric::eval_in,

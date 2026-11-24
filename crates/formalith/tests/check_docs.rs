@@ -1,9 +1,8 @@
 //! The examples of the documentation of the builtins (`context/docs.rs`) checked against what they compute: every
 //! example evaluates without error or panic, and its hand-written result is the computed one, as the same Typst
 //! text up to spaces or as a numerically equivalent expression.
-mod common;
 
-use common::{
+use crate::common::{
     guard::no_panic,
     harness::case_rng,
     numeric::{Check, Domain, env_with, equivalent, split_top, symbols},

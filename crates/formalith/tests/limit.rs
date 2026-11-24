@@ -3,8 +3,7 @@ use formalith::{
     dynamic::SetChoice, field::real::R, parse, parser::environment::Environment, try_parse,
 };
 
-mod common;
-use common::{line, typst};
+use crate::common::{line, typst};
 
 fn lim(input: &str) -> String {
     line(&parse!(input, R))

@@ -1,8 +1,7 @@
 //! Normalization under assumptions checked numerically on the assumed domain only: with `assume(x > 0)`,
 //! `sqrt(x^2) = x` must hold for positive `x`.
-mod common;
 
-use common::{
+use crate::common::{
     harness::{Verdict, case_rng, check_all, fuzz},
     numeric::{assumed_vars, env_with, equivalent, eval, symbols},
     random,

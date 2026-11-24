@@ -8,8 +8,7 @@ use formalith::{
 };
 use malachite::Rational;
 
-mod common;
-use common::{line, pretty};
+use crate::common::{line, pretty};
 
 macro_rules! poly {
     ($input:expr) => {

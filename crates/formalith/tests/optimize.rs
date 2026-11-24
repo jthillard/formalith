@@ -1,9 +1,8 @@
 //! Global extrema with `argmin` and `argmax`.
-mod common;
 
 /// Evaluate `statements` in `R`, printed as Typst so that the output doesn't depend on colors.
 fn eval(statements: &[&str]) -> Result<String, String> {
-    common::eval_statements("R".parse().unwrap(), statements, true)
+    crate::common::eval_statements("R".parse().unwrap(), statements, true)
 }
 
 fn argmin(statement: &str) -> Result<String, String> {

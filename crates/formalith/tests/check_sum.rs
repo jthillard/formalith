@@ -1,8 +1,7 @@
 //! Sums and products checked against their definitions: a closed form `S(n)` of `sum(f, k, a, n)` satisfies
 //! `S(n) - S(n - 1) = f(n)` and agrees with term by term values, likewise for products with quotients.
-mod common;
 
-use common::{
+use crate::common::{
     harness::{Verdict, assert_pass, check_all, fuzz},
     numeric::{Function, close, env_with, eval, number},
     random,

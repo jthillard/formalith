@@ -1,8 +1,7 @@
 //! Rewriting builtins checked against their definition: `simplify`, `expand`, `factor` and `apart` give a term
 //! equivalent to their argument (numerically, at random points). Also core arithmetic found broken that way.
-mod common;
 
-use common::{
+use crate::common::{
     harness::{Verdict, assert_pass, case_rng, check_all, fuzz},
     numeric::{Domain, env_with, equivalent, eval, symbols},
     random,

@@ -1,8 +1,7 @@
 //! Limits checked numerically: `f` evaluated close to the point (or at large `x` for `oo`) approaches the limit.
 //! Cases are kept well-conditioned (no essential singularities, limits reached at a polynomial rate).
-mod common;
 
-use common::{
+use crate::common::{
     harness::{Verdict, check_all, fuzz},
     numeric::{Function, env_with, eval, number},
     random,

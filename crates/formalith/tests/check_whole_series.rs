@@ -1,8 +1,7 @@
 //! Whole series `series(f, x, a, oo)` checked against the function: inside the disk of convergence (where two
 //! long partial sums agree), the partial sums of the general terms converge to `f`.
-mod common;
 
-use common::{
+use crate::common::{
     harness::{Verdict, assert_pass, case_rng, check_all, fuzz},
     numeric::{Domain, close, decimal, eval, number, split_top, symbols},
     rng::Rng,

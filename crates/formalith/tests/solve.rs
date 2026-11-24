@@ -1,9 +1,8 @@
 //! Solving systems of equations.
-mod common;
 
 /// Evaluate each statement in `set`, returning the result of the last one.
 fn eval_in(set: &str, statements: &[&str], typst: bool) -> Result<String, String> {
-    common::eval_statements(set.parse().unwrap(), statements, typst)
+    crate::common::eval_statements(set.parse().unwrap(), statements, typst)
 }
 
 /// Solve `system` in `set`, printed as Typst so that the output doesn't depend on colors.
