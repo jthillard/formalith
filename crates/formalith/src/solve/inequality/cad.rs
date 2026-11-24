@@ -17,7 +17,7 @@
 use std::cmp::Ordering;
 
 use malachite::{
-    Rational,
+    Natural, Rational,
     base::num::{
         arithmetic::traits::{Abs, Ceiling, Floor, Pow, Reciprocal},
         basic::traits::{One, Zero},
@@ -33,7 +33,9 @@ use crate::{
         R,
         approx::{approximate, approximate_fixed},
         expr::{Expr, depends, subs, value, variable, zero},
+        rootof,
     },
+    integrate::poly::Poly,
     solve::{
         Equation, Solution, Solve, SolveError, plain,
         polynomial::{MAX_SYLVESTER_SIZE, polynomial_form, sylvester_determinant},
@@ -89,27 +91,44 @@ fn values(solution: Solution<R<Rational>>) -> Vec<Expr> {
     }
 }
 
-/// The polynomial `p` in `x` with its coefficients equal to zero replaced by 0.
+/// Bound on the numerator and denominator of the rationals recognized by [`rational_value`].
+const MAX_RECOGNIZED: u64 = 1_000_000_000_000;
+
+/// The rational equal to the constant `c`, which isn't a value, when its approximation is one with a small
+/// numerator and denominator.
 ///
-/// Over a section, the coefficients are expressions of roots of the projection, which vanish there without
-/// simplifying to 0, like `{$x_0^3 - 3 x_0 + 1$}` for a root `{$x_0 = 2 cos(2 pi / 9)$}`: the roots of
-/// `{$y^2 - (x_0^3 - 3 x_0 + 1)$}` would be square roots of a value approximated as slightly negative.
-/// A coefficient is zero when its approximation at the maximum precision is.
-fn without_vanishing_coefficients(p: &Expr, x: Symbol) -> Result<Expr, SolveError> {
+/// Over a section, the coefficients are expressions of roots of the projection, which may be rationals without
+/// simplifying to them, like `{$x_0^3 - 3 x_0 + 1 = 0$}` for a root `{$x_0 = 2 cos(2 pi / 9)$}`, or a constant
+/// written with nested radicals equal to 1600 at a root of a discriminant. `solve_for` doesn't finish on polynomials
+/// with such coefficients, and the square roots of a vanishing value approximated as slightly negative would be
+/// wrong. A coefficient is a rational when its approximation at [`DIGITS`] digits is within a relative
+/// `{$10^(-35)$}` of one with numerator and denominator below `{$10^12$}` (0 when it is zero at the maximum
+/// precision), which an irrational number would only be by chance.
+fn rational_value(c: &Expr) -> Option<Rational> {
+    let approximation = approximate(c, DIGITS)?;
+    if approximation == 0 {
+        return Some(approximation);
+    }
+    let margin = (&approximation).abs() / Rational::from(10u32).pow(35u64);
+    let rational = simplest(&(&approximation - &margin), &(&approximation + margin));
+    let bound = Natural::from(MAX_RECOGNIZED);
+    (*rational.numerator_ref() <= bound && *rational.denominator_ref() <= bound).then_some(rational)
+}
+
+/// The polynomial `p` in `x` with its coefficients equal to rationals replaced by them, see [`rational_value`].
+fn with_rational_coefficients(p: &Expr, x: Symbol) -> Result<Expr, SolveError> {
     let form = polynomial_form(p, x)?;
-    if form
-        .iter()
-        .all(|c| matches!(c, Term::Value(_)) || approximate(c, DIGITS) != Some(Rational::ZERO))
-    {
+    if form.iter().all(|c| matches!(c, Term::Value(_))) {
         return Ok(p.clone());
     }
     Ok(form
         .into_iter()
         .enumerate()
-        .filter(|(_, c)| {
-            matches!(c, Term::Value(_)) || approximate(c, DIGITS) != Some(Rational::ZERO)
-        })
         .fold(zero(), |res, (degree, c)| {
+            let c = match c {
+                Term::Value(_) => c,
+                _ => rational_value(&c).map_or(c, value),
+            };
             res + c * variable(x).pow(&value(Rational::from(degree)))
         })
         .expand())
@@ -121,7 +140,23 @@ fn real_roots(p: &Expr, x: Symbol) -> Result<Vec<Root>, SolveError> {
         return Ok(vec![]);
     }
     let solution = R.solve_for(&[Equation::new(p.clone(), zero())], &[x])?;
-    values(solution)
+    approximated(values(solution))
+}
+
+/// The rationals of the coefficients `coefficients`, when they are all values.
+fn values_of(coefficients: &[Expr]) -> Option<Vec<Rational>> {
+    coefficients
+        .iter()
+        .map(|c| match c {
+            Term::Value(value) => Some(value.value.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// The roots `values`, approximated.
+fn approximated(values: Vec<Expr>) -> Result<Vec<Root>, SolveError> {
+    values
         .into_iter()
         .map(|value| {
             let approximation = approximate(&value, DIGITS).ok_or_else(|| {
@@ -549,6 +584,67 @@ impl<'a> Cad<'a> {
         )))
     }
 
+    /// The real roots of `p`, the factor `id` over the point of `sample`, when they can be found by elimination.
+    ///
+    /// `solve_for` doesn't finish on polynomials of degree 3 or more whose coefficients are written with nested
+    /// radicals, like a quartic in `{$y$}` over a root of its discriminant in `{$x$}`. Their roots are roots of the
+    /// resultants of the factor with the factors vanishing at the sections of the sample, which eliminate the unknowns
+    /// with irrational values: a polynomial with rational coefficients, whose exact real roots (`rootof`) are kept
+    /// where `p` vanishes. Returns `None` when a resultant vanishes or is too large.
+    fn eliminated_roots(
+        &self,
+        id: usize,
+        p: &Expr,
+        sample: &Sample,
+    ) -> Result<Option<Vec<Root>>, SolveError> {
+        let level = sample.values.len();
+        let x = self.unknowns[level];
+        // The values of sectors are rationals
+        let sectors: Vec<(Symbol, Expr)> = self
+            .point(sample)
+            .into_iter()
+            .zip(&sample.sections)
+            .filter_map(|(value, section)| (!*section).then_some(value))
+            .collect();
+        let mut eliminated = Self::substitute(&self.factors[id], &sectors).expand();
+        for j in (0..level).rev().filter(|j| sample.sections[*j]) {
+            let xj = self.unknowns[j];
+            if !depends(&eliminated, xj) {
+                continue;
+            }
+            let Some(section) = sample
+                .vanishing
+                .iter()
+                .find(|vanishing| self.levels[**vanishing] == j)
+            else {
+                return Ok(None);
+            };
+            let q = Self::substitute(&self.factors[*section], &sectors).expand();
+            let (p_form, q_form) = (polynomial_form(&eliminated, xj)?, polynomial_form(&q, xj)?);
+            if p_form.len() + q_form.len() - 2 > MAX_SYLVESTER_SIZE {
+                return Ok(None);
+            }
+            eliminated = Self::resultant(&p_form, &q_form)?;
+        }
+        let Some(coefficients) = values_of(&polynomial_form(&eliminated, x)?) else {
+            return Ok(None);
+        };
+        if coefficients.iter().all(|c| *c == 0) {
+            return Ok(None);
+        }
+        if coefficients.len() < 2 {
+            return Ok(Some(vec![]));
+        }
+        let roots = rootof::real_roots(&Poly::new(coefficients))
+            .into_iter()
+            .filter(|root| {
+                approximate_fixed(&subs(p, x, root).normalize(), SAME_BOUND_BITS)
+                    .is_some_and(|value| close(&value, &Rational::ZERO))
+            })
+            .collect();
+        approximated(roots).map(Some)
+    }
+
     /// The solutions over the cell of `sample`.
     fn lift(&self, sample: &Sample) -> Result<Description, SolveError> {
         let level = sample.values.len();
@@ -562,7 +658,7 @@ impl<'a> Cad<'a> {
         for id in (0..self.factors.len()).filter(|id| self.levels[*id] == level) {
             let mut p = Self::substitute(&self.factors[id], &point).expand();
             if sample.sections.iter().any(|section| *section) {
-                p = without_vanishing_coefficients(&p, x)?;
+                p = with_rational_coefficients(&p, x)?;
             }
             if p.is_zero() {
                 return Err(SolveError::Inequality(format!(
@@ -570,7 +666,17 @@ impl<'a> Cad<'a> {
                     plain(&self.factors[id])
                 )));
             }
-            roots.extend(real_roots(&p, x)?.into_iter().map(|root| (root, vec![id])));
+            let form = polynomial_form(&p, x)?;
+            let eliminated = if form.len() > 3 && values_of(&form).is_none() {
+                self.eliminated_roots(id, &p, sample)?
+            } else {
+                None
+            };
+            let found = match eliminated {
+                Some(found) => found,
+                None => real_roots(&p, x)?,
+            };
+            roots.extend(found.into_iter().map(|root| (root, vec![id])));
         }
         roots.sort_by(|(a, _), (b, _)| a.approximation.cmp(&b.approximation));
         let mut merged: Vec<(Root, Vec<usize>)> = vec![];

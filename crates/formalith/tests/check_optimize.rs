@@ -554,3 +554,11 @@ fn bug_critical_points_of_polynomial_times_exponential() {
     regression("extrema((5*x^2 - 1)*exp(2*x), x, 1, 2); exists");
     regression("extrema((x^2 + 2*x - 5)*exp(x), x)");
 }
+
+#[test]
+fn bug_degenerate_section_of_the_minimum() {
+    // `{$f < m$}` lifted `{$256 y^4 + 1280 y^2 + c$}` over a root of the projection where `{$c = 1600$}` was written
+    // with nested radicals, on which `solve_for` didn't finish
+    regression("extrema(x^4 + y^4 + (-2*x^3 + -3 + 6*y^2), x, y)");
+    regression("extrema(x^4 + y^4 + (-1*x^3 + -2 + 5*y^2), x, y)");
+}

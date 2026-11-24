@@ -322,6 +322,15 @@ fn quadratic_with_symbolic_coefficients() {
 }
 
 #[test]
+fn vanishing_divisors() {
+    // `{$y = (4 - x^2)/x$}` assumes `{$x != 0$}`, the case `{$x = 0$}` being another branch, but the numerator of
+    // `{$y^3 + x^2$}` after the substitution had a factor `{$x$}`, giving `{$x = 0, y = 4/0$}`
+    let solutions = solve("x*y + x^2 - 4 = 0, y^3 + x^2 = 0").unwrap();
+    assert_eq!(solutions.split(" \\ ").count(), 2, "{solutions}");
+    assert!(solutions.contains("rootof"), "{solutions}");
+}
+
+#[test]
 fn nonlinear_systems() {
     assert_eq!(
         solve("x^2 + y^2 = 1, x = y"),

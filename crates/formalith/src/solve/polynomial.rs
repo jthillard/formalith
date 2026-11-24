@@ -77,6 +77,7 @@ pub(super) fn solve<T: Ring>(
             .collect(),
         unknowns: unknowns.to_vec(),
         assignments: vec![],
+        nonzero: vec![],
     };
     let mut solutions = vec![];
     branch.solve(0, &mut solutions)?;
@@ -839,6 +840,8 @@ struct Branch<T: Ring> {
     unknowns: Vec<Symbol>,
     /// Assigned unknowns, in terms of the remaining unknowns.
     assignments: Assignments<T>,
+    /// Terms assumed non-zero, divided by in the assignments, the case where they vanish being another branch.
+    nonzero: Vec<Term<T>>,
 }
 
 impl<T: Ring> Branch<T> {
@@ -894,9 +897,19 @@ impl<T: Ring> Branch<T> {
         Ok(())
     }
 
-    /// Remove equations which are zero, or repeated. Returns `false` if an equation without unknowns isn't zero,
-    /// or one with unknowns can't be zero under the assumptions, so that the branch has no solution.
+    /// Remove equations which are zero, or repeated, and non-zero terms without unknowns. Returns `false` if an
+    /// equation without unknowns isn't zero, one with unknowns can't be zero under the assumptions, or a term assumed
+    /// non-zero is zero, so that the branch has no solution.
     fn clean_up(&mut self) -> bool {
+        let mut nonzero = vec![];
+        for term in std::mem::take(&mut self.nonzero) {
+            if self.has_unknown(&term) {
+                nonzero.push(term);
+            } else if term.is_zero() || term.simplify().is_zero() {
+                return false;
+            }
+        }
+        self.nonzero = nonzero;
         let mut equations: Vec<Equation<T>> = vec![];
         for equation in std::mem::take(&mut self.equations) {
             if !self.has_unknown(&equation.term) {
@@ -1009,6 +1022,7 @@ impl<T: Ring> Branch<T> {
             zero.equations.push(Equation::new(c.clone()));
             zero.equations.push(Equation::new(d.clone()));
             branches.push(zero);
+            branch.nonzero.push(c.clone());
         }
         branches.push(branch.assign(x, &(-d / c))?);
         Ok(Some(branches))
@@ -1104,6 +1118,7 @@ impl<T: Ring> Branch<T> {
                     zero.equations.push(Equation::new(leading.clone()));
                     zero.equations.push(Equation::new(rest.expand()));
                     branches.push(zero);
+                    branch.nonzero.push(leading.clone());
                 }
                 for root in &roots {
                     branches.push(branch.clone().assign(x, root)?);
@@ -1127,6 +1142,11 @@ impl<T: Ring> Branch<T> {
             // The denominator is assumed to be non-zero
             let term = substitute(&equation.term)?.expand();
             *equation = Equation::new(term.as_fraction(true).0.expand());
+        }
+        for term in &mut self.nonzero {
+            if term.symbols().contains(&x) {
+                *term = substitute(term)?.expand().as_fraction(true).0.expand();
+            }
         }
         for (_, assigned) in &mut self.assignments {
             *assigned = substitute(assigned)?;

@@ -11,6 +11,8 @@
 
 use std::cmp::Ordering;
 
+use malachite::base::num::arithmetic::traits::Sign;
+
 use super::{error, keep_lowest};
 use crate::{
     context::{Context, Symbol},
@@ -18,7 +20,8 @@ use crate::{
         Set,
         real::{
             R, Real,
-            expr::{Expr, constant_sign, depends, has_special_constant, subs},
+            approx::approximate,
+            expr::{DIGITS, Expr, depends, has_special_constant, subs},
         },
     },
     matrix::Matrix,
@@ -84,13 +87,14 @@ pub(super) fn local_min(
                 .collect()
         })
         .collect();
+    let minors = leading_minors(&hessian)?;
     let mut minimizers = vec![];
     for (branch, value) in critical_points(f, unknowns, equations)? {
         let is_point = unknowns
             .iter()
             .all(|x| branch.iter().any(|(symbol, _)| symbol == x));
         let kind = if is_point {
-            classify(&hessian, &branch)?
+            classify(&minors, &branch)?
         } else {
             Kind::Degenerate
         };
@@ -199,30 +203,47 @@ fn is_bound(
         .is_empty())
 }
 
-/// Classify a critical point by the signs of the leading principal minors of the Hessian matrix there.
-fn classify(hessian: &[Vec<Expr>], point: &Assignments<Real>) -> Result<Kind, SolveError> {
-    let n = hessian.len();
+/// The leading principal minors of the Hessian matrix `hessian`, as functions of the unknowns.
+fn leading_minors(hessian: &[Vec<Expr>]) -> Result<Vec<Expr>, SolveError> {
+    (1..=hessian.len())
+        .map(|k| {
+            let entries = hessian[..k]
+                .iter()
+                .flat_map(|row| row[..k].iter().cloned())
+                .collect();
+            Ok(Matrix::new((k, k), entries, R.get_term_set())
+                .det()
+                .map_err(|_| error("can't compute a minor of the Hessian matrix"))?
+                .expand())
+        })
+        .collect()
+}
+
+/// Classify a critical point by the signs of the leading principal minors `minors` of the Hessian matrix there.
+///
+/// The minors are substituted without expansion, which doesn't finish at points with nested radicals (roots of
+/// quartics), and their signs are approximated: a minor is zero when its approximation at the maximum precision is.
+fn classify(minors: &[Expr], point: &Assignments<Real>) -> Result<Kind, SolveError> {
+    let n = minors.len();
     let mut signs = vec![];
-    for k in 1..=n {
-        let entries = hessian[..k]
+    for minor in minors {
+        let minor = point
             .iter()
-            .flat_map(|row| row[..k].iter().map(|entry| at(entry, point)))
-            .collect();
-        let minor = Matrix::new((k, k), entries, R.get_term_set())
-            .det()
-            .map_err(|_| error("can't compute a minor of the Hessian matrix"))?
-            .expand();
-        let sign = if minor.is_zero() {
-            Ordering::Equal
-        } else {
-            constant_sign(&minor).ok_or_else(|| {
-                error(format!(
-                    "can't find the sign of `{}`, a minor of the Hessian matrix at {}",
-                    plain(&minor),
-                    assignments_text(point)
-                ))
-            })?
-        };
+            .fold(minor.clone(), |res, (symbol, value)| {
+                subs(&res, *symbol, value)
+            })
+            .normalize();
+        let sign = match &minor {
+            Term::Value(value) => Some(value.value.sign()),
+            _ => approximate(&minor, DIGITS).map(|approximation| approximation.sign()),
+        }
+        .ok_or_else(|| {
+            error(format!(
+                "can't find the sign of `{}`, a minor of the Hessian matrix at {}",
+                plain(&minor),
+                assignments_text(point)
+            ))
+        })?;
         signs.push(sign);
     }
     Ok(if signs[n - 1] == Ordering::Equal {

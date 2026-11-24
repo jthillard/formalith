@@ -564,3 +564,10 @@ fn bug_vanishing_coefficients_over_sections() {
     regression("y^2 < x^3 - 3*x + 1");
     regression("y^2 >= x^3 - x - 2");
 }
+
+#[test]
+fn bug_rational_coefficients_over_sections() {
+    // Over a root of `{$256 x^4 - 256 x^3 - 1573$}`, the constant coefficient of `{$256 y^4 + 1280 y^2 + c$}` was
+    // `{$c = 1600$}` written with nested radicals, on which `solve_for` didn't finish
+    regression("y^4 + 5*y^2 + x^4 - x^3 + 27/256 < 0");
+}
