@@ -1,5 +1,5 @@
-//! GPU timestamps of the drawing of graphs and of the search of remarkable points, reported to the profiler
-//! ([`crate::profiler::report_gpu`]) while it records (feature `profile`).
+//! GPU timestamps of the drawing of graphs, reported to the profiler ([`crate::profiler::report_gpu`]) while it
+//! records (feature `profile`).
 //!
 //! Timestamps only give durations: spans are placed at the CPU time their work was prepared at, the first
 //! timestamp of a batch being aligned on it. Graphs are drawn in egui's render pass, which needs timestamps inside
@@ -15,9 +15,6 @@ use eframe::egui_wgpu::wgpu;
 
 /// The lane of the spans of graphs.
 const GRAPHS: &str = "GPU graphs";
-
-/// The lane of the spans of searches of remarkable points.
-pub const ANALYSIS: &str = "GPU analysis";
 
 /// Frames whose timestamps are in flight.
 const SLOTS: usize = 3;

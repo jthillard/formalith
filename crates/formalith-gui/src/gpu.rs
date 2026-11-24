@@ -1,7 +1,6 @@
-//! Drawing of graphs on the GPU: a paint callback runs the shader of a graph ([`crate::shader::render`]) over the
-//! whole plot, with its view, colors and parameters as uniforms, or draws the lines of [`crate::shader::grid`].
+//! Drawing of implicit relations and regions on the GPU: a paint callback runs the shader of a graph
+//! ([`crate::shader::render`]) over the whole plot, with its view, colors and parameters as uniforms.
 
-pub mod analysis;
 #[cfg(feature = "profile")]
 pub mod timer;
 
@@ -91,8 +90,6 @@ pub struct GraphCallback {
     pub shader: Arc<Shader>,
     /// The uniforms of the shader.
     pub uniforms: Box<[f32; UNIFORMS]>,
-    /// The numbers of vertices and instances drawn: `(3, 1)` for a triangle covering the plot.
-    pub draw: (u32, u32),
     /// The name of the graph, shown by the profiler.
     #[cfg(feature = "profile")]
     pub label: String,
@@ -252,7 +249,8 @@ impl egui_wgpu::CallbackTrait for GraphCallback {
         }
         render_pass.set_pipeline(pipeline);
         render_pass.set_bind_group(0, bind_group, &[]);
-        render_pass.draw(0..self.draw.0, 0..self.draw.1);
+        // A triangle covering the plot
+        render_pass.draw(0..3, 0..1);
         #[cfg(feature = "profile")]
         if let Some((query_set, index)) = queries {
             render_pass.write_timestamp(query_set, index + 1);
@@ -262,7 +260,11 @@ impl egui_wgpu::CallbackTrait for GraphCallback {
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use super::wgpu;
+    use formalith_session::formalith::field::real::numeric::Numeric;
+    use wgpu::util::DeviceExt as _;
+
+    use super::{bytes, wgpu};
+    use crate::shader::{PRELUDE, function, tests::compile};
 
     /// A device, `None` without GPU.
     pub fn device() -> Option<(wgpu::Adapter, wgpu::Device, wgpu::Queue)> {
@@ -273,5 +275,173 @@ pub(crate) mod tests {
         let (device, queue) =
             pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default())).ok()?;
         Some((adapter, device, queue))
+    }
+
+    /// Evaluate `expr` at `(x, 0.5)` for each `x` in `xs` on the GPU, with the parameters `a = 2`, `b = -3`.
+    fn evaluate(
+        (_, device, queue): &(wgpu::Adapter, wgpu::Device, wgpu::Queue),
+        expr: &Numeric,
+        xs: &[f32],
+    ) -> Vec<f32> {
+        let source = format!(
+            "{PRELUDE}
+{}
+@group(0) @binding(0) var<storage, read> xs: array<f32>;
+@group(0) @binding(1) var<storage, read_write> ys: array<f32>;
+@group(0) @binding(2) var<storage, read> params: array<f32>;
+fn param(i: u32) -> f32 {{
+    return params[i];
+}}
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) id: vec3<u32>) {{
+    if id.x < arrayLength(&xs) {{
+        ys[id.x] = F(xs[id.x], 0.5) + 0.0 * params[0];
+    }}
+}}",
+            function(expr, "F", 0)
+        );
+        let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: None,
+            source: wgpu::ShaderSource::Wgsl(source.into()),
+        });
+        let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: None,
+            layout: None,
+            module: &module,
+            entry_point: Some("main"),
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+            cache: None,
+        });
+        let size = (xs.len() * 4) as u64;
+        let init = |contents: &[u8]| {
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: None,
+                contents,
+                usage: wgpu::BufferUsages::STORAGE,
+            })
+        };
+        let inputs = init(&bytes(xs));
+        let params = init(&bytes(&[2., -3.]));
+        let outputs = device.create_buffer(&wgpu::BufferDescriptor {
+            label: None,
+            size,
+            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        });
+        let staging = device.create_buffer(&wgpu::BufferDescriptor {
+            label: None,
+            size,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: None,
+            layout: &pipeline.get_bind_group_layout(0),
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: inputs.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: outputs.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: params.as_entire_binding(),
+                },
+            ],
+        });
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
+        {
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor::default());
+            pass.set_pipeline(&pipeline);
+            pass.set_bind_group(0, &bind_group, &[]);
+            pass.dispatch_workgroups((xs.len() as u32).div_ceil(64), 1, 1);
+        }
+        encoder.copy_buffer_to_buffer(&outputs, 0, &staging, 0, size);
+        queue.submit([encoder.finish()]);
+        staging.map_async(wgpu::MapMode::Read, .., |result| result.expect("Mapped"));
+        let _ = device.poll(wgpu::PollType::wait_indefinitely());
+        let data = staging.get_mapped_range(..).expect("Mapped");
+        data.as_chunks::<4>()
+            .0
+            .iter()
+            .map(|chunk| f32::from_le_bytes(*chunk))
+            .collect()
+    }
+
+    #[test]
+    fn test_functions() {
+        let Some(device) = device() else {
+            eprintln!("No GPU, skipped");
+            return;
+        };
+        let xs: Vec<f32> = vec![
+            -7.5, -3.2, -2., -1., -0.7, -0.3, -1e-4, 0., 1e-4, 0.25, 0.5, 0.9, 1., 1.5, 2., 2.7,
+            3., 4.2, 6.5, 12., 30.,
+        ];
+        let cases = [
+            "x^2 + 3*x*y - 1/2",
+            "sqrt(x)",
+            "x^(1/3)",
+            "x^(2/3)",
+            "x^(-2/5)",
+            "x^-3",
+            "x^y",
+            "2^x",
+            "(-2)^x",
+            "a*x + b",
+            "exp(x)",
+            "ln(x)",
+            "sin(x) + cos(x)",
+            "tan(x)",
+            "asin(x)",
+            "acos(x)",
+            "atan(x)",
+            "sinh(x)",
+            "cosh(x)",
+            "tanh(x)",
+            "asinh(x)",
+            "acosh(x)",
+            "atanh(x)",
+            "abs(x)",
+            "sign(x)",
+            "floor(x)",
+            "ceil(x)",
+            "min(x, y, a)",
+            "max(x, b)",
+            "erf(x)",
+            "erfi(x)",
+            "gamma(x)",
+            "factorial(x)",
+            "lambertw(x)",
+            "lambertw(x, -1)",
+            "polygamma(0, x)",
+            "polygamma(1, x)",
+            "polygamma(2, x)",
+            "zeta(x)",
+            "binomial(x, 3)",
+            "binomial(5, x)",
+            "piecewise(x < 0, -x, x <= 1, x^2, x > 2, a, x >= 3, b, 1)",
+            "piecewise(x < 0, -x, x > 1, x^2)",
+            "integrate(exp(x^3), x)",
+        ];
+        for input in cases {
+            let expr = compile(input);
+            let got = evaluate(&device, &expr, &xs);
+            for (x, got) in xs.iter().zip(got) {
+                let expected = expr.eval(&[f64::from(*x), 0.5, 2., -3.]);
+                let got = f64::from(got);
+                let ok = if expected.is_nan() {
+                    got.is_nan()
+                } else if expected.is_infinite() || expected.abs() > 1e38 {
+                    got.is_infinite() && got.signum() == expected.signum() || got.abs() > 1e30
+                } else {
+                    (got - expected).abs() <= 2e-4 * expected.abs().max(1.)
+                };
+                assert!(ok, "{input} at {x}: {got} != {expected}");
+            }
+        }
     }
 }

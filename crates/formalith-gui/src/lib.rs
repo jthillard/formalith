@@ -3,10 +3,10 @@
 //! their parameters and the remarkable points of the selected curve.
 //!
 //! Lines are evaluated off the interface thread ([`evaluator`]) and come back with their graphs compiled to
-//! numerical expressions ([`formalith_session::graph`]), drawn without the CAS ([`plot`]): they are compiled to WGSL
-//! ([`shader`]) and drawn per pixel on the GPU ([`gpu`]), which also searches remarkable points when it has compute
-//! shaders. In the browser, the worker is a separate wasm module (`formalith-gui-worker`), so this one doesn't
-//! hold the CAS.
+//! numerical expressions ([`formalith_session::graph`]), drawn without the CAS ([`plot`]): curves are sampled in
+//! `f64` on the CPU ([`geometry`]), with their remarkable points ([`analysis`]), and implicit relations and regions
+//! are compiled to WGSL ([`shader`]) and drawn per pixel on the GPU ([`gpu`]). In the browser, the worker is a
+//! separate wasm module (`formalith-gui-worker`), so this one doesn't hold the CAS.
 //!
 //! With the feature `profile`, a profiler window ([`profiler`]) records all of it, down to the CAS and the GPU.
 
@@ -19,6 +19,8 @@ macro_rules! profile_scope {
     };
 }
 
+#[cfg(feature = "ui")]
+pub mod analysis;
 #[cfg(feature = "ui")]
 pub mod app;
 #[cfg(feature = "ui")]

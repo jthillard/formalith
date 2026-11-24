@@ -91,7 +91,8 @@ Ideas and known gaps, roughly by area. `AGENTS.md` describes what exists; this f
 
 ## GUI
 
-- Remarkable points (roots, extrema) on WebGL2, which has no compute shaders.
+- Implicit relations and regions are evaluated in f32 on the GPU, so they lose precision when zoomed in deep (curves
+  are sampled in f64 on the CPU).
 - Hover labels and analysis for complex maps.
 
 ## Tooling

@@ -1,16 +1,17 @@
-//! Drawing of the graphs of the lines in an interactive plot, on the GPU: each graph is a plot item running its
-//! shader over the plot ([`crate::gpu`]), and the remarkable points of the selected curve are searched in compute
-//! shaders when the GPU has them ([`crate::gpu::analysis`]).
+//! Drawing of the graphs of the lines in an interactive plot. Curves, paths and the grids of complex maps are sampled
+//! in `f64` on the CPU ([`crate::geometry`]) over a window around the view, sampled again when the view leaves it or
+//! is zoomed, and drawn as lines; implicit relations and regions are plot items running their shader over the plot
+//! ([`crate::gpu`]). The remarkable points of the selected curve are searched on the CPU ([`crate::analysis`]).
 
-use std::{collections::HashMap, ops::RangeInclusive, sync::Arc};
+use std::{cell::RefCell, collections::HashMap, ops::RangeInclusive, sync::Arc};
 
 use eframe::{
     egui::{self, Color32, Vec2b},
     egui_wgpu,
 };
 use egui_plot::{
-    GridInput, HLine, HoverPosition, MarkerShape, Plot, PlotBounds, PlotGeometry, PlotItem,
-    PlotItemBase, PlotPoint, PlotTransform, Points, VLine,
+    FilledArea, GridInput, HLine, HoverPosition, Line, MarkerShape, Plot, PlotBounds, PlotGeometry,
+    PlotItem, PlotItemBase, PlotPoint, PlotTransform, PlotUi, Points, VLine,
 };
 use formalith_session::{
     formalith::field::real::numeric::Numeric,
@@ -18,12 +19,10 @@ use formalith_session::{
 };
 
 use crate::{
-    geometry::View,
-    gpu::{
-        self, GraphCallback, Shader, UNIFORMS,
-        analysis::{Analyzer, Kind, Point, Request},
-    },
-    shader::{self, AnalysisCurves, MAX_PARAMS},
+    analysis::{Kind, Point, intersections, remarkable_points},
+    geometry::{GRID_K, Polyline, View, area, sample_function, sample_grid, sample_path},
+    gpu::{self, GraphCallback, Shader, UNIFORMS},
+    shader::{self, MAX_PARAMS},
 };
 
 /// A graph to draw.
@@ -54,8 +53,8 @@ pub enum ComplexView {
     Path,
 }
 
-/// The shaders of a line: the only one of most graphs, or the imaginary part or the path of a
-/// [`GraphKind::ComplexCurve`].
+/// The parts of the graph of a line, with their own shader or polylines: the only one of most graphs, or the
+/// imaginary part or the path of a [`GraphKind::ComplexCurve`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 enum Slot {
     Main,
@@ -63,9 +62,11 @@ enum Slot {
     Path,
 }
 
-/// Added to the identifier of a line for its second graph item (the imaginary part of a
-/// [`GraphKind::ComplexCurve`]), which needs its own uniforms.
-const SECOND_ITEM: u64 = 1 << 63;
+/// The zoom ratio past which polylines are sampled again.
+const RESAMPLE_ZOOM: f64 = 1.5;
+
+/// The segments of the path of a [`GraphKind::ComplexCurve`] before refinement.
+const PATH_SEGMENTS: usize = 1024;
 
 /// The view shown first and after a reset.
 const DEFAULT_VIEW: View = View {
@@ -101,6 +102,28 @@ type Content = Vec<u64>;
 /// The range and number of samples of a search of remarkable points.
 type Range = [u64; 3];
 
+/// Families of polylines of a graph sampled on the CPU over a window around the view.
+struct Sampled {
+    /// The revision and the parameters of the line.
+    key: Vec<u64>,
+    window: View,
+    /// The size of a pixel along x and y when sampled.
+    pixel: [f64; 2],
+    families: Vec<Vec<Polyline>>,
+}
+
+impl Sampled {
+    /// Whether the polylines are still right for the line `key` in `view`, a pixel being `pixel` units.
+    fn fits(&self, key: &[u64], view: &View, pixel: [f64; 2]) -> bool {
+        self.key == key
+            && self.window.contains(view)
+            && (0..2).all(|i| {
+                let ratio = pixel[i] / self.pixel[i];
+                (1. / RESAMPLE_ZOOM..=RESAMPLE_ZOOM).contains(&ratio)
+            })
+    }
+}
+
 /// The interactive plot.
 #[derive(Default)]
 pub struct Plotter {
@@ -108,11 +131,10 @@ pub struct Plotter {
     gpu: Option<bool>,
     /// The shaders of each line, with the revision they were made for.
     shaders: HashMap<(u64, Slot), (u64, Arc<Shader>)>,
-    analyzer: Option<Analyzer>,
+    /// The polylines of each line.
+    sampled: HashMap<(u64, Slot), Sampled>,
     /// The last points found.
     remarkable: Option<(Content, Range, Vec<Point>)>,
-    /// The running search.
-    searching: Option<(Content, Range)>,
     frame: u64,
     reset: bool,
 }
@@ -125,22 +147,34 @@ fn values(params: &[f64]) -> Vec<f64> {
         .collect()
 }
 
+/// `expr` as a function of the variable `var` ([`Graph::X`] or [`Graph::Y`], the other one being undefined), with
+/// the values `params` of its parameters.
+fn function<'a>(expr: &'a Numeric, params: &[f64], var: usize) -> impl Fn(f64) -> f64 + 'a {
+    let values = RefCell::new(values(params));
+    move |t| {
+        let mut values = values.borrow_mut();
+        values[var] = t;
+        expr.eval(&values)
+    }
+}
+
+/// `expr` as a function of `x` and `y`, with the values `params` of its parameters.
+fn function_xy<'a>(expr: &'a Numeric, params: &[f64]) -> impl Fn(f64, f64) -> f64 + 'a {
+    let values = RefCell::new(values(params));
+    move |x, y| {
+        let mut values = values.borrow_mut();
+        values[Graph::X] = x;
+        values[Graph::Y] = y;
+        expr.eval(&values)
+    }
+}
+
 impl Plotter {
     /// The plot, drawing with the GPU of `cc`.
     #[must_use]
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        let Some(render_state) = &cc.wgpu_render_state else {
-            return Self::default();
-        };
-        let ctx = cc.egui_ctx.clone();
         Self {
-            gpu: Some(gpu::install(render_state)),
-            analyzer: Analyzer::new(
-                &render_state.adapter,
-                render_state.device.clone(),
-                render_state.queue.clone(),
-                Arc::new(move || ctx.request_repaint()),
-            ),
+            gpu: cc.wgpu_render_state.as_ref().map(gpu::install),
             ..Self::default()
         }
     }
@@ -150,9 +184,10 @@ impl Plotter {
         self.reset = true;
     }
 
-    /// Forget the shaders of the lines which aren't in `ids`.
+    /// Forget the shaders and polylines of the lines which aren't in `ids`.
     pub fn retain(&mut self, ids: &[u64]) {
         self.shaders.retain(|(id, _), _| ids.contains(id));
+        self.sampled.retain(|(id, _), _| ids.contains(id));
     }
 
     /// The shader `slot` of `drawable`, whose source is `source` when it changed.
@@ -172,6 +207,57 @@ impl Plotter {
                 shader
             }
         }
+    }
+
+    /// The families of polylines of the slot `slot` of `drawable` in `view`, a pixel being `pixel` units, sampled
+    /// again by `sample` over a window around the view when the graph changed, or the view left the window or was
+    /// zoomed since.
+    fn sampled(
+        &mut self,
+        drawable: &Drawable<'_>,
+        slot: Slot,
+        view: &View,
+        pixel: [f64; 2],
+        sample: impl FnOnce(&View, [f64; 2]) -> Vec<Vec<Polyline>>,
+    ) -> &[Vec<Polyline>] {
+        let key: Vec<u64> = std::iter::once(drawable.revision)
+            .chain(drawable.params.iter().map(|value| value.to_bits()))
+            .collect();
+        let slot = (drawable.id, slot);
+        if !self
+            .sampled
+            .get(&slot)
+            .is_some_and(|sampled| sampled.fits(&key, view, pixel))
+        {
+            profile_scope!("sample", &drawable.name);
+            let window = view.grown(1.);
+            let families = sample(&window, pixel);
+            self.sampled.insert(
+                slot,
+                Sampled {
+                    key,
+                    window,
+                    pixel,
+                    families,
+                },
+            );
+        }
+        &self.sampled[&slot].families
+    }
+
+    /// The polylines of the curve `y = expr(x)` of `drawable`, as its slot `slot`.
+    fn curve(
+        &mut self,
+        drawable: &Drawable<'_>,
+        slot: Slot,
+        expr: &Numeric,
+        view: &View,
+        pixel: [f64; 2],
+    ) -> &[Polyline] {
+        &self.sampled(drawable, slot, view, pixel, |window, pixel| {
+            let f = function(expr, &drawable.params, Graph::X);
+            vec![sample_function(f, window, pixel)]
+        })[0]
     }
 
     /// Show the plot of `drawables`, with the remarkable points of the curve of the line `selected` (roots, extrema,
@@ -245,12 +331,24 @@ impl Plotter {
                     .width(AXIS_WIDTH)
                     .allow_hover(false),
             );
+            let view = View {
+                x_min: bounds.min()[0],
+                x_max: bounds.max()[0],
+                y_min: bounds.min()[1],
+                y_max: bounds.max()[1],
+            };
+            let frame = plot_ui.transform().frame();
+            let pixels_per_point = plot_ui.ctx().pixels_per_point();
+            let size = [
+                f64::from(frame.width() * pixels_per_point),
+                f64::from(frame.height() * pixels_per_point),
+            ];
+            let pixel = [view.width() / size[0], view.height() / size[1]];
             for drawable in drawables {
-                self.draw(plot_ui, drawable);
+                self.draw(plot_ui, drawable, &view, pixel);
             }
-            let pixels =
-                (plot_ui.transform().frame().width() * plot_ui.ctx().pixels_per_point()) as usize;
-            self.draw_remarkable(plot_ui, drawables, selected, &bounds, pixels);
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            self.draw_remarkable(plot_ui, drawables, selected, &view, size[0] as usize);
             let hovered = plot_ui
                 .response()
                 .hovered()
@@ -277,33 +375,67 @@ impl Plotter {
         }
     }
 
-    /// Draw `drawable`.
-    fn draw(&mut self, plot_ui: &mut egui_plot::PlotUi<'_>, drawable: &Drawable<'_>) {
+    /// Draw `drawable` in `view`, a pixel being `pixel` units.
+    fn draw(
+        &mut self,
+        plot_ui: &mut PlotUi<'_>,
+        drawable: &Drawable<'_>,
+        view: &View,
+        pixel: [f64; 2],
+    ) {
         profile_scope!("Plotter::draw", &drawable.name);
-        let mut bounds = [0.; 2];
-        let (kind, relations) = match &drawable.graph.kind {
-            GraphKind::Function { expr, .. } => (0., vec![(expr, Comparison::Equal)]),
-            GraphKind::Integral { expr, a, b, .. } => {
-                let values = values(&drawable.params);
-                let (a, b) = (a.eval(&values), b.eval(&values));
-                // Without bounds, only the curve
-                if a.is_nan() || b.is_nan() {
-                    (0., vec![(expr, Comparison::Equal)])
-                } else {
-                    bounds = [a.min(b), a.max(b)];
-                    (3., vec![(expr, Comparison::Equal)])
-                }
+        let params = &drawable.params;
+        match &drawable.graph.kind {
+            GraphKind::Function { expr, .. } => {
+                let lines = self.curve(drawable, Slot::Main, expr, view, pixel);
+                draw_lines(plot_ui, drawable, Slot::Main, lines, drawable.color);
             }
-            GraphKind::InverseFunction { expr } => (1., vec![(expr, Comparison::Equal)]),
-            GraphKind::Implicit { relations } => (
-                2.,
-                relations
+            GraphKind::Integral { expr, a, b, .. } => {
+                let values = values(params);
+                let (a, b) = (a.eval(&values), b.eval(&values));
+                let lines = self.curve(drawable, Slot::Main, expr, view, pixel);
+                // Without bounds, only the curve
+                if !(a.is_nan() || b.is_nan()) {
+                    let fill = drawable.color.gamma_multiply(0.25);
+                    for (k, line) in lines.iter().enumerate() {
+                        let points = area(line, a.min(b), a.max(b));
+                        if points.len() < 2 {
+                            continue;
+                        }
+                        let xs: Vec<f64> = points.iter().map(|point| point[0]).collect();
+                        let low: Vec<f64> = points.iter().map(|point| point[1].min(0.)).collect();
+                        let high: Vec<f64> = points.iter().map(|point| point[1].max(0.)).collect();
+                        plot_ui.add(
+                            FilledArea::new(drawable.name.clone(), &xs, &low, &high)
+                                .id((drawable.id, "area", k))
+                                .fill_color(fill)
+                                .allow_hover(false),
+                        );
+                    }
+                }
+                draw_lines(plot_ui, drawable, Slot::Main, lines, drawable.color);
+            }
+            GraphKind::InverseFunction { expr } => {
+                let families = self.sampled(drawable, Slot::Main, view, pixel, |window, pixel| {
+                    let g = function(expr, params, Graph::Y);
+                    let lines = sample_function(g, &window.transposed(), [pixel[1], pixel[0]]);
+                    let swapped = lines
+                        .into_iter()
+                        .map(|line| line.into_iter().map(|[y, x]| [x, y]).collect())
+                        .collect();
+                    vec![swapped]
+                });
+                draw_lines(plot_ui, drawable, Slot::Main, &families[0], drawable.color);
+            }
+            GraphKind::Implicit { relations } => {
+                let relations: Vec<(&Numeric, Comparison)> = relations
                     .iter()
                     .map(|relation| (&relation.expr, relation.relation))
-                    .collect(),
-            ),
+                    .collect();
+                self.draw_render(plot_ui, drawable, &relations);
+            }
             GraphKind::Point { x, y } => {
-                let values = values(&drawable.params);
+                let values = values(params);
                 let (x, y) = (x.eval(&values), y.eval(&values));
                 if x.is_finite() && y.is_finite() {
                     plot_ui.points(
@@ -315,83 +447,48 @@ impl Plotter {
                             .color(drawable.color),
                     );
                 }
-                return;
             }
             GraphKind::ComplexMap { re, im } => {
-                let Some(linear) = self.gpu else {
-                    return;
-                };
-                if drawable.params.len() > MAX_PARAMS {
-                    return;
-                }
-                let shader = self.shader(drawable, Slot::Main, || shader::grid(re, im));
-                #[allow(clippy::cast_possible_truncation)]
-                let params = drawable.params.iter().map(|value| *value as f32).collect();
-                plot_ui.add(GpuGraph {
-                    base: PlotItemBase::new(drawable.name.clone()),
-                    id: drawable.id,
-                    frame: self.frame,
-                    shader,
-                    color: color(drawable.color, linear),
-                    // The lines `Re z = k`, dimmer than the lines `Im z = k`
-                    fill: color(drawable.color.gamma_multiply(0.5), linear),
-                    kind: 4.,
-                    bounds,
-                    params,
-                    drawable_color: drawable.color,
-                    draw: (shader::GRID_VERTICES, shader::GRID_LINES),
+                let families = self.sampled(drawable, Slot::Main, view, pixel, |window, pixel| {
+                    let (re, im) = (function_xy(re, params), function_xy(im, params));
+                    Vec::from(sample_grid(|x, y| [re(x, y), im(x, y)], window, pixel))
                 });
-                return;
+                // The lines `Re z = k` dimmer than the lines `Im z = k`
+                draw_lines(plot_ui, drawable, Slot::Main, &families[0], drawable.color);
+                let dim = drawable.color.gamma_multiply(0.5);
+                draw_lines(plot_ui, drawable, Slot::Imaginary, &families[1], dim);
             }
-            GraphKind::ComplexCurve { re, im, .. } => {
-                match drawable.complex_view {
-                    ComplexView::Parts => {
-                        let re = [(re, Comparison::Equal)];
-                        self.draw_render(plot_ui, drawable, Slot::Main, &re, 0., bounds);
-                        let im = [(im, Comparison::Equal)];
-                        self.draw_render(plot_ui, drawable, Slot::Imaginary, &im, 0., bounds);
-                    }
-                    ComplexView::Path => {
-                        let Some(linear) = self.gpu else {
-                            return;
-                        };
-                        if drawable.params.len() > MAX_PARAMS {
-                            return;
-                        }
-                        let shader = self.shader(drawable, Slot::Path, || shader::path(re, im));
-                        #[allow(clippy::cast_possible_truncation)]
-                        let params = drawable.params.iter().map(|value| *value as f32).collect();
-                        plot_ui.add(GpuGraph {
-                            base: PlotItemBase::new(drawable.name.clone()),
-                            id: drawable.id,
-                            frame: self.frame,
-                            shader,
-                            color: color(drawable.color, linear),
-                            fill: color(drawable.color, linear),
-                            kind: 5.,
-                            bounds,
-                            params,
-                            drawable_color: drawable.color,
-                            draw: (shader::GRID_VERTICES, 1),
-                        });
-                    }
+            GraphKind::ComplexCurve { re, im, .. } => match drawable.complex_view {
+                ComplexView::Parts => {
+                    let lines = self.curve(drawable, Slot::Main, re, view, pixel);
+                    draw_lines(plot_ui, drawable, Slot::Main, lines, drawable.color);
+                    let lines = self.curve(drawable, Slot::Imaginary, im, view, pixel);
+                    let dim = drawable.color.gamma_multiply(0.5);
+                    draw_lines(plot_ui, drawable, Slot::Imaginary, lines, dim);
                 }
-                return;
-            }
-        };
-        self.draw_render(plot_ui, drawable, Slot::Main, &relations, kind, bounds);
+                ComplexView::Path => {
+                    let families =
+                        self.sampled(drawable, Slot::Path, view, pixel, |window, pixel| {
+                            let (re, im) = (
+                                function(re, params, Graph::X),
+                                function(im, params, Graph::X),
+                            );
+                            let end = f64::from(GRID_K);
+                            let path = |t| [re(t), im(t)];
+                            vec![sample_path(path, -end, end, PATH_SEGMENTS, window, pixel)]
+                        });
+                    draw_lines(plot_ui, drawable, Slot::Path, &families[0], drawable.color);
+                }
+            },
+        }
     }
 
-    /// Draw the shader [`shader::render`] of `relations` with the kind `kind`, as the shader `slot` of `drawable`
-    /// (the imaginary part of a [`GraphKind::ComplexCurve`] being dimmer).
+    /// Draw the shader [`shader::render`] of `relations`, the graph of `drawable`.
     fn draw_render(
         &mut self,
-        plot_ui: &mut egui_plot::PlotUi<'_>,
+        plot_ui: &mut PlotUi<'_>,
         drawable: &Drawable<'_>,
-        slot: Slot,
         relations: &[(&Numeric, Comparison)],
-        kind: f32,
-        bounds: [f64; 2],
     ) {
         let Some(linear) = self.gpu else {
             return;
@@ -399,50 +496,32 @@ impl Plotter {
         if drawable.params.len() > MAX_PARAMS {
             return;
         }
-        let shader = self.shader(drawable, slot, || shader::render(relations));
-        let (id, curve_color) = if slot == Slot::Imaginary {
-            (
-                drawable.id | SECOND_ITEM,
-                drawable.color.gamma_multiply(0.5),
-            )
-        } else {
-            (drawable.id, drawable.color)
-        };
+        let shader = self.shader(drawable, Slot::Main, || shader::render(relations));
         #[allow(clippy::cast_possible_truncation)]
         let params = drawable.params.iter().map(|value| *value as f32).collect();
         plot_ui.add(GpuGraph {
             base: PlotItemBase::new(drawable.name.clone()),
-            id,
+            id: drawable.id,
             frame: self.frame,
             shader,
-            color: color(curve_color, linear),
+            color: color(drawable.color, linear),
             fill: color(drawable.color.gamma_multiply(0.25), linear),
-            kind,
-            bounds,
             params,
             drawable_color: drawable.color,
-            draw: (3, 1),
         });
     }
 
-    /// Draw the remarkable points of the curve `selected`, searching them again when it or the view changed.
+    /// Draw the remarkable points of the curve `selected` in `view`, searching them again on `pixels` pixels when it
+    /// or the view changed.
     fn draw_remarkable(
         &mut self,
-        plot_ui: &mut egui_plot::PlotUi<'_>,
+        plot_ui: &mut PlotUi<'_>,
         drawables: &[Drawable<'_>],
         selected: Option<u64>,
-        bounds: &PlotBounds,
+        view: &View,
         pixels: usize,
     ) {
         profile_scope!("Plotter::draw_remarkable");
-        let Some(analyzer) = &mut self.analyzer else {
-            return;
-        };
-        if let Some(points) = analyzer.poll()
-            && let Some((content, range)) = self.searching.take()
-        {
-            self.remarkable = Some((content, range, points));
-        }
         let Some(drawable) = drawables
             .iter()
             .find(|drawable| Some(drawable.id) == selected)
@@ -463,50 +542,30 @@ impl Plotter {
             content.extend(curve.params.iter().map(|value| value.to_bits()));
         }
         let samples = (pixels / 2).clamp(50, 1000);
-        let range = [
-            bounds.min()[0].to_bits(),
-            bounds.max()[0].to_bits(),
-            samples as u64,
-        ];
+        let (a, b) = (view.x_min, view.x_max);
+        let range = [a.to_bits(), b.to_bits(), samples as u64];
         let current = self
             .remarkable
             .as_ref()
             .is_some_and(|(cached, cached_range, _)| *cached == content && *cached_range == range);
-        if !current && !analyzer.is_busy() {
-            let curves = AnalysisCurves {
-                f: (expr, drawable.params.len()),
-                derivative,
-                others: others
-                    .iter()
-                    .filter_map(|other| Some((curve(other.graph)?.0, other.params.len())))
-                    .collect(),
-            };
-            #[allow(clippy::cast_possible_truncation)]
-            let params = std::iter::once(drawable)
-                .chain(others.iter().copied())
-                .flat_map(|curve| curve.params.iter().map(|value| *value as f32))
-                .collect();
-            let request = Request {
-                curves,
-                params,
-                a: bounds.min()[0],
-                b: bounds.max()[0],
-                samples,
-            };
-            if analyzer.start(&request) {
-                self.searching = Some((content.clone(), range));
+        if !current {
+            profile_scope!("remarkable points", &drawable.name);
+            let f = function(expr, &drawable.params, Graph::X);
+            let derivative =
+                derivative.map(|derivative| function(derivative, &drawable.params, Graph::X));
+            let derivative = derivative
+                .as_ref()
+                .map(|derivative| derivative as &dyn Fn(f64) -> f64);
+            let mut points = remarkable_points(&f, derivative, a, b, samples);
+            for other in &others {
+                if let Some((g, _)) = curve(other.graph) {
+                    let g = function(g, &other.params, Graph::X);
+                    points.extend(intersections(&f, &g, a, b, samples));
+                }
             }
+            self.remarkable = Some((content, range, points));
         }
-        if analyzer.is_busy() {
-            // Natively, the readback progresses when polled
-            plot_ui.ctx().request_repaint();
-        }
-        // Points found in another view are still right
-        let Some((_, _, points)) = self
-            .remarkable
-            .as_ref()
-            .filter(|(cached, _, _)| *cached == content)
-        else {
+        let Some((_, _, points)) = &self.remarkable else {
             return;
         };
         for kind in [Kind::Root, Kind::Minimum, Kind::Maximum, Kind::Intersection] {
@@ -525,6 +584,27 @@ impl Plotter {
                 );
             }
         }
+    }
+}
+
+/// Draw the polylines `lines` of the slot `slot` of `drawable` in `color`.
+fn draw_lines(
+    plot_ui: &mut PlotUi<'_>,
+    drawable: &Drawable<'_>,
+    slot: Slot,
+    lines: &[Polyline],
+    color: Color32,
+) {
+    for (k, line) in lines.iter().enumerate() {
+        plot_ui.line(
+            Line::new(drawable.name.clone(), line.clone())
+                .id((drawable.id, slot, k))
+                .color(color)
+                .width(LINE_WIDTH)
+                // Bands (several points of a column as a vertical bar) make steep segments thinner
+                .allow_band(false)
+                .allow_hover(false),
+        );
     }
 }
 
@@ -719,7 +799,7 @@ fn hover(
     best.map(|(_, name, point)| (name.to_owned(), point))
 }
 
-/// A graph drawn by its shader.
+/// Implicit relations or a region drawn by its shader.
 struct GpuGraph {
     base: PlotItemBase,
     id: u64,
@@ -727,14 +807,8 @@ struct GpuGraph {
     shader: Arc<Shader>,
     color: [f32; 4],
     fill: [f32; 4],
-    /// The kind of graph, see [`crate::shader::RENDER`].
-    kind: f32,
-    /// The bounds of the area of an integral, in order.
-    bounds: [f64; 2],
     params: Vec<f32>,
     drawable_color: Color32,
-    /// The numbers of vertices and instances drawn, see [`GraphCallback::draw`].
-    draw: (u32, u32),
 }
 
 impl GpuGraph {
@@ -774,7 +848,7 @@ fn uniforms(
         size[0] * pixels_per_point,
         size[1] * pixels_per_point,
         LINE_WIDTH / 2. * pixels_per_point,
-        graph.kind,
+        0.,
         graph.color[0],
         graph.color[1],
         graph.color[2],
@@ -783,9 +857,8 @@ fn uniforms(
         graph.fill[1],
         graph.fill[2],
         graph.fill[3],
-        // Beyond the view, the bounds only need to stay out of it
-        graph.bounds[0].clamp(view.x_min - view.width(), view.x_max + view.width()) as f32,
-        graph.bounds[1].clamp(view.x_min - view.width(), view.x_max + view.width()) as f32,
+        0.,
+        0.,
         DASH_PERIOD * pixels_per_point,
         0.,
     ]);
@@ -800,7 +873,6 @@ impl PlotItem for GpuGraph {
             frame: self.frame,
             shader: self.shader.clone(),
             uniforms: self.uniforms(transform, ui.ctx().pixels_per_point()),
-            draw: self.draw,
             #[cfg(feature = "profile")]
             label: self.name().to_owned(),
         };
@@ -866,23 +938,12 @@ mod tests {
             let row = ((VIEW.y_max - y) / VIEW.height() * f64::from(HEIGHT)) as usize;
             f32::from(self.0[(row * WIDTH as usize + column) * 4 + 3]) / 255.
         }
-
-        /// The largest opacity in the column of `x`.
-        fn column(&self, x: f64) -> f32 {
-            (0..HEIGHT)
-                .map(|row| {
-                    let y = VIEW.y_max - (f64::from(row) + 0.5) / f64::from(HEIGHT) * VIEW.height();
-                    self.at(x, y)
-                })
-                .fold(0., f32::max)
-        }
     }
 
-    /// Draw the graph of the relations `inputs` of the kind `kind`, offscreen.
+    /// Draw the graph of the relations `inputs`, offscreen.
     fn draw(
         device: &(wgpu::Adapter, wgpu::Device, wgpu::Queue),
         inputs: &[(&str, Comparison)],
-        kind: f32,
     ) -> Image {
         let compiled: Vec<(Numeric, Comparison)> = inputs
             .iter()
@@ -892,27 +953,13 @@ mod tests {
             .iter()
             .map(|(expr, relation)| (expr, *relation))
             .collect();
-        draw_shader(device, shader::render(&relations), kind, (3, 1))
+        draw_shader(device, shader::render(&relations))
     }
 
-    /// Draw the images of the grid under `re + i im`, offscreen.
-    fn draw_grid(device: &(wgpu::Adapter, wgpu::Device, wgpu::Queue), re: &str, im: &str) -> Image {
-        let source = shader::grid(&compile(re), &compile(im));
-        draw_shader(
-            device,
-            source,
-            4.,
-            (shader::GRID_VERTICES, shader::GRID_LINES),
-        )
-    }
-
-    /// Draw a graph with the shader `source` of the kind `kind`, offscreen, in white (the second color at a
-    /// quarter of its opacity), with `draw` vertices and instances.
+    /// Draw a graph with the shader `source`, offscreen, in white (the fill at a quarter of its opacity).
     fn draw_shader(
         (_, device, queue): &(wgpu::Adapter, wgpu::Device, wgpu::Queue),
         source: String,
-        kind: f32,
-        draw: (u32, u32),
     ) -> Image {
         let format = wgpu::TextureFormat::Rgba8Unorm;
         let graph = GpuGraph {
@@ -922,18 +969,14 @@ mod tests {
             shader: Shader::new(source),
             color: color(Color32::WHITE, false),
             fill: color(Color32::WHITE.gamma_multiply(0.25), false),
-            kind,
-            bounds: [-1., 2.],
             params: vec![2., -3.],
             drawable_color: Color32::WHITE,
-            draw,
         };
         let callback = GraphCallback {
             id: 0,
             frame: 1,
             shader: graph.shader.clone(),
             uniforms: uniforms(&VIEW, [WIDTH as f32, HEIGHT as f32], 1., &graph),
-            draw,
             #[cfg(feature = "profile")]
             label: String::new(),
         };
@@ -1021,46 +1064,7 @@ mod tests {
             eprintln!("No GPU, skipped");
             return;
         };
-        let curve = |input| draw(&device, &[(input, Comparison::Equal)], 0.);
-        let image = curve("x^2");
-        assert!(image.at(1., 1.) > 0.5);
-        assert!(image.at(1., 3.) == 0.);
-        assert!(image.at(0., -3.) == 0.);
-        assert!(image.at(2.4, 2.4_f64.powi(2)) > 0.5);
-        // No vertical lines at poles and steps
-        let image = curve("1/x");
-        assert!(image.at(2., 0.5) > 0.5);
-        assert!(image.at(0., 3.) == 0. && image.at(0., -3.) == 0.);
-        let image = curve("tan(x)");
-        assert!(image.at(0., 0.) > 0.5);
-        let pole = std::f64::consts::FRAC_PI_2;
-        assert!(image.at(pole, 0.) == 0. && image.at(-pole, 2.) == 0.);
-        // Narrow branches still go to the edges near their poles, without vertical lines
-        let image = curve("tan(4*x)");
-        let pole = std::f64::consts::FRAC_PI_8;
-        let pixel = VIEW.width() / f64::from(WIDTH);
-        let near = |y| {
-            (-3..=3)
-                .map(|k| image.at(pole + f64::from(k) * pixel, y))
-                .fold(0., f32::max)
-        };
-        assert!(near(5.5) > 0.5 && near(-5.5) > 0.5);
-        assert!(image.at(pole, 0.) == 0.);
-        let image = curve("floor(x)");
-        assert!(image.at(0.5, 0.) > 0.5);
-        assert!(image.at(1., 0.5) == 0.);
-        // The domain of `sqrt` starts at 0
-        let image = curve("sqrt(x)");
-        assert!(image.at(-1., 0.) == 0.);
-        assert!(image.column(0.03) > 0.5);
-        assert!(image.at(4., 2.) > 0.5);
-        // Parameters `a = 2`, `b = -3`
-        let image = curve("a*x + b");
-        assert!(image.at(3., 3.) > 0.5);
-        let image = draw(&device, &[("y^2", Comparison::Equal)], 1.);
-        assert!(image.at(1., 1.) > 0.5 && image.at(4., -2.) > 0.5);
-        assert!(image.at(1., 3.) == 0.);
-        let implicit = |input, relation| draw(&device, &[(input, relation)], 2.);
+        let implicit = |input, relation| draw(&device, &[(input, relation)]);
         let image = implicit("x^2 + y^2 - 4", Comparison::Equal);
         assert!(image.at(2., 0.) > 0.5 && image.at(0., -2.) > 0.5);
         assert!(image.at(0., 0.) == 0. && image.at(5., 0.) == 0.);
@@ -1081,7 +1085,7 @@ mod tests {
             ("x^2 + y^2 - 4", Comparison::Less),
             ("y", Comparison::GreaterEqual),
         ];
-        let image = draw(&device, &half_disk, 2.);
+        let image = draw(&device, &half_disk);
         assert!((image.at(0., 1.) - 0.25).abs() < 0.02);
         assert!(image.at(0., -1.) == 0. && image.at(0., 3.) == 0.);
         assert!(image.at(1., 0.) > 0.5);
@@ -1092,58 +1096,8 @@ mod tests {
                 ("x^2 + y^2 - 4", Comparison::Equal),
                 ("y", Comparison::Greater),
             ],
-            2.,
         );
         assert!(image.at(0., 2.) > 0.5);
         assert!(image.at(0., -2.) == 0. && image.at(0., 1.) == 0. && image.at(1., 0.) == 0.);
-        // The area of an integral from -1 to 2, above and below the axis
-        let image = draw(&device, &[("x^2 - 1", Comparison::Equal)], 3.);
-        assert!(image.at(1.5, 1.5_f64.powi(2) - 1.) > 0.5);
-        assert!((image.at(1.5, 0.6) - 0.25).abs() < 0.02);
-        assert!((image.at(0., -0.5) - 0.25).abs() < 0.02);
-        assert!(image.at(0., 0.5) == 0. && image.at(1.5, 2.) == 0.);
-        assert!(image.at(-2., -2.) == 0. && image.at(3., 2.) == 0.);
-        assert!(image.at(2.5, 2.5_f64.powi(2) - 1.) > 0.5);
-    }
-
-    #[test]
-    fn test_grid() {
-        let Some(device) = device() else {
-            eprintln!("No GPU, skipped");
-            return;
-        };
-        // The identity: the lines `y = k` opaque, `x = k` at a quarter
-        let image = draw_grid(&device, "x", "y");
-        assert!(image.at(3.3, 2.) > 0.5 && image.at(-7.7, 0.) > 0.5);
-        assert!((image.at(3., 2.5) - 0.25).abs() < 0.02);
-        assert!(image.at(3.5, 2.5) == 0.);
-        // `z^2`: the image of the real axis is `[0, 100]` on the real axis, the lines `Im z = k` are parabolas
-        // `x = y^2 / (4 k^2) - k^2`, and the lines `Re z = k` the parabolas `x = k^2 - y^2 / (4 k^2)`
-        let image = draw_grid(&device, "x^2 - y^2", "2*x*y");
-        assert!(image.at(5.3, 0.) > 0.5);
-        assert!(image.at(1.5_f64.powi(2) / 4. - 1., 1.5) > 0.5);
-        // Drawn twice, for `k = 1` and `k = -1`
-        let dim = image.at(1. - 1.5_f64.powi(2) / 4., 1.5);
-        assert!(dim > 0.2 && dim < 0.5);
-        assert!(image.at(0.3, 0.7) == 0.);
-        // `1/z`: lines through the pole are cut, not joined across the plot
-        let image = draw_grid(&device, "x/(x^2 + y^2)", "-y/(x^2 + y^2)");
-        assert!(image.at(0.5, 0.) > 0.5);
-        // The image of `Im z = 1` is the circle of center `-i/2` and radius `1/2`
-        assert!(image.at(0., -1.) > 0.5);
-    }
-
-    #[test]
-    fn test_path() {
-        let Some(device) = device() else {
-            eprintln!("No GPU, skipped");
-            return;
-        };
-        // `exp(i t)`: the unit circle
-        let source = shader::path(&compile("cos(x)"), &compile("sin(x)"));
-        let image = draw_shader(&device, source, 5., (shader::GRID_VERTICES, 1));
-        let (c, s) = (0.6_f64.cos(), 0.6_f64.sin());
-        assert!(image.at(c, s) > 0.5 && image.at(-1., 0.) > 0.5);
-        assert!(image.at(0., 0.) == 0. && image.at(2., 0.) == 0.);
     }
 }
