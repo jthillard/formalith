@@ -1,5 +1,5 @@
 #!/bin/sh
-# Formats the staged Rust files with `cargo fmt`.
+# Formats the staged Rust files with `cargo fmt`, then checks the workspace with `cargo clippy`.
 # Enable with `git config core.hooksPath .githooks`.
 set -e
 
@@ -15,8 +15,13 @@ if [ -n "$unstaged" ]; then
         echo "Run \`cargo fmt --all\` and stage the result." >&2
         exit 1
     fi
-    exit 0
+else
+    cargo fmt --all
+    git add -- $staged
 fi
 
-cargo fmt --all
-git add -- $staged
+# Checks the working tree, so unstaged changes are linted too
+if ! cargo clippy --workspace --all-targets --quiet -- -D warnings; then
+    echo "pre-commit: \`cargo clippy --workspace --all-targets\` has warnings." >&2
+    exit 1
+fi

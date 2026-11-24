@@ -89,5 +89,6 @@ A failure prints the seed and the failing inputs. `FORMALITH_SHOW_SKIPPED=1` lis
 `FORMALITH_TIMES=1` prints the time of each case and `FORMALITH_WORKERS` sets the number of threads.
 
 CI runs `cargo fmt --all --check` and `cargo test --workspace` on pushes and pull requests. A pre-commit hook formatting the
-staged Rust files is enabled with `git config core.hooksPath .githooks`. The fuzzers run every night with a new seed
+staged Rust files and running `cargo clippy --workspace --all-targets` (failing on warnings) is enabled with
+`git config core.hooksPath .githooks`. The fuzzers run every night with a new seed
 (`.github/workflows/fuzz.yml`, also started by hand with a number of cases and a seed).
