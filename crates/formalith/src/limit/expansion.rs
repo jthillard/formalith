@@ -17,7 +17,7 @@ use crate::{
 use super::{Direction, LimitError, LimitResult, gruntz::Gruntz, prepare, series};
 
 /// The terms `{$c_i w^(e_i)$}` of a series in `w`, which stands for an expression in `x`.
-pub(crate) struct SeriesTerms {
+pub struct SeriesTerms {
     /// Pairs `{$(e_i, c_i)$}` with rational exponents, sorted by increasing exponent, without zero coefficients.
     pub(crate) terms: Vec<(Rational, Expr)>,
     /// Whether the terms are the whole series, without remainder.
@@ -58,14 +58,21 @@ impl Term<Real> {
             // `{$x = s/w$}`, so `{$w = s/x$}` and `{$ln w = -ln(s x)$}`
             let sign = value(Rational::from(sign as i64));
             let ln_back = -fun(Context::LN, &sign * &variable(x));
-            return side_series(&f, x, order, |w| &sign / w, &sign / &variable(x), ln_back);
+            return side_series(
+                &f,
+                x,
+                order,
+                |w| &sign / w,
+                &(&sign / &variable(x)),
+                &ln_back,
+            );
         }
         // `{$x = a + s w$}`, so `{$w = s (x - a)$}`
         let side = |sign: i64| {
             let sign = value(Rational::from(sign));
             let w = &sign * &(variable(x) - point.clone());
             let ln_back = fun(Context::LN, w.clone());
-            side_series(&f, x, order, |w| point + &(&sign * w), w, ln_back)
+            side_series(&f, x, order, |w| point + &(&sign * w), &w, &ln_back)
         };
         match direction {
             Direction::Right => side(1),
@@ -88,7 +95,7 @@ impl Term<Real> {
 ///
 /// # Errors
 /// Like [`Term::series`], [`LimitError::Unsupported`] for irrational exponents and logarithms.
-pub(crate) fn series_terms(
+pub fn series_terms(
     f: &Expr,
     x: Symbol,
     point: &Expr,
@@ -167,7 +174,7 @@ fn side_terms(
 
 /// The remainder `{$o((x - a)^(n - 1))$}` of a series at `point` (`{$o(x^(1 - n))$}` at `{$plus.minus oo$}`), `n`
 /// being `order`, added to the terms by the builtin `series`.
-pub(crate) fn remainder(x: Symbol, point: &Expr, order: &Rational) -> Expr {
+pub fn remainder(x: Symbol, point: &Expr, order: &Rational) -> Expr {
     let exponant = value(order - Rational::from(1));
     let bound = if infinity_sign(point).is_some() {
         variable(x).pow(&-exponant)
@@ -184,8 +191,8 @@ fn side_series(
     x: Symbol,
     order: &Rational,
     at: impl Fn(&Expr) -> Expr,
-    back: Expr,
-    ln_back: Expr,
+    back: &Expr,
+    ln_back: &Expr,
 ) -> LimitResult<Expr> {
     let mut gruntz = Gruntz::new(x);
     // Not a valid identifier, so it can't conflict with a symbol of the expression
@@ -198,7 +205,7 @@ fn side_series(
         .into_iter()
         .try_fold(zero(), |res, (exponant, coefficient)| {
             let coefficient = coefficient
-                .substitute(logw, &ln_back)
+                .substitute(logw, ln_back)
                 .ok_or(LimitError::Unsupported)?;
             Ok(res + coefficient * back.pow(&exponant))
         })

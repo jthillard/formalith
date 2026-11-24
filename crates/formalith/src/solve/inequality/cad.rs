@@ -4,7 +4,7 @@
 //!    belonging to the level of its last unknown.
 //! 2. Projection: the polynomials of the last level give polynomials of the lower levels whose roots are the
 //!    points where the roots in the last unknown appear, disappear or cross (coefficients, discriminants and
-//!    resultants, McCallum's projection), down to polynomials in `{$x_1$}`.
+//!    resultants, `McCallum`'s projection), down to polynomials in `{$x_1$}`.
 //! 3. Lifting: the real roots of the polynomials in `{$x_1$}` split the line into points (sections) and open
 //!    intervals (sectors). Over a sample point of each one, the roots in `{$x_2$}` of the polynomials of the second
 //!    level split the line again, and so on. On each cell the polynomials have a constant sign, found at the
@@ -317,7 +317,7 @@ impl<'a> Cad<'a> {
         let mut factors = vec![];
         for item in items {
             if !self.depends(&item) {
-                constant = constant * item;
+                constant *= item;
                 continue;
             }
             match &item {
@@ -334,7 +334,7 @@ impl<'a> Cad<'a> {
     }
 
     /// The index of the factor `p`, added if needed.
-    fn add_factor(&mut self, p: Expr) -> Result<usize, SolveError> {
+    fn add_factor(&mut self, p: &Expr) -> Result<usize, SolveError> {
         let p = p.expand();
         if let Some(index) = self.factors.iter().position(|f| *f == p) {
             return Ok(index);
@@ -367,7 +367,7 @@ impl<'a> Cad<'a> {
         let sign = Self::constant_sign(&constant)?;
         let factors = factors
             .into_iter()
-            .map(|(factor, multiplicity)| Ok((self.add_factor(factor)?, multiplicity % 2 == 1)))
+            .map(|(factor, multiplicity)| Ok((self.add_factor(&factor)?, multiplicity % 2 == 1)))
             .collect::<Result<_, SolveError>>()?;
         Ok((sign, factors))
     }
@@ -439,7 +439,7 @@ impl<'a> Cad<'a> {
                 }
                 let (_, factors) = self.split_factors(&p);
                 for (factor, _) in factors {
-                    self.add_factor(factor)?;
+                    self.add_factor(&factor)?;
                 }
             }
         }
@@ -456,14 +456,13 @@ impl<'a> Cad<'a> {
                 }
                 let equation = Equation::new(self.factors[id].clone(), zero());
                 R.solve_for(&[equation], &[self.unknowns[level]])
-                    .map(values)
-                    .unwrap_or_default()
+                    .map_or_default(values)
             })
             .collect();
     }
 
     /// `term` with the first unknowns replaced by `values`.
-    fn substitute(&self, term: &Expr, values: &[(Symbol, Expr)]) -> Expr {
+    fn substitute(term: &Expr, values: &[(Symbol, Expr)]) -> Expr {
         values
             .iter()
             .fold(term.clone(), |term, (x, value)| subs(&term, *x, value))
@@ -480,8 +479,8 @@ impl<'a> Cad<'a> {
     }
 
     /// The approximation of `term` at `point`.
-    fn approximate_at(&self, term: &Expr, point: &[(Symbol, Expr)]) -> Option<Rational> {
-        approximate(&self.substitute(term, point), DIGITS)
+    fn approximate_at(term: &Expr, point: &[(Symbol, Expr)]) -> Option<Rational> {
+        approximate(&Self::substitute(term, point), DIGITS)
     }
 
     /// The sign of the factor `id` at the sample point of a cell.
@@ -490,7 +489,7 @@ impl<'a> Cad<'a> {
             return Ok(Ordering::Equal);
         }
         let factor = &self.factors[id];
-        match self.approximate_at(factor, &self.point(sample)) {
+        match Self::approximate_at(factor, &self.point(sample)) {
             Some(approximation) if approximation != 0 => Ok(approximation.cmp(&Rational::ZERO)),
             _ => Err(SolveError::Inequality(format!(
                 "can't find the sign of `{}`",
@@ -535,8 +534,7 @@ impl<'a> Cad<'a> {
         let point = self.point(sample);
         for id in ids {
             for candidate in &self.roots[*id] {
-                if self
-                    .approximate_at(candidate, &point)
+                if Self::approximate_at(candidate, &point)
                     .is_some_and(|approximation| close(&approximation, &root.approximation))
                 {
                     return Ok(candidate.clone());
@@ -562,7 +560,7 @@ impl<'a> Cad<'a> {
         // The roots of the factors of this level over the sample point, sorted, with the factors vanishing there
         let mut roots: Vec<(Root, Vec<usize>)> = vec![];
         for id in (0..self.factors.len()).filter(|id| self.levels[*id] == level) {
-            let mut p = self.substitute(&self.factors[id], &point).expand();
+            let mut p = Self::substitute(&self.factors[id], &point).expand();
             if sample.sections.iter().any(|section| *section) {
                 p = without_vanishing_coefficients(&p, x)?;
             }
@@ -653,28 +651,26 @@ impl<'a> Cad<'a> {
                 a.len() == b.len()
                     && a.iter().zip(b).all(|(a, b)| {
                         let (i, j) = (&a.interval, &b.interval);
-                        let lo = self.same_bound(i.lo.as_ref(), j.lo.as_ref(), point);
-                        let hi = self.same_bound(i.hi.as_ref(), j.hi.as_ref(), point);
+                        let lo = Self::same_bound(i.lo.as_ref(), j.lo.as_ref(), point);
+                        let hi = Self::same_bound(i.hi.as_ref(), j.hi.as_ref(), point);
                         if !(lo && hi && i.lo_closed == j.lo_closed && i.hi_closed == j.hi_closed) {
                             return false;
                         }
                         // Compare the next levels inside the interval
-                        let inside = match i.point() {
-                            Some(value) => self.substitute(value, point),
-                            None => {
-                                let bound = |bound: Option<&Expr>| {
-                                    bound.and_then(|bound| self.approximate_at(bound, point))
-                                };
-                                let (lo, hi) = (bound(i.lo.as_ref()), bound(i.hi.as_ref()));
-                                if (i.lo.is_some() && lo.is_none())
-                                    || (i.hi.is_some() && hi.is_none())
-                                {
-                                    return false;
-                                }
-                                // The bounds of a sector may meet at the point, like `{$plus.minus sqrt(1 - x^2)$}`
-                                // at `{$x = 1$}`
-                                value(simplest_between(lo.as_ref(), hi.as_ref()))
+                        let inside = if let Some(value) = i.point() {
+                            Self::substitute(value, point)
+                        } else {
+                            let bound = |bound: Option<&Expr>| {
+                                bound.and_then(|bound| Self::approximate_at(bound, point))
+                            };
+                            let (lo, hi) = (bound(i.lo.as_ref()), bound(i.hi.as_ref()));
+                            if (i.lo.is_some() && lo.is_none()) || (i.hi.is_some() && hi.is_none())
+                            {
+                                return false;
                             }
+                            // The bounds of a sector may meet at the point, like `{$plus.minus sqrt(1 - x^2)$}`
+                            // at `{$x = 1$}`
+                            value(simplest_between(lo.as_ref(), hi.as_ref()))
                         };
                         let mut point = point.to_vec();
                         point.push((self.unknowns[point.len()], inside));
@@ -686,14 +682,15 @@ impl<'a> Cad<'a> {
     }
 
     /// Whether the bounds `a` and `b` are the same at `point`.
-    fn same_bound(&self, a: Option<&Expr>, b: Option<&Expr>, point: &[(Symbol, Expr)]) -> bool {
+    fn same_bound(a: Option<&Expr>, b: Option<&Expr>, point: &[(Symbol, Expr)]) -> bool {
         match (a, b) {
             (None, None) => true,
             (Some(a), Some(b)) => {
                 // `close` only needs an absolute accuracy, and a bound may vanish at the point, where `approximate`
                 // would raise its precision up to its maximum
-                let approximate_at =
-                    |term: &Expr| approximate_fixed(&self.substitute(term, point), SAME_BOUND_BITS);
+                let approximate_at = |term: &Expr| {
+                    approximate_fixed(&Self::substitute(term, point), SAME_BOUND_BITS)
+                };
                 match (approximate_at(a), approximate_at(b)) {
                     (Some(a), Some(b)) => close(&a, &b),
                     _ => false,
@@ -766,7 +763,7 @@ impl<'a> Cad<'a> {
                 let x = self.unknowns[prefix.len()];
                 for piece in pieces {
                     let bound = |bound: &Option<Expr>| {
-                        bound.as_ref().map(|bound| self.substitute(bound, points))
+                        bound.as_ref().map(|bound| Self::substitute(bound, points))
                     };
                     let interval = Interval {
                         lo: bound(&piece.interval.lo),

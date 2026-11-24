@@ -82,17 +82,17 @@ fn elementary(ident: Symbol, u: &Expr) -> Option<Expr> {
         Context::TANH => fun(Context::LN, fun(Context::COSH, u.clone())),
         // By parts, `{$integral f = u f - integral u f'$}`
         Context::LN => u * &f - u.clone(),
-        Context::ASIN => u * &f + sqrt(&one - &u2),
-        Context::ACOS => u * &f - sqrt(&one - &u2),
+        Context::ASIN => u * &f + sqrt(&(&one - &u2)),
+        Context::ACOS => u * &f - sqrt(&(&one - &u2)),
         Context::ATAN => u * &f - half() * fun(Context::LN, &one + &u2),
-        Context::ASINH => u * &f - sqrt(&u2 + &one),
-        Context::ACOSH => u * &f - sqrt(&u2 - &one),
+        Context::ASINH => u * &f - sqrt(&(&u2 + &one)),
+        Context::ACOSH => u * &f - sqrt(&(&u2 - &one)),
         Context::ATANH => u * &f + half() * fun(Context::LN, &one - &u2),
         Context::ABS => half() * u * f,
         Context::SIGN => fun(Context::ABS, u.clone()),
         // By parts, `{$integral "erf" = u "erf" u + e^(-u^2) / sqrt(pi)$}`
-        Context::ERF => u * &f + fun(Context::EXP, -u2) / sqrt(variable(Context::PI)),
-        Context::ERFI => u * &f - fun(Context::EXP, u2) / sqrt(variable(Context::PI)),
+        Context::ERF => u * &f + fun(Context::EXP, -u2) / sqrt(&variable(Context::PI)),
+        Context::ERFI => u * &f - fun(Context::EXP, u2) / sqrt(&variable(Context::PI)),
         // By parts, `{$integral "Si" = u "Si" u + cos u$}`, with the derivatives `{$sin(u)/u$}`, `{$cos(u)/u$}`, `{$e^u/u$}`
         Context::SI => u * &f + fun(Context::COS, u.clone()),
         Context::CI => u * &f - fun(Context::SIN, u.clone()),
@@ -104,9 +104,10 @@ fn elementary(ident: Symbol, u: &Expr) -> Option<Expr> {
 /// `{$integral e^u sin v$}` and `{$integral e^u cos v$}` for linear `u` and `v`.
 fn exp_trig(f: &Expr, x: Symbol) -> Option<Expr> {
     let [first, second] = factors(f).try_into().ok()?;
-    let (exp, trig) = match (unary(&first)?, unary(&second)?) {
-        (exp @ (Context::EXP, _), trig) | (trig, exp @ (Context::EXP, _)) => (exp, trig),
-        _ => return None,
+    let ((exp @ (Context::EXP, _), trig) | (trig, exp @ (Context::EXP, _))) =
+        (unary(&first)?, unary(&second)?)
+    else {
+        return None;
     };
     let (u, (ident, v)) = (exp.1, trig);
     let (a, b) = (linear(u, x)?, linear(v, x)?);
@@ -185,9 +186,9 @@ fn gaussian(q: &Expr, x: Symbol) -> Option<Expr> {
     } else {
         (Context::ERFI, c)
     };
-    let sqrt_c = sqrt(value(c));
+    let sqrt_c = sqrt(&value(c));
     let erf = fun(ident, &sqrt_c * &(variable(x) + value(h)));
-    Some(fun(Context::EXP, value(k)) * sqrt(variable(Context::PI)) / (ratio(2, 1) * sqrt_c) * erf)
+    Some(fun(Context::EXP, value(k)) * sqrt(&variable(Context::PI)) / (ratio(2, 1) * sqrt_c) * erf)
 }
 
 /// `{$integral p e^q$}` for a polynomial `p` and a quadratic polynomial `q`: dividing `p` by `{$q'$}`,
@@ -205,8 +206,8 @@ fn polynomial_gaussian(f: &Expr, x: Symbol) -> Option<Expr> {
             _ => (&factor, one()),
         };
         match unary(base) {
-            Some((Context::EXP, u)) => q = q + n * u,
-            _ => rest = rest * &factor,
+            Some((Context::EXP, u)) => q += n * u,
+            _ => rest *= &factor,
         }
     }
     quadratic(&q, x)?;
@@ -235,9 +236,9 @@ fn symbolic_atan(q: &Expr, x: Symbol) -> Option<Expr> {
     let (mut a, mut b) = (zero(), zero());
     for term in add {
         if depends(term, x) {
-            a = a + term / &square;
+            a += term / &square;
         } else {
-            b = b + term;
+            b += term;
         }
     }
     if depends(&a, x) || a.is_zero() || b.is_zero() {
@@ -246,7 +247,7 @@ fn symbolic_atan(q: &Expr, x: Symbol) -> Option<Expr> {
     if matches!((&a, &b), (Term::Value(_), Term::Value(_))) {
         return None;
     }
-    let s = map_tree(&sqrt(&b / &a), &|t| match unary(t) {
+    let s = map_tree(&sqrt(&(&b / &a)), &|t| match unary(t) {
         Some((Context::ABS, u)) => Some(u.clone()),
         _ => None,
     });
@@ -271,12 +272,12 @@ fn has_root(term: &Expr) -> bool {
 fn quadratic_power(q: &Expr, e: &Expr, x: Symbol) -> Option<Expr> {
     let (c2, h, k) = quadratic(q, x)?;
     let t = variable(x) + value(h);
-    let sqrt_q = sqrt(q.clone());
+    let sqrt_q = sqrt(q);
     let (c2_sign, k_sign) = (
         constant_sign(&value(c2.clone()))?,
         constant_sign(&value(k.clone()))?,
     );
-    let sqrt = |v: Rational| sqrt(value(v));
+    let sqrt = |v: Rational| sqrt(&value(v));
     if *e == ratio(-1, 2) {
         return match (c2_sign, k_sign) {
             // `{$integral 1 / sqrt(c_2 t^2 + k) = "asinh"(t sqrt(c_2 / k)) / sqrt(c_2)$}`

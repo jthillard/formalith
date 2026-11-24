@@ -24,7 +24,7 @@ const MAX_RHO_ITERATIONS: u64 = 1 << 20;
 
 /// Whether `n` is prime: exact for `n` fitting in `u64` and below `{$3.3 dot 10^24$}`, a strong probable prime test
 /// above.
-pub(crate) fn is_prime(n: &Natural) -> bool {
+pub fn is_prime(n: &Natural) -> bool {
     if let Ok(n) = u64::try_from(n) {
         return modular::is_prime(n);
     }
@@ -95,7 +95,7 @@ fn split(n: Natural, factors: &mut Vec<Natural>) -> Option<()> {
 
 /// The prime factorization of `{$n >= 1$}`, as primes with their exponents by increasing primes. Returns `None` if
 /// a factor can't be found.
-pub(crate) fn factor(n: &Natural) -> Option<Vec<(Natural, u64)>> {
+pub fn factor(n: &Natural) -> Option<Vec<(Natural, u64)>> {
     let mut rest = n.clone();
     let mut primes = vec![];
     let mut p = 2_u64;
@@ -123,7 +123,7 @@ pub(crate) fn factor(n: &Natural) -> Option<Vec<(Natural, u64)>> {
 /// The rows `[p, e]` of the builtin `factorint(q)` for a non-zero rational `q`: `[-1, 1]` first when `q` is
 /// negative, then the primes of its numerator and denominator by increasing primes, the latter with negative
 /// exponents, and `[1, 1]` for `{$plus.minus 1$}`. Returns `None` for 0, or if a factor can't be found.
-pub(crate) fn factor_rational(q: &Rational) -> Option<Vec<(Integer, i64)>> {
+pub fn factor_rational(q: &Rational) -> Option<Vec<(Integer, i64)>> {
     if *q == 0 {
         return None;
     }
@@ -162,6 +162,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::maybe_infinite_iter)]
     fn factorization() {
         let factors = |n: Natural| {
             factor(&n)
@@ -174,7 +175,7 @@ mod tests {
             factors(Natural::from(360_u64)),
             [("2".into(), 3), ("3".into(), 2), ("5".into(), 1)]
         );
-        assert!(factors(Natural::ONE).is_empty());
+        assert_eq!(factors(Natural::ONE), []);
         let n = (Natural::ONE << 67_u64) - Natural::ONE;
         assert_eq!(
             factors(n),
@@ -182,12 +183,12 @@ mod tests {
         );
         // Two primes above `{$2^64$}`
         let p = Natural::from(18_446_744_073_709_551_557_u64) + Natural::from(1_000_u64);
-        let p = (0..)
-            .map(|k| &p + Natural::from(k as u64))
+        let p = (0_u64..)
+            .map(|k| &p + Natural::from(k))
             .find(is_prime)
             .unwrap();
-        let q = (0..)
-            .map(|k| Natural::from(1_000_003_u64) + Natural::from(k as u64))
+        let q = (0_u64..)
+            .map(|k| Natural::from(1_000_003_u64) + Natural::from(k))
             .find(is_prime)
             .unwrap();
         let res = factor(&(&p * &q)).unwrap();

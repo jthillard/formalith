@@ -111,8 +111,8 @@ impl Emitter<'_> {
                 } else {
                     "nf_nan()".to_owned()
                 };
-                for pair in args.chunks_exact(2).rev() {
-                    value = self.bind(&format!("nf_branch({}, {}, {value})", pair[0], pair[1]));
+                for [condition, branch] in args.as_chunks::<2>().0.iter().rev() {
+                    value = self.bind(&format!("nf_branch({condition}, {branch}, {value})"));
                 }
                 return value;
             }

@@ -77,15 +77,16 @@ fn substitute(integrator: &mut Integrator, f: &Expr, x: Symbol, u: &Expr) -> Opt
         h = replace(&quotient.simplify(), u, &t, x);
     }
     // `{$x = (t - b) / a$}` for a linear `{$u = a x + b$}`, unless `x` already comes from one
-    let mut affine = false;
-    if depends(&h, x)
+    let affine = if depends(&h, x)
         && !integrator.affine.contains(&x)
         && let Some(a) = linear(u, x)
     {
         let b = (u - &(&a * &variable(x))).simplify();
         h = h.substitute(x, &((&t - &b) / a))?;
-        affine = true;
-    }
+        true
+    } else {
+        false
+    };
     if depends(&h, x) {
         return None;
     }

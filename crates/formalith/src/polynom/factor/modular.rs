@@ -27,6 +27,8 @@ impl Rng {
     }
 }
 
+// The remainder is below `p`
+#[allow(clippy::cast_possible_truncation)]
 const fn mul_mod(a: u64, b: u64, p: u64) -> u64 {
     ((a as u128 * b as u128) % p as u128) as u64
 }
@@ -346,7 +348,7 @@ pub fn is_prime(n: u64) -> bool {
     if n < 2 {
         return false;
     }
-    if let Some(base) = BASES.iter().find(|base| n % **base == 0) {
+    if let Some(base) = BASES.iter().find(|base| n.is_multiple_of(**base)) {
         return n == *base;
     }
     let s = (n - 1).trailing_zeros();

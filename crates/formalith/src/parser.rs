@@ -20,7 +20,7 @@ use crate::term::{Fun, Mul, Normalize, SymbolTerm, Term, Value, flags::Flags, re
 use environment::Environment;
 use lexer::{Lexer, LiteralTokenKind, Token, TokenKind};
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Op {
     Add,
     Subtract,
@@ -29,7 +29,7 @@ pub(crate) enum Op {
     Pow,
 }
 impl Op {
-    pub const fn get_priority(&self) -> usize {
+    pub const fn get_priority(self) -> usize {
         match self {
             Self::Pow => 14,
             Self::Multiply | Self::Divide => 13,

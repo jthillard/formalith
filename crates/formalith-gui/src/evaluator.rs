@@ -9,6 +9,8 @@ use std::collections::VecDeque;
 use crate::protocol::{CRASHED, Reply, Request};
 
 /// What a backend reports.
+// Events are sent once per line, boxing wouldn't save anything
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 pub enum Event {
     /// An answer to a request.

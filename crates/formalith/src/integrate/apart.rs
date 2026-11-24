@@ -49,7 +49,7 @@ impl Term<C<Real>> {
 }
 
 /// The function and variable of `apart(f, x)`, or of `apart(f)` when `f` has a single symbol.
-pub(crate) fn apart_arguments<T: Set>(args: &[Term<T>]) -> Option<(&Term<T>, Symbol)> {
+pub fn apart_arguments<T: Set>(args: &[Term<T>]) -> Option<(&Term<T>, Symbol)> {
     match args {
         [f, Term::Symbol(x)] => Some((f, x.symbol)),
         [f] => {

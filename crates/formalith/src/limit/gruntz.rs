@@ -97,7 +97,7 @@ impl Gruntz {
                 Ordering::Equal => f = c0,
             }
         };
-        self.without_angles(&res).map(|res| res.normalize())
+        Self::without_angles(&res).map(|res| res.normalize())
     }
 
     /// Rewrite each `{$Gamma(g)$}` with `{$g -> -oo$}` in `f` by the reflection formula
@@ -230,12 +230,12 @@ impl Gruntz {
             return Err(LimitError::Unsupported);
         };
         let angle = self.angle(&g);
-        let (sin, cos) = (fun(Context::SIN, angle.clone()), fun(Context::COS, angle));
+        let (sine, cosine) = (fun(Context::SIN, angle.clone()), fun(Context::COS, angle));
         let (f, h) = (fun(sif(), g.clone()), fun(sig(), g));
         Ok(if ident == Context::SI {
-            sign * variable(Context::PI) * half() - f * cos - h * sin
+            sign * variable(Context::PI) * half() - f * cosine - h * sine
         } else {
-            f * sin - h * cos
+            f * sine - h * cosine
         })
     }
 
@@ -357,7 +357,7 @@ impl Gruntz {
     }
 
     /// `res` if it doesn't depend on the angles. A result taking several values for a single angle doesn't exist.
-    fn without_angles(&self, res: &Expr) -> LimitResult<Expr> {
+    fn without_angles(res: &Expr) -> LimitResult<Expr> {
         let angles = angles(res);
         if angles.is_empty() {
             return Ok(res.clone());
@@ -577,10 +577,9 @@ impl Gruntz {
                 {
                     self.mrv(g)
                 }
-                // Unbounded arguments were rewritten
-                Some((Context::SI | Context::CI | Context::EI, g)) => self.mrv(g),
-                // `{$Gamma g$}` with `{$g -> oo$}` was rewritten, and `{$psi^((m))(g)$}` has a series
-                Some((Context::GAMMA, g)) => self.mrv(g),
+                // Unbounded arguments were rewritten, like `{$Gamma g$}` with `{$g -> oo$}`, and
+                // `{$psi^((m))(g)$}` has a series
+                Some((Context::SI | Context::CI | Context::EI | Context::GAMMA, g)) => self.mrv(g),
                 None if polygamma_args(f).is_some() => {
                     let (_, g) = polygamma_args(f).ok_or(LimitError::Unsupported)?;
                     self.mrv(g)

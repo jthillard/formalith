@@ -103,6 +103,9 @@ impl<K: Ring> Poly<K> {
     }
 
     /// Convert a polynomial to an expression over its coefficients, keeping the terms sorted by decreasing degree.
+    ///
+    /// # Panics
+    /// Panics if a degree doesn't fit in an `i64`.
     pub fn to_term(&self, a: &Polynomial<K>) -> Term<K> {
         let set = self.coefficients;
         let exponant_set = set.get_exponant_set();

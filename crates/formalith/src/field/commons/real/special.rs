@@ -29,7 +29,7 @@ const MAX_ORDER: u64 = 1000;
 static BERNOULLI: RwLock<Vec<Rational>> = RwLock::new(Vec::new());
 
 /// The Bernoulli number `{$B_n$}`, with `{$B_1 = -1/2$}`.
-pub(crate) fn bernoulli(n: usize) -> Rational {
+pub fn bernoulli(n: usize) -> Rational {
     if let Some(b) = BERNOULLI.read().expect("Bernoulli numbers lock").get(n) {
         return b.clone();
     }
@@ -131,10 +131,7 @@ impl R<Rational> {
     pub(super) fn eval_piecewise(self, args: &[Term<Self>]) -> Option<Term<Self>> {
         let default = (args.len() % 2 == 1).then(|| args[args.len() - 1].clone());
         let mut kept = vec![];
-        for pair in args.chunks_exact(2) {
-            let [condition, value] = pair else {
-                unreachable!("Chunks have two elements")
-            };
+        for [condition, value] in args.as_chunks::<2>().0 {
             match decide(condition) {
                 Some(false) => {}
                 Some(true) if kept.is_empty() => return Some(value.clone()),

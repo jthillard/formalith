@@ -32,7 +32,7 @@ macro_rules! profile_scope {
 pub mod graph;
 
 use std::{
-    fmt,
+    fmt::{self, Write},
     panic::{self, AssertUnwindSafe},
 };
 
@@ -133,7 +133,7 @@ impl Session {
              commands:",
         );
         for (command, description) in COMMANDS {
-            help.push_str(&format!("\n  {command:<13} {description}"));
+            let _ = write!(help, "\n  {command:<13} {description}");
         }
         help.push('\n');
         help.push_str(&sets_help());
@@ -170,13 +170,11 @@ impl Session {
                 if let Some(name) =
                     command_argument(line, "help").or_else(|| command_argument(line, ":help"))
                 {
-                    match builtin_help(name) {
-                        Some(help) => (Output::Message(help), false),
-                        None => (
-                            Output::Error(format!("unknown builtin `{name}`, see `help builtins`")),
-                            false,
-                        ),
-                    }
+                    let output = builtin_help(name).map_or_else(
+                        || Output::Error(format!("unknown builtin `{name}`, see `help builtins`")),
+                        Output::Message,
+                    );
+                    (output, false)
                 } else if let Some(name) = command_argument(line, ":set") {
                     self.set_command(name)
                 } else if let Some(name) = command_argument(line, ":clear") {
@@ -286,9 +284,9 @@ impl Session {
 fn builtins_help() -> String {
     let mut help = String::from("builtins (`help <name>` for details):");
     for category in Category::ALL {
-        help.push_str(&format!("\n{}:", category.title()));
+        let _ = write!(help, "\n{}:", category.title());
         for doc in category.builtins() {
-            help.push_str(&format!("\n  {:<13} {}", doc.name(), doc.summary));
+            let _ = write!(help, "\n  {:<13} {}", doc.name(), doc.summary);
         }
     }
     help
@@ -309,7 +307,7 @@ fn builtin_help(name: &str) -> Option<String> {
         } else {
             format!(" (in {})", example.set)
         };
-        help.push_str(&format!("\n  {} → {}{set}", example.input, example.result));
+        let _ = write!(help, "\n  {} → {}{set}", example.input, example.result);
     }
     Some(help)
 }

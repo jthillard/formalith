@@ -17,6 +17,12 @@
 )]
 // This lint is not relevant in most cases
 #![allow(clippy::or_fun_call)]
+// Single-letter names follow the mathematical notation of the algorithms
+#![allow(clippy::many_single_char_names)]
+// Long algorithms read better as one function than split arbitrarily
+#![allow(clippy::too_many_lines)]
+// `mul_add` changes f64 rounding and is emulated in software on wasm
+#![allow(clippy::suboptimal_flops)]
 // Allow this lint since it cause a stack overflow in clippy, probably due to infinite types.
 // A bug report should probably be filled
 #![allow(clippy::significant_drop_in_scrutinee)]

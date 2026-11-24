@@ -1,5 +1,6 @@
-//! Systems of inequalities, like `x^2 - 3x + 2 > 0` or `x^2 + y^2 < 1, y > 0`, whose solutions are unions of
-//! cells: the first unknown in an interval, the next one between bounds depending on the first one, and so on.
+//! Systems of inequalities, like `x^2 - 3x + 2 > 0` or `x^2 + y^2 < 1, y > 0`.
+//!
+//! Their solutions are unions of cells: the first unknown in an interval, the next one between bounds depending on the first one, and so on.
 //!
 //! Each relation `lhs op rhs` is written as `{$f = n / d$}`, `n` and `d` being polynomials in the unknowns. The
 //! relations are split into groups sharing no unknown, each one solved by a cylindrical algebraic decomposition
@@ -108,36 +109,36 @@ impl<T: Set> Interval<T> {
     }
 
     /// Print the interval, `{a}` for a point.
-    fn print_interval(&self, options: &PrintOptions, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn print_interval(&self, options: PrintOptions, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if let Some(point) = self.point() {
             f.write_str("{")?;
-            point.print(options, f)?;
+            point.print(&options, f)?;
             return f.write_str("}");
         }
         f.write_str(if self.lo_closed { "[" } else { "(" })?;
         match &self.lo {
-            Some(lo) => lo.print(options, f)?,
+            Some(lo) => lo.print(&options, f)?,
             None => f.write_str("-oo")?,
         }
         f.write_str(", ")?;
         match &self.hi {
-            Some(hi) => hi.print(options, f)?,
+            Some(hi) => hi.print(&options, f)?,
             None => f.write_str("oo")?,
         }
         f.write_str(if self.hi_closed { "]" } else { ")" })
     }
 
     /// Pretty print the interval, `{a}` for a point.
-    fn pretty_print_interval(&self, options: &PrintOptions) -> PrettyPrinter {
+    fn pretty_print_interval(&self, options: PrintOptions) -> PrettyPrinter {
         if let Some(point) = self.point() {
-            let mut point = point.pretty_print(options);
+            let mut point = point.pretty_print(&options);
             point.group('{', '}');
             return point;
         }
         let bound = |bound: &Option<Term<T>>, positive| {
             bound.as_ref().map_or_else(
                 || PrettyPrinter::from(if positive { "∞" } else { "-∞" }.to_owned()),
-                |bound| bound.pretty_print(options),
+                |bound| bound.pretty_print(&options),
             )
         };
         let mut printed = bound(&self.lo, false);
@@ -150,8 +151,12 @@ impl<T: Set> Interval<T> {
     }
 }
 
-/// The solutions of a system of inequalities: a union of cells, each one giving an interval per unknown, whose
-/// bounds may depend on the previous unknowns, like `{$x in (-1, 1), y in (-sqrt(1 - x^2), sqrt(1 - x^2))$}`.
+/// A printed line of a [`Region`]: the intervals of the first unknowns, and the union of those of the last one.
+type Line<'a, T> = (&'a [Interval<T>], Vec<&'a Interval<T>>);
+
+/// The solutions of a system of inequalities: a union of cells.
+///
+/// Each cell gives an interval per unknown, whose bounds may depend on the previous unknowns, like `{$x in (-1, 1), y in (-sqrt(1 - x^2), sqrt(1 - x^2))$}`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Region<T: Set> {
     /// The unknowns, empty when the relations don't contain any symbol.
@@ -162,7 +167,7 @@ pub struct Region<T: Set> {
 
 impl<T: Set> Region<T> {
     /// The text printed without intervals.
-    fn text(&self, options: &PrintOptions) -> Option<String> {
+    fn text(&self, options: PrintOptions) -> Option<String> {
         let text = if self.cells.is_empty() {
             "no solution"
         } else if self.unknowns.is_empty() {
@@ -179,8 +184,8 @@ impl<T: Set> Region<T> {
 
     /// The lines of the solution: groups of consecutive cells only differing by their last interval, which are
     /// printed as a union.
-    fn lines(&self) -> Vec<(&[Interval<T>], Vec<&Interval<T>>)> {
-        let mut lines: Vec<(&[Interval<T>], Vec<&Interval<T>>)> = vec![];
+    fn lines(&self) -> Vec<Line<'_, T>> {
+        let mut lines: Vec<Line<'_, T>> = vec![];
         for cell in &self.cells {
             let (last, prefix) = cell
                 .split_last()
@@ -197,7 +202,7 @@ impl<T: Set> Region<T> {
     fn print_coordinate(
         unknown: Symbol,
         intervals: &[&Interval<T>],
-        options: &PrintOptions,
+        options: PrintOptions,
         f: &mut fmt::Formatter<'_>,
     ) -> fmt::Result {
         let (element, union, reals) = if options.typst {
@@ -210,9 +215,9 @@ impl<T: Set> Region<T> {
             && let Some(point) = interval.point()
         {
             write!(f, "{name} ")?;
-            Self::operator("=", options, f)?;
+            Self::operator("=", &options, f)?;
             f.write_str(" ")?;
-            return point.print(options, f);
+            return point.print(&options, f);
         }
         write!(f, "{name}{element}")?;
         if let [interval] = intervals
@@ -233,12 +238,12 @@ impl<T: Set> Region<T> {
     fn pretty_print_coordinate(
         unknown: Symbol,
         intervals: &[&Interval<T>],
-        options: &PrintOptions,
+        options: PrintOptions,
     ) -> PrettyPrinter {
         let mut res = PrettyPrinter::from(unknown.name().to_owned());
         if let [interval] = intervals {
             if let Some(point) = interval.point() {
-                res.concat("=", true, &point.pretty_print(options));
+                res.concat("=", true, &point.pretty_print(&options));
                 return res;
             }
             if interval.is_everything() {
@@ -257,7 +262,7 @@ impl<T: Set> Region<T> {
 
 impl<T: Set> Print for Region<T> {
     fn print(&self, options: &PrintOptions, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if let Some(text) = self.text(options) {
+        if let Some(text) = self.text(*options) {
             return f.write_str(&text);
         }
         let (last, others) = self.unknowns.split_last().expect("There is an unknown");
@@ -267,10 +272,10 @@ impl<T: Set> Print for Region<T> {
                 f.write_str(if options.typst { " \\ " } else { "\n" })?;
             }
             for (unknown, interval) in others.iter().zip(prefix) {
-                Self::print_coordinate(*unknown, &[interval], options, f)?;
+                Self::print_coordinate(*unknown, &[interval], *options, f)?;
                 f.write_str(", ")?;
             }
-            Self::print_coordinate(*last, &union, options, f)?;
+            Self::print_coordinate(*last, &union, *options, f)?;
         }
         Ok(())
     }
@@ -278,7 +283,7 @@ impl<T: Set> Print for Region<T> {
 
 impl<T: Set> PrettyPrint for Region<T> {
     fn pretty_print(&self, options: &PrintOptions) -> PrettyPrinter {
-        if let Some(text) = self.text(options) {
+        if let Some(text) = self.text(*options) {
             return text.into();
         }
         let (last, others) = self.unknowns.split_last().expect("There is an unknown");
@@ -289,13 +294,13 @@ impl<T: Set> PrettyPrint for Region<T> {
                 line.concat(
                     ", ",
                     false,
-                    &Self::pretty_print_coordinate(*unknown, &[interval], options),
+                    &Self::pretty_print_coordinate(*unknown, &[interval], *options),
                 );
             }
             line.concat(
                 ", ",
                 false,
-                &Self::pretty_print_coordinate(*last, &union, options),
+                &Self::pretty_print_coordinate(*last, &union, *options),
             );
             res.stack(&line);
         }

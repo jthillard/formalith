@@ -146,7 +146,7 @@ pub(super) fn rational(f: &Expr, k: Symbol) -> Option<Expr> {
         }
         // The Laurent coefficients at `r` are the first coefficients of the series of `{$rem(r + u) / d(r + u)$}`
         let series = series_quotient(&rem.shift(&root), &cofactor.shift(&root), multiplicity);
-        let argument = variable(k) - value(root.clone());
+        let argument = variable(k) - value(root);
         for (i, c) in series.iter().enumerate() {
             if *c == 0 {
                 continue;
@@ -207,7 +207,7 @@ pub(super) fn known_series(f: &Expr, k: Symbol, a: &Expr) -> Option<Expr> {
         Term::Mul(mul) => mul.iter().cloned().collect(),
         _ => vec![f.clone()],
     };
-    let factorial = fun(Context::FACTORIAL, k_term.clone()).inv();
+    let factorial = fun(Context::FACTORIAL, k_term).inv();
     if !factors.contains(&factorial) {
         return None;
     }

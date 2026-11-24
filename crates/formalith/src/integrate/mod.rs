@@ -185,6 +185,9 @@ struct Integrator {
     risch_cache: HashMap<(Symbol, Expr), risch::RischResult<Expr>>,
 }
 
+/// An integration strategy, `None` when it doesn't apply.
+type Strategy = fn(&mut Integrator, &Expr, Symbol) -> Option<Expr>;
+
 impl Integrator {
     /// An antiderivative of `f` with respect to `x`.
     fn integrate(&mut self, f: &Expr, x: Symbol) -> Option<Expr> {
@@ -223,7 +226,7 @@ impl Integrator {
         if let Some(g) = merge_square_roots(f, x).or_else(|| pull_common_factors(f, x)) {
             return self.integrate(&g, x);
         }
-        let strategies: [fn(&mut Self, &Expr, Symbol) -> Option<Expr>; 6] = [
+        let strategies: [Strategy; 6] = [
             table::integrate,
             trig::integrate_powers,
             substitution::integrate,
@@ -277,12 +280,12 @@ fn split_constant(f: &Expr, x: Symbol) -> (Expr, Expr) {
     let mut rest = vec![];
     for factor in factors {
         if !depends(factor, x) {
-            constant = constant * factor;
+            constant *= factor;
         } else if let Some((Context::EXP, Term::Add(add))) = unary(factor)
             && add.iter().any(|t| !depends(t, x))
         {
             let (free, dependent): (Vec<_>, Vec<_>) = add.iter().partition(|t| !depends(t, x));
-            constant = constant * fun(Context::EXP, free.into_iter().fold(zero(), |s, t| s + t));
+            constant *= fun(Context::EXP, free.into_iter().fold(zero(), |s, t| s + t));
             rest.push(fun(
                 Context::EXP,
                 dependent.into_iter().fold(zero(), |s, t| s + t),
@@ -312,10 +315,10 @@ fn merge_square_roots(f: &Expr, x: Symbol) -> Option<Expr> {
                     && let Term::Value(e) = &**pow.exponant
                     && *e.value.denominator_ref() == 2u32 =>
             {
-                rest = rest * pow.base.pow(&value(&e.value - &half));
+                rest *= pow.base.pow(&value(&e.value - &half));
                 radicands.push((*pow.base).clone());
             }
-            _ => rest = rest * factor,
+            _ => rest *= factor,
         }
     }
     if radicands.len() < 2 {

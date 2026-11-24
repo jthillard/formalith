@@ -206,7 +206,11 @@ pub fn multi_bezout(a: &[QPoly]) -> Vec<QPoly> {
 /// Lift `f ≡ lc(f) * g0 * h0 mod p`, with `g0`, `h0` monic and coprime, to `f ≡ g * h mod p^k` where `lc(g) = lc(f)` and `h` is monic.
 fn hensel_pair(f: &ZPoly, g0: &ModPoly, h0: &ModPoly, p: u64, k: u32) -> (ZPoly, ZPoly) {
     let lc = f.last().expect("Non zero polynomial");
-    let g0 = modular::scale(g0, modular::from_integers(&[lc.clone()], p)[0], p);
+    let g0 = modular::scale(
+        g0,
+        modular::from_integers(std::slice::from_ref(lc), p)[0],
+        p,
+    );
     let (_, s, t) = modular::ext_gcd(&g0, h0, p);
 
     let mut g = from_mod(&g0);

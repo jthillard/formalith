@@ -1,5 +1,6 @@
-//! User documentation of the builtins: signature, description and examples, shown by the `help` of sessions and
-//! the documentation page of the website (`./dev docs`, the example `builtin_docs` of `formalith-session`).
+//! User documentation of the builtins: signature, description and examples.
+//!
+//! It is shown by the `help` of sessions and the documentation page of the website (`./dev docs`, the example `builtin_docs` of `formalith-session`).
 //!
 //! Example results are written by hand, as Typst math which also reads as plain text.
 

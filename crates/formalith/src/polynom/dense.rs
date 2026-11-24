@@ -10,7 +10,7 @@ use malachite::{
 };
 
 /// The elements of a field of characteristic 0, the coefficients of a [`Poly`].
-pub(crate) trait Coefficient: Clone + PartialEq + Debug {
+pub trait Coefficient: Clone + PartialEq + Debug {
     /// The rational number `r` as an element of the field.
     fn from_rational(r: Rational) -> Self;
     fn is_zero(&self) -> bool;
@@ -101,7 +101,7 @@ impl Coefficient for [Rational; 2] {
 
 /// A polynomial `{$sum_i c_i x^i$}`, its coefficients by increasing degree, without trailing zeros.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct Poly<F = Rational>(Vec<F>);
+pub struct Poly<F = Rational>(Vec<F>);
 
 impl<F: Coefficient> Poly<F> {
     /// The polynomial with the given coefficients, by increasing degree.

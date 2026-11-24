@@ -376,7 +376,7 @@ impl<E: Set> fmt::Display for Statement<E> {
     }
 }
 
-impl<'a> Parser<'a> {
+impl Parser<'_> {
     /// Parse a statement: a definition like `f(x) := x^2`, a system of equations like `x + y = 3, x - y = 1`
     /// (solved), or an expression. The definition is checked by parsing its body in `set`, but isn't stored, see
     /// [`Environment::eval`].

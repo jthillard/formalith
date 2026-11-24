@@ -49,7 +49,7 @@ mod trig;
 const MAX_DEPTH: usize = 16;
 
 /// Equations with functions of the unknowns. Implemented for every ring, where they can't be solved by default.
-pub(crate) trait Transcendental: Ring {
+pub trait Transcendental: Ring {
     /// Solve the expanded equations `expressions = 0` for `unknowns`, after the polynomial solver failed with
     /// `error`, which is returned if they can't be solved.
     fn solve_transcendental(
@@ -107,7 +107,7 @@ impl Transcendental for R<Rational> {
 }
 
 /// Whether `symbol` is named like an integer parameter of a periodic solution, `k` or `k_n`.
-pub(crate) fn is_integer_parameter(symbol: Symbol) -> bool {
+pub fn is_integer_parameter(symbol: Symbol) -> bool {
     let name = symbol.name();
     name == "k"
         || name
@@ -516,17 +516,16 @@ impl Inverter {
         let mut logarithm = value(Rational::from(0));
         for factor in factors {
             if !depends(&factor, x) {
-                constant = constant * factor;
+                constant *= factor;
                 continue;
             }
-            logarithm = logarithm
-                + match (unary(&factor), &factor) {
-                    (Some((Context::EXP, u)), _) => u.clone(),
-                    (_, Term::Pow(pow)) if depends(&pow.exponant, x) => {
-                        &**pow.exponant * &fun(Context::LN, (*pow.base).clone())
-                    }
-                    _ => return None,
-                };
+            logarithm += match (unary(&factor), &factor) {
+                (Some((Context::EXP, u)), _) => u.clone(),
+                (_, Term::Pow(pow)) if depends(&pow.exponant, x) => {
+                    &**pow.exponant * &fun(Context::LN, (*pow.base).clone())
+                }
+                _ => return None,
+            };
         }
         if logarithm.is_zero() {
             return None;

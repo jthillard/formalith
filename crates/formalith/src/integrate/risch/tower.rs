@@ -130,12 +130,16 @@ impl Tower {
             return Elem::zero();
         }
         let (num, den) = f.fraction(level);
-        let dnum = self.derivative_poly(&num, level);
+        let num_derivative = self.derivative_poly(&num, level);
         if den.degree() == 0 {
-            return Elem::from_poly(level, dnum);
+            return Elem::from_poly(level, &num_derivative);
         }
-        let dden = self.derivative_poly(&den, level);
-        Elem::from_fraction(level, &dnum.mul(&den).sub(&num.mul(&dden)), &den.mul(&den))
+        let den_derivative = self.derivative_poly(&den, level);
+        Elem::from_fraction(
+            level,
+            &num_derivative.mul(&den).sub(&num.mul(&den_derivative)),
+            &den.mul(&den),
+        )
     }
 
     /// The derivative of a polynomial in the monomial of level `level`.
@@ -223,7 +227,7 @@ impl Tower {
                     return Err(RischError::Unsupported);
                 }
                 let ln_term = fun(Context::LN, (*pow.base).clone());
-                let ln = self.ln(&base, ln_term.clone())?;
+                let ln = self.ln(&base, ln_term)?;
                 self.exp(&exponant.times(&ln), term.clone())
             }
             Term::Fun(f) => match f.get_args::<R<Rational>>().map(Vec::as_slice) {

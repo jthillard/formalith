@@ -5,6 +5,9 @@
 //! at negative indices), a recurrence `{$sum_(s = 0)^r P_s(n) c_(n + s) = 0$}`. The coefficients are then
 //! determined by finitely many initial values, at the first indices and where the leading coefficient vanishes.
 
+// Indices and orders are small
+#![allow(clippy::cast_possible_wrap, clippy::cast_possible_truncation)]
+
 use std::collections::BTreeSet;
 
 use crate::polynom::{
@@ -18,7 +21,7 @@ use super::{
 };
 
 /// A recurrence `{$sum_(s = 0)^r P_s(n) c_(n + s) = 0$}` holding for `{$n >= n_0$}`.
-pub(crate) struct Recurrence {
+pub struct Recurrence {
     pub(crate) operator: Operator,
     pub(crate) start: usize,
 }
@@ -74,7 +77,7 @@ impl Recurrence {
     }
 
     /// The order `r`.
-    pub(crate) fn order(&self) -> usize {
+    pub(crate) const fn order(&self) -> usize {
         self.operator.order()
     }
 

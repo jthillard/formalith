@@ -17,7 +17,7 @@ use crate::{
 
 /// How [`sign_set`] decides signs.
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct SignMode {
+pub struct SignMode {
     /// Approximate constants whose sign isn't found from their structure, like `{$pi - 3$}`.
     approximate: bool,
     /// Symbols without sign assumption are non-zero, a generic value of a parameter.
@@ -43,7 +43,7 @@ impl SignMode {
 }
 
 /// The possible signs of `term`.
-pub(crate) fn sign_set(term: &Expr, mode: SignMode) -> SignSet {
+pub fn sign_set(term: &Expr, mode: SignMode) -> SignSet {
     let res = structural_sign(term, mode);
     if res.strict().is_none()
         && mode.approximate
@@ -60,7 +60,7 @@ pub(crate) fn sign_set(term: &Expr, mode: SignMode) -> SignSet {
 }
 
 /// The sign of `term` when it is known, see [`sign_set`].
-pub(crate) fn sign(term: &Expr, mode: SignMode) -> Option<std::cmp::Ordering> {
+pub fn sign(term: &Expr, mode: SignMode) -> Option<std::cmp::Ordering> {
     sign_set(term, mode).strict()
 }
 
@@ -81,8 +81,8 @@ fn structural_sign(term: &Expr, mode: SignMode) -> SignSet {
         },
         Term::Add(add) => {
             let mut res = SignSet::ZERO;
-            for t in add.iter() {
-                res = res.add(structural_sign(t, mode));
+            for t in add {
+                res = res + structural_sign(t, mode);
                 if res == SignSet::ANY {
                     break;
                 }
@@ -91,7 +91,7 @@ fn structural_sign(term: &Expr, mode: SignMode) -> SignSet {
         }
         Term::Mul(mul) => mul.iter().fold(
             SignSet::from_ordering(mul.coefficient.sign()),
-            |res, factor| res.mul(structural_sign(factor, mode)),
+            |res, factor| res * structural_sign(factor, mode),
         ),
         Term::Pow(pow) => {
             let base = structural_sign(&pow.base, mode);
@@ -182,7 +182,7 @@ fn structural_sign(term: &Expr, mode: SignMode) -> SignSet {
 
 /// Whether `term` is an integer: an integer value, a symbol assumed to be an integer, or a sum, product or
 /// non-negative integer power of integers, or `floor` / `ceil` of a real.
-pub(crate) fn is_integer(term: &Expr) -> bool {
+pub fn is_integer(term: &Expr) -> bool {
     match term {
         Term::Value(value) => value.value.denominator_ref() == &1u32,
         Term::Symbol(symbol) => assumption(symbol.symbol).integer,

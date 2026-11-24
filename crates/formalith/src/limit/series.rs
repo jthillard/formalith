@@ -218,7 +218,7 @@ pub(super) fn leadterm(gruntz: &mut Gruntz, f: &Expr, logw: &Expr) -> LimitResul
     let mut order = Rational::ONE;
     for _ in 0..MAX_REFINEMENTS {
         let mut series = expander.series(f, &order)?;
-        if let Some((e0, c0)) = expander.strip_lead(&mut series)? {
+        if let Some((e0, c0)) = expander.strip_lead(&mut series) {
             return Ok((c0.simplify(), e0));
         }
         if series.order.is_none() {
@@ -332,15 +332,15 @@ impl Expander<'_> {
     }
 
     /// Remove the leading terms of `series` with a zero coefficient, and return its leading term `{$(e_0, c_0)$}`.
-    fn strip_lead(&self, series: &mut Series) -> LimitResult<Option<(Expr, Expr)>> {
+    fn strip_lead(&self, series: &mut Series) -> Option<(Expr, Expr)> {
         while let Some((exponant, coefficient)) = series.terms.first() {
             if self.gruntz.is_zero(coefficient) {
                 series.terms.remove(0);
             } else {
-                return Ok(Some((exponant.clone(), coefficient.clone())));
+                return Some((exponant.clone(), coefficient.clone()));
             }
         }
-        Ok(None)
+        None
     }
 
     /// The series of `f` with a known leading term, raising the order until it is found. Fails if `f` is zero.
@@ -348,7 +348,7 @@ impl Expander<'_> {
         let mut order = n.clone();
         for _ in 0..MAX_REFINEMENTS {
             let mut series = self.series(f, &order)?;
-            if let Some((e0, c0)) = self.strip_lead(&mut series)? {
+            if let Some((e0, c0)) = self.strip_lead(&mut series) {
                 return Ok((series, e0, c0));
             }
             if series.order.is_none() {
@@ -892,7 +892,7 @@ impl Expander<'_> {
                 if j % 2 == 0 {
                     return Some(zero());
                 }
-                let k = (j + 1) / 2;
+                let k = j.div_ceil(2);
                 let c = bernoulli(2 * k) / Rational::from(u64::try_from(2 * k * (2 * k - 1)).ok()?);
                 Some(value(c))
             },

@@ -401,8 +401,8 @@ fn exp_log_form(term: &Expr, x: Symbol, infinite: bool) -> LimitResult<Expr> {
                     hyperbolic_as_exp(ident, u).expect("A hyperbolic function")
                 }
                 // `{$"asinh" u = ln(u + sqrt(u^2 + 1))$}`, `{$"acosh" u = ln(u + sqrt(u^2 - 1))$}`
-                (Context::ASINH, [u]) => fun(Context::LN, u + &sqrt(u * u + one())),
-                (Context::ACOSH, [u]) => fun(Context::LN, u + &sqrt(u * u - one())),
+                (Context::ASINH, [u]) => fun(Context::LN, u + &sqrt(&(u * u + one()))),
+                (Context::ACOSH, [u]) => fun(Context::LN, u + &sqrt(&(u * u - one()))),
                 // `{$"atanh" u = ln((1 + u)/(1 - u))/2$}`
                 (Context::ATANH, [u]) => {
                     fun(Context::LN, (one() + u.clone()) / (one() - u.clone())) * half()
@@ -410,7 +410,7 @@ fn exp_log_form(term: &Expr, x: Symbol, infinite: bool) -> LimitResult<Expr> {
                 (ident @ (Context::ASIN | Context::ACOS), [u]) => {
                     // `{$asin u = 2 atan(u/(1 + sqrt(1 - u^2)))$}`, `{$acos u = pi/2 - asin u$}`
                     let asin = value(Rational::from(2))
-                        * fun(Context::ATAN, u / &(one() + sqrt(one() - u * u)));
+                        * fun(Context::ATAN, u / &(one() + sqrt(&(one() - u * u))));
                     if ident == Context::ASIN {
                         asin
                     } else {

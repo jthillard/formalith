@@ -17,7 +17,7 @@ const MAX_ROOT: u64 = 10_000;
 
 /// A reduced fraction `{$p / q$}` with `q` monic.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct RatFun {
+pub struct RatFun {
     pub(crate) num: EPoly,
     pub(crate) den: EPoly,
 }
@@ -114,7 +114,7 @@ impl Coefficient for RatFun {
 
 /// The natural numbers `n` with `{$p(n) = 0$}`, `None` when they can't be bounded. With parameters in the
 /// coefficients, the roots of `p` at a sample point of the parameters are candidates checked exactly.
-pub(crate) fn natural_roots(p: &EPoly) -> Option<Vec<u64>> {
+pub fn natural_roots(p: &EPoly) -> Option<Vec<u64>> {
     if p.is_zero() {
         return None;
     }
@@ -149,7 +149,7 @@ pub(crate) fn natural_roots(p: &EPoly) -> Option<Vec<u64>> {
             .into_iter()
             .filter_map(|r| u64::try_from(&r).ok())
             .filter(|&n| n <= MAX_ROOT)
-            .filter(|&n| p.eval(&Elem::integer(n as i64)).is_zero())
+            .filter(|&n| p.eval(&Elem::integer(n.cast_signed())).is_zero())
             .collect(),
     )
 }

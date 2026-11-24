@@ -99,14 +99,14 @@ impl<T: Set> Pow<T> {
         )
     }
     /// Pretty print `self` assuming its exponant is positive, as a root if the exponant is a fraction.
-    fn pretty_print_positive(&self, options: &PrintOptions) -> crate::printer::PrettyPrinter {
+    fn pretty_print_positive(&self, options: PrintOptions) -> crate::printer::PrettyPrinter {
         if let Some((num, index)) = self.exponant.root_split() {
-            let mut radicand = PrettyPrint::pretty_print(&self.radicand(num), options);
-            radicand.root(index.map(|index| index.pretty_print(options)).as_ref());
+            let mut radicand = PrettyPrint::pretty_print(&self.radicand(num), &options);
+            radicand.root(index.map(|index| index.pretty_print(&options)).as_ref());
             return radicand;
         }
-        let mut base = (*self.base).pretty_print(options);
-        let exponant = (**self.exponant).pretty_print(options);
+        let mut base = (*self.base).pretty_print(&options);
+        let exponant = (**self.exponant).pretty_print(&options);
         if match &*self.base {
             Term::Mul(_) | Term::Add(_) => true,
             // `-1^x` reads as `-(1^x)`
@@ -185,9 +185,9 @@ impl<T: Set> PrettyPrint for Pow<T> {
     default fn pretty_print(&self, options: &PrintOptions) -> crate::printer::PrettyPrinter {
         match **self.exponant {
             Term::Value(_) if self.exponant.is_strictly_negative() => {
-                self.with_negated_exponant().pretty_print_positive(options)
+                self.with_negated_exponant().pretty_print_positive(*options)
             }
-            _ => self.pretty_print_positive(options),
+            _ => self.pretty_print_positive(*options),
         }
     }
 }
@@ -197,14 +197,14 @@ impl<T: Ring> PrettyPrint for Pow<T> {
         // If exponant is negative, print as a fraction
         if matches!(**self.exponant, Term::Value(_)) && self.exponant.is_strictly_negative() {
             let den = match Term::Pow(self.with_negated_exponant()).normalize() {
-                Term::Pow(pow) => pow.pretty_print_positive(options),
+                Term::Pow(pow) => pow.pretty_print_positive(*options),
                 normalized => PrettyPrint::pretty_print(&normalized, options),
             };
             let mut res = PrettyPrint::pretty_print(&Term::one(self.set), options);
             res.vertical_concat("─", &den);
             return res;
         }
-        self.pretty_print_positive(options)
+        self.pretty_print_positive(*options)
     }
 }
 

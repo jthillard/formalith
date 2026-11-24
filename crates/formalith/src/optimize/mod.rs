@@ -99,7 +99,7 @@ impl<T: Set> Extrema<T> {
     }
 
     /// The label of `point`, `min:` or `max:`.
-    fn label(point: &ExtremumPoint<T>, options: &PrintOptions) -> String {
+    fn label(point: &ExtremumPoint<T>, options: PrintOptions) -> String {
         let label = if point.max { "max:" } else { "min:" };
         if options.typst {
             format!("\"{label}\"")
@@ -109,7 +109,7 @@ impl<T: Set> Extrema<T> {
     }
 
     /// The text printed when there is no extremum.
-    fn none(options: &PrintOptions) -> String {
+    fn none(options: PrintOptions) -> String {
         if options.typst {
             "\"no extremum\"".to_owned()
         } else {
@@ -121,17 +121,17 @@ impl<T: Set> Extrema<T> {
 impl<T: Set> Print for Extrema<T> {
     fn print(&self, options: &PrintOptions, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.points.is_empty() {
-            return f.write_str(&Self::none(options));
+            return f.write_str(&Self::none(*options));
         }
         // One extremum per line, `\` being a line break in Typst
         for (i, point) in self.points.iter().enumerate() {
             if i != 0 {
                 f.write_str(if options.typst { " \\ " } else { "\n" })?;
             }
-            f.write_str(&Self::label(point, options))?;
+            f.write_str(&Self::label(point, *options))?;
             f.write_str(" ")?;
             if !point.point.is_empty() {
-                Solution::print_assignments(&point.point, options, f)?;
+                Solution::print_assignments(&point.point, *options, f)?;
                 Self::delimiter(",", options, f)?;
                 f.write_str(if options.typst { " quad " } else { " " })?;
             }
@@ -145,7 +145,7 @@ impl<T: Set> Print for Extrema<T> {
 impl<T: Set> PrettyPrint for Extrema<T> {
     fn pretty_print(&self, options: &PrintOptions) -> PrettyPrinter {
         if self.points.is_empty() {
-            return Self::none(options).into();
+            return Self::none(*options).into();
         }
         let mut res = PrettyPrinter::empty();
         for point in &self.points {
@@ -154,7 +154,7 @@ impl<T: Set> PrettyPrint for Extrema<T> {
             for equation in Solution::equations(&point.point).chain([value]) {
                 line.concat(", ", false, &equation.pretty_print(options));
             }
-            let mut labeled = PrettyPrinter::from(Self::label(point, options));
+            let mut labeled = PrettyPrinter::from(Self::label(point, *options));
             labeled.concat(" ", false, &line);
             res.stack(&labeled);
         }
@@ -364,7 +364,7 @@ fn compare(p: &Expr, q: &Expr) -> Option<Ordering> {
         .iter()
         .all(|symbol| Context::is_builtin_constant(*symbol))
         && let Some(approximation) = approximate_fixed(&difference, BITS)
-        && (&approximation).abs() > Rational::from(2).pow(-(BITS as i64 / 2))
+        && (&approximation).abs() > Rational::from(2).pow(-(BITS / 2).cast_signed())
     {
         return Some(approximation.sign());
     }

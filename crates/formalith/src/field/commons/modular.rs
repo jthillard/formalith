@@ -4,7 +4,10 @@ use std::cmp::Ordering;
 
 use malachite::{
     Integer, Natural,
-    base::num::arithmetic::traits::{Mod, ModPow, UnsignedAbs},
+    base::num::{
+        arithmetic::traits::{Mod, ModPow, UnsignedAbs},
+        conversion::traits::ExactFrom,
+    },
 };
 
 use super::parse_integer_literal;
@@ -68,11 +71,12 @@ impl Zn {
     /// Reduce an integer modulo `n`.
     #[must_use]
     pub fn reduce(&self, n: &Integer) -> u64 {
-        u64::try_from(&n.mod_op(Integer::from(self.modulus))).expect("Reduced integer fits in u64")
+        // The remainder is below the modulus
+        u64::exact_from(&n.mod_op(Integer::from(self.modulus)))
     }
 
     /// Compute `base^exponant`, returning `None` for negative powers of non invertible elements.
-    fn pow(&self, base: u64, exponant: &Integer) -> Option<u64> {
+    fn pow(self, base: u64, exponant: &Integer) -> Option<u64> {
         let base = if *exponant < 0 {
             self.try_inv(&base)?
         } else {

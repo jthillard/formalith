@@ -16,61 +16,61 @@ use crate::{
     term::{Fun, Normalize, SymbolTerm, Term, Value},
 };
 
-pub(crate) use super::Real;
+pub use super::Real;
 /// A real expression.
-pub(crate) type Expr = Term<Real>;
+pub type Expr = Term<Real>;
 
 /// Significant digits of the numerical approximations deciding signs and zeros.
-pub(crate) const DIGITS: u64 = 30;
+pub const DIGITS: u64 = 30;
 
 /// The constant `value`.
-pub(crate) fn value(value: Rational) -> Expr {
+pub const fn value(value: Rational) -> Expr {
     Term::Value(Value::new(value, R))
 }
 
 /// The constant `{$p / q$}`.
-pub(crate) fn ratio(p: i64, q: i64) -> Expr {
+pub fn ratio(p: i64, q: i64) -> Expr {
     value(Rational::from_signeds(p, q))
 }
 
 /// The constant 0.
-pub(crate) fn zero() -> Expr {
+pub fn zero() -> Expr {
     Term::zero(R)
 }
 
 /// The constant 1.
-pub(crate) fn one() -> Expr {
+pub const fn one() -> Expr {
     value(Rational::ONE)
 }
 
 /// The constant `{$1/2$}`.
-pub(crate) fn half() -> Expr {
+pub fn half() -> Expr {
     ratio(1, 2)
 }
 
 /// The symbol `x` as an expression.
-pub(crate) const fn variable(x: Symbol) -> Expr {
+pub const fn variable(x: Symbol) -> Expr {
     Term::Symbol(SymbolTerm::new(x, R))
 }
 
 /// `{$oo$}`.
-pub(crate) const fn infinity() -> Expr {
+pub const fn infinity() -> Expr {
     variable(Context::OO)
 }
 
 /// The function `ident(arg)`, normalized.
-pub(crate) fn fun(ident: Symbol, arg: Expr) -> Expr {
+pub fn fun(ident: Symbol, arg: Expr) -> Expr {
     Term::Fun(Box::new(Fun::new(ident, vec![arg], R))).normalize()
 }
 
 /// `{$sqrt(u)$}`.
-pub(crate) fn sqrt(u: Expr) -> Expr {
+pub fn sqrt(u: &Expr) -> Expr {
     u.pow(&half())
 }
 
 /// The argument of `{$u + i v$}` in `{$(-pi, pi]$}`, `{$"undefined"$}` at 0, by the signs of `u` and `v`. `None` when
 /// a sign is unknown.
-pub(crate) fn arg(u: &Expr, v: &Expr) -> Option<Expr> {
+pub fn arg(u: &Expr, v: &Expr) -> Option<Expr> {
     let sign_of = |t: &Expr| {
         if t.is_zero() {
             Some(Ordering::Equal)
@@ -104,7 +104,7 @@ pub(crate) fn arg(u: &Expr, v: &Expr) -> Option<Expr> {
 }
 
 /// The identifier and argument of a builtin function with one real argument.
-pub(crate) fn unary(term: &Expr) -> Option<(Symbol, &Expr)> {
+pub fn unary(term: &Expr) -> Option<(Symbol, &Expr)> {
     match term {
         Term::Fun(fun) => match fun.get_args::<Real>().map(Vec::as_slice) {
             Some([arg]) => Some((fun.get_ident(), arg)),
@@ -115,7 +115,7 @@ pub(crate) fn unary(term: &Expr) -> Option<(Symbol, &Expr)> {
 }
 
 /// `{$psi^((m))(u)$}`, normalized.
-pub(crate) fn polygamma(m: u64, u: Expr) -> Expr {
+pub fn polygamma(m: u64, u: Expr) -> Expr {
     Term::Fun(Box::new(Fun::new(
         Context::POLYGAMMA,
         vec![value(Rational::from(m)), u],
@@ -125,7 +125,7 @@ pub(crate) fn polygamma(m: u64, u: Expr) -> Expr {
 }
 
 /// The order `m` and the argument `u` of `{$psi^((m))(u)$}`, for a natural `m`.
-pub(crate) fn polygamma_args(term: &Expr) -> Option<(u64, &Expr)> {
+pub fn polygamma_args(term: &Expr) -> Option<(u64, &Expr)> {
     match term {
         Term::Fun(fun) if fun.get_ident() == Context::POLYGAMMA => {
             match fun.get_args::<Real>().map(Vec::as_slice) {
@@ -138,7 +138,7 @@ pub(crate) fn polygamma_args(term: &Expr) -> Option<(u64, &Expr)> {
 }
 
 /// `k` if `term` is the value `{$-k$}`, a non-positive integer, where `{$Gamma$}` and `{$psi^((m))$}` have poles.
-pub(crate) fn gamma_pole(term: &Expr) -> Option<u64> {
+pub fn gamma_pole(term: &Expr) -> Option<u64> {
     match term {
         Term::Value(v) if v.value <= 0 => u64::try_from(&-&v.value).ok(),
         _ => None,
@@ -146,17 +146,17 @@ pub(crate) fn gamma_pole(term: &Expr) -> Option<u64> {
 }
 
 /// Whether `term` contains the symbol `x`.
-pub(crate) fn depends(term: &Expr, x: Symbol) -> bool {
+pub fn depends(term: &Expr, x: Symbol) -> bool {
     term.symbols().contains(&x)
 }
 
 /// Whether `term` contains `{$oo$}` or `undefined`, which are only meaningful as limit points or results.
-pub(crate) fn has_special_constant(term: &Expr) -> bool {
+pub fn has_special_constant(term: &Expr) -> bool {
     depends(term, Context::OO) || depends(term, Context::UNDEFINED)
 }
 
 /// `Some(Greater)` for `{$oo$}`, `Some(Less)` for `{$-oo$}`, `None` otherwise.
-pub(crate) fn infinity_sign(term: &Expr) -> Option<Ordering> {
+pub fn infinity_sign(term: &Expr) -> Option<Ordering> {
     if *term == infinity() {
         Some(Ordering::Greater)
     } else if *term == -infinity() {
@@ -167,13 +167,13 @@ pub(crate) fn infinity_sign(term: &Expr) -> Option<Ordering> {
 }
 
 /// Whether `term` is `{$oo$}` or `{$-oo$}`.
-pub(crate) fn is_infinite(term: &Expr) -> bool {
+pub fn is_infinite(term: &Expr) -> bool {
     infinity_sign(term).is_some()
 }
 
 /// The sign of a term free of the variable, from its structure and the assumptions on its symbols, or the
 /// numerical approximation with [`DIGITS`] digits of a constant. `None` if it is unknown.
-pub(crate) fn constant_sign(term: &Expr) -> Option<Ordering> {
+pub fn constant_sign(term: &Expr) -> Option<Ordering> {
     match term {
         Term::Value(value) => Some(value.value.sign()),
         _ => sign(term, SignMode::APPROXIMATE),
@@ -181,7 +181,7 @@ pub(crate) fn constant_sign(term: &Expr) -> Option<Ordering> {
 }
 
 /// `{$ident(u)$}` written with exponentials, for the hyperbolic functions `sinh`, `cosh` and `tanh`.
-pub(crate) fn hyperbolic_as_exp(ident: Symbol, u: &Expr) -> Option<Expr> {
+pub fn hyperbolic_as_exp(ident: Symbol, u: &Expr) -> Option<Expr> {
     match ident {
         Context::SINH | Context::COSH => {
             // `{$sinh u = (e^u - e^(-u))/2$}`, `{$cosh u = (e^u + e^(-u))/2$}`
@@ -204,7 +204,7 @@ pub(crate) fn hyperbolic_as_exp(ident: Symbol, u: &Expr) -> Option<Expr> {
 /// Rebuild `term` from its operands mapped by `f`: the terms of a sum, the factors of a product, the base then
 /// the exponant of a power, and the arguments of a function with real arguments (normalized). Values,
 /// symbols and functions with other arguments are returned unchanged.
-pub(crate) fn try_map_operands<E>(
+pub fn try_map_operands<E>(
     term: &Expr,
     mut f: impl FnMut(&Expr) -> Result<Expr, E>,
 ) -> Result<Expr, E> {
@@ -228,7 +228,7 @@ pub(crate) fn try_map_operands<E>(
 }
 
 /// Replace the symbol `x` by `value` everywhere in `term`, also in exponents, normalizing the result.
-pub(crate) fn subs(term: &Expr, x: Symbol, value: &Expr) -> Expr {
+pub fn subs(term: &Expr, x: Symbol, value: &Expr) -> Expr {
     match term {
         _ if !depends(term, x) => term.clone(),
         Term::Symbol(_) => value.clone(),
@@ -242,7 +242,7 @@ pub(crate) fn subs(term: &Expr, x: Symbol, value: &Expr) -> Expr {
 
 /// Rewrite `term` from the top: subterms for which `rewrite` gives a result are replaced, the others are rebuilt
 /// from their rewritten parts.
-pub(crate) fn map_tree(term: &Expr, rewrite: &impl Fn(&Expr) -> Option<Expr>) -> Expr {
+pub fn map_tree(term: &Expr, rewrite: &impl Fn(&Expr) -> Option<Expr>) -> Expr {
     if let Some(res) = rewrite(term) {
         return res;
     }
@@ -251,7 +251,7 @@ pub(crate) fn map_tree(term: &Expr, rewrite: &impl Fn(&Expr) -> Option<Expr>) ->
 }
 
 /// The number of nodes of a term.
-pub(crate) fn size(term: &Expr) -> usize {
+pub fn size(term: &Expr) -> usize {
     1 + match term {
         Term::Value(_) | Term::Symbol(_) => 0,
         Term::Add(add) => add.iter().map(size).sum(),
@@ -266,7 +266,7 @@ pub(crate) fn size(term: &Expr) -> usize {
 /// Rewrite `{$exp(c ln u) = u^c$}` for a rational `c`, and `{$exp(ln u) = u$}`.
 ///
 /// Not done by normalization, as limits and integrals build `{$exp(g ln b)$}` on purpose.
-pub(crate) fn exp_of_ln(term: &Expr) -> Expr {
+pub fn exp_of_ln(term: &Expr) -> Expr {
     map_tree(term, &|t| {
         let (Context::EXP, arg) = unary(t)? else {
             return None;

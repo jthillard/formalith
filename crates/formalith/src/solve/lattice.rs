@@ -84,9 +84,9 @@ impl IntegerSystem for Z<Integer> {
                 hermite.row_add(above, row, &factor);
             }
         }
-        assignments(&hermite, Z, unknowns, Z, |value| {
+        Ok(assignments(&hermite, Z, unknowns, Z, |value| {
             Term::constant(value.clone(), Z)
-        })
+        }))
     }
 }
 
@@ -176,10 +176,7 @@ fn smith(
         } else {
             Integer::from(0)
         };
-        let g = match &modulus {
-            Some(n) => Z.gcd(&d, n),
-            None => d.clone(),
-        };
+        let g = modulus.as_ref().map_or_else(|| d.clone(), |n| Z.gcd(&d, n));
         if g == 0 {
             // `0 y_i = c_i` over `{$ZZ$}`
             if c != 0 {

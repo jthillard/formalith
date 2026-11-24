@@ -107,23 +107,23 @@ fn split(f: &Expr, x: Symbol, y: Symbol) -> Option<(Expr, Expr)> {
     };
     for factor in factors {
         match (depends(&factor, x), depends(&factor, y)) {
-            (_, false) => p = p * factor,
-            (false, true) => q = q * factor,
+            (_, false) => p *= factor,
+            (false, true) => q *= factor,
             (true, true) => {
                 // `{$e^(u(x) + v(y)) = e^u e^v$}`
                 let (Context::EXP, Term::Add(add)) = unary(&factor)? else {
                     return None;
                 };
                 let (mut u, mut v) = (zero(), zero());
-                for term in add.iter() {
+                for term in add {
                     match (depends(term, x), depends(term, y)) {
                         (_, false) => u += term,
                         (false, true) => v += term,
                         (true, true) => return None,
                     }
                 }
-                p = p * fun(Context::EXP, u);
-                q = q * fun(Context::EXP, v);
+                p *= fun(Context::EXP, u);
+                q *= fun(Context::EXP, v);
             }
         }
     }

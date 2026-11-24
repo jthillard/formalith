@@ -109,6 +109,8 @@ impl Term<Real> {
 }
 
 /// The index of the sums: `k`, or the first of `n`, `k_1`, `k_2`... not in the expression or the point.
+// Some name of the infinite sequence is unused
+#[allow(clippy::maybe_infinite_iter)]
 fn index(f: &Expr, point: &Expr) -> Symbol {
     let mut used = f.symbols();
     used.extend(point.symbols());
@@ -193,7 +195,7 @@ fn rational_series(
         let a = at(&rest).ok_or(LimitError::Unsupported)?
             / at(&derivative).ok_or(LimitError::Unsupported)?;
         let b = rationalize(&(-(a * rho)).simplify());
-        general = general + b * rho.pow(&n);
+        general += b * rho.pow(&n);
     }
     // `w` in terms of `x`
     let back = match infinity_sign(point) {
@@ -208,7 +210,7 @@ fn rational_series(
     for (i, c) in quotient.coefficients().iter().enumerate() {
         let i_term = value(Rational::from(i));
         let c = (value(c.clone()) + subs(&general, k, &i_term)).simplify();
-        res = res + c * w_power(&back, &i_term);
+        res += c * w_power(&back, &i_term);
     }
     let general = tidy(&(general * w_power(&back, &n)));
     Ok(res + held_sum(general, k, value(Rational::from(first))))
@@ -335,12 +337,12 @@ fn merge_sums(parts: &[Expr], x: Symbol) -> Expr {
             _ => None,
         };
         let Some([body, k, a, _]) = args.as_ref().map(|args| args.as_slice()) else {
-            res = res + term;
+            res += term;
             continue;
         };
         match sums
             .iter_mut()
-            .find(|[other, j, b]| j == k && b == a && !depends(&(body / &*other).simplify(), x))
+            .find(|[other, j, b]| j == k && b == a && !depends(&(body / other).simplify(), x))
         {
             Some([other, _, _]) => *other = &*other + body,
             None => sums.push([body.clone(), k.clone(), a.clone()]),
@@ -358,7 +360,7 @@ struct Coefficients {
     w: Expr,
     e0: Rational,
     q: Rational,
-    coefficients: Vec<Expr>,
+    values: Vec<Expr>,
     elems: Vec<Elem>,
     params: Params,
 }
@@ -412,7 +414,7 @@ fn coefficients(
         w,
         e0,
         q,
-        coefficients,
+        values: coefficients,
         elems,
         params,
     }))
@@ -489,7 +491,7 @@ fn holonomic_coefficients(
             w: series.w,
             e0,
             q: Rational::from(1),
-            coefficients,
+            values: coefficients,
             elems,
             params,
         },
@@ -525,7 +527,7 @@ fn verify_by_ode(
     };
     let (s, m) = (recurrence.start, recurrence.period);
     let power = |j: usize| variable(t).pow(&value(Rational::from(j)));
-    let c = &coefficients.coefficients;
+    let c = &coefficients.values;
     let head = (0..s).fold(zero(), |res, j| res + &c[j] * &power(j));
     let g = f_t * variable(t).pow(&(-&q_term * value(coefficients.e0.clone()))) - head;
     let h0 = (s..s + m).fold(zero(), |res, j| res + &c[j] * &power(j));
@@ -599,7 +601,7 @@ fn guess_series(
         w,
         e0,
         q,
-        coefficients,
+        values: coefficients,
         elems,
         params,
     } = found;
@@ -647,7 +649,7 @@ fn guess_series(
             let n = &m_term * &variable(k) + &i_term;
             held_sum(tidy_term(&(c * w_power(w, &exponent(&n))), k), k, zero())
         };
-        res = res + sum;
+        res += sum;
     }
     Ok(res)
 }
@@ -736,6 +738,7 @@ fn guess_with(c: &[Elem], m: usize, d: usize) -> Option<Recurrence> {
         .last()
         .unwrap_or(START);
     // `{$P(n) != 0$}` for `{$n >= s$}`, so that the recurrence gives every coefficient
+    #[allow(clippy::option_if_let_else)]
     let bound = match p
         .coefficients()
         .iter()
@@ -810,7 +813,7 @@ fn is_integer_exponent(e: &Expr, k: Symbol) -> bool {
             let c1 = &c1.value - &c0.value;
             c0.value.denominator_ref() == &1u32
                 && c1.denominator_ref() == &1u32
-                && (e - &(value(c0.value.clone()) + value(c1) * variable(k)))
+                && (e - &(value(c0.value) + value(c1) * variable(k)))
                     .expand()
                     .is_zero()
         }
@@ -987,7 +990,7 @@ fn absorb_coefficients(term: &Expr) -> Expr {
         .abs()
         .into_numerator_and_denominator();
     let sign = if mul.coefficient < 0 { -one() } else { one() };
-    for factor in mul.iter() {
+    for factor in mul {
         let Term::Pow(pow) = factor else { continue };
         let Term::Value(base) = &*pow.base else {
             continue;
@@ -1019,7 +1022,7 @@ fn absorb_coefficients(term: &Expr) -> Expr {
         let rest = mul
             .iter()
             .filter(|t| !std::ptr::eq(*t, factor))
-            .fold(sign.clone(), |res, t| res * t);
+            .fold(sign, |res, t| res * t);
         return rest
             * pow
                 .base
@@ -1150,9 +1153,9 @@ mod tests {
                     .find(|(e, _)| *e == exponent)
                     .map_or_else(zero, |(_, c)| c.clone());
                 assert!(
-                    (&found.coefficients[j] - &expected).expand().is_zero(),
+                    (&found.values[j] - &expected).expand().is_zero(),
                     "{f}: c_{j} = {}, not {expected}",
-                    found.coefficients[j]
+                    found.values[j]
                 );
             }
         }

@@ -16,7 +16,7 @@ use crate::polynom::dense::{Coefficient, Poly};
 
 /// An element of `{$K_n$}`.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) enum Elem {
+pub enum Elem {
     /// An element of `{$QQ$}`, the level 0.
     Rational(Rational),
     /// A fraction of a level at least 1.
@@ -26,22 +26,22 @@ pub(crate) enum Elem {
 /// `{$p(t_k) / q(t_k)$}` with `p` and `q` coprime, `q` monic, coefficients of lower levels, and `p` or `q` not
 /// constant.
 #[derive(Debug, PartialEq, Eq)]
-pub(crate) struct Fraction {
+pub struct Fraction {
     level: usize,
     num: Poly<Elem>,
     den: Poly<Elem>,
 }
 
 /// A polynomial in some `{$t_k$}` with coefficients in `{$K_(k - 1)$}`.
-pub(crate) type EPoly = Poly<Elem>;
+pub type EPoly = Poly<Elem>;
 
 impl Elem {
     /// The generator `{$t_k$}` of level `{$k >= 1$}`.
     pub(crate) fn generator(level: usize) -> Self {
-        Self::from_reduced(level, EPoly::x(), EPoly::one())
+        Self::from_reduced(level, &EPoly::x(), &EPoly::one())
     }
 
-    pub(crate) fn rational(r: Rational) -> Self {
+    pub(crate) const fn rational(r: Rational) -> Self {
         Self::Rational(r)
     }
 
@@ -77,7 +77,7 @@ impl Elem {
     }
 
     /// The element `{$p / q$}` of level `level`, the polynomials being coprime.
-    fn from_reduced(level: usize, num: EPoly, den: EPoly) -> Self {
+    fn from_reduced(level: usize, num: &EPoly, den: &EPoly) -> Self {
         assert!(!den.is_zero(), "Division by zero");
         let lead = den.leading().inverse();
         let (num, den) = (num.scale(&lead), den.scale(&lead));
@@ -91,14 +91,14 @@ impl Elem {
     pub(crate) fn from_fraction(level: usize, num: &EPoly, den: &EPoly) -> Self {
         let g = num.gcd(den);
         if g.degree() == 0 {
-            return Self::from_reduced(level, num.clone(), den.clone());
+            return Self::from_reduced(level, num, den);
         }
-        Self::from_reduced(level, num.exact_div(&g), den.exact_div(&g))
+        Self::from_reduced(level, &num.exact_div(&g), &den.exact_div(&g))
     }
 
     /// The polynomial `p` of level `level` as an element.
-    pub(crate) fn from_poly(level: usize, p: EPoly) -> Self {
-        Self::from_reduced(level, p, EPoly::one())
+    pub(crate) fn from_poly(level: usize, p: &EPoly) -> Self {
+        Self::from_reduced(level, p, &EPoly::one())
     }
 
     /// `{$e^n$}` for an integer `n`.
@@ -149,9 +149,9 @@ impl Coefficient for Elem {
                 if da == db {
                     Self::from_fraction(level, &na.add(&nb), &da)
                 } else if db.degree() == 0 {
-                    Self::from_reduced(level, na.add(&nb.mul(&da)), da)
+                    Self::from_reduced(level, &na.add(&nb.mul(&da)), &da)
                 } else if da.degree() == 0 {
-                    Self::from_reduced(level, nb.add(&na.mul(&db)), db)
+                    Self::from_reduced(level, &nb.add(&na.mul(&db)), &db)
                 } else {
                     Self::from_fraction(level, &na.mul(&db).add(&nb.mul(&da)), &da.mul(&db))
                 }
@@ -181,15 +181,15 @@ impl Coefficient for Elem {
                 let (na, da) = self.fraction(level);
                 let (nb, db) = other.fraction(level);
                 if other.level() < level {
-                    Self::from_reduced(level, na.scale(other), da)
+                    Self::from_reduced(level, &na.scale(other), &da)
                 } else if self.level() < level {
-                    Self::from_reduced(level, nb.scale(self), db)
+                    Self::from_reduced(level, &nb.scale(self), &db)
                 } else {
                     let (g1, g2) = (na.gcd(&db), nb.gcd(&da));
                     Self::from_reduced(
                         level,
-                        na.exact_div(&g1).mul(&nb.exact_div(&g2)),
-                        da.exact_div(&g2).mul(&db.exact_div(&g1)),
+                        &na.exact_div(&g1).mul(&nb.exact_div(&g2)),
+                        &da.exact_div(&g2).mul(&db.exact_div(&g1)),
                     )
                 }
             }
@@ -199,13 +199,13 @@ impl Coefficient for Elem {
     fn inverse(&self) -> Self {
         match self {
             Self::Rational(r) => Self::Rational(Rational::ONE / r),
-            Self::Fraction(f) => Self::from_reduced(f.level, f.den.clone(), f.num.clone()),
+            Self::Fraction(f) => Self::from_reduced(f.level, &f.den, &f.num),
         }
     }
 }
 
 /// The polynomial taking the given values at the given distinct points (Lagrange interpolation).
-pub(crate) fn interpolate(points: &[Rational], values: &[Elem]) -> EPoly {
+pub fn interpolate(points: &[Rational], values: &[Elem]) -> EPoly {
     let mut res = EPoly::zero();
     for (j, (zj, vj)) in points.iter().zip(values).enumerate() {
         if vj.is_zero() {
@@ -224,7 +224,7 @@ pub(crate) fn interpolate(points: &[Rational], values: &[Elem]) -> EPoly {
 }
 
 /// Points of `{$QQ^n$}` to evaluate elements at, distinct from simple values like 0, 1 or -1.
-pub(crate) fn sample_points(n: usize) -> impl Iterator<Item = Vec<Rational>> {
+pub fn sample_points(n: usize) -> impl Iterator<Item = Vec<Rational>> {
     const PRIMES: [i64; 12] = [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37];
     (0..).map(move |i: usize| {
         (0..n)
@@ -239,12 +239,12 @@ pub(crate) fn sample_points(n: usize) -> impl Iterator<Item = Vec<Rational>> {
 
 /// A solution `r` of the linear system whose rows are `{$(a_1, ..., a_n, b)$}` with `{$sum a_i r_i = b$}`, the
 /// free unknowns being 0, or `None` if it is inconsistent.
-pub(crate) fn solve_linear<F: Coefficient>(rows: Vec<Vec<F>>, n: usize) -> Option<Vec<F>> {
+pub fn solve_linear<F: Coefficient>(rows: Vec<Vec<F>>, n: usize) -> Option<Vec<F>> {
     solve_linear_rank(rows, n).map(|(res, _)| res)
 }
 
 /// The only solution of the linear system of [`solve_linear`], or `None` if it has none or several.
-pub(crate) fn solve_linear_unique<F: Coefficient>(rows: Vec<Vec<F>>, n: usize) -> Option<Vec<F>> {
+pub fn solve_linear_unique<F: Coefficient>(rows: Vec<Vec<F>>, n: usize) -> Option<Vec<F>> {
     solve_linear_rank(rows, n).and_then(|(res, rank)| (rank == n).then_some(res))
 }
 

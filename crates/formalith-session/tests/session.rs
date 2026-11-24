@@ -44,12 +44,12 @@ fn definitions() {
         run(&mut session, "f(x) := x^2"),
         ("f(x) := x^2".to_owned(), true)
     );
-    assert_eq!(run(&mut session, "assume(a > 0)").1, true);
+    assert!(run(&mut session, "assume(a > 0)").1);
     assert_eq!(run(&mut session, "f(3)"), ("9".to_owned(), false));
     assert_eq!(run(&mut session, ":defs").0, "f(x) := x^2\nassume(a > 0)");
     assert_eq!(run(&mut session, ":clear f"), (String::new(), true));
     assert!(matches!(session.run(":clear f").output, Output::Error(_)));
-    assert_eq!(run(&mut session, ":clear").1, true);
+    assert!(run(&mut session, ":clear").1);
     assert_eq!(run(&mut session, ":defs").0, "no definitions");
 }
 
@@ -195,13 +195,13 @@ fn replayed_lines_restore_random_sessions() {
 #[test]
 fn errors_and_the_session_goes_on() {
     let mut session = Session::new();
-    assert_eq!(run(&mut session, "a := 2").1, true);
-    assert_eq!(run(&mut session, ":set N").1, true);
+    assert!(run(&mut session, "a := 2").1);
+    assert!(run(&mut session, ":set N").1);
     assert_eq!(run(&mut session, "a + 3").0, "5");
     // `N` has no subtraction
     let response = session.run("a - 3");
     assert!(matches!(response.output, Output::Error(_)));
     assert!(!response.replay);
-    assert_eq!(run(&mut session, ":set R").1, true);
+    assert!(run(&mut session, ":set R").1);
     assert_eq!(run(&mut session, "a - 3").0, "-1");
 }

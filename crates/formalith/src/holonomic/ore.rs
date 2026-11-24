@@ -11,11 +11,11 @@ use crate::polynom::{dense::Coefficient, fraction::solve_linear};
 use super::ratfun::RatFun;
 
 /// Largest order of the operators computed.
-pub(crate) const MAX_ORDER: usize = 8;
+pub const MAX_ORDER: usize = 8;
 
 /// The kind of an operator.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Kind {
+pub enum Kind {
     /// `{$partial = d/(d t)$}`.
     Differential,
     /// `{$S c(n) = c(n + 1)$}`.
@@ -24,7 +24,7 @@ pub(crate) enum Kind {
 
 /// `{$sum_i a_i partial^i$}` (or `{$S^i$}`), its leading coefficient non-zero.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct Operator {
+pub struct Operator {
     pub(crate) kind: Kind,
     pub(crate) coefficients: Vec<RatFun>,
 }
@@ -39,12 +39,12 @@ impl Operator {
     }
 
     /// The order.
-    pub(crate) fn order(&self) -> usize {
+    pub(crate) const fn order(&self) -> usize {
         self.coefficients.len() - 1
     }
 
     /// The operator of order 1 `{$partial - rho$}` (or `{$S - rho$}`).
-    pub(crate) fn first_order(kind: Kind, rho: RatFun) -> Self {
+    pub(crate) fn first_order(kind: Kind, rho: &RatFun) -> Self {
         Self {
             kind,
             coefficients: vec![rho.negate(), RatFun::one()],
@@ -162,7 +162,7 @@ impl Operator {
 
 /// The operator `{$partial^i - sum_(j < i) alpha_j partial^j$}` for the first `i` such that `vector(i)` depends
 /// linearly on `vector(0), ..., vector(i - 1)`, vectors of dimension `dim`, `None` above [`MAX_ORDER`].
-pub(crate) fn annihilator(
+pub fn annihilator(
     kind: Kind,
     dim: usize,
     mut vector: impl FnMut(usize) -> Vec<RatFun>,

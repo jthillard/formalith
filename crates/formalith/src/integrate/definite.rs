@@ -61,7 +61,7 @@ use super::{
 /// Bits of the numerical check of values computed by substitution.
 const CHECK_BITS: u64 = 96;
 /// Samples checking the sign of denominators which aren't analyzed.
-const SAMPLES: i64 = 64;
+const SAMPLES: i32 = 64;
 /// Maximum number of poles of `tan` or zeros of `sin` and `cos` in the interval.
 const MAX_PERIODS: i64 = 1000;
 
@@ -75,7 +75,7 @@ struct RangeGuard;
 
 impl Drop for RangeGuard {
     fn drop(&mut self) {
-        RANGES.with_borrow_mut(|ranges| ranges.pop());
+        RANGES.with_borrow_mut(std::vec::Vec::pop);
     }
 }
 
@@ -208,6 +208,8 @@ pub(super) fn integrate(f: &Expr, x: Symbol, a: &Expr, b: &Expr) -> IntegrateRes
     points.sort_by(|(p, _), (q, _)| p.partial_cmp(q).unwrap_or(Ordering::Equal));
     points.dedup_by(|(p, _), (q, _)| (*p - *q).abs() < 1e-12);
     // Singular points are searched in the closed interval, the bounds being regular when none is found there
+    // Also equal infinite bounds
+    #[allow(clippy::float_cmp)]
     let near = |p: f64, q: f64| (p - q).abs() < 1e-12 || p == q;
     let regular = |bound: f64| !points.iter().any(|(p, _)| near(*p, bound));
     let mut bounds = vec![(a.clone(), regular(a_value))];
@@ -277,10 +279,10 @@ fn mellin(f: &Expr, x: Symbol) -> Option<Expr> {
     let mut rest = None;
     for factor in factors {
         match factor {
-            _ if !depends(factor, x) => constant = constant * factor,
-            Term::Symbol(_) => s = s + one(),
+            _ if !depends(factor, x) => constant *= factor,
+            Term::Symbol(_) => s += one(),
             Term::Pow(pow) if *pow.base == variable(x) && !depends(&pow.exponant, x) => {
-                s = s + &**pow.exponant;
+                s += &**pow.exponant;
             }
             _ if rest.is_none() => rest = Some(factor),
             _ => return None,
@@ -472,10 +474,7 @@ fn evaluate(antiderivative: &Expr, x: Symbol, points: &[(Expr, bool)]) -> Integr
         add(limit(&pair[1], Direction::Left)?, Ordering::Greater)?;
         add(limit(&pair[0], Direction::Right)?, Ordering::Less)?;
     }
-    match infinite {
-        Some(sign) => Err(IntegrateError::Divergent(sign)),
-        None => Ok(finite),
-    }
+    infinite.map_or(Ok(finite), |sign| Err(IntegrateError::Divergent(sign)))
 }
 
 /// `{$F(p)$}` by substitution when it is the limit `res` (which may be written differently, like `sin / cos` for
@@ -689,6 +688,8 @@ fn periodic_zeros(
         .map_err(|_| IntegrateError::Unsupported)?
         .ceiling();
     let first = i64::try_from(&first).map_err(|_| IntegrateError::Unsupported)?;
+    // Checked against `MAX_PERIODS` below
+    #[allow(clippy::cast_possible_truncation)]
     let last = high.floor() as i64;
     if last - first > MAX_PERIODS {
         return Err(IntegrateError::Unsupported);
@@ -707,7 +708,7 @@ fn periodic_zeros(
 fn same_sign(term: &Expr, x: Symbol, interval: (f64, f64)) -> IntegrateResult<()> {
     let mut sign = None;
     for i in 1..SAMPLES {
-        let u = (i as f64) / (SAMPLES as f64);
+        let u = f64::from(i) / f64::from(SAMPLES);
         // Samples spread on the whole interval, infinite ones being mapped from `(0, 1)`
         let point = match (interval.0.is_finite(), interval.1.is_finite()) {
             (true, true) => interval.0 + (interval.1 - interval.0) * u,
@@ -783,7 +784,7 @@ fn constant_parts(f: &Expr, x: Symbol, interval: (f64, f64)) -> Expr {
         return f.clone();
     };
     // Points where inverse trigonometric functions have exact values, tried first for a value without them
-    let sqrt = |n: i64| sqrt(value(Rational::from(n)));
+    let sqrt = |n: i64| sqrt(&value(Rational::from(n)));
     let mut candidates = vec![value(point)];
     for p in [
         zero(),
@@ -908,9 +909,7 @@ fn symmetric(
     b: &Expr,
     interval: (f64, f64),
 ) -> Option<IntegrateResult<Expr>> {
-    if !(interval.0.is_finite() && interval.1.is_finite())
-        || !(a + b).is_zero()
-        || !continuous(f, x)
+    if !interval.0.is_finite() || !interval.1.is_finite() || !(a + b).is_zero() || !continuous(f, x)
     {
         return None;
     }

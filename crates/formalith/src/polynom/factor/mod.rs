@@ -28,6 +28,8 @@ pub trait RationalSet: Set {
     /// Convert an element to a rational number, if it is one.
     fn to_rational(&self, element: &Self::Element) -> Option<Rational>;
     /// Convert a rational number to an element, if it belongs to the set.
+    // Paired with `to_rational`, the set building its element
+    #[allow(clippy::wrong_self_convention)]
     fn from_rational(&self, value: Rational) -> Option<Self::Element>;
 }
 
@@ -149,6 +151,8 @@ pub trait GaussianSet: Set {
     /// Convert an element to a Gaussian rational `[re, im]`, if it is one.
     fn to_gaussian(&self, element: &Self::Element) -> Option<[Rational; 2]>;
     /// Convert a Gaussian rational `[re, im]` to an element, if it belongs to the set.
+    // Paired with `to_gaussian`, the set building its element
+    #[allow(clippy::wrong_self_convention)]
     fn from_gaussian(&self, value: [Rational; 2]) -> Option<Self::Element>;
 }
 
@@ -241,6 +245,7 @@ impl<V: Monomial, T: Ring, U: Ring> MultivariatePolynomial<V, T, U> {
     }
 
     /// Inverse of [`Self::to_gaussian_sparse`], using the sets of `self`.
+    #[allow(clippy::wrong_self_convention)]
     fn from_gaussian_sparse(&self, vars: &[V], p: &GaussianPoly) -> Option<Self> {
         let mut map = HashMap::new();
         for (exponents, c) in p.coefficients() {
@@ -250,6 +255,7 @@ impl<V: Monomial, T: Ring, U: Ring> MultivariatePolynomial<V, T, U> {
     }
 
     /// Inverse of [`Self::to_sparse`], using the sets of `self`.
+    #[allow(clippy::wrong_self_convention)]
     fn from_sparse(&self, vars: &[V], p: &SparsePoly) -> Option<Self> {
         let mut map = HashMap::new();
         for (exponents, c) in p.terms() {

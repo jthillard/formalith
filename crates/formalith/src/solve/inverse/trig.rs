@@ -220,7 +220,7 @@ fn monomials(p: &Expr, s: Symbol, c: Symbol) -> Option<Vec<Monomial>> {
                     i += di;
                     j += dj;
                 } else {
-                    coefficient = coefficient * factor;
+                    coefficient *= factor;
                 }
             }
             Some(Monomial {
@@ -254,7 +254,7 @@ fn branches(monomials: &[Monomial], t: Symbol) -> Option<Vec<Branch>> {
     let pow = |base: &Expr, n: u32| base.pow(&value(Rational::from(n)));
     // The points of the angles where `{$sin v = s$}` or `{$cos v = c$}`
     let sin_branch = |s: Expr| {
-        let other = sqrt(&one - &(&s * &s));
+        let other = sqrt(&(&one - &(&s * &s)));
         Branch {
             ident: Context::SIN,
             scale: Rational::from(1),
@@ -264,7 +264,7 @@ fn branches(monomials: &[Monomial], t: Symbol) -> Option<Vec<Branch>> {
         }
     };
     let cos_branch = |c: Expr| {
-        let other = sqrt(&one - &(&c * &c));
+        let other = sqrt(&(&one - &(&c * &c)));
         Branch {
             ident: Context::COS,
             scale: Rational::from(1),
@@ -288,9 +288,9 @@ fn branches(monomials: &[Monomial], t: Symbol) -> Option<Vec<Branch>> {
             let term =
                 monomial.coefficient.clone() * pow(&tv, i) * pow(&(&one - &(&tv * &tv)), j / 2);
             if j % 2 == 0 {
-                even = even + term;
+                even += term;
             } else {
-                odd = odd + term;
+                odd += term;
             }
         }
         let (even, odd) = (even.expand(), odd.expand());
@@ -357,9 +357,9 @@ fn branches(monomials: &[Monomial], t: Symbol) -> Option<Vec<Branch>> {
         };
         let (a, b, c) = (coefficient(1, 0), coefficient(0, 1), coefficient(0, 0));
         if let Some(phi) = arg(&a, &b) {
-            let r = sqrt(&a * &a + &b * &b);
+            let r = sqrt(&(&a * &a + &b * &b));
             let s = -c / &r;
-            let other = sqrt(&one - &(&s * &s));
+            let other = sqrt(&(&one - &(&s * &s)));
             // `{$v = w - phi$}` with `{$sin w = s$}`
             let point = |cw: &Expr| ((&s * &a - cw * &b) / &r, (cw * &a + &s * &b) / &r);
             return Some(vec![Branch {

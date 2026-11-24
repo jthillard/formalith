@@ -58,7 +58,7 @@ impl PrintOptions {
         }
     }
     /// Check if colors should be written.
-    const fn use_colors(&self) -> bool {
+    const fn use_colors(self) -> bool {
         self.colors && !self.typst
     }
 }
@@ -448,8 +448,8 @@ impl PrettyPrinter {
         self.lines.push(sym.repeat(self.width()));
 
         // Concat the other printer
-        for i in 0..other.height() {
-            let mut line = other.lines[i].clone();
+        for line in &other.lines {
+            let mut line = line.clone();
             line.insert_str(0, &" ".repeat(other_offset));
             line += &" ".repeat(other_offset_end);
             self.lines.push(line);
@@ -507,10 +507,9 @@ impl PrettyPrinter {
         let height = self.height();
         let sign = match index.map(|index| index.lines.as_slice()) {
             _ if height > 1 => None,
-            None => Some('√'),
             Some([index]) if index == "3" => Some('∛'),
             Some([index]) if index == "4" => Some('∜'),
-            Some(_) => Some('√'),
+            _ => Some('√'),
         };
         let index = index.filter(|_| !matches!(sign, Some('∛' | '∜')));
         // A diagonal sign is one column wider than the radicand's height, plus a space before the radicand
@@ -522,6 +521,7 @@ impl PrettyPrinter {
             " ".repeat(overline_start) + &"_".repeat(self.width() + sign_width - overline_start),
         );
         for (i, line) in self.lines.iter().enumerate() {
+            #[allow(clippy::option_if_let_else)]
             let prefix = if let Some(sign) = sign {
                 sign.to_string()
             } else if i == height - 1 {
@@ -639,8 +639,8 @@ impl PrettyPrinter {
         } else {
             get_drawings_chars(sym).unwrap_or(or)
         };
-        for i in 0..height {
-            self.lines[i].insert(
+        for (i, line) in self.lines.iter_mut().enumerate() {
+            line.insert(
                 0,
                 if i == 0 {
                     drawings.0
@@ -663,8 +663,8 @@ impl PrettyPrinter {
         } else {
             get_drawings_chars(sym).unwrap_or(or)
         };
-        for i in 0..height {
-            self.lines[i].push(if i == 0 {
+        for (i, line) in self.lines.iter_mut().enumerate() {
+            line.push(if i == 0 {
                 drawings.0
             } else if i == height - 1 {
                 drawings.2

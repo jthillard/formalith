@@ -387,7 +387,7 @@ impl Semiring for R<Rational> {
                     let mut res = Term::Value(Value::new(mul.coefficient.clone(), *self));
                     res.set_approximate(mul.is_approximate());
                     for factor in mul {
-                        res = res * factor;
+                        res *= factor;
                     }
                     return res;
                 }
@@ -401,10 +401,10 @@ impl Semiring for R<Rational> {
                         match factor {
                             Term::Fun(fun) if fun.get_ident() == Context::EXP => {
                                 if let Some(arg) = fun.get_arg::<Self>() {
-                                    argument = argument + arg;
+                                    argument += arg;
                                 }
                             }
-                            _ => res = res * factor,
+                            _ => res *= factor,
                         }
                     }
                     return res * self.fun(Context::EXP, argument);
@@ -420,10 +420,10 @@ impl Semiring for R<Rational> {
                         match factor {
                             Term::Fun(fun) if fun.get_ident() == Context::LITTLE_O => {
                                 if let Some(arg) = fun.get_arg::<Self>() {
-                                    res = res * arg;
+                                    res *= arg;
                                 }
                             }
-                            _ => res = res * factor,
+                            _ => res *= factor,
                         }
                     }
                     return self.fun(Context::LITTLE_O, res);
@@ -972,8 +972,8 @@ impl R<Rational> {
         match (ident, args) {
             (Context::EXP | Context::COS, [x]) if x.is_zero() => Some(value(Rational::ONE)),
             (Context::SIN | Context::TAN, [x]) if x.is_zero() => Some(value(Rational::ZERO)),
-            (Context::SIN | Context::COS | Context::TAN, [x]) if self.pi_multiple(x).is_some() => {
-                self.eval_trig_at_pi_multiple(ident, &self.pi_multiple(x)?)
+            (Context::SIN | Context::COS | Context::TAN, [x]) if Self::pi_multiple(x).is_some() => {
+                self.eval_trig_at_pi_multiple(ident, &Self::pi_multiple(x)?)
             }
             (Context::LN, [x]) if x.is_one() => Some(value(Rational::ZERO)),
             // `{$ln q = -ln(1/q)$}` for `{$0 < q < 1$}`
@@ -1212,7 +1212,7 @@ impl R<Rational> {
     }
 
     /// The rational `q` if `x` is `{$q pi$}`.
-    fn pi_multiple(self, x: &Term<Self>) -> Option<Rational> {
+    fn pi_multiple(x: &Term<Self>) -> Option<Rational> {
         match x {
             Term::Symbol(symbol) if symbol.symbol == Context::PI => Some(Rational::ONE),
             Term::Mul(mul)
@@ -1269,12 +1269,12 @@ impl R<Rational> {
         let mut rest = Term::zero(self);
         let mut found = false;
         for term in add {
-            match self.pi_multiple(term) {
+            match Self::pi_multiple(term) {
                 Some(multiple) => {
                     q += multiple;
                     found = true;
                 }
-                None => rest = rest + term,
+                None => rest += term,
             }
         }
         if !found {
@@ -1304,7 +1304,7 @@ impl R<Rational> {
             });
         }
         // Nearest integer, `q` being at distance at least `{$1/4$}` from a half-integer
-        let n = Integer::from((&q + Rational::from_signeds(1, 2)).floor());
+        let n = (&q + Rational::from_signeds(1, 2)).floor();
         if n == 0 {
             return None;
         }
@@ -1340,7 +1340,7 @@ impl R<Rational> {
             let two = Rational::from(2);
             let r = &c - &two * Rational::from((&c / &two).floor());
             changed |= r != c;
-            reduced = reduced + R.value(r) * rest;
+            reduced += R.value(r) * rest;
         }
         changed.then_some(reduced)
     }
@@ -1369,8 +1369,8 @@ impl R<Rational> {
         let mut rest = Term::zero(self);
         for term in terms {
             match turns(term) {
-                Some(turns) => n = n + turns,
-                None => rest = rest + term,
+                Some(turns) => n += turns,
+                None => rest += term,
             }
         }
         if n.is_zero() {

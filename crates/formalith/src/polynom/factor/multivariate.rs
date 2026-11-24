@@ -66,7 +66,7 @@ impl SparsePoly {
         }
     }
     /// Check if the polynomial is zero.
-    pub fn is_zero(&self) -> bool {
+    pub const fn is_zero(&self) -> bool {
         self.terms.is_empty()
     }
     /// Check if the polynomial is a constant.

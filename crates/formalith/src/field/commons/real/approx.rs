@@ -29,9 +29,9 @@ use super::{R, special::bernoulli};
 type Real = R<Rational>;
 
 /// Default number of significant digits of `approx`.
-pub(crate) const DEFAULT_DIGITS: u64 = 15;
+pub const DEFAULT_DIGITS: u64 = 15;
 /// Maximum number of significant digits of `approx`.
-pub(crate) const MAX_DIGITS: u64 = 10_000;
+pub const MAX_DIGITS: u64 = 10_000;
 /// Arguments of `exp` above this bound are not evaluated, the result being too large.
 const MAX_EXP_ARGUMENT: u64 = 100_000;
 /// Integer exponents above this bound are not evaluated.
@@ -72,6 +72,8 @@ impl Fixed {
     fn one(self) -> Integer {
         Integer::ONE << self.bits
     }
+    // Paired with `to_rational`, at the precision of `self`
+    #[allow(clippy::wrong_self_convention)]
     fn from_rational(self, x: &Rational) -> Integer {
         (x << self.bits).floor()
     }
@@ -499,8 +501,7 @@ impl Fixed {
     /// Stirling's series `{$ln Gamma(y) ~ (y - 1/2) ln y - y + ln(2 pi)/2 + sum_k B_(2 k) / (2 k (2 k - 1) y^(2 k - 1))$}`.
     fn gamma(self, x: &Rational) -> Option<Rational> {
         if let Ok(n) = u64::try_from(x)
-            && n >= 1
-            && n <= MAX_EXPONENT
+            && (1..=MAX_EXPONENT).contains(&n)
         {
             return Some(Rational::from(Natural::factorial(n - 1)));
         }
@@ -513,7 +514,7 @@ impl Fixed {
         let half = Rational::from_signeds(1, 2);
         let two_pi = Rational::from(self.pi() << 1_u64) >> self.bits;
         let ln_y = self.ln(&y);
-        let main = self.from_rational(&(&y - &half)) * &ln_y >> self.bits;
+        let main = (self.from_rational(&(&y - &half)) * &ln_y) >> self.bits;
         let series = self.asymptotic_sum(&y, &y, |k, b| b / Rational::from(2 * k * (2 * k - 1)));
         let ln_gamma = main - self.from_rational(&y) + (self.ln(&two_pi) >> 1_u64) + series;
         Some(self.to_rational(self.exp(&ln_gamma)?) / product)
@@ -1005,26 +1006,28 @@ fn bind(term: &Term<Real>, x: Symbol, value: &Term<Real>) -> Term<Real> {
             bind(&pow.exponant, x, value),
             set,
         )),
-        Term::Fun(fun) => match fun.get_args::<Real>() {
-            Some(args) => Term::Fun(Box::new(Fun::new(
-                fun.get_ident(),
-                args.iter().map(|t| bind(t, x, value)).collect(),
-                set,
-            ))),
-            None => term.clone(),
-        },
+        Term::Fun(fun) => fun.get_args::<Real>().map_or_else(
+            || term.clone(),
+            |args| {
+                Term::Fun(Box::new(Fun::new(
+                    fun.get_ident(),
+                    args.iter().map(|t| bind(t, x, value)).collect(),
+                    set,
+                )))
+            },
+        ),
     }
 }
 
 /// Number of bits needed to get `digits` significant decimal digits.
-fn bits_for_digits(digits: u64) -> u64 {
+const fn bits_for_digits(digits: u64) -> u64 {
     // `{$log_2(10) < 3.3220$}`
     digits * 33_220 / 10_000 + 1
 }
 
 /// Approximate a term without symbols, other than builtin constants, to `digits` significant digits. Return `None`
 /// if the term contains symbols or can't be evaluated, like `{$ln(-1)$}`.
-pub(crate) fn approximate(term: &Term<Real>, digits: u64) -> Option<Rational> {
+pub fn approximate(term: &Term<Real>, digits: u64) -> Option<Rational> {
     let needed = bits_for_digits(digits) + GUARD_BITS / 2;
     let max_bits = 4 * needed + 4096;
     let mut bits = needed + GUARD_BITS;
@@ -1054,7 +1057,7 @@ pub(crate) fn approximate(term: &Term<Real>, digits: u64) -> Option<Rational> {
 
 /// Approximate a term like [`approximate`], but in a single evaluation with an absolute error of about
 /// `{$2^(-"bits")$}`, which is faster when the value may be zero.
-pub(crate) fn approximate_fixed(term: &Term<Real>, bits: u64) -> Option<Rational> {
+pub fn approximate_fixed(term: &Term<Real>, bits: u64) -> Option<Rational> {
     Fixed {
         bits: bits + GUARD_BITS,
     }
@@ -1152,7 +1155,7 @@ fn decimal_digits(x: &Rational, digits: u64) -> (Natural, i64) {
 }
 
 /// Round `x` to `digits` significant digits.
-pub(crate) fn round_significant(x: &Rational, digits: u64) -> Rational {
+pub fn round_significant(x: &Rational, digits: u64) -> Rational {
     if *x == 0 {
         return Rational::ZERO;
     }
@@ -1194,7 +1197,7 @@ pub(super) fn precision(x: &Rational) -> u64 {
 
 /// Print an approximated value as a decimal number, in scientific notation if it is very large or very small. Every
 /// digit of a decimal number is printed, other numbers are rounded to [`DEFAULT_DIGITS`] digits.
-pub(crate) fn format_decimal(x: &Rational, typst: bool) -> String {
+pub fn format_decimal(x: &Rational, typst: bool) -> String {
     if *x == 0 {
         return "0.0".to_owned();
     }
@@ -1204,6 +1207,7 @@ pub(crate) fn format_decimal(x: &Rational, typst: bool) -> String {
     let mantissa = mantissa.trim_end_matches('0');
     let sign = if *x < 0 { "-" } else { "" };
     if (-5..16).contains(&exponant) {
+        #[allow(clippy::option_if_let_else)]
         let (integer, fraction) = if let Ok(exponant) = usize::try_from(exponant) {
             if mantissa.len() <= exponant + 1 {
                 let zeros = "0".repeat(exponant + 1 - mantissa.len());

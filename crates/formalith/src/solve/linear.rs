@@ -83,7 +83,13 @@ fn solve_matrix<T: Ring, K: Ring>(
     matrix
         .row_reduce_left(unknowns.len())
         .map_err(|_| SolveError::NotInvertible)?;
-    assignments(&matrix, coefficient_set, unknowns, set, to_term)
+    Ok(assignments(
+        &matrix,
+        coefficient_set,
+        unknowns,
+        set,
+        to_term,
+    ))
 }
 
 /// The solution of a system of augmented matrix `matrix` in row reduced echelon form, with pivots equal to one
@@ -94,7 +100,7 @@ pub(super) fn assignments<T: Ring, K: Ring>(
     unknowns: &[Symbol],
     set: T,
     to_term: impl Fn(&K::Element) -> Term<T>,
-) -> Result<Solution<T>, SolveError> {
+) -> Solution<T> {
     let count = unknowns.len();
     // Pivots, as (row, column)
     let mut pivots = vec![];
@@ -103,7 +109,7 @@ pub(super) fn assignments<T: Ring, K: Ring>(
             Some(column) => pivots.push((row, column)),
             // `0 = b` with `b` non-zero
             None if !coefficient_set.is_zero(&matrix[(row, count)]) => {
-                return Ok(Solution::NoSolution);
+                return Solution::NoSolution;
             }
             None => {}
         }
@@ -120,15 +126,18 @@ pub(super) fn assignments<T: Ring, K: Ring>(
             for &free in &free {
                 let coefficient = &matrix[(row, free)];
                 if !coefficient_set.is_zero(coefficient) {
-                    value = value
-                        - to_term(coefficient) * Term::Symbol(SymbolTerm::new(unknowns[free], set));
+                    value -=
+                        to_term(coefficient) * Term::Symbol(SymbolTerm::new(unknowns[free], set));
                 }
             }
             (unknowns[column], value)
         })
         .collect();
-    Ok(Solution::Assignments(assignments))
+    Solution::Assignments(assignments)
 }
+
+/// The coefficients `a_i` of the unknowns `x_i` and the constant `b` of `sum(a_i x_i) + b`.
+type LinearForm<T> = (BTreeMap<Symbol, Term<T>>, Term<T>);
 
 /// Split an expanded expression into its coefficients `a_i` and its constant `b`, so that it is
 /// `sum(a_i x_i) + b` with `x_i` the unknowns. Coefficients and the constant don't contain unknowns.
@@ -136,7 +145,7 @@ fn linear_form<T: Ring>(
     expression: &Term<T>,
     unknowns: &[Symbol],
     set: T,
-) -> Result<(BTreeMap<Symbol, Term<T>>, Term<T>), SolveError> {
+) -> Result<LinearForm<T>, SolveError> {
     let has_unknown = |term: &Term<T>| {
         term.symbols()
             .iter()

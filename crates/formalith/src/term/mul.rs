@@ -90,14 +90,14 @@ impl<T: Set> Mul<T> {
     /// Print the coefficient, as a decimal number if it is a numerical approximation.
     fn print_coefficient_element(
         &self,
-        options: &PrintOptions,
+        options: PrintOptions,
         f: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result {
         let coefficient_set = self.set.get_coefficient_set();
         if self.is_approximate() {
-            coefficient_set.print_approximate(&self.coefficient, options, f)
+            coefficient_set.print_approximate(&self.coefficient, &options, f)
         } else {
-            coefficient_set.print(&self.coefficient, options, f)
+            coefficient_set.print(&self.coefficient, &options, f)
         }
     }
     /// Return the constant coefficient factor of the product.
@@ -134,7 +134,7 @@ impl<T: Set> Mul<T> {
     /// Print the product as typst source, factors with a negative exponent going to a `frac` denominator.
     fn print_typst(
         &self,
-        options: &PrintOptions,
+        options: PrintOptions,
         f: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result {
         let mut num = vec![];
@@ -150,12 +150,12 @@ impl<T: Set> Mul<T> {
         let print_factors = |factors: &[Term<T>], f: &mut std::fmt::Formatter<'_>| {
             for (i, factor) in factors.iter().enumerate() {
                 if i != 0 {
-                    Self::mul_sign(options, f)?;
+                    Self::mul_sign(&options, f)?;
                 }
                 if matches!(factor, Term::Add(_)) {
-                    Self::group(factor, options, f)?;
+                    Self::group(factor, &options, f)?;
                 } else {
-                    Print::print(factor, options, f)?;
+                    Print::print(factor, &options, f)?;
                 }
             }
             Ok(())
@@ -164,11 +164,11 @@ impl<T: Set> Mul<T> {
             let coefficient_set = self.set.get_coefficient_set();
             let is_sum = coefficient_set.is_sum(&self.coefficient);
             if is_sum {
-                Self::group_delim("(", options, f)?;
+                Self::group_delim("(", &options, f)?;
             }
             self.print_coefficient_element(options, f)?;
             if is_sum {
-                Self::group_delim(")", options, f)?;
+                Self::group_delim(")", &options, f)?;
             }
             Ok(())
         };
@@ -177,20 +177,20 @@ impl<T: Set> Mul<T> {
         let minus_one =
             self.has_coeff() && coefficient_set.is_one(&coefficient_set.neg(&self.coefficient));
         if minus_one {
-            Self::operator("-", options, f)?;
+            Self::operator("-", &options, f)?;
         }
         if den.is_empty() {
             if self.has_coeff() && !minus_one {
                 print_coefficient(f)?;
                 if !num.is_empty() {
-                    Self::mul_sign(options, f)?;
+                    Self::mul_sign(&options, f)?;
                 }
             }
             return print_factors(&num, f);
         }
         if self.has_coeff() && !minus_one && !num.is_empty() {
             print_coefficient(f)?;
-            Self::mul_sign(options, f)?;
+            Self::mul_sign(&options, f)?;
         }
         f.write_str("frac(")?;
         if num.is_empty() {
@@ -211,7 +211,7 @@ impl<T: Set> Mul<T> {
 impl<T: Set> Print for Mul<T> {
     fn print(&self, options: &PrintOptions, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if options.typst {
-            return self.print_typst(options, f);
+            return self.print_typst(*options, f);
         }
         // Print the coefficient at the beginning of the product, `-1` being printed as a minus sign
         if self.has_coeff() {
@@ -223,7 +223,7 @@ impl<T: Set> Print for Mul<T> {
                 if is_sum {
                     Self::group_delim("(", options, f)?;
                 }
-                self.print_coefficient_element(options, f)?;
+                self.print_coefficient_element(*options, f)?;
                 if is_sum {
                     Self::group_delim(")", options, f)?;
                 }
@@ -243,7 +243,7 @@ impl<T: Set> Mul<T> {
     fn pretty_print_default<F: Fn() -> crate::printer::PrettyPrinter>(
         &self,
         f: F,
-        options: &PrintOptions,
+        options: PrintOptions,
     ) -> crate::printer::PrettyPrinter {
         // Parts of the numerator and of the denominator, with whether they are sums (needing parentheses next to
         // other parts)
@@ -259,14 +259,14 @@ impl<T: Set> Mul<T> {
         };
         if !coefficient_set.is_one(&coefficient) {
             let print_coefficient = |coefficient: &<T::ProductCoefficientSet as Set>::Element| {
-                let mut printed = coefficient_set.pretty_print(coefficient, options);
+                let mut printed = coefficient_set.pretty_print(coefficient, &options);
                 if coefficient_set.is_sum(coefficient) {
                     printed.paren();
                 }
                 (printed, false)
             };
             if self.is_approximate() {
-                let mut printed = coefficient_set.pretty_print_approximate(&coefficient, options);
+                let mut printed = coefficient_set.pretty_print_approximate(&coefficient, &options);
                 if coefficient_set.is_sum(&coefficient) {
                     printed.paren();
                 }
@@ -287,12 +287,12 @@ impl<T: Set> Mul<T> {
                 Term::Pow(pow) if pow.exponant.is_strictly_negative() => {
                     let factor = Term::Pow(pow.with_negated_exponant()).normalize();
                     den.push((
-                        PrettyPrint::pretty_print(&factor, options),
+                        PrettyPrint::pretty_print(&factor, &options),
                         matches!(factor, Term::Add(_)),
                     ));
                 }
                 _ => num.push((
-                    PrettyPrint::pretty_print(factor, options),
+                    PrettyPrint::pretty_print(factor, &options),
                     matches!(factor, Term::Add(_)),
                 )),
             }
@@ -329,7 +329,7 @@ impl<T: Set> Mul<T> {
 }
 impl<T: Set> PrettyPrint for Mul<T> {
     default fn pretty_print(&self, options: &PrintOptions) -> crate::printer::PrettyPrinter {
-        self.pretty_print_default(|| unreachable!("Pretty printing a `Mul` in a set or a group should return a numerator. This is a bug, this product is not normalized or represents an impossible product (not living in a ring)"), options)
+        self.pretty_print_default(|| unreachable!("Pretty printing a `Mul` in a set or a group should return a numerator. This is a bug, this product is not normalized or represents an impossible product (not living in a ring)"), *options)
     }
 }
 
@@ -337,7 +337,7 @@ impl<T: Ring> PrettyPrint for Mul<T> {
     fn pretty_print(&self, options: &PrintOptions) -> crate::printer::PrettyPrinter {
         self.pretty_print_default(
             || PrettyPrint::pretty_print(&Term::one(self.set), options),
-            options,
+            *options,
         )
     }
 }

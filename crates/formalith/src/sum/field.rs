@@ -15,19 +15,18 @@ use crate::{
 
 /// The subterms free of the index used as generators `{$t_1, ..., t_n$}`.
 #[derive(Default)]
-pub(crate) struct Params {
+pub struct Params {
     atoms: Vec<Expr>,
 }
 
 impl Params {
     /// The generator of the field standing for `atom`.
     fn generator(&mut self, atom: &Expr) -> Elem {
-        let level = match self.atoms.iter().position(|a| a == atom) {
-            Some(i) => i + 1,
-            None => {
-                self.atoms.push(atom.clone());
-                self.atoms.len()
-            }
+        let level = if let Some(i) = self.atoms.iter().position(|a| a == atom) {
+            i + 1
+        } else {
+            self.atoms.push(atom.clone());
+            self.atoms.len()
         };
         Elem::generator(level)
     }
@@ -143,7 +142,7 @@ impl Params {
 }
 
 /// The fraction `{$p / q$}` reduced, with `q` monic.
-pub(crate) fn reduce(num: &EPoly, den: &EPoly) -> (EPoly, EPoly) {
+pub fn reduce(num: &EPoly, den: &EPoly) -> (EPoly, EPoly) {
     let g = num.gcd(den);
     let (num, den) = if g.degree() == 0 {
         (num.clone(), den.clone())

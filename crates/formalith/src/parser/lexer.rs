@@ -292,7 +292,7 @@ mod tests {
 
     #[test]
     fn empty_input() {
-        assert!(kinds("").is_empty());
+        assert_eq!(kinds(""), []);
         let mut lexer = Lexer::new("");
         assert_eq!(lexer.lex().kind, TokenKind::Eof);
         assert_eq!(lexer.lex().kind, TokenKind::Eof);

@@ -30,7 +30,10 @@ fn antiderivative(f: &str) -> Verdict {
     let mut valid = 0;
     for _ in 0..POINTS * 2 {
         let x0 = Domain::Range(-3.0, 3.0).sample(&mut rng);
-        let (Some(d), Some(v)) = (big_f.derivative_at(&x0), small_f.at(&[x0.clone()])) else {
+        let (Some(d), Some(v)) = (
+            big_f.derivative_at(&x0),
+            small_f.at(std::slice::from_ref(&x0)),
+        ) else {
             continue;
         };
         if !close(d, v, 1e-7) {

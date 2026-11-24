@@ -108,7 +108,7 @@ impl Risch<'_> {
         let (a, d) = f.fraction(1);
         let (g, h, r) = self.hermite(&a, &d, 1);
         let r = to_rational_poly(&r.fraction(1).0).antiderivative();
-        let part = g.plus(&Elem::from_poly(1, from_rational_poly(&r)));
+        let part = g.plus(&Elem::from_poly(1, &from_rational_poly(&r)));
         let logs = if h.is_zero() {
             zero()
         } else {
@@ -132,10 +132,10 @@ impl Risch<'_> {
         // `{$p = h - sum alpha D S / S + r$}`
         let mut p = h.plus(&r);
         for (alpha, s) in self.residue_reduce(&h, level)? {
-            let s = Elem::from_poly(level, s);
+            let s = Elem::from_poly(level, &s);
             let alpha_elem = Elem::rational(alpha.clone());
             p = p.minus(&alpha_elem.times(&self.d(&s).divide(&s)));
-            logs = logs + value(alpha) * ln_abs(&self.tower.to_term(&s), self.tower.x());
+            logs += value(alpha) * ln_abs(&self.tower.to_term(&s), self.tower.x());
         }
         let (num, den) = p.fraction(level);
         let rest = match self.tower.kind(level) {
@@ -210,7 +210,7 @@ impl Risch<'_> {
         }
         let (q2, r) = a.div_rem(&d_star);
         let h = Elem::from_fraction(level, &r, &d_star);
-        let r = Elem::from_poly(level, q.add(&q2)).plus(&special);
+        let r = Elem::from_poly(level, &q.add(&q2)).plus(&special);
         debug_assert_eq!(
             self.d(&g).plus(&h).plus(&r),
             Elem::from_fraction(level, input, d),
@@ -234,7 +234,7 @@ impl Risch<'_> {
             return Err(RischError::Unsupported);
         }
         let dd = self.d_poly(&d, level);
-        let r = self.resultant_in_z(&d, &a, &dd);
+        let r = Self::resultant_in_z(&d, &a, &dd);
         let r = r.monic();
         let r: Option<Vec<_>> = r
             .coefficients()
@@ -256,8 +256,8 @@ impl Risch<'_> {
     }
 
     /// `{$R(z) = "res"_t(d, a - z b)$}`, interpolated from its values at `{$z = 0, ..., deg d$}`.
-    fn resultant_in_z(&self, d: &EPoly, a: &EPoly, b: &EPoly) -> EPoly {
-        let points: Vec<_> = (0..=d.degree()).map(|z| Rational::from(z)).collect();
+    fn resultant_in_z(d: &EPoly, a: &EPoly, b: &EPoly) -> EPoly {
+        let points: Vec<_> = (0..=d.degree()).map(Rational::from).collect();
         let values: Vec<_> = points
             .iter()
             .map(|z| d.resultant(&a.sub(&b.scale(&Elem::rational(z.clone())))))
@@ -280,7 +280,7 @@ impl Risch<'_> {
                 .times(&t.pow(m_elem + 1))
                 .plus(&b.times(&t.pow(m_elem)));
             q = q.plus(&q0);
-            let (num, den) = Elem::from_poly(level, p)
+            let (num, den) = Elem::from_poly(level, &p)
                 .minus(&self.d(&q0))
                 .fraction(level);
             if !den.is_one() || (!num.is_zero() && num.degree() >= m) {

@@ -50,9 +50,8 @@ impl Risch<'_> {
         let mut sure = true;
         match self.solve_rde(f, g, level, &mut sure)? {
             Some(y) if self.d(&y).plus(&f.times(&y)) == *g => Ok(Some(y)),
-            Some(_) => Err(RischError::Unsupported),
             None if sure => Ok(None),
-            None => Err(RischError::Unsupported),
+            _ => Err(RischError::Unsupported),
         }
     }
 
@@ -66,7 +65,7 @@ impl Risch<'_> {
     ) -> RischResult<Option<Elem>> {
         // `{$z = q y$}` with `{$D z + (f - D q / q) z = q g$}`
         let q = self.weak_normalizer(f, level)?;
-        let q_elem = Elem::from_poly(level, q.clone());
+        let q_elem = Elem::from_poly(level, &q);
         let f = f.minus(&self.d(&q_elem).divide(&q_elem));
         let g = g.times(&q_elem);
         let Some((a, b, c, h)) = self.normal_denominator(&f, &g, level) else {
@@ -103,7 +102,7 @@ impl Risch<'_> {
         // `{$f = a_1 / d_1 + ...$}`, the residues at the roots of `{$d_1$}` being the roots of `r`
         let (a1, _) = d.exact_div(&d1).diophantine(&d1, &a);
         let dd1 = self.d_poly(&d1, level);
-        let r = self.resultant_in_z(&d1, &a1, &dd1);
+        let r = Self::resultant_in_z(&d1, &a1, &dd1);
         let mut q = EPoly::one();
         for n in self.positive_integer_roots(&r)? {
             q = q.mul(&d1.gcd(&a1.sub(&dd1.scale(&Elem::rational(n)))));
@@ -172,10 +171,10 @@ impl Risch<'_> {
             return None;
         }
         let a = dn.mul(&h);
-        let b = Elem::from_poly(level, a.clone())
+        let b = Elem::from_poly(level, &a)
             .times(f)
-            .minus(&Elem::from_poly(level, dn.mul(&self.d_poly(&h, level))));
-        let c = Elem::from_poly(level, a.mul(&h)).times(g);
+            .minus(&Elem::from_poly(level, &dn.mul(&self.d_poly(&h, level))));
+        let c = Elem::from_poly(level, &a.mul(&h)).times(g);
         Some((a, b, c, h))
     }
 
@@ -225,7 +224,7 @@ impl Risch<'_> {
         }
         let big_n = 0.max(-nb).max(n - nc);
         let t = Elem::generator(level);
-        let a_elem = Elem::from_poly(level, a.clone());
+        let a_elem = Elem::from_poly(level, a);
         let tn = t.pow(big_n);
         let big_a = a.mul(&EPoly::monomial(Elem::one(), to_usize(big_n)));
         let big_b = b
@@ -384,7 +383,7 @@ impl Risch<'_> {
         level: usize,
         sure: &mut bool,
     ) -> RischResult<Option<EPoly>> {
-        let c = Elem::from_poly(level, c.clone());
+        let c = Elem::from_poly(level, c);
         let integral = match self.integrate(&c) {
             Ok(integral) => integral,
             Err(RischError::NonElementary) => return Ok(None),
@@ -428,8 +427,7 @@ impl Risch<'_> {
             Kind::Exp(_) => {
                 let eta = self.tower.eta(level);
                 let mut proof = true;
-                let proved =
-                    !matches!(log_derivative_multiple(&b0, &eta, &mut proof), Some(_)) && proof;
+                let proved = log_derivative_multiple(&b0, &eta, &mut proof).is_none() && proof;
                 (Some(eta), proved)
             }
             _ => (None, false),
@@ -460,14 +458,13 @@ impl Risch<'_> {
 /// The integer `m` with `{$alpha = D z / z + m eta$}` for `{$eta = D a$}`, `{$t = e^a$}` being a monomial and `z`
 /// in the field below: only `{$z = 1$}` is detected, `sure` being set to `false` when another `z` could exist.
 fn log_derivative_multiple(alpha: &Elem, eta: &Elem, sure: &mut bool) -> Option<i64> {
-    match alpha.divide(eta).as_rational() {
-        // `{$(r - m) eta = D z / z$}` would make `{$t^(r - m)$}` algebraic
-        Some(r) => integer(r),
-        None => {
-            *sure = false;
-            None
-        }
-    }
+    let ratio = alpha.divide(eta);
+    let Some(r) = ratio.as_rational() else {
+        *sure = false;
+        return None;
+    };
+    // `{$(r - m) eta = D z / z$}` would make `{$t^(r - m)$}` algebraic
+    integer(r)
 }
 
 #[cfg(test)]

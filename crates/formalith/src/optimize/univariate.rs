@@ -295,14 +295,14 @@ impl<'a> Analysis<'a> {
         let mut limits = vec![];
         for piece in &self.pieces {
             let (l, r) = self.ends(piece);
-            limits.push(match l {
-                Some(l) => (l, f.limit(x, l, Direction::Right)),
-                None => (&self.lower, f.limit(x, &self.lower, Direction::Both)),
-            });
-            limits.push(match r {
-                Some(r) => (r, f.limit(x, r, Direction::Left)),
-                None => (&self.upper, f.limit(x, &self.upper, Direction::Both)),
-            });
+            limits.push(l.map_or_else(
+                || (&self.lower, f.limit(x, &self.lower, Direction::Both)),
+                |l| (l, f.limit(x, l, Direction::Right)),
+            ));
+            limits.push(r.map_or_else(
+                || (&self.upper, f.limit(x, &self.upper, Direction::Both)),
+                |r| (r, f.limit(x, r, Direction::Left)),
+            ));
         }
         if limits
             .iter()
@@ -617,7 +617,9 @@ fn walk(term: &Expr, visit: &mut impl FnMut(&Expr)) {
         }
         Term::Fun(function) => {
             if let Some(args) = function.get_args::<Real>() {
-                args.iter().for_each(|t| walk(t, visit));
+                for t in args {
+                    walk(t, visit);
+                }
             }
         }
     }
@@ -656,7 +658,9 @@ fn collect_conditions(term: &Expr, x: Symbol, res: &mut Vec<(Expr, Condition)>) 
             let Some(args) = function.get_args::<Real>() else {
                 return;
             };
-            args.iter().for_each(|t| collect_conditions(t, x, res));
+            for t in args {
+                collect_conditions(t, x, res);
+            }
             let [u] = args.as_slice() else {
                 return;
             };

@@ -5,7 +5,7 @@
 //! ([`ore`]), and [`recurrence::Recurrence`] turns it into the recurrence of the coefficients, which proves a
 //! guessed closed form of the general term of the series. Used by `series(f, x, a, oo)`.
 
-pub(crate) mod dfinite;
-pub(crate) mod ore;
-pub(crate) mod ratfun;
-pub(crate) mod recurrence;
+pub mod dfinite;
+pub mod ore;
+pub mod ratfun;
+pub mod recurrence;

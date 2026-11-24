@@ -39,7 +39,7 @@ const INTEGRALS: [Symbol; 10] = [
 ];
 
 /// A differential operator annihilating `f`, a function of `w`, its coefficients rational functions of `w`.
-pub(crate) fn annihilator(f: &Expr, w: Symbol, params: &mut Params) -> Option<Operator> {
+pub fn annihilator(f: &Expr, w: Symbol, params: &mut Params) -> Option<Operator> {
     annihilator_at(f, w, params, 0).filter(|op| op.order() <= MAX_ORDER)
 }
 
@@ -54,14 +54,14 @@ fn annihilator_at(f: &Expr, w: Symbol, params: &mut Params, depth: usize) -> Opt
         return None;
     }
     if !depends(f, w) {
-        return Some(Operator::first_order(Kind::Differential, RatFun::zero()));
+        return Some(Operator::first_order(Kind::Differential, &RatFun::zero()));
     }
     if let Some(r) = rational(f, w, params) {
         // `{$r partial - r'$}`
         return Some(if r.is_zero() {
-            Operator::first_order(Kind::Differential, RatFun::zero())
+            Operator::first_order(Kind::Differential, &RatFun::zero())
         } else {
-            Operator::first_order(Kind::Differential, r.derivative().divide(&r))
+            Operator::first_order(Kind::Differential, &r.derivative().divide(&r))
         });
     }
     let recurse = |t: &Expr, params: &mut Params| annihilator_at(t, w, params, depth + 1);
@@ -127,7 +127,7 @@ fn annihilator_at(f: &Expr, w: Symbol, params: &mut Params, depth: usize) -> Opt
             let du = u.derivative();
             match ident {
                 // `{$partial - u'$}`
-                Context::EXP => Some(Operator::first_order(Kind::Differential, du)),
+                Context::EXP => Some(Operator::first_order(Kind::Differential, &du)),
                 // `{$u' f'' - u'' f' plus.minus u'^3 f = 0$}`
                 Context::SIN | Context::COS | Context::SINH | Context::COSH => {
                     let cube = du.times(&du).times(&du);
@@ -154,7 +154,7 @@ fn annihilator_at(f: &Expr, w: Symbol, params: &mut Params, depth: usize) -> Opt
 fn power_of_first_order(op: &Operator, c: &Elem) -> Operator {
     // `{$a_1 g' + a_0 g = 0$}`, so `{$rho = -a_0 / a_1$}`
     let rho = op.coefficients[0].negate().divide(&op.coefficients[1]);
-    Operator::first_order(Kind::Differential, rho.times(&RatFun::constant(c.clone())))
+    Operator::first_order(Kind::Differential, &rho.times(&RatFun::constant(c.clone())))
 }
 
 /// Whether `g` is analytic and non-zero at `{$w = 0^+$}`: its series starts with a non-zero constant.
@@ -186,7 +186,7 @@ mod tests {
         for c in &op.coefficients {
             let wt = crate::field::real::expr::variable(w);
             let c = params.poly_to_term(&c.num, &wt) / params.poly_to_term(&c.den, &wt);
-            res = res + c * &derivative;
+            res += c * &derivative;
             derivative = derivative.derivative(w);
         }
         res

@@ -2,7 +2,7 @@
 
 use malachite::Rational;
 
-pub(crate) use crate::polynom::dense::{Coefficient, Poly};
+pub use crate::polynom::dense::{Coefficient, Poly};
 use crate::{
     context::Symbol,
     field::{
@@ -14,7 +14,7 @@ use crate::{
 };
 
 /// The coefficients of polynomials converted to expressions of a set, its elements.
-pub(crate) trait TermCoefficient: Coefficient {
+pub trait TermCoefficient: Coefficient {
     /// The set whose elements are the coefficients.
     type Set: Ring<Element = Self, ExponantSet = Self::Set, ProductCoefficientSet = Self::Set>;
 

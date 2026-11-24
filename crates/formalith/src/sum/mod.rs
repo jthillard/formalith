@@ -115,17 +115,13 @@ impl Term<Real> {
             return match (infinity_sign(a), infinity_sign(b)) {
                 (None, None) => Ok(tidy(&(self * &(b - a + one())))),
                 _ if self.is_zero() => Ok(zero()),
-                _ => match constant_sign(self) {
-                    Some(sign) => Err(SumError::Divergent(sign)),
-                    None => Err(SumError::Unsupported),
-                },
+                _ => Err(constant_sign(self).map_or(SumError::Unsupported, SumError::Divergent)),
             };
         }
         let _guard = integer_index(k);
-        let res = match antidifference(self, k) {
-            Some(antidifference) => difference(&antidifference, k, a, b),
-            None => Err(SumError::Unsupported),
-        };
+        let res = antidifference(self, k).map_or(Err(SumError::Unsupported), |antidifference| {
+            difference(&antidifference, k, a, b)
+        });
         match (res, count(a, b)) {
             (Err(SumError::Unsupported), _) if infinity_sign(b) == Some(Ordering::Greater) => {
                 polynomial::known_series(self, k, a)
@@ -170,10 +166,10 @@ impl Term<Real> {
             return Ok(self.pow(&(b - a + one())));
         }
         let _guard = integer_index(k);
-        let res = match product::antiquotient(self, k) {
-            Some(antiquotient) => product::quotient(&antiquotient, k, a, b),
-            None => Err(SumError::Unsupported),
-        };
+        let res = product::antiquotient(self, k)
+            .map_or(Err(SumError::Unsupported), |antiquotient| {
+                product::quotient(&antiquotient, k, a, b)
+            });
         match (res, count(a, b)) {
             (Err(SumError::Unsupported), Some(count)) if count <= MAX_TERMS => {
                 Ok(direct(self, k, a, count, one(), |res, t| res * t))

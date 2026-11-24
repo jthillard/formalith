@@ -86,7 +86,7 @@ fn hermite_reduce(mut a: Poly, d: &Poly, x: Symbol) -> (Expr, Poly, Poly) {
 }
 
 /// The monic irreducible factors over `{$QQ$}` (or `{$QQ(i)$}`) of a square-free polynomial.
-pub(crate) fn factor<F: TermCoefficient>(d: &Poly<F>, x: Symbol) -> Vec<Poly<F>> {
+pub fn factor<F: TermCoefficient>(d: &Poly<F>, x: Symbol) -> Vec<Poly<F>> {
     if d.degree() <= 1 {
         return vec![d.monic()];
     }
@@ -144,7 +144,7 @@ fn log_part(q: &Poly, p: &Poly, x: Symbol) -> Option<Expr> {
 
 /// The real and imaginary parts of a complex constant, made of real radicals or of real functions like
 /// `{$cos((2 pi) / 7)$}`.
-pub(crate) fn split(t: &Term<Complex>) -> Option<(Expr, Expr)> {
+pub fn split(t: &Term<Complex>) -> Option<(Expr, Expr)> {
     let real = |t: Term<Complex>| {
         TryExprFrom::<Complex>::try_from_expr(&R, t)
             .ok()
@@ -156,7 +156,7 @@ pub(crate) fn split(t: &Term<Complex>) -> Option<(Expr, Expr)> {
 }
 
 /// The distinct rational roots of a non-zero polynomial, and whether it is a product of linear factors.
-pub(crate) fn rational_roots(p: &Poly, x: Symbol) -> (Vec<Rational>, bool) {
+pub fn rational_roots(p: &Poly, x: Symbol) -> (Vec<Rational>, bool) {
     let mut roots = vec![];
     let mut split = true;
     for square_free in p.square_free() {

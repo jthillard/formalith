@@ -22,7 +22,7 @@ const DIRECTIONS: usize = 6;
 const INTEGERS: [i64; 3] = [-1, 0, 2];
 
 /// The arguments of `name(...)` in `input`.
-fn call_args<'a>(input: &'a str, name: &str) -> Option<Vec<String>> {
+fn call_args(input: &str, name: &str) -> Option<Vec<String>> {
     input
         .strip_prefix(name)?
         .strip_prefix('(')?

@@ -93,7 +93,7 @@ pub(super) fn ratio(t: &Expr, k: Symbol, params: &mut Params) -> Option<(EPoly, 
                 num = num.mul(&n);
                 den = den.mul(&d);
             }
-            None => rational = rational * factor,
+            None => rational *= factor,
         }
     }
     // The rational part `{$p(k + 1) q(k) / (p(k) q(k + 1))$}`

@@ -367,26 +367,24 @@ impl<V: Monomial, T: Ring, U: Ring> MultivariatePolynomial<V, T, U> {
 
         let mut var_map: HashMap<_, _> = num_vars.iter().cloned().collect();
         for (v, e) in denom_vars {
-            match var_map.get_mut(v) {
-                Some(current_exp) => {
-                    let difference = exponant_set.sub(current_exp, e);
-                    let divides = match exponant_set.partial_cmp(current_exp, e) {
-                        Some(ordering) => ordering != Ordering::Less,
-                        // Symbolic exponants, like `x^(2*n)` divided by `x^n`: the difference must be exact and not negative
-                        None => {
-                            exponant_set.element_eq(&exponant_set.add(&difference, e), current_exp)
-                                && !exponant_set.is_strictly_negative(&difference)
-                        }
-                    };
-                    if !divides {
-                        return None;
-                    }
-                    *current_exp = difference;
-                    if exponant_set.is_zero(current_exp) {
-                        var_map.remove(v);
-                    }
+            {
+                let current_exp = var_map.get_mut(v)?;
+                let difference = exponant_set.sub(current_exp, e);
+                let divides = exponant_set.partial_cmp(current_exp, e).map_or_else(
+                    // Symbolic exponants, like `x^(2*n)` divided by `x^n`: the difference must be exact and not negative
+                    || {
+                        exponant_set.element_eq(&exponant_set.add(&difference, e), current_exp)
+                            && !exponant_set.is_strictly_negative(&difference)
+                    },
+                    |ordering| ordering != Ordering::Less,
+                );
+                if !divides {
+                    return None;
                 }
-                None => return None,
+                *current_exp = difference;
+                if exponant_set.is_zero(current_exp) {
+                    var_map.remove(v);
+                }
             }
         }
 

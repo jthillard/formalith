@@ -57,7 +57,11 @@ fn remainder(env: &Environment, f: &str, s: &str, a: &str, n: &str, side: Option
                 let h = format!("{sign}/10^{e}");
                 (format!("({a}) + {h}"), format!("1/({h})^({n})"))
             };
-            let diff = format!("({} - {})*{scale}", fun.call(&[x.clone()]), ser.call(&[x]));
+            let diff = format!(
+                "({} - {})*{scale}",
+                fun.call(std::slice::from_ref(&x)),
+                ser.call(&[x])
+            );
             match ser.number_of(&diff) {
                 Some(r) => ratios.push(r.abs()),
                 None => break,

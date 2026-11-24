@@ -421,14 +421,19 @@ impl Context {
             | Self::LOCALMIN
             | Self::LOCALMAX
             | Self::EXTREMA
-            | Self::LOCALEXTREMA => Some((1, usize::MAX)),
-            Self::APPROX | Self::LOG | Self::CHARPOLY | Self::LAMBERTW => Some((1, 2)),
+            | Self::LOCALEXTREMA
+            | Self::DIAG => Some((1, usize::MAX)),
+            Self::APPROX
+            | Self::LOG
+            | Self::CHARPOLY
+            | Self::LAMBERTW
+            | Self::ROOTS
+            | Self::DISCRIMINANT
+            | Self::ZEROS
+            | Self::APART
+            | Self::DEGREE => Some((1, 2)),
             Self::SUBS => Some((3, 3)),
-            Self::RESULTANT => Some((2, 3)),
-            Self::ROOTS | Self::DISCRIMINANT | Self::ZEROS => Some((1, 2)),
-            Self::DIAG => Some((1, usize::MAX)),
-            Self::DIFF => Some((2, 3)),
-            Self::APART | Self::DEGREE => Some((1, 2)),
+            Self::RESULTANT | Self::DIFF => Some((2, 3)),
             Self::PIECEWISE => Some((2, usize::MAX)),
             Self::LIM => Some((3, 4)),
             Self::SERIES => Some((3, 5)),

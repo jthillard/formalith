@@ -94,7 +94,7 @@ impl<'a, T: Set> IntoIterator for &'a Add<T> {
 /// Whether the element `a` of `set` prints as a minus sign followed by its opposite in a sum: negative elements,
 /// and elements of unordered sets printed with a single leading sign, like `{$-i$}` (`{$x - i$}`, not
 /// `{$x + -i$}`).
-fn prints_negative<S: Group>(set: S, a: &S::Element, options: &PrintOptions) -> bool {
+fn prints_negative<S: Group>(set: S, a: &S::Element, options: PrintOptions) -> bool {
     struct Printed<'a, S: Set>(S, &'a S::Element, &'a PrintOptions);
     impl<S: Set> Display for Printed<'_, S> {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -102,7 +102,7 @@ fn prints_negative<S: Group>(set: S, a: &S::Element, options: &PrintOptions) -> 
         }
     }
     set.is_strictly_negative(a)
-        || Printed(set, a, options)
+        || Printed(set, a, &options)
             .to_string()
             .strip_prefix('-')
             .is_some_and(|rest| !rest.contains(['+', '-']))
@@ -121,7 +121,7 @@ impl<T: Set> Add<T> {
     >(
         &self,
         mut special_cases: F,
-        options: &crate::printer::PrintOptions,
+        options: crate::printer::PrintOptions,
         f: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result {
         for (i, term) in self.print_order().enumerate() {
@@ -137,14 +137,14 @@ impl<T: Set> Add<T> {
                         let mut mul = mul.clone();
                         let coeff = &mut mul.coefficient;
                         mul.set.get_coefficient_set().neg_assign(coeff);
-                        Self::operator("-", options, f)?;
-                        Print::print(&mul, options, f)?;
+                        Self::operator("-", &options, f)?;
+                        Print::print(&mul, &options, f)?;
                     }
                     _ => {
                         if i != 0 {
-                            Self::operator("+", options, f)?;
+                            Self::operator("+", &options, f)?;
                         }
-                        Print::print(term, options, f)?;
+                        Print::print(term, &options, f)?;
                     }
                 }
             }
@@ -159,7 +159,7 @@ impl<T: Set> Print for Add<T> {
         options: &crate::printer::PrintOptions,
         f: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result {
-        self.print_default(|_, _| Ok(false), options, f)
+        self.print_default(|_, _| Ok(false), *options, f)
     }
 }
 
@@ -173,7 +173,7 @@ impl<T: Group> Print for Add<T> {
             |term, f| {
                 Ok(
                     if let Term::Value(Value { value, set, .. }) = term
-                        && prints_negative(*set, value, options)
+                        && prints_negative(*set, value, *options)
                     {
                         Self::operator("-", options, f)?;
                         Print::print(&Value::new(set.neg(value), *set), options, f)?;
@@ -183,7 +183,7 @@ impl<T: Group> Print for Add<T> {
                     },
                 )
             },
-            options,
+            *options,
             f,
         )
     }
@@ -193,7 +193,7 @@ impl<T: Set> Add<T> {
     fn pretty_print_default<F: FnMut(&Term<T>, &mut Option<PrettyPrinter>) -> bool>(
         &self,
         mut special_cases: F,
-        options: &PrintOptions,
+        options: PrintOptions,
     ) -> crate::printer::PrettyPrinter {
         let mut res: Option<PrettyPrinter> = None;
         for term in self.print_order() {
@@ -209,11 +209,11 @@ impl<T: Set> Add<T> {
                         let mut mul = mul.clone();
                         let coeff = &mut mul.coefficient;
                         mul.set.get_coefficient_set().neg_assign(coeff);
-                        let elem = PrettyPrint::pretty_print(&mul, options);
+                        let elem = PrettyPrint::pretty_print(&mul, &options);
                         res.as_mut().unwrap().concat("-", true, &elem);
                     }
                     _ => {
-                        let elem = PrettyPrint::pretty_print(term, options);
+                        let elem = PrettyPrint::pretty_print(term, &options);
                         if let Some(res) = &mut res {
                             res.concat("+", true, &elem);
                         } else {
@@ -229,7 +229,7 @@ impl<T: Set> Add<T> {
 
 impl<T: Set> PrettyPrint for Add<T> {
     default fn pretty_print(&self, options: &PrintOptions) -> crate::printer::PrettyPrinter {
-        self.pretty_print_default(|_, _| false, options)
+        self.pretty_print_default(|_, _| false, *options)
     }
 }
 
@@ -239,7 +239,7 @@ impl<T: Group> PrettyPrint for Add<T> {
             |term, res| {
                 if let Term::Value(Value { value, set, .. }) = term
                     && let Some(res) = res
-                    && prints_negative(*set, value, options)
+                    && prints_negative(*set, value, *options)
                 {
                     let elem =
                         PrettyPrint::pretty_print(&Value::new(set.neg(value), *set), options);
@@ -249,7 +249,7 @@ impl<T: Group> PrettyPrint for Add<T> {
                     false
                 }
             },
-            options,
+            *options,
         )
     }
 }

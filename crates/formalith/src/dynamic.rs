@@ -1,6 +1,9 @@
 //! Evaluation of expressions in a set chosen at runtime, by name (`Z/7`, `R[x]`...), used by interactive sessions.
 
-use std::{fmt, str::FromStr};
+use std::{
+    fmt::{self, Write},
+    str::FromStr,
+};
 
 use crate::{
     context::{Context, Symbol},
@@ -338,7 +341,7 @@ pub fn sets() -> Vec<(String, &'static str)> {
 pub fn sets_help() -> String {
     let mut help = String::from("available sets:");
     for (name, description) in sets() {
-        help.push_str(&format!("\n  {name:<6} {description}"));
+        let _ = write!(help, "\n  {name:<6} {description}");
     }
     help
 }
@@ -452,9 +455,8 @@ fn print_statement<E: SetParseExpression>(
     options: Option<PrintOptions>,
 ) -> String {
     let typst = options.as_ref().is_some_and(|options| options.typst);
-    let print = |value: &dyn Fn(PrintOptions) -> String, display: String| {
-        options.map_or(display, |options| value(options))
-    };
+    let print =
+        |value: &dyn Fn(PrintOptions) -> String, display: String| options.map_or(display, value);
     match statement {
         Statement::Expression(term) => print(
             &|options| term.with_options(options).to_string(),

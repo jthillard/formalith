@@ -90,10 +90,13 @@ impl SignSet {
     pub const fn neg(self) -> Self {
         Self((self.0 & Self::ZERO_BIT) | ((self.0 & Self::NEG) << 2) | ((self.0 & Self::POS) >> 2))
     }
+}
 
-    /// The signs of a product `u v`.
-    #[must_use]
-    pub fn mul(self, other: Self) -> Self {
+/// The signs of a product `u v`.
+impl std::ops::Mul for SignSet {
+    type Output = Self;
+
+    fn mul(self, other: Self) -> Self {
         let mut res = Self::EMPTY;
         for a in [Ordering::Less, Ordering::Equal, Ordering::Greater] {
             for b in [Ordering::Less, Ordering::Equal, Ordering::Greater] {
@@ -109,10 +112,13 @@ impl SignSet {
         }
         res
     }
+}
 
-    /// The signs of a sum `u + v`.
-    #[must_use]
-    pub fn add(self, other: Self) -> Self {
+/// The signs of a sum `u + v`.
+impl std::ops::Add for SignSet {
+    type Output = Self;
+
+    fn add(self, other: Self) -> Self {
         let mut res = Self::EMPTY;
         for a in [Ordering::Less, Ordering::Equal, Ordering::Greater] {
             for b in [Ordering::Less, Ordering::Equal, Ordering::Greater] {
@@ -291,7 +297,7 @@ impl Assumptions {
 
     /// Whether there is no assumption.
     #[must_use]
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
 

@@ -3,7 +3,7 @@
 use std::cmp::Ordering;
 
 /// Lexicographically compares two iterators using `cmp`, like the unstable `Iterator::cmp_by`.
-pub(crate) fn cmp_by<A, B>(
+pub fn cmp_by<A, B>(
     a: impl IntoIterator<Item = A>,
     b: impl IntoIterator<Item = B>,
     mut cmp: impl FnMut(A, B) -> Ordering,
@@ -12,7 +12,7 @@ pub(crate) fn cmp_by<A, B>(
 }
 
 /// Lexicographically compares two iterators using `partial_cmp`, like the unstable `Iterator::partial_cmp_by`.
-pub(crate) fn partial_cmp_by<A, B>(
+pub fn partial_cmp_by<A, B>(
     a: impl IntoIterator<Item = A>,
     b: impl IntoIterator<Item = B>,
     mut partial_cmp: impl FnMut(A, B) -> Option<Ordering>,

@@ -57,7 +57,7 @@ impl GaussianPoly {
         res
     }
     /// Check if the polynomial is zero.
-    pub fn is_zero(&self) -> bool {
+    pub const fn is_zero(&self) -> bool {
         self.re.is_zero() && self.im.is_zero()
     }
     /// Check if the polynomial is a constant.

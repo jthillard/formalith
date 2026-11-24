@@ -307,17 +307,16 @@ impl<T: Ring> M<T> {
                     [p, x] => (Self::scalar(p)?, Some(Self::symbol(x)?)),
                     _ => return None,
                 };
-                let x = match x {
-                    Some(x) => x,
-                    None => {
-                        let symbols: Vec<_> = <T as MatrixEntries>::symbols(p)?
-                            .into_iter()
-                            .filter(|x| !Context::is_builtin_constant(*x))
-                            .collect();
-                        match symbols.as_slice() {
-                            [x] => *x,
-                            _ => return None,
-                        }
+                let x = if let Some(x) = x {
+                    x
+                } else {
+                    let symbols: Vec<_> = <T as MatrixEntries>::symbols(p)?
+                        .into_iter()
+                        .filter(|x| !Context::is_builtin_constant(*x))
+                        .collect();
+                    match symbols.as_slice() {
+                        [x] => *x,
+                        _ => return None,
                     }
                 };
                 let roots = <T as MatrixEntries>::roots(p, x)?;
@@ -350,7 +349,9 @@ impl<T: Ring> M<T> {
             Context::DET => scalar(matrix.det().ok()?),
             Context::TRANSPOSE => VectorSpaceElement::Vector(matrix.transpose()),
             Context::TRACE => scalar(matrix.trace().ok()?),
-            Context::RANK => scalar(scalars.nth(<T as MatrixEntries>::rank(matrix)? as i64)),
+            Context::RANK => {
+                scalar(scalars.nth(i64::try_from(<T as MatrixEntries>::rank(matrix)?).ok()?))
+            }
             Context::KERNEL => VectorSpaceElement::Vector(<T as MatrixEntries>::kernel(matrix)?),
             Context::CHARPOLY => {
                 let x = match args.get(1) {
@@ -489,8 +490,12 @@ impl<T: Ring> M<T> {
     }
 }
 
-/// Matrix operations depending on the set of the entries, specialized for the sets where they can be evaluated:
-/// normal forms over `{$ZZ$}` and `{$ZZ\/n ZZ$}`, eigenvalues over `{$RR$}`. Every method returns `None` when the
+/// An eigenvalue of a matrix over `T`, with its algebraic multiplicity and a basis of its eigenspace as columns.
+pub type EigenvalueSpace<T> = (<T as Set>::Element, usize, Matrix<T>);
+
+/// Matrix operations depending on the set of the entries.
+///
+/// They are specialized for the sets where they can be evaluated: normal forms over `{$ZZ$}` and `{$ZZ\/n ZZ$}`, eigenvalues over `{$RR$}`. Every method returns `None` when the
 /// operation can't be evaluated.
 pub trait MatrixEntries: Ring {
     /// The rank of `matrix`.
@@ -504,7 +509,7 @@ pub trait MatrixEntries: Ring {
     /// The Smith normal form of `matrix`, see [`Matrix::smith`].
     fn smith(matrix: &Matrix<Self>) -> Option<Matrix<Self>>;
     /// The eigenvalues of `matrix`, with their algebraic multiplicity and a basis of their eigenspace.
-    fn eigenspaces(matrix: &Matrix<Self>) -> Option<Vec<(Self::Element, usize, Matrix<Self>)>>;
+    fn eigenspaces(matrix: &Matrix<Self>) -> Option<Vec<EigenvalueSpace<Self>>>;
     /// The symbol `element` is, if it is one.
     fn as_symbol(element: &Self::Element) -> Option<Symbol>;
     /// The symbols of `element`.
@@ -533,7 +538,7 @@ impl<T: Ring> MatrixEntries for T {
     default fn smith(_: &Matrix<Self>) -> Option<Matrix<Self>> {
         None
     }
-    default fn eigenspaces(_: &Matrix<Self>) -> Option<Vec<(Self::Element, usize, Matrix<Self>)>> {
+    default fn eigenspaces(_: &Matrix<Self>) -> Option<Vec<EigenvalueSpace<Self>>> {
         None
     }
     default fn as_symbol(_: &Self::Element) -> Option<Symbol> {
@@ -569,7 +574,7 @@ impl<T: Ring> MatrixEntries for TermSet<T> {
     default fn smith(_: &Matrix<Self>) -> Option<Matrix<Self>> {
         None
     }
-    default fn eigenspaces(_: &Matrix<Self>) -> Option<Vec<(Self::Element, usize, Matrix<Self>)>> {
+    default fn eigenspaces(_: &Matrix<Self>) -> Option<Vec<EigenvalueSpace<Self>>> {
         None
     }
     default fn as_symbol(element: &Self::Element) -> Option<Symbol> {
@@ -746,7 +751,7 @@ impl MatrixEntries for TermSet<R<Rational>> {
         let Term::Value(n) = n else { return None };
         factorint_matrix(&n.value, R, Rational::from)
     }
-    fn eigenspaces(matrix: &Matrix<Self>) -> Option<Vec<(Self::Element, usize, Matrix<Self>)>> {
+    fn eigenspaces(matrix: &Matrix<Self>) -> Option<Vec<EigenvalueSpace<Self>>> {
         Some(
             matrix
                 .eigenspaces()?

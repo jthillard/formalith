@@ -233,9 +233,8 @@ impl C<R<Rational>> {
 
     /// Print `{$"re" + "im" i$}`, the parts being printed by `part`.
     fn print_parts(
-        self,
         elem: &[Rational; 2],
-        options: &PrintOptions,
+        options: PrintOptions,
         f: &mut std::fmt::Formatter<'_>,
         part: impl Fn(&Rational, &mut std::fmt::Formatter<'_>) -> std::fmt::Result,
     ) -> std::fmt::Result {
@@ -374,7 +373,7 @@ impl Set for C<R<Rational>> {
         options: &PrintOptions,
         f: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result {
-        self.print_parts(elem, options, f, |x, f| self.real().print(x, options, f))
+        Self::print_parts(elem, *options, f, |x, f| self.real().print(x, options, f))
     }
     fn pretty_print(&self, elem: &Self::Element, options: &PrintOptions) -> PrettyPrinter {
         Self::pretty_print_parts(elem, |x| self.real().pretty_print(x, options))
@@ -385,7 +384,7 @@ impl Set for C<R<Rational>> {
         options: &PrintOptions,
         f: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result {
-        self.print_parts(elem, options, f, |x, f| {
+        Self::print_parts(elem, *options, f, |x, f| {
             f.write_str(&format_decimal(x, options.typst))
         })
     }
@@ -689,7 +688,7 @@ impl TryElementFrom<R<Rational>> for C<R<Rational>> {
     }
 }
 
-impl TryElementFrom<C<R<Rational>>> for R<Rational> {
+impl TryElementFrom<C<Self>> for R<Rational> {
     fn try_from_element(value: [Rational; 2]) -> Result<Self::Element, super::TryCastError> {
         let [re, im] = value;
         if im == 0 {
@@ -706,8 +705,9 @@ pub type Complex = C<R<Rational>>;
 /// The complex field, using [`malachite::rational::Rational`] for the real and imaginary parts to get arbitrary precision numbers.
 pub const C: C<R<Rational>> = C::new(R);
 
-/// The real and imaginary parts `{$(u, v)$}` of `{$f(a + i b) = u + i v$}`, as functions of the real symbols `a`
-/// and `b`, the other symbols of `f` being assumed real, for graphs. Parts may only have a numerical form: `{$zeta$}`
+/// The real and imaginary parts `{$(u, v)$}` of `{$f(a + i b) = u + i v$}`, for graphs.
+///
+/// They are functions of the real symbols `a` and `b`, the other symbols of `f` being assumed real. Parts may only have a numerical form: `{$zeta$}`
 /// and `{$Gamma$}` of non-real arguments are internal functions evaluated by
 /// [`Numeric`](crate::field::real::numeric::Numeric), and the principal argument of `{$ln$}` and powers is
 /// `{$2 atan(v / (|z| + u))$}` when the signs of the parts are unknown. `None` when a part can't be written.

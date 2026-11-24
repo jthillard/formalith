@@ -945,7 +945,7 @@ impl<T: Ring<ExponantSet: Ring, ProductCoefficientSet = T>> Term<T> {
         let exponant_set = set.get_exponant_set();
         let exponant =
             |q: Rational| Some(Term::constant(exponant_set.from_rational(q)?, exponant_set));
-        let symbol = |prefix: &str, i: usize| Symbol::new(&format!("@{prefix}{i}"));
+        let symbol = |prefix: &str, i: usize| Symbol::new(format!("@{prefix}{i}"));
         let factor = || {
             let mut replaced = self.clone();
             for (i, atom) in atoms.iter().enumerate() {

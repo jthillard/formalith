@@ -262,10 +262,10 @@ impl<From: Set, T: Set> Print for Fun<From, T> {
                 write!(
                     f,
                     "{}_(",
-                    if self.ident != Context::PRODUCT {
-                        "sum"
-                    } else {
+                    if self.ident == Context::PRODUCT {
                         "product"
+                    } else {
+                        "sum"
                     }
                 )?;
                 k.print(options, f)?;
@@ -397,7 +397,7 @@ impl<From: Set, T: Set> PrettyPrint for Fun<From, T> {
             res.big_operator(&sign.to_string(), &lower, Some(&b.pretty_print(options)));
             return res;
         }
-        if let Some(res) = self.pretty_print_special(options) {
+        if let Some(res) = self.pretty_print_special(*options) {
             return res;
         }
         if let (Some(relation), [lhs, rhs]) =
@@ -430,8 +430,8 @@ impl<From: Set, T: Set> PrettyPrint for Fun<From, T> {
 
 impl<From: Set, T: Set> Fun<From, T> {
     /// Pretty print the builtins drawn with their own notation, like `{$n!$}`, `{$floor(x)$}` or `{$binom(n, k)$}`.
-    fn pretty_print_special(&self, options: &PrintOptions) -> Option<PrettyPrinter> {
-        let pretty = |term: &Term<From>| term.pretty_print(options);
+    fn pretty_print_special(&self, options: PrintOptions) -> Option<PrettyPrinter> {
+        let pretty = |term: &Term<From>| term.pretty_print(&options);
         Some(match (self.ident, self.args.as_slice()) {
             (Context::ABS, [u]) => {
                 let mut res = pretty(u);
@@ -677,7 +677,7 @@ pub(crate) fn eval_matrix_builtin<T: Ring>(fun: &dyn Function<T>) -> Option<Term
         Context::TRACE => matrix.trace().ok(),
         Context::RANK => {
             let rank = <TermSet<T> as MatrixEntries>::rank(matrix)?;
-            Some(Term::constant(set.nth(rank as i64), set))
+            Some(Term::constant(set.nth(i64::try_from(rank).ok()?), set))
         }
         Context::CHARPOLY => {
             let x = match args.get(1) {
@@ -739,6 +739,8 @@ fn resultant<T: Ring>(p: &Term<T>, q: &Term<T>, x: Symbol) -> Option<Term<T>> {
 
 /// The discriminant `{$(-1)^(n (n - 1)/2) "res"(p, p') / a_n$}` of a polynomial `p` of degree `{$n >= 1$}` in `x`
 /// with leading coefficient `{$a_n$}`, `None` if it can't be computed.
+// Degrees are small
+#[allow(clippy::cast_possible_wrap)]
 fn discriminant<T: Ring>(p: &Term<T>, x: Symbol) -> Option<Term<T>> {
     let coefficients = polynomial_form(&p.expand(), x).ok()?;
     let n = coefficients.len() - 1;

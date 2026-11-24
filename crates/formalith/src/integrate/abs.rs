@@ -165,12 +165,13 @@ pub(super) fn without_abs(term: &Expr, x: Symbol, sample: &Expr) -> Option<Expr>
             failed.set(true);
             None
         })?;
-        let sign = match u.substitute(x, sample).as_ref().and_then(constant_sign) {
-            Some(sign @ (Ordering::Less | Ordering::Greater)) => value(Rational::from(sign as i8)),
-            _ => {
-                failed.set(true);
-                return None;
-            }
+        let sign = if let Some(sign @ (Ordering::Less | Ordering::Greater)) =
+            u.substitute(x, sample).as_ref().and_then(constant_sign)
+        {
+            value(Rational::from(sign as i8))
+        } else {
+            failed.set(true);
+            return None;
         };
         Some(if ident == Context::ABS {
             sign * u

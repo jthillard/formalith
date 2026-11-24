@@ -45,7 +45,7 @@ fn is_prime(n: u64) -> bool {
         return false;
     }
     for p in BASES {
-        if n % p == 0 {
+        if n.is_multiple_of(p) {
             return n == p;
         }
     }

@@ -245,8 +245,8 @@ fn verify(input: &str, output: &str) -> Verdict {
     // Points of the region satisfy the relations
     for line in &lines {
         for _ in 0..REGION_SAMPLES {
-            match sample_line(line, &mut rng) {
-                Some((env, point)) => match check_relations(&env, &relations, false) {
+            if let Some((env, point)) = sample_line(line, &mut rng) {
+                match check_relations(&env, &relations, false) {
                     Some(Ok(())) => checked += 1,
                     Some(Err(e)) => {
                         return Verdict::Wrong(format!(
@@ -255,8 +255,7 @@ fn verify(input: &str, output: &str) -> Verdict {
                         ));
                     }
                     None => {}
-                },
-                None => {}
+                }
             }
         }
     }
@@ -450,7 +449,7 @@ fn curated_inequalities() {
 
 /// A random comparison.
 fn op(rng: &mut Rng) -> &'static str {
-    *rng.pick(&["<", "<=", ">", ">=", "!="])
+    rng.pick(&["<", "<=", ">", ">=", "!="])
 }
 
 /// A random relation in `x`: products of linear factors, rational functions, polynomials against constants.

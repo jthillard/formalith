@@ -68,10 +68,7 @@ fn kernel(mut matrix: Matrix<TermSet<R<Rational>>>) -> Matrix<TermSet<R<Rational
 
 /// The real roots of the expanded polynomial `p` in `x` found by [`Solve::solve_for`], with their
 /// multiplicities, in the order of its solutions. Returns `None` if they can't be computed.
-pub(crate) fn real_roots(
-    p: &Term<R<Rational>>,
-    x: Symbol,
-) -> Option<Vec<(Term<R<Rational>>, usize)>> {
+pub fn real_roots(p: &Term<R<Rational>>, x: Symbol) -> Option<Vec<(Term<R<Rational>>, usize)>> {
     let roots = match R
         .solve_for(&[Equation::new(p.clone(), Term::zero(R))], &[x])
         .ok()?

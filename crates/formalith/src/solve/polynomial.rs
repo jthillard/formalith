@@ -100,7 +100,7 @@ pub(super) fn solve<T: Ring>(
 
 /// Assumptions on the symbols of a set (see [`crate::context::assumptions`]), used to drop impossible branches and
 /// solutions. Implemented for every ring, where nothing is known by default.
-pub(crate) trait Assumed: Ring {
+pub trait Assumed: Ring {
     /// Whether `value` contradicts the assumptions on `symbol`, like a negative value for a positive symbol.
     fn contradicts(symbol: Symbol, value: &Term<Self>) -> bool;
 
@@ -133,7 +133,7 @@ impl Assumed for R<Rational> {
 
 /// Roots of polynomials in a set, and factorization of the equations. Implemented for every ring, with a default
 /// which can't factor, nor find roots.
-pub(crate) trait PolynomialRoots: Ring {
+pub trait PolynomialRoots: Ring {
     /// Factor `term`, returning `None` if the set doesn't support factorization.
     fn factor_term(term: &Term<Self>) -> Option<Term<Self>>;
 
@@ -186,7 +186,7 @@ impl PolynomialRoots for R<Rational> {
         // A polynomial in `x^k`
         let k = (1..coefficients.len())
             .filter(|degree| !coefficients[*degree].is_zero())
-            .fold(0, |k, degree| gcd(k, degree));
+            .fold(0, gcd);
         if k > 1 {
             let coefficients: Vec<_> = coefficients.iter().step_by(k).cloned().collect();
             let roots = Self::roots(&coefficients)?;
@@ -313,7 +313,7 @@ fn euler_phi(n: usize) -> usize {
 /// The cyclotomic polynomial `{$Phi_n = (x^n - 1) / product_(d | n, d < n) Phi_d$}`.
 fn cyclotomic(n: usize) -> Poly {
     let mut res = Poly::monomial(Rational::ONE, n).sub(&Poly::one());
-    for d in (1..n).filter(|d| n % d == 0) {
+    for d in (1..n).filter(|d| n.is_multiple_of(*d)) {
         res = res.exact_div(&cyclotomic(d));
     }
     res
@@ -463,7 +463,7 @@ impl PolynomialRoots for C<R<Rational>> {
         // A polynomial in `x^k`
         let k = (1..coefficients.len())
             .filter(|degree| !coefficients[*degree].is_zero())
-            .fold(0, |k, degree| gcd(k, degree));
+            .fold(0, gcd);
         if k > 1 {
             let coefficients: Vec<_> = coefficients.iter().step_by(k).cloned().collect();
             let roots = Self::roots(&coefficients)?;
@@ -710,11 +710,16 @@ fn complex_sqrt(t: &Term<C<R<Rational>>>) -> Term<C<R<Rational>>> {
     }
 }
 
+/// An equation `c*x + d = 0` of [`Branch::substitute_linear`]: a rank (lower is better), the index of the
+/// equation, `x`, `c` and `d`.
+type LinearCandidate<T> = (u8, usize, Symbol, Term<T>, Term<T>);
+
+/// A complex expression.
+type ComplexTerm = Term<C<R<Rational>>>;
+
 /// The real and imaginary parts `{$(a, b)$}` of `{$t = a + b i$}`, if every term of the expanded `t` is a complex
 /// coefficient times a real expression (its symbols and radicals being assumed real).
-pub(crate) fn split_complex(
-    t: &Term<C<R<Rational>>>,
-) -> Option<(Term<C<R<Rational>>>, Term<C<R<Rational>>>)> {
+pub fn split_complex(t: &ComplexTerm) -> Option<(ComplexTerm, ComplexTerm)> {
     let t = t.expand();
     let terms = match &t {
         Term::Add(add) => add.iter().cloned().collect(),
@@ -966,7 +971,7 @@ impl<T: Ring> Branch<T> {
     /// the case `c = 0, d = 0`.
     fn substitute_linear(&self, symbolic: bool) -> Result<Option<Vec<Self>>, SolveError> {
         // Prefer values, which don't need any assumption
-        let mut best: Option<(u8, usize, Symbol, Term<T>, Term<T>)> = None;
+        let mut best: Option<LinearCandidate<T>> = None;
         for (index, equation) in self.equations.iter().enumerate() {
             for &x in &self.unknowns_of(&equation.term) {
                 let coefficients = polynomial_form(&equation.term, x)?;
@@ -1134,7 +1139,7 @@ fn power<T: Ring>(x: Symbol, n: usize, set: T) -> Term<T> {
 ///
 /// # Errors
 /// Returns an error if the expression isn't polynomial in `x`, like `abs(x)` or `x^(1/2)`.
-pub(crate) fn polynomial_form<T: Ring>(
+pub fn polynomial_form<T: Ring>(
     expression: &Term<T>,
     x: Symbol,
 ) -> Result<Vec<Term<T>>, SolveError> {
@@ -1165,7 +1170,7 @@ pub(crate) fn polynomial_form<T: Ring>(
             // `c * f_1 * ... * x^k * ... * f_n`, where only `x^k` contains `x`
             let mut total = 0;
             let mut others = vec![];
-            for factor in mul.iter() {
+            for factor in mul {
                 if !has_x(factor) {
                     others.push(factor.clone());
                     continue;
@@ -1193,7 +1198,7 @@ pub(crate) fn polynomial_form<T: Ring>(
 ///
 /// It is computed by expanding along rows, with the minors memoized by the set of used columns, so that it doesn't
 /// need divisions.
-pub(crate) fn sylvester_determinant<T: Ring>(p: &[Term<T>], q: &[Term<T>]) -> Term<T> {
+pub fn sylvester_determinant<T: Ring>(p: &[Term<T>], q: &[Term<T>]) -> Term<T> {
     let set = p[0].get_set();
     let (m, n) = (p.len() - 1, q.len() - 1);
     let size = m + n;

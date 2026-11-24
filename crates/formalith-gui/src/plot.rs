@@ -405,10 +405,10 @@ impl Plotter {
         let Some(analyzer) = &mut self.analyzer else {
             return;
         };
-        if let Some(points) = analyzer.poll() {
-            if let Some((content, range)) = self.searching.take() {
-                self.remarkable = Some((content, range, points));
-            }
+        if let Some(points) = analyzer.poll()
+            && let Some((content, range)) = self.searching.take()
+        {
+            self.remarkable = Some((content, range, points));
         }
         let Some(drawable) = drawables
             .iter()

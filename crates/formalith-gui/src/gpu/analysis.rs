@@ -248,6 +248,8 @@ impl Analyzer {
     /// Start the search of `request`, unless one is running. Returns whether it started.
     pub fn start(&mut self, request: &Request<'_>) -> bool {
         profile_scope!("Analyzer::start");
+        // Also rejects NaN bounds
+        #[allow(clippy::neg_cmp_op_on_partial_ord)]
         if self.pending.is_some() || request.samples == 0 || !(request.b > request.a) {
             return false;
         }
@@ -559,8 +561,10 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {{
         staging.map_async(wgpu::MapMode::Read, .., |result| result.expect("Mapped"));
         let _ = device.poll(wgpu::PollType::wait_indefinitely());
         let data = staging.get_mapped_range(..).expect("Mapped");
-        data.chunks_exact(4)
-            .map(|chunk| f32::from_le_bytes(chunk.try_into().expect("4 bytes")))
+        data.as_chunks::<4>()
+            .0
+            .iter()
+            .map(|chunk| f32::from_le_bytes(*chunk))
             .collect()
     }
 

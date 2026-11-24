@@ -208,7 +208,7 @@ fn trig_argument(f: &Expr, x: Symbol, argument: &mut Option<Expr>) -> bool {
 /// `{$integral f$}` for a rational function of `sin u`, `cos u` and `tan u`, with `u` linear in `x`, substituting
 /// `{$t = tan(u / 2)$}`: `{$sin u = 2t / (1 + t^2)$}`, `{$cos u = (1 - t^2) / (1 + t^2)$}` and
 /// `{$dif u = 2 / (1 + t^2) dif t$}`.
-fn weierstrass(integrator: &mut Integrator, f: &Expr, x: Symbol) -> Option<Expr> {
+fn weierstrass(integrator: &Integrator, f: &Expr, x: Symbol) -> Option<Expr> {
     let mut argument = None;
     if !trig_argument(f, x, &mut argument) {
         return None;
@@ -281,10 +281,10 @@ pub(super) fn substitute(integrator: &mut Integrator, f: &Expr, x: Symbol) -> Op
     let t = variable(t_symbol);
     let (sin_t, cos_t) = (fun(Context::SIN, t.clone()), fun(Context::COS, t.clone()));
     let one = one();
-    let r = sqrt(value((&k / &a).abs()));
-    let sqrt_k = sqrt(value(k.clone().abs()));
+    let r = sqrt(&value((&k / &a).abs()));
+    let sqrt_k = sqrt(&value(k.clone().abs()));
     let u = variable(x) + value(h.clone());
-    let root = sqrt(q.clone());
+    let root = sqrt(&q);
     // `(u(t), sqrt(q)(t), du/dt)` and `(sin t, cos t, t)` in `x`
     let ((u_t, root_t, du), (sin_x, cos_x, t_x)) = match (a > 0, k > 0) {
         (false, true) => (

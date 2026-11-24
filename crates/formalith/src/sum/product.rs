@@ -106,7 +106,7 @@ fn polynomial(p: &EPoly, k: Symbol, params: &Params) -> Option<Expr> {
             ),
             _ => fun(Context::GAMMA, &k_term - &params.to_term(&root)),
         };
-        res = res * factor.pow(&value(Rational::from(multiplicity)));
+        res *= factor.pow(&value(Rational::from(multiplicity)));
     }
     Some(res)
 }
@@ -194,7 +194,7 @@ pub(super) fn combine_factorials(term: &Expr) -> Expr {
             continue;
         }
         let Some((ident, u, _)) = &parsed[i] else {
-            res = res * &factors[i];
+            res *= &factors[i];
             continue;
         };
         // The factors of the group of `i` with their shifts from `u`
@@ -220,15 +220,15 @@ pub(super) fn combine_factorials(term: &Expr) -> Expr {
         for (j, shift) in &group {
             merged[*j] = true;
             let exponent = &parsed[*j].as_ref().expect("Parsed factor").2;
-            exponent_sum = exponent_sum + exponent;
+            exponent_sum += exponent;
             // `{$(u + m)! = u! (u + 1) ... (u + m)$}`, `{$Gamma(u + m) = Gamma(u) u ... (u + m - 1)$}`
             let offset = i64::from(*ident == Context::GAMMA);
             for step in 1..=(shift - base) {
                 let factor = &lowest + &value(Rational::from(step - offset));
-                res = res * factor.pow(exponent);
+                res *= factor.pow(exponent);
             }
         }
-        res = res * fun(*ident, lowest).pow(&exponent_sum);
+        res *= fun(*ident, lowest).pow(&exponent_sum);
     }
     absorb_factors(res)
 }

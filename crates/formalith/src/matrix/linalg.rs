@@ -182,6 +182,8 @@ impl<T: Ring> Matrix<TermSet<T>> {
     ///
     /// # Errors
     /// Returns an error if the matrix is not square.
+    // Degrees are small
+    #[allow(clippy::cast_possible_wrap)]
     pub fn charpoly(&self, x: Symbol) -> MatrixResult<Term<T>> {
         let set = *self.set.get_set();
         let coefficients = self.charpoly_coefficients()?;

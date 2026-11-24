@@ -4,6 +4,9 @@
 //! evaluated at many points without normalization. The tree is plain data (serializable with the `serde` feature),
 //! so it can be evaluated far from the terms it comes from, like in another thread or wasm instance.
 
+// Floats are compared exactly with integers, truth values and poles, and iterate over integer values
+#![allow(clippy::float_cmp, clippy::while_float)]
+
 use malachite::{
     Rational,
     base::{num::conversion::traits::RoundingFrom, rounding_modes::RoundingMode},
@@ -24,15 +27,15 @@ pub enum Numeric {
     /// The variable at this index of the values given to [`Numeric::eval`].
     Var(usize),
     /// A sum.
-    Add(Vec<Numeric>),
+    Add(Vec<Self>),
     /// A product.
-    Mul(Vec<Numeric>),
+    Mul(Vec<Self>),
     /// A power `base^exponent`.
-    Pow(Box<Numeric>, Box<Numeric>),
+    Pow(Box<Self>, Box<Self>),
     /// A rational power `{$x^(p/q)$}`, real for negative `x` when `q` is odd.
-    RationalPow(Box<Numeric>, i64, u64),
+    RationalPow(Box<Self>, i64, u64),
     /// A function applied to its arguments.
-    Fun(NumFn, Vec<Numeric>),
+    Fun(NumFn, Vec<Self>),
     /// A part which can't be evaluated numerically, like an unevaluated integral, with its name.
     Unsupported(String),
 }
@@ -232,7 +235,7 @@ fn to_f64(value: &Rational) -> f64 {
 }
 
 impl Numeric {
-    /// Compile `term`, whose symbols `vars[i]` become [`Numeric::Var`]`(i)`.
+    /// Compile `term`, whose symbols `vars[i]` become `Numeric::Var(i)`.
     ///
     /// Other symbols and functions without a numerical form become [`Numeric::Unsupported`].
     ///
@@ -326,10 +329,13 @@ impl Numeric {
 }
 
 /// The Euler-Mascheroni constant.
+// `std::f64::consts::EGAMMA` is unstable
+#[allow(clippy::approx_constant)]
 const EULER_GAMMA: f64 = 0.577_215_664_901_532_9;
 
 /// `{$x^(p/q)$}`, the real root for negative `x` and odd `q`.
 fn rational_pow(x: f64, num: i64, den: u64) -> f64 {
+    #![allow(clippy::cast_precision_loss)]
     if den == 1 {
         return i32::try_from(num).map_or_else(|_| x.powf(num as f64), |n| x.powi(n));
     }
@@ -375,7 +381,7 @@ fn polygamma(m: f64, mut x: f64) -> f64 {
     let mut steps = 0;
     while x < 10. {
         // `{$psi^((m))(x) = psi^((m))(x + 1) - (-1)^m m! / x^(m+1)$}`
-        shift -= sign * factorial(m) / x.powi(m as i32 + 1);
+        shift -= sign * factorial(m) / x.powi(m.cast_signed() + 1);
         x += 1.;
         steps += 1;
         if steps > 100_000 {
@@ -385,14 +391,15 @@ fn polygamma(m: f64, mut x: f64) -> f64 {
     let mut series = if m == 0 {
         x.ln() - 0.5 / x
     } else {
-        factorial(m - 1) / x.powi(m as i32) + factorial(m) / (2. * x.powi(m as i32 + 1))
+        factorial(m - 1) / x.powi(m.cast_signed())
+            + factorial(m) / (2. * x.powi(m.cast_signed() + 1))
     };
     for (k, bernoulli) in (1..).zip(BERNOULLI) {
         let term = if m == 0 {
             -bernoulli / (2. * f64::from(k) * x.powi(2 * k))
         } else {
-            bernoulli * factorial(2 * k as u32 + m - 1)
-                / (factorial(2 * k as u32) * x.powi(2 * k + m as i32))
+            bernoulli * factorial(2 * k.cast_unsigned() + m - 1)
+                / (factorial(2 * k.cast_unsigned()) * x.powi(2 * k + m.cast_signed()))
         };
         series += term;
     }
@@ -878,7 +885,7 @@ mod tests {
         assert_close(eval("erf(x)", 1.), 0.842_700_792_949_714_9);
         assert_close(eval("erfi(x)", 1.), 1.650_425_758_797_542_9);
         assert_close(eval("erfi(x)", 6.), 4.112_751_455_828_239e14);
-        assert_close(eval("erfi(x)", 4.9), 3_149_283_850.004_450_8);
+        assert_close(eval("erfi(x)", 4.9), 3_149_283_850.004_451);
     }
 
     #[test]

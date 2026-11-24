@@ -84,6 +84,8 @@ impl LineResult {
 }
 
 /// An answer of the worker.
+// Replies are sent once per line, boxing wouldn't save anything
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Reply {
     /// The result of a line.

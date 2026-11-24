@@ -1,4 +1,6 @@
-//! Graphs of the lines of a session, for graphical interfaces: curves `y = f(x)`, `x = g(y)`, implicit curves and
+//! Graphs of the lines of a session, for graphical interfaces.
+//!
+//! Curves `y = f(x)`, `x = g(y)`, implicit curves and
 //! regions in `x` and `y` (also intersections of several relations, like `x^2 + y^2 < 1, y > 0`), points, and the
 //! areas of definite integrals `integrate(f, x, a, b)`. In `C`, functions `f(z)` are drawn as the images of the
 //! lines of a grid ([`GraphKind::ComplexMap`]), functions of a real `x` as curves (with their real and imaginary
@@ -271,6 +273,7 @@ fn function(f: &Term<Real>, var: Symbol) -> Graph {
 
 /// The graph of a definite integral `integrate(f, var, a, b)`, if `f` only depends on `var` and parameters, and the
 /// bounds only on parameters.
+#[allow(clippy::many_single_char_names)]
 fn integral_graph(line: &str, env: &Environment) -> Option<Graph> {
     let [f, var, a, b] = split_call(line, "integrate")?;
     let Term::Symbol(var) = parse(var, env).ok()? else {
@@ -389,12 +392,9 @@ fn top_level(text: &str) -> impl Iterator<Item = (usize, char)> + '_ {
 
 /// The coordinates of a point `point(a, b)` or `(a, b)`.
 fn split_point(line: &str) -> Option<(&str, &str)> {
-    let start = if line.starts_with("point") {
-        let rest = line["point".len()..].trim_start();
-        line.len() - rest.len()
-    } else {
-        0
-    };
+    let start = line
+        .strip_prefix("point")
+        .map_or(0, |rest| line.len() - rest.trim_start().len());
     let inner = &line[start..];
     if !inner.starts_with('(') || closing_bracket(inner)? != inner.len() - 1 {
         return None;
@@ -520,10 +520,9 @@ pub(crate) fn evaluate(
                 .map(|(lhs, relation, rhs)| (lhs, *relation, rhs))
                 .collect::<Vec<_>>(),
         );
-        let evaluated = match env.eval(line, R) {
-            Ok(statement) => Evaluated::new(statement),
-            Err(_) => Evaluated::relations(relations),
-        };
+        let evaluated = env
+            .eval(line, R)
+            .map_or_else(|_| Evaluated::relations(relations), Evaluated::new);
         return Ok((evaluated, graph));
     }
     if let Some(graph) = integral_graph(line, env) {

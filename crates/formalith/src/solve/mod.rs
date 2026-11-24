@@ -118,11 +118,10 @@ impl<T: Group> Solution<T> {
         };
         branches.sort_by(cmp);
         branches.dedup();
-        match branches.len() {
-            0 => Self::NoSolution,
-            1 => Self::Assignments(branches.pop().expect("There is one branch")),
-            _ => Self::Alternatives(branches),
+        if branches.len() > 1 {
+            return Self::Alternatives(branches);
         }
+        branches.pop().map_or(Self::NoSolution, Self::Assignments)
     }
 }
 
@@ -158,7 +157,7 @@ impl<T: Set> Solution<T> {
     }
 
     /// The text printed when there isn't any assignment.
-    fn text(&self, options: &PrintOptions) -> Option<String> {
+    fn text(&self, options: PrintOptions) -> Option<String> {
         let text = match self {
             Self::NoSolution => "no solution",
             Self::Assignments(assignments) if assignments.is_empty() => "true",
@@ -174,15 +173,15 @@ impl<T: Set> Solution<T> {
     /// Print one solution, its assignments being separated by commas.
     pub(crate) fn print_assignments(
         assignments: &[(Symbol, Term<T>)],
-        options: &PrintOptions,
+        options: PrintOptions,
         f: &mut fmt::Formatter<'_>,
     ) -> fmt::Result {
         for (i, equation) in Self::equations(assignments).enumerate() {
             if i != 0 {
-                Self::delimiter(",", options, f)?;
+                Self::delimiter(",", &options, f)?;
                 f.write_str(" ")?;
             }
-            equation.print(options, f)?;
+            equation.print(&options, f)?;
         }
         Ok(())
     }
@@ -190,7 +189,7 @@ impl<T: Set> Solution<T> {
 
 impl<T: Set> Print for Solution<T> {
     fn print(&self, options: &PrintOptions, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if let Some(text) = self.text(options) {
+        if let Some(text) = self.text(*options) {
             return f.write_str(&text);
         }
         // One solution per line, `\` being a line break in Typst
@@ -198,7 +197,7 @@ impl<T: Set> Print for Solution<T> {
             if i != 0 {
                 f.write_str(if options.typst { " \\ " } else { "\n" })?;
             }
-            Self::print_assignments(assignments, options, f)?;
+            Self::print_assignments(assignments, *options, f)?;
         }
         Ok(())
     }
@@ -206,7 +205,7 @@ impl<T: Set> Print for Solution<T> {
 
 impl<T: Set> PrettyPrint for Solution<T> {
     fn pretty_print(&self, options: &PrintOptions) -> PrettyPrinter {
-        if let Some(text) = self.text(options) {
+        if let Some(text) = self.text(*options) {
             return text.into();
         }
         let mut res = PrettyPrinter::empty();
