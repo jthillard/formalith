@@ -28,6 +28,10 @@ use std::{str::FromStr, time::Duration};
 const POINTS: usize = 5;
 /// Relative (or absolute, near 0) tolerance between `approx` and the f64 evaluation.
 const F64_TOLERANCE: f64 = 1e-9;
+/// Relative perturbation of the point estimating the conditioning of the f64 evaluation.
+const PERTURBATION: f64 = 1e-12;
+/// Relative error of the intermediate f64 results, compared with [`PERTURBATION`].
+const ROUNDING: f64 = 1e-15;
 
 /// A decimal printed by `approx`, like `-1.92874984796392e-22`, as an exact rational.
 fn parse_decimal(text: &str) -> Option<Rational> {
@@ -95,9 +99,17 @@ fn approx(input: &str) -> Verdict {
         let Some(x0) = rational_point(&point) else {
             continue;
         };
-        let fast = numeric.eval(&[to_f64(&x0)]);
+        let x0 = to_f64(&x0);
+        let fast = numeric.eval(&[x0]);
         let exact = to_f64(&precise);
         if !fast.is_finite() {
+            continue;
+        }
+        // The rounding of intermediate results acts like a perturbation of the point, amplified by the
+        // conditioning: near a pole of an inner function, the f64 evaluation can't be trusted to the tolerance
+        let perturbed = numeric.eval(&[x0.mul_add(PERTURBATION, x0)]);
+        let rounding_error = (perturbed - fast).abs() * (ROUNDING / PERTURBATION);
+        if !perturbed.is_finite() || rounding_error > F64_TOLERANCE * exact.abs().max(1.0) {
             continue;
         }
         if (fast - exact).abs() > F64_TOLERANCE * exact.abs().max(1.0) {
@@ -253,4 +265,13 @@ fn bug_polygamma_of_large_negative_approximations() {
     // approximation
     regression("polygamma(1, polygamma(2, 5/3)*cosh(3*x + 1)); 2.4; 2.6");
     regression("polygamma(0, -x*1000)");
+}
+
+#[test]
+fn bug_ill_conditioned_f64_evaluation() {
+    // The argument `{$-1.968...$}` of the inner `{$psi''$}` is 1/31 from a pole, and the outer one near
+    // `{$-59581.74$}`, so the rounding of the argument changed the f64 evaluation by `{$2 dot 10^(-7)$}`: such
+    // points are skipped
+    let verdict = approx("polygamma(2, polygamma(2, ((-1*x + -2) * 2/4))); 1.9; 2");
+    assert!(!matches!(verdict, Verdict::Wrong(_)), "{verdict:?}");
 }
