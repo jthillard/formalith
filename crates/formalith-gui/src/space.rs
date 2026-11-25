@@ -1,7 +1,8 @@
 //! The 3D view: surfaces `z = f(x, y)` ([`GraphKind::Surface`]) and complex functions `f(z)`
 //! ([`GraphKind::ComplexMap`], height `|f|`, colored by `arg f`) over a square domain, in a box seen by an orbiting
 //! camera. Surfaces are evaluated and drawn on the GPU ([`crate::shader::surface`], [`crate::gpu::scene`]); the
-//! height range is chosen from a coarse sample on the CPU, and the box with its ticks is painted by egui on top.
+//! height range is chosen from a coarse sample on the CPU, the axes inside the box are drawn with them (hidden behind
+//! the surfaces), and the box with its ticks is painted by egui on top.
 //!
 //! Coordinates are normalized to the box `[-1, 1]^3`: `x` and `y` over the domain `center ± radius`, `z` over the
 //! height range.
@@ -17,7 +18,9 @@ use formalith_session::graph::{Graph, GraphKind};
 use crate::{
     gpu::{
         Shader,
-        scene::{RESOLUTION, SURFACE_UNIFORMS, SceneCallback, SurfaceDraw},
+        scene::{
+            AXES_UNIFORMS, AxesDraw, RESOLUTION, SURFACE_UNIFORMS, SceneCallback, SurfaceDraw,
+        },
     },
     plot::{Drawable, color, format_number},
     shader::{self, MAX_PARAMS, SurfaceKind},
@@ -345,12 +348,18 @@ impl Space {
             #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
             let size =
                 [rect.width(), rect.height()].map(|side| (side * pixels_per_point).round() as u32);
+            let axes_color = ui.visuals().text_color().gamma_multiply(0.7);
             painter.add(egui_wgpu::Callback::new_paint_callback(
                 rect,
                 SceneCallback {
                     frame: self.frame,
                     size,
                     surfaces: draws,
+                    axes: axes_draw(
+                        &view_proj,
+                        &axes(self.camera.domain(), range),
+                        color(axes_color, linear),
+                    ),
                 },
             ));
         }
@@ -543,7 +552,6 @@ impl Space {
             let last = (max / step).floor() as i64;
             (first..=last).map(move |k| k as f64 * step)
         };
-        let normalized = |value: f64, min: f64, max: f64| 2. * (value - min) / (max - min) - 1.;
         for x in ticks(domain[0], domain[1], step) {
             label(
                 [normalized(x, domain[0], domain[1]), sy, -1.],
@@ -574,6 +582,63 @@ impl Space {
         label([sx * 1.25, 0., -1.], "y".to_owned());
         label([corner[0], corner[1], 1.2], "z".to_owned());
     }
+}
+
+/// The coordinate `value` of the interval `[min, max]` in `[-1, 1]`.
+fn normalized(value: f64, min: f64, max: f64) -> f64 {
+    2. * (value - min) / (max - min) - 1.
+}
+
+/// The segments of the box along the axes `x`, `y` and `z` inside of it, for the domain `[x_min, x_max, y_min, y_max]`
+/// and the height range `range`: an axis is there when 0 is in the ranges of the two other coordinates.
+fn axes(domain: [f64; 4], range: [f64; 2]) -> Vec<[[f64; 3]; 2]> {
+    let ranges = [[domain[0], domain[1]], [domain[2], domain[3]], range];
+    let origin =
+        ranges.map(|[min, max]| (min <= 0. && 0. <= max).then(|| normalized(0., min, max)));
+    (0..3)
+        .filter_map(|axis| {
+            let mut ends = [[0.; 3]; 2];
+            for k in 0..3 {
+                if k == axis {
+                    ends[0][k] = -1.;
+                    ends[1][k] = 1.;
+                } else {
+                    let at = origin[k]?;
+                    ends[0][k] = at;
+                    ends[1][k] = at;
+                }
+            }
+            Some(ends)
+        })
+        .collect()
+}
+
+/// The matrix `m` for WGSL, by columns.
+#[allow(clippy::cast_possible_truncation)]
+fn by_columns(m: &Mat4) -> [f32; 16] {
+    std::array::from_fn(|i| m[i % 4][i / 4] as f32)
+}
+
+/// The axes `segments` seen through `view_proj` in the premultiplied `color`, if any.
+#[allow(clippy::cast_possible_truncation)]
+fn axes_draw(view_proj: &Mat4, segments: &[[[f64; 3]; 2]], color: [f32; 4]) -> Option<AxesDraw> {
+    if segments.is_empty() {
+        return None;
+    }
+    let mut uniforms = Box::new([0.; AXES_UNIFORMS]);
+    uniforms[..16].copy_from_slice(&by_columns(view_proj));
+    uniforms[16..20].copy_from_slice(&color);
+    for (end, uniform) in segments
+        .iter()
+        .flatten()
+        .zip(uniforms[20..].as_chunks_mut::<4>().0)
+    {
+        *uniform = [end[0] as f32, end[1] as f32, end[2] as f32, 0.];
+    }
+    Some(AxesDraw {
+        uniforms,
+        vertices: u32::try_from(segments.len() * 2).ok()?,
+    })
 }
 
 /// The height range from sampled `heights`: from the 2nd to the 98th percentile of the finite ones, padded, or
@@ -610,12 +675,7 @@ fn uniforms(
     linear: bool,
 ) -> Box<[f32; SURFACE_UNIFORMS]> {
     let mut uniforms = Box::new([0.; SURFACE_UNIFORMS]);
-    // By columns
-    for column in 0..4 {
-        for row in 0..4 {
-            uniforms[column * 4 + row] = view_proj[row][column] as f32;
-        }
-    }
+    uniforms[..16].copy_from_slice(&by_columns(view_proj));
     let domain = camera.domain();
     let color = color(drawable.color, linear);
     // A light above the camera
@@ -676,6 +736,23 @@ mod tests {
     }
 
     #[test]
+    fn test_axes() {
+        let segments = axes([-1., 1., -1., 1.], [-1., 1.]);
+        assert_eq!(segments.len(), 3);
+        assert!(
+            segments
+                .iter()
+                .all(|[a, b]| (0..3).all(|k| a[k] + b[k] == 0.))
+        );
+        // `x = 0` is out of the domain: only the `x` axis
+        assert_eq!(
+            axes([1., 2., -1., 3.], [-1., 1.]),
+            vec![[[-1., -0.5, 0.], [1., -0.5, 0.]]]
+        );
+        assert!(axes([1., 2., 1., 2.], [1., 2.]).is_empty());
+    }
+
+    #[test]
     fn test_hit() {
         let (_, graph) = Session::new().graph("x^2 + y^2");
         let graph = graph.unwrap();
@@ -719,8 +796,12 @@ mod tests {
 
     const SIZE: u32 = 128;
 
-    /// The opacity of the pixels of the graph of `line` seen from above, drawn offscreen.
-    fn draw(device: &(wgpu::Adapter, wgpu::Device, wgpu::Queue), line: &str) -> Vec<f32> {
+    /// The opacity of the pixels of the graph of `line` seen from above, drawn offscreen, with the axes when `with_axes`.
+    fn draw(
+        device: &(wgpu::Adapter, wgpu::Device, wgpu::Queue),
+        line: &str,
+        with_axes: bool,
+    ) -> Vec<f32> {
         let (_, device, queue) = device;
         let (_, graph) = Session::new().graph(line);
         let graph = graph.expect("A graph");
@@ -749,6 +830,11 @@ mod tests {
                 shader,
                 uniforms: uniforms(&camera, &view_proj, [-1., 51.], &drawable, false),
             }],
+            axes: if with_axes {
+                axes_draw(&view_proj, &axes(camera.domain(), [-1., 51.]), [1.; 4])
+            } else {
+                None
+            },
         };
         let format = wgpu::TextureFormat::Rgba8Unorm;
         let mut resources = egui_wgpu::CallbackResources::default();
@@ -836,12 +922,16 @@ mod tests {
         let at = |image: &[f32], column: u32, row: u32| image[(row * SIZE + column) as usize];
         // Inside the range `[0, 50]` over the whole domain: seen from above, the middle is covered, the corners of
         // the view (out of the box) aren't
-        let image = draw(&device, "x^2 + y^2");
+        let image = draw(&device, "x^2 + y^2", false);
         assert!(at(&image, SIZE / 2, SIZE / 2) > 0.99);
         assert!(at(&image, 1, 1) == 0.);
         // Undefined everywhere
-        let image = draw(&device, "sqrt(-1 - x^2 - y^2)");
+        let image = draw(&device, "sqrt(-1 - x^2 - y^2)", false);
         assert!(image.iter().all(|alpha| *alpha == 0.));
+        // Only the axes, through the middle
+        let image = draw(&device, "sqrt(-1 - x^2 - y^2)", true);
+        assert!((0..SIZE).any(|row| at(&image, SIZE / 2, row) > 0.));
+        assert!(at(&image, 1, 1) == 0.);
         // A complex function
         let mut session = Session::new();
         session.run(":set C");

@@ -1,6 +1,6 @@
 //! Drawing of the surfaces of the 3D view ([`crate::space`]). egui's render pass has no depth buffer, so the surfaces
 //! are drawn in `prepare` into textures of their own (multisampled color and depth, resolved), then copied into the
-//! view by `paint`.
+//! view by `paint`. The axes are drawn as lines in the same pass, hidden by the surfaces in front of them.
 
 use std::{collections::HashMap, sync::Arc};
 
@@ -10,6 +10,9 @@ use super::{Shader, UNUSED_FRAMES, bytes};
 
 /// The number of floats of the uniforms of [`crate::shader::SURFACE`].
 pub const SURFACE_UNIFORMS: usize = 32 + 4 * 16;
+
+/// The number of floats of the uniforms of [`AXES`]: the matrix, the color and the ends of the segments.
+pub const AXES_UNIFORMS: usize = 16 + 4 + 4 * 6;
 
 /// The number of quads along each side of the grid of a surface.
 pub const RESOLUTION: u32 = 160;
@@ -45,6 +48,35 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 }
 ";
 
+/// Draws up to 3 segments of the box `[-1, 1]^3` in a premultiplied color.
+const AXES: &str = "
+struct Uniforms {
+    view_proj: mat4x4<f32>,
+    color: vec4<f32>,
+    ends: array<vec4<f32>, 6>,
+}
+
+@group(0) @binding(0) var<uniform> u: Uniforms;
+
+@vertex
+fn vs_main(@builtin(vertex_index) index: u32) -> @builtin(position) vec4<f32> {
+    return u.view_proj * vec4<f32>(u.ends[index].xyz, 1.0);
+}
+
+@fragment
+fn fs_main() -> @location(0) vec4<f32> {
+    return u.color;
+}
+";
+
+/// The axes to draw.
+pub struct AxesDraw {
+    /// The uniforms of [`AXES`].
+    pub uniforms: Box<[f32; AXES_UNIFORMS]>,
+    /// The number of ends of segments in the uniforms, at most 6.
+    pub vertices: u32,
+}
+
 /// A surface to draw.
 pub struct SurfaceDraw {
     /// The identifier of the surface, which owns a uniform buffer.
@@ -63,6 +95,8 @@ pub struct SceneCallback {
     pub size: [u32; 2],
     /// The surfaces.
     pub surfaces: Vec<SurfaceDraw>,
+    /// The axes, drawn after the surfaces.
+    pub axes: Option<AxesDraw>,
 }
 
 /// The textures the surfaces are drawn into, for a size.
@@ -82,12 +116,26 @@ pub(crate) struct SceneResources {
     pipeline_layout: wgpu::PipelineLayout,
     blit_layout: wgpu::BindGroupLayout,
     blit_pipeline: wgpu::RenderPipeline,
+    axes_pipeline: wgpu::RenderPipeline,
+    axes_buffer: wgpu::Buffer,
+    axes_bind_group: wgpu::BindGroup,
     /// Pipelines by shader hash, with the frame they were last used in.
     pipelines: HashMap<u64, (wgpu::RenderPipeline, u64)>,
     /// Uniform buffers by surface, with the frame they were last used in.
     surfaces: HashMap<u64, (wgpu::Buffer, wgpu::BindGroup, u64)>,
     targets: Option<Targets>,
     frame: u64,
+}
+
+/// The depth test of the scene, with `compare`.
+fn depth_state(compare: wgpu::CompareFunction) -> wgpu::DepthStencilState {
+    wgpu::DepthStencilState {
+        format: DEPTH_FORMAT,
+        depth_write_enabled: Some(true),
+        depth_compare: Some(compare),
+        stencil: wgpu::StencilState::default(),
+        bias: wgpu::DepthBiasState::default(),
+    }
 }
 
 impl SceneResources {
@@ -157,12 +205,65 @@ impl SceneResources {
             multiview_mask: None,
             cache: None,
         });
+        let axes_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("axes"),
+            source: wgpu::ShaderSource::Wgsl(AXES.into()),
+        });
+        let axes_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("axes"),
+            layout: Some(&pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &axes_module,
+                entry_point: Some("vs_main"),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                buffers: &[],
+            },
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::LineList,
+                ..wgpu::PrimitiveState::default()
+            },
+            // `LessEqual`, so that an axis on a flat surface isn't hidden by it
+            depth_stencil: Some(depth_state(wgpu::CompareFunction::LessEqual)),
+            multisample: wgpu::MultisampleState {
+                count: SAMPLES,
+                ..wgpu::MultisampleState::default()
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &axes_module,
+                entry_point: Some("fs_main"),
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            multiview_mask: None,
+            cache: None,
+        });
+        let axes_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("axes"),
+            size: (AXES_UNIFORMS * 4) as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let axes_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("axes"),
+            layout: &layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: axes_buffer.as_entire_binding(),
+            }],
+        });
         Self {
             format,
             layout,
             pipeline_layout,
             blit_layout,
             blit_pipeline,
+            axes_pipeline,
+            axes_buffer,
+            axes_bind_group,
             pipelines: HashMap::new(),
             surfaces: HashMap::new(),
             targets: None,
@@ -185,13 +286,7 @@ impl SceneResources {
                 buffers: &[],
             },
             primitive: wgpu::PrimitiveState::default(),
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: DEPTH_FORMAT,
-                depth_write_enabled: Some(true),
-                depth_compare: Some(wgpu::CompareFunction::Less),
-                stencil: wgpu::StencilState::default(),
-                bias: wgpu::DepthBiasState::default(),
-            }),
+            depth_stencil: Some(depth_state(wgpu::CompareFunction::Less)),
             multisample: wgpu::MultisampleState {
                 count: SAMPLES,
                 ..wgpu::MultisampleState::default()
@@ -314,6 +409,9 @@ impl egui_wgpu::CallbackTrait for SceneCallback {
             *last = frame;
             queue.write_buffer(buffer, 0, &bytes(&surface.uniforms[..]));
         }
+        if let Some(axes) = &self.axes {
+            queue.write_buffer(&resources.axes_buffer, 0, &bytes(&axes.uniforms[..]));
+        }
         let size = self.size.map(|side| side.max(1));
         resources.targets(device, size);
         let resources = &*resources;
@@ -352,6 +450,11 @@ impl egui_wgpu::CallbackTrait for SceneCallback {
             pass.set_pipeline(pipeline);
             pass.set_bind_group(0, bind_group, &[]);
             pass.draw(0..vertices, 0..1);
+        }
+        if let Some(axes) = &self.axes {
+            pass.set_pipeline(&resources.axes_pipeline);
+            pass.set_bind_group(0, &resources.axes_bind_group, &[]);
+            pass.draw(0..axes.vertices.min(6), 0..1);
         }
         vec![]
     }
