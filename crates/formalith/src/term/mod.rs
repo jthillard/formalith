@@ -1202,6 +1202,71 @@ impl<T: Set> Normalize for Term<T> {
     }
 }
 impl<T: Semiring> Term<T> {
+    /// Sort the normalized terms of a sum and merge like terms, dropping zeros.
+    fn merge_sorted(mut terms: Vec<Self>) -> Vec<Self> {
+        terms.sort_by(Self::cmp_terms);
+        terms.reverse();
+        let mut res = vec![];
+        let Some(mut current_merge) = terms.pop() else {
+            return res;
+        };
+        while let Some(next) = terms.pop() {
+            if !current_merge.try_merge_terms(&next) {
+                if !current_merge.is_zero() {
+                    res.push(current_merge);
+                }
+                current_merge = next;
+            }
+        }
+        if !current_merge.is_zero() {
+            res.push(current_merge);
+        }
+        res
+    }
+
+    /// Distribute a product `{$c (a + b)$}` of the merged terms of a sum when some of its terms merge with the
+    /// others, returning the new terms, or `None`. Up to `depth` products are distributed together, so
+    /// `{$2(x + y) - 2(x + z) = 2y - 2z$}` needs 2. The depth is bounded since trying every subset of products
+    /// is exponential in their number.
+    fn distribute_cancelling(terms: &[Self], depth: usize) -> Option<Vec<Self>> {
+        for (j, term) in terms.iter().enumerate() {
+            let Self::Mul(mul) = term else { continue };
+            let [Self::Add(inner)] = mul.factors.as_slice() else {
+                continue;
+            };
+            let mut candidate: Vec<Self> = terms
+                .iter()
+                .enumerate()
+                .filter(|(k, _)| *k != j)
+                .map(|(_, t)| t.clone())
+                .collect();
+            let expected = candidate.len() + inner.len();
+            for part in inner {
+                match Self::Mul(Mul::new(
+                    mul.coefficient.clone(),
+                    vec![part.clone()],
+                    mul.set,
+                ))
+                .normalize()
+                {
+                    Self::Add(add) => candidate.extend(add.terms),
+                    product => candidate.push(product),
+                }
+            }
+            let merged = Self::merge_sorted(candidate);
+            if merged.len() < expected {
+                return Some(merged);
+            }
+            if depth > 1
+                && let Some(merged) = Self::distribute_cancelling(&merged, depth - 1)
+                && merged.len() < expected
+            {
+                return Some(merged);
+            }
+        }
+        None
+    }
+
     fn normalize_in_ring(&self) -> Self {
         let mut res = match self {
             Self::Value(_) | Self::Symbol(_) => self.clone(),
@@ -1222,60 +1287,10 @@ impl<T: Semiring> Term<T> {
                 if res.is_empty() {
                     return Self::zero(self.get_set());
                 }
-                res.sort_by(Self::cmp_terms);
-                res.reverse();
-
-                // Merge terms
-                let mut terms = vec![];
-                let mut current_merge = res.pop().unwrap();
-                while let Some(next) = res.pop() {
-                    if !current_merge.try_merge_terms(&next) {
-                        if !current_merge.is_zero() {
-                            terms.push(current_merge);
-                        }
-                        current_merge = next;
-                    }
-                }
-                if !current_merge.is_zero() {
-                    terms.push(current_merge);
-                }
-
-                // `{$(x + y) - (x + y) = 0$}`: distribute a product `c (a + b)` when it cancels with other terms
-                for j in 0..terms.len() {
-                    let Self::Mul(mul) = &terms[j] else { continue };
-                    if mul.factors.len() != 1 {
-                        continue;
-                    }
-                    let Self::Add(inner) = &mul.factors[0] else {
-                        continue;
-                    };
-                    let mut candidate: Vec<Self> = terms
-                        .iter()
-                        .enumerate()
-                        .filter(|(k, _)| *k != j)
-                        .map(|(_, t)| t.clone())
-                        .collect();
-                    let others = candidate.len();
-                    for part in inner {
-                        candidate.push(
-                            Self::Mul(Mul::new(
-                                mul.coefficient.clone(),
-                                vec![part.clone()],
-                                self.get_set(),
-                            ))
-                            .normalize(),
-                        );
-                    }
-                    let expected = others + inner.len();
-                    let merged = Self::Add(Add::new(candidate, self.get_set())).normalize();
-                    let count = match &merged {
-                        Self::Add(add) => add.len(),
-                        t if t.is_zero() => 0,
-                        _ => 1,
-                    };
-                    if count < expected {
-                        return merged;
-                    }
+                let mut terms = Self::merge_sorted(res);
+                // `{$(x + y) - (x + y) = 0$}`: distribute products `c (a + b)` when they cancel with other terms
+                while let Some(distributed) = Self::distribute_cancelling(&terms, 2) {
+                    terms = distributed;
                 }
 
                 if terms.is_empty() {

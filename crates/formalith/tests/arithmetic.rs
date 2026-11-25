@@ -444,3 +444,23 @@ fn arithmetic_with_infinity() {
     // Symbols aren't assumed finite
     assert_eq!(eval_r("x+oo"), "oo+x");
 }
+
+#[test]
+fn distributed_products_cancel() {
+    assert_eq!(eval_r("(x + y) - (x + y)"), "0");
+    assert_eq!(eval_r("3*(x + y) - 3*x"), "3*y");
+    // Two products distributed together
+    assert_eq!(eval_r("2*(x + y) - 2*(x + z)"), "2*y-2*z");
+}
+
+#[test]
+fn many_products_of_sums_normalize_quickly() {
+    // Trying to distribute each product `{$k (a_k + b_k)$}` normalized the other terms, which tried the others
+    // again, in factorial time
+    let sum = (2..=15)
+        .map(|k| format!("{k}*(a_{k} + b_{k})"))
+        .collect::<Vec<_>>()
+        .join(" + ");
+    let res = eval_r(&sum);
+    assert_eq!(res.matches('(').count(), 14, "{res}");
+}
