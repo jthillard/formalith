@@ -90,9 +90,8 @@ Ideas and known gaps, roughly by area. `AGENTS.md` describes what exists; this f
 
 ## Matrices
 
-- Eigenvalues when the characteristic polynomial has non-real roots (`eigenvalues([[0, -1], [1, 0]])` is
-  unevaluated, though `C` and `split_complex` exist), and matrices over `C`.
-- `simplify`, `expand` and `diff` of matrix literals don't parse in `M` (`simplify([[x, 1], [0, x]])`).
+- Eigenvalues in `M(C)` are limited by the roots `C` finds: cubics aren't solved there
+  (`eigenvalues([[3, 2, 3], [-2, 2, -1], [3, 1, -1]])`), unlike in `R` (Cardano), and non-rational quartics neither.
 
 ## GUI
 

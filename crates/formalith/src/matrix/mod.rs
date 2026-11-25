@@ -9,7 +9,7 @@ pub(crate) mod eigen;
 mod linalg;
 mod normal_form;
 
-pub use eigen::Eigenspace;
+pub use eigen::{EigenSet, Eigenspace};
 
 use crate::{
     field::{Group, Ring, Set},

@@ -11,13 +11,13 @@ use crate::{
     context::{Context, Symbol},
     field::{
         EuclideanRing, Group, Monoid, PartiallyOrderedSet, Ring, Semiring, Set, SetParseExpression,
-        integer::Z, modular::Zn, primes, real::R,
+        complex::C, integer::Z, modular::Zn, primes, real::R,
     },
-    matrix::{Matrix, MatrixResult, eigen::real_roots},
+    matrix::{EigenSet, Matrix, MatrixResult, eigen},
     parser::{Parser, ParserError, lexer::TokenKind},
     printer::{PrettyPrint, PrettyPrinter, Print, PrintOptions},
     solve::polynomial::polynomial_form,
-    term::{self, Expand, Function, Term, TermSet, Value},
+    term::{self, Expand, Fun, Function, Normalize, SymbolTerm, Term, TermSet, Value},
 };
 
 /// An enum representing elements inside a vector space.
@@ -279,6 +279,36 @@ impl<T: Ring> M<T> {
         }
         let scalars = self.scalar_sub_set;
         let scalar = |element| VectorSpaceElement::Scalar(element, scalars);
+        if Context::maps_entries(fun.get_ident()) {
+            let (first, rest) = args.split_first()?;
+            let rest = rest
+                .iter()
+                .map(|arg| match arg {
+                    Term::Symbol(x) => <T as MatrixEntries>::from_symbol(scalars, x.symbol),
+                    _ => Self::scalar(arg).cloned(),
+                })
+                .collect::<Option<Vec<_>>>()?;
+            let apply =
+                |entry| <T as MatrixEntries>::apply_builtin(scalars, fun.get_ident(), entry, &rest);
+            return match first {
+                Term::Value(Value {
+                    value: VectorSpaceElement::Vector(matrix),
+                    ..
+                }) => {
+                    let data = matrix.data.iter().map(apply).collect::<Option<_>>()?;
+                    Some(VectorSpaceElement::Vector(Matrix::new(
+                        (matrix.height(), matrix.width()),
+                        data,
+                        scalars,
+                    )))
+                }
+                Term::Value(Value {
+                    value: VectorSpaceElement::Scalar(x, _),
+                    ..
+                }) => apply(x).map(scalar),
+                _ => None,
+            };
+        }
         match fun.get_ident() {
             Context::DIAG => {
                 let entries = match args.as_slice() {
@@ -520,6 +550,15 @@ pub trait MatrixEntries: Ring {
     fn roots(p: &Self::Element, x: Symbol) -> Option<Vec<Self::Element>>;
     /// The prime factorization of the number `n`, as rows `[p, e]` (see the builtin `factorint`).
     fn factorint(n: &Self::Element) -> Option<Matrix<Self>>;
+    /// The symbol `x` as an element.
+    fn from_symbol(set: Self, x: Symbol) -> Option<Self::Element>;
+    /// The builtin `ident` (see [`Context::maps_entries`]) evaluated at `entry` and the other arguments `args`.
+    fn apply_builtin(
+        set: Self,
+        ident: Symbol,
+        entry: &Self::Element,
+        args: &[Self::Element],
+    ) -> Option<Self::Element>;
 }
 
 impl<T: Ring> MatrixEntries for T {
@@ -554,6 +593,17 @@ impl<T: Ring> MatrixEntries for T {
         None
     }
     default fn factorint(_: &Self::Element) -> Option<Matrix<Self>> {
+        None
+    }
+    default fn from_symbol(_: Self, _: Symbol) -> Option<Self::Element> {
+        None
+    }
+    default fn apply_builtin(
+        _: Self,
+        _: Symbol,
+        _: &Self::Element,
+        _: &[Self::Element],
+    ) -> Option<Self::Element> {
         None
     }
 }
@@ -595,6 +645,47 @@ impl<T: Ring> MatrixEntries for TermSet<T> {
     default fn factorint(_: &Self::Element) -> Option<Matrix<Self>> {
         None
     }
+    default fn from_symbol(set: Self, x: Symbol) -> Option<Self::Element> {
+        Some(Term::Symbol(SymbolTerm::new(x, *set.get_set())))
+    }
+    /// The builtin of the entries' set, normalized, so that it is evaluated by their own rules.
+    default fn apply_builtin(
+        set: Self,
+        ident: Symbol,
+        entry: &Self::Element,
+        args: &[Self::Element],
+    ) -> Option<Self::Element> {
+        let args = std::iter::once(entry).chain(args).cloned().collect();
+        Some(Term::Fun(Box::new(Fun::new(ident, args, *set.get_set()))).normalize())
+    }
+}
+
+/// The roots of the polynomial `p` in `x` found by [`eigen::roots`], repeated by multiplicity, if it has a
+/// positive degree and some roots.
+fn polynomial_roots<T: EigenSet>(p: &Term<T>, x: Symbol) -> Option<Vec<Term<T>>> {
+    let p = p.expand();
+    // A polynomial of positive degree
+    if polynomial_form(&p, x).ok()?.len() < 2 {
+        return None;
+    }
+    let roots: Vec<_> = eigen::roots(&p, x)?
+        .into_iter()
+        .flat_map(|(value, multiplicity)| std::iter::repeat_n(value, multiplicity))
+        .collect();
+    (!roots.is_empty()).then_some(roots)
+}
+
+/// The eigenvalues of `matrix` with their multiplicities and eigenspaces, see [`Matrix::eigenspaces`].
+fn eigenvalue_spaces<T: EigenSet>(
+    matrix: &Matrix<TermSet<T>>,
+) -> Option<Vec<EigenvalueSpace<TermSet<T>>>> {
+    Some(
+        matrix
+            .eigenspaces()?
+            .into_iter()
+            .map(|space| (space.value, space.multiplicity, space.basis))
+            .collect(),
+    )
 }
 
 /// The entries of `matrix`, if they are all values.
@@ -735,30 +826,30 @@ impl MatrixEntries for TermSet<R<Rational>> {
     fn derivative(element: &Self::Element, x: Symbol) -> Option<Self::Element> {
         Some(element.derivative(x))
     }
+    /// The real roots.
     fn roots(p: &Self::Element, x: Symbol) -> Option<Vec<Self::Element>> {
-        let p = p.expand();
-        // A polynomial of positive degree
-        if polynomial_form(&p, x).ok()?.len() < 2 {
-            return None;
-        }
-        let roots: Vec<_> = real_roots(&p, x)?
-            .into_iter()
-            .flat_map(|(value, multiplicity)| std::iter::repeat_n(value, multiplicity))
-            .collect();
-        (!roots.is_empty()).then_some(roots)
+        polynomial_roots(p, x)
     }
     fn factorint(n: &Self::Element) -> Option<Matrix<Self>> {
         let Term::Value(n) = n else { return None };
         factorint_matrix(&n.value, R, Rational::from)
     }
+    /// Only when every eigenvalue is real.
     fn eigenspaces(matrix: &Matrix<Self>) -> Option<Vec<EigenvalueSpace<Self>>> {
-        Some(
-            matrix
-                .eigenspaces()?
-                .into_iter()
-                .map(|space| (space.value, space.multiplicity, space.basis))
-                .collect(),
-        )
+        eigenvalue_spaces(matrix)
+    }
+}
+
+impl MatrixEntries for TermSet<C<R<Rational>>> {
+    fn derivative(element: &Self::Element, x: Symbol) -> Option<Self::Element> {
+        Some(element.derivative(x))
+    }
+    /// The complex roots.
+    fn roots(p: &Self::Element, x: Symbol) -> Option<Vec<Self::Element>> {
+        polynomial_roots(p, x)
+    }
+    fn eigenspaces(matrix: &Matrix<Self>) -> Option<Vec<EigenvalueSpace<Self>>> {
+        eigenvalue_spaces(matrix)
     }
 }
 
@@ -978,10 +1069,29 @@ impl<T: SetParseExpression> SetParseExpression for M<T> {
 
     fn parse_literal(&self, parser: &mut Parser) -> Result<Option<Self::Element>, String> {
         // Builtins returning matrices are functions of this set, not scalars like other functions
-        if let TokenKind::Ident(name) = &parser.token.kind
-            && Context::returns_matrix(Symbol::new(name.as_str()))
-        {
-            return Ok(None);
+        if let TokenKind::Ident(name) = &parser.token.kind {
+            let ident = Symbol::new(name.as_str());
+            if Context::returns_matrix(ident) {
+                return Ok(None);
+            }
+            // Builtins applied to entries are functions of this set when their arguments aren't scalars, like
+            // `{$simplify([[x, 1], [0, x]])$}`
+            if Context::maps_entries(ident) {
+                if has_matrix_argument(parser) {
+                    return Ok(None);
+                }
+                let mut scalar_parser = parser.clone();
+                let scalar_of_matrix = std::mem::replace(&mut scalar_parser.scalar_of_matrix, true);
+                let parsed = self.scalar_sub_set.parse_literal(&mut scalar_parser);
+                scalar_parser.scalar_of_matrix = scalar_of_matrix;
+                return Ok(match parsed {
+                    Ok(Some(parsed)) => {
+                        *parser = scalar_parser;
+                        Some(VectorSpaceElement::Scalar(parsed, self.scalar_sub_set))
+                    }
+                    Ok(None) | Err(_) => None,
+                });
+            }
         }
         // The scalar stops before them too, `{$2 I(2)$}` being a scalar times a matrix
         let scalar_of_matrix = std::mem::replace(&mut parser.scalar_of_matrix, true);
@@ -1046,6 +1156,35 @@ impl<T: SetParseExpression> SetParseExpression for M<T> {
             }
             _ => Ok(None),
         }
+    }
+}
+
+/// Whether the arguments of the call at the current token contain a matrix literal or a builtin returning a
+/// matrix, which the scalar set would read as an unknown function, like `I` in `{$diff(I(2) x, x)$}`.
+fn has_matrix_argument(parser: &Parser) -> bool {
+    let mut parser = parser.clone();
+    parser.next_token();
+    if parser.token.kind != TokenKind::OpenParen {
+        return false;
+    }
+    let mut depth = 0usize;
+    loop {
+        match &parser.token.kind {
+            TokenKind::OpenParen => depth += 1,
+            TokenKind::CloseParen => {
+                depth -= 1;
+                if depth == 0 {
+                    return false;
+                }
+            }
+            TokenKind::OpenBracket => return true,
+            TokenKind::Ident(name) if Context::returns_matrix(Symbol::new(name.as_str())) => {
+                return true;
+            }
+            TokenKind::Eof => return false,
+            _ => {}
+        }
+        parser.next_token();
     }
 }
 

@@ -165,7 +165,7 @@ pub static BUILTIN_DOCS: [BuiltinDoc; Context::BUILTIN_NAMES.len()] = [
         Algebra,
         "expand(f)",
         "Expands products and powers of sums.",
-        "In R, also applies the addition formulas of sin and cos.",
+        "In R, also applies the addition formulas of sin and cos. On a matrix, expands each entry.",
         &[
             ex("expand((x + 1)^3)", "x^3 + 3 x^2 + 3 x + 1"),
             ex("expand(sin(a + b))", "sin(a) cos(b) + sin(b) cos(a)"),
@@ -190,10 +190,16 @@ pub static BUILTIN_DOCS: [BuiltinDoc; Context::BUILTIN_NAMES.len()] = [
         "simplify(f)",
         "Simplifies an expression.",
         "Cancels common factors of fractions. In R, also tries identities like sin^2 + cos^2 = 1, multiple \
-         angles, hyperbolic functions as exponentials and exp(c ln u) = u^c, keeping the smallest result.",
+         angles, hyperbolic functions as exponentials and exp(c ln u) = u^c, keeping the smallest result. On a \
+         matrix, simplifies each entry.",
         &[
             ex("simplify((x^2 - 1)/(x - 1))", "x + 1"),
             ex("simplify(sin(x)^2 + cos(x)^2)", "1"),
+            ex_in(
+                "M",
+                "simplify([[sin(x)^2 + cos(x)^2, 1], [0, x]])",
+                "mat(1, 1; 0, x)",
+            ),
         ],
     ),
     doc(
@@ -330,10 +336,15 @@ pub static BUILTIN_DOCS: [BuiltinDoc; Context::BUILTIN_NAMES.len()] = [
         Calculus,
         "diff(f, x, [n])",
         "n-th derivative of f with respect to x (the first by default).",
-        "",
+        "On a matrix, differentiates each entry.",
         &[
             ex("diff(x^3, x)", "3 x^2"),
             ex("diff(sin(x), x, 2)", "-sin(x)"),
+            ex_in(
+                "M",
+                "diff([[x^2, x], [1, x^3]], x)",
+                "mat(2 x, 1; 0, 3 x^2)",
+            ),
         ],
     ),
     doc(
@@ -801,15 +812,19 @@ pub static BUILTIN_DOCS: [BuiltinDoc; Context::BUILTIN_NAMES.len()] = [
         Matrices,
         "eigenvalues(A)",
         "Eigenvalues of a square matrix, as a column repeating them by algebraic multiplicity.",
-        "In M, when every root of the characteristic polynomial is found.",
-        &[ex_in("M", "eigenvalues([[2, 1], [1, 2]])", "mat(1; 3)")],
+        "When every root of the characteristic polynomial is found: in M when they are all real, in M(C) \
+         complex ones too.",
+        &[
+            ex_in("M", "eigenvalues([[2, 1], [1, 2]])", "mat(1; 3)"),
+            ex_in("M(C)", "eigenvalues([[0, -1], [1, 0]])", "mat(-i; i)"),
+        ],
     ),
     doc(
         Context::EIGENVECTORS,
         Matrices,
         "eigenvectors(A)",
         "Eigenvectors of a square matrix, as columns, by eigenspace in the order of eigenvalues.",
-        "",
+        "In M and M(C), like eigenvalues.",
         &[ex_in(
             "M",
             "eigenvectors([[2, 1], [1, 2]])",
@@ -878,7 +893,7 @@ pub static BUILTIN_DOCS: [BuiltinDoc; Context::BUILTIN_NAMES.len()] = [
         Matrices,
         "gradient(f, [x_1, ..., x_n])",
         "Gradient of a scalar function, the column of its partial derivatives.",
-        "The variables are every symbol of f, sorted by name, by default. In M.",
+        "The variables are every symbol of f, sorted by name, by default. In M and M(C).",
         &[ex_in("M", "gradient(x^2*y, x, y)", "mat(2 x y; x^2)")],
     ),
     doc(
@@ -886,7 +901,7 @@ pub static BUILTIN_DOCS: [BuiltinDoc; Context::BUILTIN_NAMES.len()] = [
         Matrices,
         "jacobian(F, [x_1, ..., x_n])",
         "Jacobian matrix of a row or column of functions, J_(i j) = d F_i / d x_j.",
-        "The variables are every symbol of F, sorted by name, by default. In M.",
+        "The variables are every symbol of F, sorted by name, by default. In M and M(C).",
         &[ex_in(
             "M",
             "jacobian([[x*y, x + y]], x, y)",
@@ -898,7 +913,7 @@ pub static BUILTIN_DOCS: [BuiltinDoc; Context::BUILTIN_NAMES.len()] = [
         Matrices,
         "hessian(f, [x_1, ..., x_n])",
         "Hessian matrix of a scalar function, its second partial derivatives.",
-        "The variables are every symbol of f, sorted by name, by default. In M.",
+        "The variables are every symbol of f, sorted by name, by default. In M and M(C).",
         &[ex_in("M", "hessian(x^2*y)", "mat(2 y, 2 x; 2 x, 0)")],
     ),
     doc(
@@ -1044,12 +1059,13 @@ pub static BUILTIN_DOCS: [BuiltinDoc; Context::BUILTIN_NAMES.len()] = [
         Context::ROOTS,
         Algebra,
         "roots(p, [x])",
-        "Real roots of a polynomial, as a column repeated by multiplicity.",
-        "x may be omitted when p has a single symbol. In M only, over the rationals: the roots found by solve, \
-         unevaluated when there is none.",
+        "Roots of a polynomial, as a column repeated by multiplicity.",
+        "x may be omitted when p has a single symbol. In M, the real roots found by solve, and in M(C) the \
+         complex ones; unevaluated when there is none.",
         &[
             ex_in("M", "roots(x^3 - x^2)", "mat(0; 0; 1)"),
             ex_in("M", "roots(x^2 - 2)", "mat(sqrt(2); -sqrt(2))"),
+            ex_in("M(C)", "roots(x^2 + 1)", "mat(-i; i)"),
         ],
     ),
     doc(

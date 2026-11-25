@@ -160,6 +160,62 @@ fn linear_algebra(a: &str) -> Verdict {
     Verdict::Pass
 }
 
+/// Evaluate in `M(C)` (symbolic complex entries).
+fn mc(input: &str) -> Result<String, String> {
+    eval_in(SetChoice::MC, &mut Environment::new(), input)
+}
+
+/// Whether `expand(simplify(term))` is exactly zero in `M(C)`, every entry for a matrix.
+fn complex_zero(term: &str) -> bool {
+    mc(&format!("expand(simplify({term}))")).is_ok_and(|res| {
+        rows(&res).map_or(res == "0", |rows| rows.iter().flatten().all(|e| e == "0"))
+    })
+}
+
+/// Check `eigenvalues` and `eigenvectors` in `M(C)`: their sum is the trace, their product the determinant, and
+/// `A v = λ v` exactly.
+fn complex_eigen(a: &str) -> Verdict {
+    let n = rows(a).unwrap().len();
+    let (Ok(values), Ok(vectors)) = (
+        mc(&format!("eigenvalues({a})")),
+        mc(&format!("eigenvectors({a})")),
+    ) else {
+        return Verdict::Skip("eigen".to_owned());
+    };
+    if values.contains("eigen") || vectors.contains("eigen") {
+        return Verdict::Skip("unevaluated".to_owned());
+    }
+    let values: Vec<String> = rows(&values)
+        .unwrap()
+        .into_iter()
+        .map(|r| r[0].clone())
+        .collect();
+    if values.len() != n {
+        return Verdict::Wrong(format!(
+            "{} eigenvalues {values:?} for size {n}",
+            values.len()
+        ));
+    }
+    let sum = values.iter().map(|v| format!("({v})")).collect::<Vec<_>>();
+    if !complex_zero(&format!("{} - trace({a})", sum.join(" + "))) {
+        return Verdict::Wrong(format!("eigenvalues {values:?} don't sum to the trace"));
+    }
+    if !complex_zero(&format!("{} - det({a})", sum.join("*"))) {
+        return Verdict::Wrong(format!("eigenvalues {values:?} don't multiply to the det"));
+    }
+    let mut distinct = values.clone();
+    distinct.dedup();
+    for v in columns(&vectors).unwrap() {
+        let ok = distinct
+            .iter()
+            .any(|lambda| complex_zero(&format!("{a} * {v} - ({lambda}) * {v}")));
+        if !ok || complex_zero(&v) {
+            return Verdict::Wrong(format!("eigenvector {v} of eigenvalues {values:?}"));
+        }
+    }
+    Verdict::Pass
+}
+
 /// Integer matrix from rows of `i64`.
 fn integers(matrix: &str) -> Option<Vec<Vec<i64>>> {
     rows(matrix)?
@@ -286,6 +342,34 @@ fn matrices() {
             "[[1, 0, 0, 0], [0, 2, 0, 0], [0, 0, 3, 1], [0, 0, 0, 3]]",
         ],
         linear_algebra,
+    );
+}
+
+#[test]
+fn complex_matrices() {
+    check_all(
+        "complex eigenvalues",
+        &[
+            "[[0, -1], [1, 0]]",
+            "[[1, -2], [1, 3]]",
+            "[[2, 1], [1, 2]]",
+            "[[i, 1], [0, -i]]",
+            "[[1, i], [-i, 1]]",
+            "[[0, -1, 0], [1, 0, 0], [0, 0, 2]]",
+            "[[0, 0, 0, -1], [1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0]]",
+        ],
+        complex_eigen,
+    );
+}
+
+#[test]
+#[ignore = "fuzz: random matrices in M(C), run with --ignored"]
+fn fuzz_complex_eigen() {
+    fuzz(
+        "fuzz complex eigenvalues",
+        60,
+        |rng| random::int_matrix(rng, 2, 2, 3),
+        complex_eigen,
     );
 }
 

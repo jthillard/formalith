@@ -410,6 +410,22 @@ impl Context {
         )
     }
 
+    /// Return `true` if `symbol` is a builtin applied to each entry of a matrix given as its first argument, like
+    /// `simplify` or `diff`, the other arguments being scalars.
+    #[must_use]
+    pub const fn maps_entries(symbol: Symbol) -> bool {
+        matches!(
+            symbol,
+            Self::SIMPLIFY
+                | Self::EXPAND
+                | Self::FACTOR
+                | Self::DIFF
+                | Self::SUBS
+                | Self::INTEGRATE
+                | Self::APPROX
+        )
+    }
+
     /// Return the minimum and maximum number of arguments of a builtin function, or `None` if `symbol` isn't a builtin.
     #[must_use]
     pub const fn builtin_arity(symbol: Symbol) -> Option<(usize, usize)> {

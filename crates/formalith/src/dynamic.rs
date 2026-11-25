@@ -30,6 +30,8 @@ pub enum SetChoice {
     C,
     /// Matrices with rational coefficients.
     M,
+    /// Matrices with complex coefficients.
+    MC,
     /// Matrices with integer coefficients.
     MZ,
     /// Matrices with coefficients modulo `n`.
@@ -53,7 +55,15 @@ pub enum Coefficients {
 
 impl SetChoice {
     /// Every set which isn't parameterized.
-    pub const ALL: [Self; 6] = [Self::N, Self::Z, Self::R, Self::C, Self::M, Self::MZ];
+    pub const ALL: [Self; 7] = [
+        Self::N,
+        Self::Z,
+        Self::R,
+        Self::C,
+        Self::M,
+        Self::MC,
+        Self::MZ,
+    ];
 
     /// The name used to select the set, like `Z/7` or `R[x]`.
     #[must_use]
@@ -70,6 +80,7 @@ impl SetChoice {
             Self::R => "rationals",
             Self::C => "complex numbers, `i` is the imaginary unit",
             Self::M => "matrices with rational coefficients, like [[1, 2], [3, 4]]",
+            Self::MC => "matrices with complex coefficients, with complex eigenvalues",
             Self::MZ => "matrices with integer coefficients, with hermite and smith normal forms",
             Self::MZn(_) => "matrices with coefficients modulo n, like M(Z/6)",
             Self::Zn(_) => "integers modulo n, a field when n is prime, like Z/7",
@@ -113,6 +124,7 @@ impl SetChoice {
             Self::R => eval_in(input, R, env),
             Self::C => eval_in(input, C, env),
             Self::M => eval_in(input, M, env),
+            Self::MC => eval_in(input, M::new(TermSet::new(C)), env),
             Self::MZ => eval_in(input, M::new(TermSet::new(Z)), env),
             Self::MZn(n) => eval_in(input, M::new(TermSet::new(Zn::new(n))), env),
             Self::Zn(n) => eval_in(input, Zn::new(n), env),
@@ -231,6 +243,7 @@ impl fmt::Display for SetChoice {
             Self::R => f.write_str("R"),
             Self::C => f.write_str("C"),
             Self::M => f.write_str("M"),
+            Self::MC => f.write_str("M(C)"),
             Self::MZ => f.write_str("M(Z)"),
             Self::MZn(n) => write!(f, "M(Z/{n})"),
             Self::Zn(n) => write!(f, "Z/{n}"),
@@ -266,10 +279,11 @@ impl FromStr for SetChoice {
         {
             return match entries.parse()? {
                 Self::R => Ok(Self::M),
+                Self::C => Ok(Self::MC),
                 Self::Z => Ok(Self::MZ),
                 Self::Zn(n) => Ok(Self::MZn(n)),
                 entries => Err(format!(
-                    "matrices with coefficients in {entries} are not supported, use R, Z or Z/n"
+                    "matrices with coefficients in {entries} are not supported, use R, C, Z or Z/n"
                 )),
             };
         }

@@ -793,3 +793,80 @@ fn scalar_builtins_evaluated_in_m() {
     assert_eq!(m("[[x, 1], [0, x]]^-1"), m("[[1/x, -1/x^2], [0, 1/x]]"));
     assert_eq!(m("[[1, 2], [3, 4]]/2"), m("[[1/2, 1], [3/2, 2]]"));
 }
+
+#[test]
+fn complex_matrices() {
+    let mc = |input: &str| {
+        SetChoice::MC
+            .eval(input, false, &mut Environment::new())
+            .unwrap()
+    };
+    assert_eq!(mc("eigenvalues([[0, -1], [1, 0]])"), mc("[[-i], [i]]"));
+    assert_eq!(
+        mc("eigenvectors([[0, -1], [1, 0]])"),
+        mc("[[-i, i], [1, 1]]")
+    );
+    assert_eq!(
+        mc("eigenvalues([[0, -1, 0], [1, 0, 0], [0, 0, 2]])"),
+        mc("[[-i], [i], [2]]")
+    );
+    assert_eq!(mc("eigenvalues([[i, 1], [0, -i]])"), mc("[[-i], [i]]"));
+    assert_eq!(
+        mc("eigenvectors([[i, 1], [0, -i]])"),
+        mc("[[i/2, 1], [1, 0]]")
+    );
+    assert_eq!(mc("eigenvalues([[2, 1], [1, 2]])"), mc("[[1], [3]]"));
+    assert_eq!(mc("det([[i, 1], [2, i]])"), "-3");
+    assert_eq!(mc("[[i, 1], [2, i]]^-1"), mc("[[-i/3, 1/3], [2/3, -i/3]]"));
+    assert_eq!(mc("roots(x^2 + 1)"), mc("[[-i], [i]]"));
+    assert_eq!(mc("gradient(x^2 + i*y, x, y)"), mc("[[2*x], [i]]"));
+    // Real matrices keep non-real eigenvalues unevaluated
+    let m = SetChoice::M
+        .eval(
+            "eigenvalues([[0, -1], [1, 0]])",
+            false,
+            &mut Environment::new(),
+        )
+        .unwrap();
+    assert!(m.contains("eigenvalues"), "{m}");
+}
+
+#[test]
+fn builtins_on_matrix_entries() {
+    let mut env = Environment::new();
+    let mut m = |input: &str| SetChoice::M.eval(input, false, &mut env).unwrap();
+    assert_eq!(
+        m("simplify([[sin(x)^2 + cos(x)^2, 1], [0, x]])"),
+        m("[[1, 1], [0, x]]")
+    );
+    assert_eq!(m("simplify([[x, 1], [0, x]])"), m("[[x, 1], [0, x]]"));
+    assert_eq!(m("expand([[(x + 1)^2]])"), m("[[x^2 + 2*x + 1]]"));
+    assert_eq!(m("factor([[x^2 - 1]])"), m("[[(x - 1)*(x + 1)]]"));
+    assert_eq!(
+        m("diff([[x^2, x], [1, x^3]], x)"),
+        m("[[2*x, 1], [0, 3*x^2]]")
+    );
+    assert_eq!(
+        m("diff([[x^2, x], [1, x^3]], x, 2)"),
+        m("[[2, 0], [0, 6*x]]")
+    );
+    assert_eq!(m("diff(I(2)*x, x)"), m("I(2)"));
+    assert_eq!(m("subs([[x, 1]], x, 2)"), m("[[2, 1]]"));
+    assert_eq!(m("integrate([[x, cos(x)]], x)"), m("[[x^2/2, sin(x)]]"));
+    assert_eq!(
+        m("simplify([[x, 1], [0, x]]) + I(2)"),
+        m("[[x + 1, 1], [0, x + 1]]")
+    );
+    // Definitions of matrices
+    m("A := [[x^2, x]]");
+    assert_eq!(m("diff(A, x)"), m("[[2*x, 1]]"));
+    // Scalars are unchanged
+    assert_eq!(m("simplify(x^2)"), m("x^2"));
+    assert_eq!(m("2*diff(x^2, x)"), m("4*x"));
+    let mzn = |input: &str| {
+        SetChoice::MZn(7)
+            .eval(input, false, &mut Environment::new())
+            .unwrap()
+    };
+    assert_eq!(mzn("expand([[(x + 1)^2, 9]])"), mzn("[[x^2 + 2*x + 1, 2]]"));
+}
