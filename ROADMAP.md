@@ -39,8 +39,10 @@ Ideas and known gaps, roughly by area. `AGENTS.md` describes what exists; this f
 
 ## Simplification
 
-- **Rationalizing denominators** with radicals: `tan(pi/12)` is `(√6 - √2)/(√6 + √2)` rather than `2 - √3`, and
-  solutions of trigonometric equations keep forms like `atan(1/cos(1) + sin(1)/cos(1))`.
+- **Rationalizing denominators** mixing radicals of different orders and bases (`1/(√2 + ∛3)`), with nested
+  radicals (`1/(1 + √(2 + √2))`) or in `C`.
+- Trigonometric solutions with several angles or no half-angle form keep nested forms, like
+  `asin(1/√(sin(1)² + 2 cos(1) + cos(1)² + 1))` (`sin² + cos² = 1` isn't applied there).
 
 ## Approximation
 

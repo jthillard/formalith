@@ -17,7 +17,7 @@ use malachite::{
     Integer, Natural, Rational,
     base::{
         num::{
-            arithmetic::traits::{Abs, FloorRoot, Gcd, Lcm, Pow},
+            arithmetic::traits::{Abs, FloorRoot, Lcm, Pow},
             basic::traits::Zero,
             conversion::traits::RoundingFrom,
             logic::traits::SignificantBits,
@@ -262,61 +262,10 @@ fn real_poles(q: &Poly, rest: &Expr, derivative: &Expr, w: Symbol, n: &Expr) -> 
         let at = |p: &Expr| p.substitute(w, &r).map(|t| t.expand());
         let a = at(rest).ok_or(LimitError::Unsupported)?
             / at(derivative).ok_or(LimitError::Unsupported)?;
-        let b = rationalize(&(-(a * rho)).simplify());
+        let b = (-(a * rho)).simplify();
         res += b * rho.pow(n);
     }
     Ok(res)
-}
-
-/// A fraction whose denominator is `{$a + b sqrt(c)$}` (rational `a`, `b`, `c`), multiplied by the conjugate
-/// `{$a - b sqrt(c)$}` above and below, like `{$(sqrt(5) + 3) / (sqrt(5) + 5) = (sqrt(5) + 5) / 10$}`.
-fn rationalize(term: &Expr) -> Expr {
-    let (num, den) = term.as_fraction(true);
-    let Term::Add(add) = &den else {
-        return term.clone();
-    };
-    let is_radical = |t: &Expr| match t {
-        Term::Pow(pow) => {
-            matches!(&*pow.base, Term::Value(_))
-                && **pow.exponant == value(Rational::from_signeds(1, 2))
-        }
-        Term::Mul(mul) => mul.iter().count() == 1 && mul.iter().all(|f| matches!(f, Term::Pow(_))),
-        _ => false,
-    };
-    let terms: Vec<&Expr> = add.iter().collect();
-    let [a, b] = terms.as_slice() else {
-        return term.clone();
-    };
-    let (rational, radical) = match (a, b) {
-        (Term::Value(_), r) if is_radical(r) => (*a, *b),
-        (r, Term::Value(_)) if is_radical(r) => (*b, *a),
-        _ => return term.clone(),
-    };
-    let conjugate = rational - radical;
-    let den = (&den * &conjugate).expand();
-    if !matches!(den, Term::Value(_)) {
-        return term.clone();
-    }
-    let num = (num * conjugate).expand();
-    // The content of the numerator out, `{$(2 sqrt(5) + 10) / 20 = (sqrt(5) + 5) / 10$}`
-    let Term::Add(add) = &num else {
-        return num / den;
-    };
-    let content = add.iter().try_fold(Natural::from(0u32), |g, t| {
-        let c = match t {
-            Term::Value(v) => &v.value,
-            Term::Mul(mul) => &mul.coefficient,
-            _ => return None,
-        };
-        (c.denominator_ref() == &1u32).then(|| g.gcd(c.numerator_ref()))
-    });
-    match content {
-        Some(g) if g > 1u32 => {
-            let g = value(Rational::from(g));
-            (&num / &g).expand() * (g / den)
-        }
-        _ => num / den,
-    }
 }
 
 /// The series of `f`, guessed as a whole, then from its partial fractions or its terms when `split` is set.

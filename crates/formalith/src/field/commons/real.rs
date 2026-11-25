@@ -3,6 +3,7 @@
 pub(crate) mod approx;
 pub(crate) mod expr;
 pub mod numeric;
+mod radicals;
 mod rewrite;
 pub(crate) mod rootof;
 pub(crate) mod sign;
@@ -42,7 +43,7 @@ use crate::{
     polynom::ToTerm,
     printer::PrettyPrinter,
     sum::SumError,
-    term::{self, Fun, Normalize, SymbolTerm, Term, TermSet, Value, flags::Flags},
+    term::{self, Expand, Fun, Normalize, SymbolTerm, Term, TermSet, Value, flags::Flags},
 };
 
 /// Largest `n` for which `{$n!$}` is evaluated, to avoid huge computations.
@@ -239,6 +240,12 @@ impl Semiring for R<Rational> {
                     let positive = -Term::Mul(mul.clone());
                     return self.value(sign) * positive.pow(exponant);
                 }
+                (Term::Add(add), Term::Value(n))
+                    if let Some(res) = radicals::power(add, &n.value) =>
+                {
+                    // `{$1/(1 + sqrt(2)) = sqrt(2) - 1$}`, `{$(1 + sqrt(2))^2 = 3 + 2 sqrt(2)$}`
+                    return res;
+                }
                 (Term::Add(add), Term::Value(exponant))
                     if exponant.value == Rational::from_signeds(1, 2)
                         && let Some(res) = self.denest(add) =>
@@ -419,6 +426,9 @@ impl Semiring for R<Rational> {
                     return res * self.fun(Context::EXP, argument);
                 }
                 if let Some(res) = self.merge_radicals(mul) {
+                    return res;
+                }
+                if let Some(res) = radicals::expand_product(mul) {
                     return res;
                 }
                 let is_little_o = |factor: &&Term<Self>| matches!(factor, Term::Fun(fun) if fun.get_ident() == Context::LITTLE_O);
@@ -1046,7 +1056,9 @@ impl R<Rational> {
             (Context::ACOSH, [x]) if x.is_one() => Some(value(Rational::ZERO)),
             (Context::ASIN | Context::ACOS | Context::ATAN, [x]) => {
                 if ident == Context::ATAN
-                    && let Some(res) = self.eval_atan_of_tan(x)
+                    && let Some(res) = self
+                        .eval_atan_of_tan(x)
+                        .or_else(|| self.eval_atan_half_angle(x))
                 {
                     return Some(res);
                 }
@@ -1461,14 +1473,33 @@ impl R<Rational> {
             };
             Some(value(sign, 1) * res)
         };
-        let (sin_value, cos_value) = (sin(k), sin((k + 60) % 240));
+        // `{$tan(k pi / 120)$}`, directly so that nested radicals don't end up in a denominator
+        let tan = |k: i64| -> Option<Term<Self>> {
+            let k = k % 120;
+            let (k, signum) = if k > 60 { (120 - k, -1) } else { (k, 1) };
+            let sqrt_sum = |a, b, c| sqrt(value(a, 1) + value(b, 1) * sqrt_of(c));
+            let res = match k {
+                0 => value(0, 1),
+                10 => value(2, 1) - sqrt_of(3),
+                12 => sqrt_sum(25, -10, 5) / value(5, 1),
+                15 => sqrt_of(2) - value(1, 1),
+                20 => sqrt_of(3) / value(3, 1),
+                24 => sqrt_sum(5, -2, 5),
+                30 => value(1, 1),
+                36 => sqrt_sum(25, 10, 5) / value(5, 1),
+                40 => sqrt_of(3),
+                45 => sqrt_of(2) + value(1, 1),
+                48 => sqrt_sum(5, 2, 5),
+                50 => value(2, 1) + sqrt_of(3),
+                // A pole at `{$pi/2$}`
+                _ => return None,
+            };
+            Some(value(signum, 1) * res)
+        };
         match ident {
-            Context::SIN => sin_value,
-            Context::COS => cos_value,
-            _ => {
-                let cos_value = cos_value?;
-                (!cos_value.is_zero()).then(|| sin_value.map(|s| s / cos_value))?
-            }
+            Context::SIN => sin(k),
+            Context::COS => sin((k + 60) % 240),
+            _ => tan(k),
         }
     }
 
@@ -1491,6 +1522,12 @@ impl R<Rational> {
             }
             _ => return None,
         };
+        self.reduce_angle(theta)
+    }
+
+    /// `{$atan(tan theta) = theta - k pi$}` for a constant `{$theta$}`, `k` being the integer nearest to
+    /// `{$theta / pi$}`. `None` when `{$theta$}` can't be approximated, or is too close to a pole of `tan`.
+    fn reduce_angle(self, theta: Term<Self>) -> Option<Term<Self>> {
         let pi = Term::Symbol(SymbolTerm::new(Context::PI, self));
         // `{$theta/pi + 1/2$}` is never an integer since `{$cos theta != 0$}`, but must be far enough from one to
         // round with an approximation
@@ -1502,6 +1539,65 @@ impl R<Rational> {
             return None;
         }
         Some(theta - Term::Value(Value::new(k, self)) * pi)
+    }
+
+    /// `{$atan(tan theta)$}` reduced by [`Self::reduce_angle`] when `x` is a half-angle form of `{$tan theta$}` in the
+    /// sine and cosine of a single constant angle `a`, like `{$(1 + sin a)/cos a = tan(pi/4 + a/2)$}` or
+    /// `{$sin a/(1 + cos a) = tan(a/2)$}`, which solving trigonometric equations gives.
+    fn eval_atan_half_angle(self, x: &Term<Self>) -> Option<Term<Self>> {
+        fn angles(term: &expr::Expr, res: &mut Vec<expr::Expr>) {
+            match term {
+                Term::Add(add) => add.iter().for_each(|t| angles(t, res)),
+                Term::Mul(mul) => mul.iter().for_each(|t| angles(t, res)),
+                Term::Pow(pow) => {
+                    angles(&pow.base, res);
+                    angles(&pow.exponant, res);
+                }
+                Term::Fun(_) => match expr::unary(term) {
+                    Some((Context::SIN | Context::COS, a)) => {
+                        if !res.contains(a) {
+                            res.push(a.clone());
+                        }
+                    }
+                    _ => res.push(term.clone()),
+                },
+                Term::Value(_) | Term::Symbol(_) => {}
+            }
+        }
+        let mut found = vec![];
+        angles(x, &mut found);
+        let [a] = found.as_slice() else { return None };
+        let (sin, cos) = (
+            self.fun(Context::SIN, a.clone()),
+            self.fun(Context::COS, a.clone()),
+        );
+        let one = self.value(Rational::ONE);
+        let pi = Term::Symbol(SymbolTerm::new(Context::PI, self));
+        let half = self.value(Rational::from_signeds(1, 2));
+        let quarter = &pi * &self.value(Rational::from_signeds(1, 4));
+        let half_angle = a * &half;
+        // `{$(N, D, theta)$}` with `{$N / D = tan theta$}`
+        let candidates = [
+            (&one + &sin, cos.clone(), &quarter + &half_angle),
+            (&one - &sin, cos.clone(), &quarter - &half_angle),
+            (cos.clone(), &one - &sin, &quarter + &half_angle),
+            (cos.clone(), &one + &sin, &quarter - &half_angle),
+            (sin.clone(), &one + &cos, half_angle.clone()),
+            (&one - &cos, sin.clone(), half_angle.clone()),
+            (sin.clone(), &one - &cos, &pi * &half - &half_angle),
+            (&one + &cos, sin.clone(), &pi * &half - &half_angle),
+        ];
+        let (num, den) = x.as_fraction(true);
+        let theta = candidates.into_iter().find_map(|(n, d, theta)| {
+            if (&num * &d - &n * &den).expand().is_zero() {
+                Some(theta)
+            } else if (&num * &d + &n * &den).expand().is_zero() {
+                Some(-theta)
+            } else {
+                None
+            }
+        })?;
+        self.reduce_angle(theta)
     }
 
     /// Evaluate `asin`, `acos` or `atan` at the classic values, like `{$asin(1/2) = pi/6$}`.

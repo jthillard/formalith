@@ -256,6 +256,35 @@ fn trigonometric_values_with_radicals() {
 }
 
 #[test]
+fn tangent_values_have_no_radical_denominators() {
+    assert_eq!(parse!("tan(pi/12)", R), parse!("2-sqrt(3)", R));
+    assert_eq!(parse!("tan(5*pi/12)", R), parse!("2+sqrt(3)", R));
+    assert_eq!(parse!("tan(pi/8)", R), parse!("sqrt(2)-1", R));
+    assert_eq!(parse!("tan(7*pi/8)", R), parse!("1-sqrt(2)", R));
+    assert_eq!(parse!("tan(pi/5)", R), parse!("sqrt(5-2*sqrt(5))", R));
+    assert_eq!(
+        parse!("tan(-3*pi/10)", R),
+        parse!("-sqrt(25+10*sqrt(5))/5", R)
+    );
+}
+
+#[test]
+fn arctangent_of_half_angle_forms() {
+    assert_eq!(parse!("atan((1-sin(1))/cos(1))", R), parse!("pi/4-1/2", R));
+    assert_eq!(parse!("atan(cos(1)/(1-sin(1)))", R), parse!("pi/4+1/2", R));
+    assert_eq!(parse!("atan(sin(1)/(1+cos(1)))", R), parse!("1/2", R));
+    assert_eq!(parse!("atan((1-cos(1))/sin(1))", R), parse!("1/2", R));
+    assert_eq!(
+        parse!("atan(-(1+cos(1))/sin(1))", R),
+        parse!("-(pi/2-1/2)", R)
+    );
+    // Reduced into `{$(-pi/2, pi/2)$}`
+    assert_eq!(parse!("atan(sin(4)/(1+cos(4)))", R), parse!("2-pi", R));
+    // Only for constant angles, `{$atan(tan(x/2)) != x/2$}`
+    assert!(matches!(parse!("atan(sin(x)/(1+cos(x)))", R), Term::Fun(_)));
+}
+
+#[test]
 fn trigonometric_symmetries() {
     assert_eq!(parse!("sin(-x)", R), parse!("-sin(x)", R));
     assert_eq!(parse!("cos(-x)", R), parse!("cos(x)", R));

@@ -698,6 +698,19 @@ fn lambert_equations() {
 }
 
 #[test]
+fn trigonometric_equations_with_half_angle_forms() {
+    // `{$tan x = (1 - sin 1)/cos 1 = tan(pi/4 - 1/2)$}`
+    assert_eq!(
+        solve("sin(x+1) = cos(x)"),
+        ok("x = frac(1, 4) pi+pi k-frac(1, 2) \\ k in ZZ")
+    );
+    assert_eq!(
+        solve("cos(x) + sin(x - 1) = 0"),
+        ok("x = -frac(1, 4) pi+pi k+frac(1, 2) \\ k in ZZ")
+    );
+}
+
+#[test]
 fn trigonometric_equations_of_a_common_angle() {
     // Homogeneous in `{$sin x$}` and `{$cos x$}`: a polynomial in `{$tan x$}`
     assert_eq!(

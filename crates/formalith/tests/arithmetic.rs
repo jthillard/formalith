@@ -464,3 +464,54 @@ fn many_products_of_sums_normalize_quickly() {
     let res = eval_r(&sum);
     assert_eq!(res.matches('(').count(), 14, "{res}");
 }
+
+#[test]
+fn rationalized_denominators() {
+    assert_eq!(parse!("1/(1+sqrt(2))", R), parse!("sqrt(2)-1", R));
+    assert_eq!(parse!("1/(1-sqrt(2))", R), parse!("-sqrt(2)-1", R));
+    assert_eq!(parse!("sqrt(2)/(sqrt(2)+1)", R), parse!("2-sqrt(2)", R));
+    assert_eq!(
+        parse!("(sqrt(6)-sqrt(2))/(sqrt(6)+sqrt(2))", R),
+        parse!("2-sqrt(3)", R)
+    );
+    assert_eq!(parse!("1/(2+2*sqrt(2))", R), parse!("(sqrt(2)-1)/2", R));
+    assert_eq!(parse!("x/(1+sqrt(3))", R), parse!("x*(sqrt(3)-1)/2", R));
+    assert_eq!(parse!("1/(1+sqrt(2))^2", R), parse!("3-2*sqrt(2)", R));
+    assert_eq!(parse!("1/(1-sqrt(2)) + 1/(1+sqrt(2))", R), rational(-2, 1));
+    // Several square roots, eliminated one prime at a time
+    assert_eq!(
+        parse!("1/(sqrt(2)+sqrt(3)+sqrt(5))", R),
+        parse!("(3*sqrt(2)+2*sqrt(3)-sqrt(30))/12", R)
+    );
+    assert_eq!(
+        parse!(
+            "(sqrt(2)+sqrt(3)+sqrt(5)+sqrt(7))*(1/(sqrt(2)+sqrt(3)+sqrt(5)+sqrt(7)))",
+            R
+        ),
+        rational(1, 1)
+    );
+    // Roots of a single integer, by an inverse modulo `{$x^3 - 2$}`
+    assert_eq!(
+        parse!("1/(1+2^(1/3))", R),
+        parse!("(1-2^(1/3)+4^(1/3))/3", R)
+    );
+    assert_eq!(
+        parse!("1/(2^(1/3)+4^(1/3))", R),
+        parse!("(2*2^(1/3)+4^(1/3)-2)/6", R)
+    );
+    // Unrelated roots of different orders stay
+    assert!(matches!(parse!("1/(sqrt(2)+3^(1/3))", R), Term::Pow(_)));
+}
+
+#[test]
+fn products_of_radical_sums_are_expanded() {
+    assert_eq!(parse!("(1+sqrt(2))^2", R), parse!("3+2*sqrt(2)", R));
+    assert_eq!(
+        parse!("sqrt(2)*(1+sqrt(3))", R),
+        parse!("sqrt(2)+sqrt(6)", R)
+    );
+    assert_eq!(parse!("(1+sqrt(2))*(1-sqrt(2))", R), rational(-1, 1));
+    assert_eq!(parse!("(8-4*sqrt(3))/4", R), parse!("2-sqrt(3)", R));
+    assert_eq!(parse!("x*(1+sqrt(3))^2", R), parse!("2*x*(2+sqrt(3))", R));
+    assert_eq!(parse!("-(sqrt(2)-1)", R), parse!("1-sqrt(2)", R));
+}
