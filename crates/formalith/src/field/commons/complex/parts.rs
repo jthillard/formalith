@@ -83,7 +83,35 @@ pub(super) fn split_with(f: &Complex, split: Split) -> Option<(Expr, Expr)> {
 /// Whether `f` has no symbols other than builtin constants, so that its parts are those of [`split`] (in plain
 /// normalization, symbols aren't assumed real: `{$re(x)$}` stays unevaluated).
 pub(super) fn is_constant(f: &Complex) -> bool {
-    f.symbols().into_iter().all(Context::is_builtin_constant)
+    let mut indices = Vec::new();
+    held_sum_indices(f, &mut indices);
+    f.symbols()
+        .into_iter()
+        .all(|s| Context::is_builtin_constant(s) || indices.contains(&s))
+}
+
+/// Push the indices of the held sums of `f` (bound symbols, so they don't make `f` depend on them).
+fn held_sum_indices(f: &Complex, indices: &mut Vec<Symbol>) {
+    match f {
+        Term::Value(_) | Term::Symbol(_) => {}
+        Term::Add(add) => add.iter().for_each(|term| held_sum_indices(term, indices)),
+        Term::Mul(mul) => mul.iter().for_each(|term| held_sum_indices(term, indices)),
+        Term::Pow(pow) => {
+            held_sum_indices(&pow.base, indices);
+            held_sum_indices(&pow.exponant, indices);
+        }
+        Term::Fun(function) => {
+            let Some(args) = function.get_args::<C<R<Rational>>>() else {
+                return;
+            };
+            if function.get_ident() == Context::held_sum()
+                && let Some(Term::Symbol(k)) = args.get(1)
+            {
+                indices.push(k.symbol);
+            }
+            args.iter().for_each(|arg| held_sum_indices(arg, indices));
+        }
+    }
 }
 
 /// `{$re z$}`, `{$im z$}`, `{$overline(z)$}` or `{$|z|$}` for a constant `z`, computed from its parts (`{$|z|$}` only when
@@ -222,6 +250,80 @@ fn to_complex(f: &Expr) -> Option<Complex> {
         Term::Fun(function) => {
             let args = function.get_args::<Real>()?;
             let args = args.iter().map(to_complex).collect::<Option<_>>()?;
+            Term::Fun(Box::new(Fun::new(function.get_ident(), args, C))).normalize()
+        }
+    })
+}
+
+/// `f` as a real expression with the imaginary unit replaced by the symbol `t`. With `analytic`, only when `f` is
+/// built from rational functions and entire functions (`exp`, `sin`, `cos`, `sinh`, `cosh`, `erf`), so that an
+/// identity between power series in `{$x$}` found for a real `t` stays true at `{$t = i$}`; otherwise any term, for
+/// algebraic rules like derivatives, which commute with `{$t = i$}`. `None` when it can't be written.
+pub(super) fn with_unit(f: &Complex, t: Symbol, analytic: bool) -> Option<Expr> {
+    let gaussian = |z: &[Rational; 2]| value(z[0].clone()) + value(z[1].clone()) * variable(t);
+    Some(match f {
+        Term::Value(z) => gaussian(&z.value),
+        Term::Symbol(s) => variable(s.symbol),
+        Term::Add(add) => add
+            .iter()
+            .try_fold(zero(), |res, term| Some(res + with_unit(term, t, analytic)?))?,
+        Term::Mul(mul) => mul
+            .iter()
+            .try_fold(gaussian(&mul.coefficient), |res, factor| {
+                Some(res * with_unit(factor, t, analytic)?)
+            })?,
+        Term::Pow(pow) => match &**pow.exponant {
+            Term::Value(e) if e.value[1] == 0 && e.value[0].denominator_ref() == &1u32 => {
+                with_unit(&pow.base, t, analytic)?.pow(&value(e.value[0].clone()))
+            }
+            _ if analytic => return None,
+            exponant => with_unit(&pow.base, t, analytic)?.pow(&with_unit(exponant, t, analytic)?),
+        },
+        Term::Fun(function) => {
+            let ident = function.get_ident();
+            if analytic
+                && ![
+                    Context::EXP,
+                    Context::SIN,
+                    Context::COS,
+                    Context::SINH,
+                    Context::COSH,
+                    Context::ERF,
+                ]
+                .contains(&ident)
+            {
+                return None;
+            }
+            let args = function
+                .get_args::<C<R<Rational>>>()?
+                .iter()
+                .map(|arg| with_unit(arg, t, analytic))
+                .collect::<Option<_>>()?;
+            Term::Fun(Box::new(Fun::new(ident, args, R))).normalize()
+        }
+    })
+}
+
+/// The real expression `f` as a complex expression with the symbol `t` replaced by the imaginary unit, the inverse
+/// of [`with_unit`]. `None` for functions with non-real arguments other than those of `t`.
+pub(super) fn from_unit(f: &Expr, t: Symbol) -> Option<Complex> {
+    Some(match f {
+        Term::Symbol(s) if s.symbol == t => Term::Value(Value::new(C.i(), C)),
+        Term::Value(_) | Term::Symbol(_) => C.try_from_expr(f.clone()).ok()?,
+        Term::Add(add) => add
+            .iter()
+            .try_fold(Term::zero(C), |res, term| Some(res + from_unit(term, t)?))?,
+        Term::Mul(mul) => mul.iter().try_fold(
+            Term::Value(Value::new([mul.coefficient.clone(), Rational::ZERO], C)),
+            |res, factor| Some(res * from_unit(factor, t)?),
+        )?,
+        Term::Pow(pow) => from_unit(&pow.base, t)?.pow(&from_unit(&pow.exponant, t)?),
+        Term::Fun(function) => {
+            let args = function.get_args::<Real>()?;
+            let args = args
+                .iter()
+                .map(|arg| from_unit(arg, t))
+                .collect::<Option<_>>()?;
             Term::Fun(Box::new(Fun::new(function.get_ident(), args, C))).normalize()
         }
     })
@@ -375,6 +477,18 @@ fn split_fun(ident: Symbol, args: &[(Expr, Expr)], numeric: bool) -> Option<(Exp
             } else {
                 (cos * cosh, -(sin * sinh))
             })
+        }
+        // Held sums are linear, so `{$sum (u_k + i v_k) = sum u_k + i sum v_k$}` when the sum converges
+        (_, [(u, v), (k, _), bounds @ ..]) if ident == Context::held_sum() => {
+            let held = |body: &Expr| {
+                if body.is_zero() {
+                    return zero();
+                }
+                let mut args = vec![body.clone(), k.clone()];
+                args.extend(bounds.iter().map(|(a, _)| a.clone()));
+                Term::Fun(Box::new(Fun::new(ident, args, R))).normalize()
+            };
+            Some((held(u), held(v)))
         }
         (Context::ZETA | Context::GAMMA, [(a, b)]) if numeric => Some(numeric_parts(ident, a, b)),
         // `{$z! = Gamma(z + 1)$}`

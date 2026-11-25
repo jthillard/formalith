@@ -12,7 +12,6 @@ Ideas and known gaps, roughly by area. `AGENTS.md` describes what exists; this f
   fractions.
 - **More poles of rational functions**: multiple irrational poles, complex roots of irreducible factors of degree 3
   or more (`1/(1 + x + x^3)`).
-- **`series(f, x, a, oo)` in `C`**, through the real and imaginary parts like finite series.
 - **Known non-holonomic series** beyond a kernel with Bernoulli or Euler numbers times a power of `x`:
   `tan(x)^2`, `tan(x) / (1 + x)`, `tan(x)` at 1.
 - **Held sums**:

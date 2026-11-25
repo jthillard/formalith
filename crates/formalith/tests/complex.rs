@@ -232,6 +232,36 @@ fn limits_and_series_of_real_and_imaginary_parts() {
 }
 
 #[test]
+fn whole_series() {
+    // A single sum with the imaginary unit as a parameter
+    assert_eq!(eval("series(exp(i*x), x, 0, oo)"), eval("sum(x^k*i^k/k!, k, 0, oo)"));
+    assert_eq!(eval("series(1/(1 - i*x), x, 0, oo)"), eval("sum(x^k*i^k, k, 0, oo)"));
+    assert_eq!(
+        eval("series(exp((1 + i)*x), x, 0, oo)"),
+        eval("sum(x^k*(1 + i)^k/k!, k, 0, oo)")
+    );
+    // Otherwise the series of each part
+    assert_eq!(
+        eval("series(exp(x) + i*x, x, 0, oo)"),
+        eval("i*x + sum(x^k/k!, k, 0, oo)")
+    );
+    assert!(eval("series(sqrt(1 + i*x), x, 0, oo)").starts_with("series("));
+    // Held sums in `C` are evaluated, differentiated and approximated
+    assert_eq!(
+        eval("approx(subs(series(x*exp(i*x), x, 0, oo), x, 2))"),
+        eval("approx(2*exp(2*i))")
+    );
+    assert_eq!(
+        eval("diff(series(exp(i*x), x, 0, oo), x)"),
+        eval("sum(x^k*i^(k + 1)/k!, k, 0, oo)")
+    );
+    assert_eq!(
+        eval("approx(subs(integrate(series(exp(i*x), x, 0, oo), x), x, 1))"),
+        eval("approx(sin(1) + i*(1 - cos(1)))")
+    );
+}
+
+#[test]
 fn sums_print_negative_imaginary_terms_with_a_minus_sign() {
     assert_eq!(pretty(&parse!("x - i", C)), "x - i");
     assert_eq!(pretty(&parse!("x - 2*i*y", C)), "x - 2⋅i⋅y");

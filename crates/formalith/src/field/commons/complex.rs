@@ -3,7 +3,7 @@
 mod approx;
 mod parts;
 
-use std::cmp::Ordering;
+use std::{cmp::Ordering, sync::LazyLock};
 
 use malachite::{
     Integer, Natural, Rational,
@@ -144,6 +144,24 @@ impl C<R<Rational>> {
         Term::Symbol(SymbolTerm::new(ident, self))
     }
 
+    /// The whole series of `f` in `{$x$}`, computed in `{$RR$}` with the imaginary unit as a real parameter `t` and
+    /// `{$t = i$}` substituted back, so that `{$e^(i x)$}` has a single sum (see [`parts::with_unit`]).
+    fn whole_series_with_unit(
+        f: &Term<Self>,
+        x: Symbol,
+        point: &Expr,
+        direction: &[Expr],
+    ) -> Option<Term<Self>> {
+        let t = *UNIT;
+        let g = parts::with_unit(f, t, true)?;
+        if !g.symbols().contains(&t) {
+            return None;
+        }
+        let direction = Direction::from_args(direction)?;
+        let res = g.infinite_series(x, point, direction).ok()?;
+        parts::from_unit(&res, t)
+    }
+
     /// Evaluate `integrate`, `lim` or `series` in `{$RR$}` on the real and imaginary parts of the function,
     /// every symbol being assumed real. The other arguments (bounds, point, order) must be real.
     fn eval_calculus(self, ident: Symbol, args: &[Term<Self>]) -> Option<Term<Self>> {
@@ -152,6 +170,13 @@ impl C<R<Rational>> {
         };
         let x = x.symbol;
         let rest = rest.iter().map(parts::real).collect::<Option<Vec<_>>>()?;
+        if ident == Context::SERIES
+            && let [point, Term::Symbol(oo), direction @ ..] = rest.as_slice()
+            && oo.symbol == Context::OO
+            && let Some(res) = Self::whole_series_with_unit(f, x, point, direction)
+        {
+            return Some(res);
+        }
         let (u, v) = parts::split(f)?;
         // Each part is `Ok(Some(res))`, `Ok(None)` if unevaluated, or `Err(())` if it doesn't exist
         let eval = |part: &Expr| -> Result<Option<Expr>, ()> {
@@ -191,6 +216,15 @@ impl C<R<Rational>> {
                     }
                 }
                 _ => {
+                    // The whole series of each part
+                    if let [point, Term::Symbol(oo), direction @ ..] = rest.as_slice()
+                        && oo.symbol == Context::OO
+                    {
+                        let Some(direction) = Direction::from_args(direction) else {
+                            return Ok(None);
+                        };
+                        return Ok(part.infinite_series(x, point, direction).ok());
+                    }
                     let (point, order, direction) = match rest.as_slice() {
                         [point] => (point, Rational::from(6), Some(Direction::Both)),
                         [point, Term::Value(order), direction @ ..] => {
@@ -210,6 +244,7 @@ impl C<R<Rational>> {
             if ident == Context::SERIES
                 && let Some(re) = &mut re
                 && let [point, rest @ ..] = rest.as_slice()
+                && !matches!(rest, [Term::Symbol(oo), ..] if oo.symbol == Context::OO)
             {
                 let order = match rest {
                     [Term::Value(order), ..] => order.value.clone(),
@@ -685,7 +720,24 @@ impl Derivable for C<R<Rational>> {
     fn derivative(&self, _: &Self::Element, _: Symbol) -> Self::Element {
         self.zero()
     }
+
+    fn derivative_function(&self, fun: &dyn crate::term::Function<Self>, x: Symbol) -> Option<Term<Self>> {
+        // A whole series, term by term, in `{$RR$}` with the imaginary unit as a parameter
+        if fun.get_ident() != Context::held_sum() {
+            return None;
+        }
+        let t = *UNIT;
+        let sum = parts::with_unit(&Term::Fun(dyn_clone::clone_box(fun)), t, false)?;
+        let Term::Fun(sum) = sum else {
+            return None;
+        };
+        let res = crate::sum::derive_held_sum(sum.get_args::<R<Rational>>()?, x)?;
+        parts::from_unit(&res, t)
+    }
 }
+
+/// The imaginary unit as a real parameter, for the rules computed in `{$RR$}` (see [`parts::with_unit`]).
+static UNIT: LazyLock<Symbol> = LazyLock::new(|| Symbol::new("@iunit"));
 
 impl SetParseExpression for C<R<Rational>> {
     type MatrixArgumentSet = M<TermSet<Self>>;
