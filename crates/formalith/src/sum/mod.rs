@@ -31,7 +31,7 @@ mod polynomial;
 mod product;
 mod taylor;
 
-pub(crate) use taylor::{derive_held_sum, integrate_held_sum};
+pub(crate) use taylor::{derive_held_sum, has_held_sum, held_sum_at, held_sum_between, integrate_held_sum};
 
 use std::{cmp::Ordering, error::Error, fmt};
 

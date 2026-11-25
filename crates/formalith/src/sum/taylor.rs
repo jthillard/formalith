@@ -26,17 +26,17 @@ use malachite::{
     },
 };
 
-use std::convert::Infallible;
+use std::{cmp::Ordering, convert::Infallible};
 
 use crate::{
     context::{
         Context, Symbol,
-        assumptions::{Assumption, Assumptions, SignSet},
+        assumptions::{Assumption, Assumptions, AssumptionsGuard, SignSet},
     },
     field::real::{
         R, approx,
         expr::{
-            Expr, Real, arg, depends, fun, infinity_sign, map_tree, one, size, subs,
+            Expr, Real, arg, constant_sign, depends, fun, has_special_constant, infinity_sign, map_tree, one, size, subs,
             try_map_operands, unary, value, variable, zero,
         },
     },
@@ -892,9 +892,12 @@ pub fn derive_held_sum(args: &[Expr], x: Symbol) -> Option<Expr> {
     Some(tidy_held_sum(&body.derivative(x), k.symbol, a, x))
 }
 
-/// An antiderivative of the held sum `{$sum_(k = a)^oo C(k) B^E$}` of the arguments `[f, k, a, oo]` with respect to
-/// `x`, term by term, `B` being linear in `x` and `E` affine in `k`: `{$C B^(E + 1) / ((E + 1) B')$}`. The terms
-/// where `{$E = -1$}` are integrated by `integrate`, giving logarithms. `None` for other terms.
+/// An antiderivative of the held sum `{$sum_(k = a)^oo f$}` of the arguments `[f, k, a, oo]` with respect to `x`,
+/// term by term. For `{$f = C(k) B^E$}`, `B` being linear in `x` and `E` affine in `k`, it is
+/// `{$C B^(E + 1) / ((E + 1) B')$}`, the terms where `{$E = -1$}` being integrated by `integrate`, giving logarithms.
+/// Other terms with such a factor `{$B^E$}` are integrated by `integrate` with a symbolic `k` (natural, at least `a`),
+/// as `{$G(x, k) - G(x_0, k)$}` with `{$B(x_0) = 0$}`, so that the terms vanish at the point of the series. `None`
+/// for other terms.
 pub fn integrate_held_sum(
     args: &[Expr],
     x: Symbol,
@@ -909,18 +912,14 @@ pub fn integrate_held_sum(
     }
     let mut start = Integer::try_from(&a.value).ok()?;
     let _guard = integer_index(k);
-    let (c, base, e) = power_of(body, x)?;
-    let slope = base.derivative(x);
-    if slope.is_zero() || depends(&slope, x) {
-        return None;
-    }
+    let (base, e) = linear_power(body, x)?;
     let (alpha, beta) = affine(&e, k)?;
     let mut res = zero();
     if alpha == 0u32 {
         if beta == -1 {
             return None;
         }
-    } else if let Ok(k0) = Integer::try_from(&((Rational::from(-1) - beta) / alpha))
+    } else if let Ok(k0) = Integer::try_from(&((Rational::from(-1) - &beta) / &alpha))
         && k0 >= start
     {
         // `{$integral B^(-1) = ln|B| / B'$}` and the terms before
@@ -932,9 +931,133 @@ pub fn integrate_held_sum(
             start += Integer::from(1);
         }
     }
-    let e1 = e + one();
-    let antiderivative = c * base.pow(&e1) / (e1 * slope);
-    Some(res + tidy_held_sum(&antiderivative, k, &value(Rational::from(start)), x))
+    let first = value(Rational::from(&start));
+    if let Some((c, power_base, e)) = power_of(body, x)
+        && power_base == base
+    {
+        let e1 = e + one();
+        let antiderivative = c * base.pow(&e1) / (e1 * base.derivative(x));
+        return Some(res + tidy_held_sum(&antiderivative, k, &first, x));
+    }
+    // With a symbolic `k`, the terms vanishing at the root of `B` when `{$E > 0$}`
+    if alpha <= 0u32 {
+        return None;
+    }
+    let _natural = natural_index(k, &start);
+    let antiderivative = integrate(body)?;
+    if has_held_sum(&antiderivative) {
+        return None;
+    }
+    let slope = base.derivative(x);
+    let x0 = -subs(&base, x, &zero()) / slope;
+    let at_x0 = antiderivative.limit(x, &x0, Direction::Right).ok()?;
+    if depends(&at_x0, x) || has_special_constant(&at_x0) {
+        return None;
+    }
+    Some(res + tidy_held_sum(&(antiderivative - at_x0), k, &first, x))
+}
+
+/// The held sum `{$sum_(k = a)^oo f(k)$}` of the arguments `[f, k, a, oo]` with `x` replaced by the constant `point`,
+/// when it converges there by the ratio test (`{$lim_(k -> oo) |f(k + 1)/f(k)| < 1$}`), `None` otherwise. Zero when
+/// every term vanishes.
+pub fn held_sum_at(args: &[Expr], x: Symbol, point: &Expr) -> Option<Expr> {
+    let [body, Term::Symbol(k), a, b] = args else {
+        return None;
+    };
+    let k = k.symbol;
+    if k == x || *b != variable(Context::OO) || depends(a, x) {
+        return None;
+    }
+    let _guard = integer_index(k);
+    // At the root of a factor `{$B^E$}` with `{$E > 0$}` for every `{$k >= a$}`, every term vanishes
+    if let Some((base, e)) = linear_power(body, x)
+        && subs(&base, x, point).expand().is_zero()
+        && let Some((alpha, beta)) = affine(&e, k)
+        && let Term::Value(a) = a
+        && alpha >= 0u32
+        && alpha * &a.value + beta > 0u32
+    {
+        return Some(zero());
+    }
+    let body = subs(body, x, point);
+    if body.expand().is_zero() {
+        return Some(zero());
+    }
+    let next = subs(&body, k, &(variable(k) + one()));
+    let ratio = fun(Context::ABS, &next / &body);
+    let limit = ratio.limit(k, &variable(Context::OO), Direction::Both).ok()?;
+    (constant_sign(&(one() - limit)) == Some(Ordering::Greater))
+        .then(|| tidy_held_sum(&body, k, a, x))
+}
+
+/// `{$S(b) - S(a)$}` for the held sum `S` of the arguments `[f, k, a, oo]` in `x`, as a single held sum, when it
+/// converges at both points (see [`held_sum_at`]).
+pub fn held_sum_between(args: &[Expr], x: Symbol, a: &Expr, b: &Expr) -> Option<Expr> {
+    let (at_a, at_b) = (held_sum_at(args, x, a)?, held_sum_at(args, x, b)?);
+    let [body, Term::Symbol(k), start, _] = args else {
+        return None;
+    };
+    if at_a.is_zero() || at_b.is_zero() {
+        return Some(at_b - at_a);
+    }
+    let _guard = integer_index(k.symbol);
+    let difference = subs(body, x, b) - subs(body, x, a);
+    Some(tidy_held_sum(&difference, k.symbol, start, x))
+}
+
+/// Whether `term` has a held sum.
+pub fn has_held_sum(term: &Expr) -> bool {
+    let found = std::cell::Cell::new(false);
+    map_tree(term, &|t| {
+        if let Term::Fun(f) = t
+            && f.get_ident() == Context::held_sum()
+        {
+            found.set(true);
+        }
+        None
+    });
+    found.get()
+}
+
+/// Assume the index `k` of a held sum starting at `start` natural and at least `start`, as far as signs go.
+fn natural_index(k: Symbol, start: &Integer) -> Option<AssumptionsGuard> {
+    let mut assumptions = Assumptions::current();
+    let sign = if *start >= 1u32 {
+        SignSet::POSITIVE
+    } else if *start >= 0u32 {
+        SignSet::NONNEGATIVE
+    } else {
+        return None;
+    };
+    assumptions
+        .assume(
+            k,
+            Assumption {
+                sign,
+                integer: true,
+            },
+        )
+        .ok()?;
+    Some(assumptions.enter())
+}
+
+/// The factor `{$B^E$}` of `body` with `B` linear in `x` and `E` free of `x`, depending on another symbol.
+fn linear_power(body: &Expr, x: Symbol) -> Option<(Expr, Expr)> {
+    let factors: Vec<&Expr> = match body {
+        Term::Mul(mul) => mul.iter().collect(),
+        _ => vec![body],
+    };
+    factors.into_iter().find_map(|factor| {
+        let Term::Pow(pow) = factor else {
+            return None;
+        };
+        let slope = pow.base.derivative(x);
+        (!slope.is_zero()
+            && !depends(&slope, x)
+            && !depends(&pow.exponant, x)
+            && !pow.exponant.symbols().is_empty())
+        .then(|| ((*pow.base).clone(), (**pow.exponant).clone()))
+    })
 }
 
 /// The factor `{$B^E$}` of `body` depending on `x`, with `E` depending on `k`, as `(C, B, E)` with `{$C B^E$}` =
@@ -1131,10 +1254,25 @@ fn consistent_at_sample(rows: &[Vec<Elem>], unknowns: usize) -> bool {
 fn tidy_term(term: &Expr, k: Symbol) -> Expr {
     let term = combine_factorials(&split_powers(term, k));
     let term = combine_factorials(&split_powers(&half_gammas(&duplicate_gammas(&term)), k));
-    tidy(&merge_powers(
+    factor_denominators(&tidy(&merge_powers(
         &absorb_coefficients(&clear_denominators(&binomials(&term, k))),
         k,
-    ))
+    )))
+}
+
+/// Sums raised to negative integer powers factored, like `{$1/(k! + 2k k!) = 1/((2k + 1) k!)$}`.
+fn factor_denominators(term: &Expr) -> Expr {
+    map_tree(term, &|t| {
+        let Term::Pow(pow) = t else { return None };
+        let (Term::Add(_), Term::Value(e)) = (&*pow.base, &**pow.exponant) else {
+            return None;
+        };
+        if e.value >= 0u32 || e.value.denominator_ref() != &1u32 {
+            return None;
+        }
+        let factored = pow.base.factor();
+        (size(&factored) <= size(&pow.base) + 2).then(|| factored.pow(&pow.exponant))
+    })
 }
 
 /// Powers of values whose exponent is a multiple of `k` merged into a power of a larger value, like

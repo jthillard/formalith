@@ -15,7 +15,8 @@ Ideas and known gaps, roughly by area. `AGENTS.md` describes what exists; this f
 - **Known non-holonomic series** beyond a kernel with Bernoulli or Euler numbers times a power of `x`:
   `tan(x)^2`, `tan(x) / (1 + x)`, `tan(x)` at 1.
 - **Held sums**:
-  - definite integrals term by term, and integrals of terms that aren't a power of a linear term;
+  - definite integrals on the boundary of the disk of convergence (`integrate(series(1/(1 + x), x, 0, oo), x, 0, 1)`,
+    Abel's theorem) and on infinite intervals;
   - partial sums on the GPU (`Numeric::Sum` is NaN there).
 
 ## Solving

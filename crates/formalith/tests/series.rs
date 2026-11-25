@@ -411,6 +411,36 @@ fn held_sums_term_by_term() {
         eval("approx(subs(series(1/(1 - x + 2*x^2), x, 0, oo), x, 1/10))"),
         "1.08695652173913"
     );
+    // Definite integrals term by term, inside the disk of convergence
+    assert_eq!(
+        eval("integrate(series(exp(x^2), x, 0, oo), x, 0, 1)"),
+        "sum(((2*k+1)^-1)*(k!^-1), k, 0, oo)"
+    );
+    for (integrand, a, b) in [
+        ("series(exp(x^2), x, 0, oo)", "0", "1"),
+        ("series(cos(x), x, 0, oo)", "-1", "1"),
+        ("series(exp(-x)/x, x, 0, oo)", "1", "2"),
+        ("series(1/(1-x), x, 0, oo)", "0", "1/2"),
+        ("ln(x)*series(exp(x), x, 0, oo)", "1", "2"),
+        ("x^2*series(cos(x), x, 0, oo)", "0", "1"),
+    ] {
+        let integral = format!("integrate({integrand}, x, {a}, {b})");
+        let res = eval(&integral);
+        assert!(res.contains("sum("), "{integral}: {res}");
+        let function = integrand.replace(", x, 0, oo)", ")").replace("series(", "(");
+        assert_eq!(
+            eval(&format!("approx({integral})")),
+            eval(&format!("approx(integrate({function}, x, {a}, {b}))")),
+            "{integral}"
+        );
+    }
+    // Outside of it they stay unevaluated
+    assert!(eval("integrate(series(1/(1-x), x, 0, oo), x, 0, 2)").starts_with("integrate("));
+    // Other factors go inside the terms
+    assert_eq!(
+        eval("integrate(x*series(exp(x), x, 0, oo), x)"),
+        eval("sum(x^k/(k*(k - 2)!), k, 2, oo)")
+    );
     // Sums equal to zero are zero at a bounded precision, quickly
     let start = std::time::Instant::now();
     assert_eq!(eval("approx(subs(series(sin(x), x, 0, oo), x, pi))"), "0.0");

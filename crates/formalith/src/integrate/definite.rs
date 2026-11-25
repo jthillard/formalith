@@ -17,7 +17,7 @@
 use crate::field::real::expr::sqrt;
 use crate::field::real::expr::{
     DIGITS, Expr, Real, constant_sign, depends, fun, half, has_special_constant, infinity_sign,
-    is_infinite, map_tree, one, unary, value, variable, zero,
+    is_infinite, map_tree, one, subs, unary, value, variable, zero,
 };
 use std::{
     cell::{Cell, RefCell},
@@ -201,7 +201,20 @@ pub(super) fn integrate(f: &Expr, x: Symbol, a: &Expr, b: &Expr) -> IntegrateRes
     if let Some(res) = symmetric(f, x, a, b, interval) {
         return res;
     }
-    let antiderivative = f.integrate(x)?;
+    let mut antiderivative = f.integrate(x)?;
+    // Whole series at the bounds, inside their disks of convergence, the rest as usual
+    let mut series = zero();
+    let mut f = f;
+    let derivative;
+    if let Some((sums, rest)) = held_sums_at_bounds(&antiderivative, x, a, b) {
+        series = sums;
+        derivative = rest.derivative(x);
+        f = &derivative;
+        antiderivative = rest;
+    }
+    if !depends(&antiderivative, x) {
+        return Ok(series);
+    }
     let mut points = vec![];
     singular_points(f, x, (a_value, b_value), &mut points)?;
     singular_points(&antiderivative, x, (a_value, b_value), &mut points)?;
@@ -219,7 +232,48 @@ pub(super) fn integrate(f: &Expr, x: Symbol, a: &Expr, b: &Expr) -> IntegrateRes
         .filter(|(p, _)| !near(*p, a_value) && !near(*p, b_value))
         .map(|(_, point)| (point.clone(), false));
     bounds.splice(1..1, inner);
-    evaluate(&antiderivative, x, &bounds)
+    Ok(series + evaluate(&antiderivative, x, &bounds)?)
+}
+
+/// `{$S(b) - S(a)$}` for the terms `S` of the antiderivative `{$F = S + R$}` with a held sum, as `(S(b) - S(a), R)`,
+/// when each one is a constant times a held sum converging at both bounds. `None` when `F` has no held sum, or when
+/// they don't converge.
+fn held_sums_at_bounds(antiderivative: &Expr, x: Symbol, a: &Expr, b: &Expr) -> Option<(Expr, Expr)> {
+    let terms: Vec<&Expr> = match antiderivative {
+        Term::Add(add) => add.iter().collect(),
+        _ => vec![antiderivative],
+    };
+    let (mut sums, mut rest) = (zero(), zero());
+    let mut found = false;
+    for term in terms {
+        let factors: Vec<&Expr> = match term {
+            Term::Mul(mul) => mul.iter().collect(),
+            _ => vec![term],
+        };
+        let Some(Term::Fun(sum)) = factors.iter().copied().find(
+            |factor| matches!(factor, Term::Fun(fun) if fun.get_ident() == Context::held_sum()),
+        ) else {
+            rest = rest + term;
+            continue;
+        };
+        let c = term / &Term::Fun(sum.clone());
+        let args = sum.get_args::<Real>()?;
+        if depends(&c, x) {
+            // `{$c(b) S(b) - c(a) S(a)$}`, `c` being finite at the bounds
+            let at = |point: &Expr| {
+                let factor = subs(&c, x, point);
+                if has_special_constant(&factor) {
+                    return None;
+                }
+                Some(factor * crate::sum::held_sum_at(args, x, point)?)
+            };
+            sums = sums + at(b)? - at(a)?;
+        } else {
+            sums = sums + c * crate::sum::held_sum_between(args, x, a, b)?;
+        }
+        found = true;
+    }
+    found.then_some((sums, rest))
 }
 
 /// `{$integral_a^b f$}` as a sum of integrals on the pieces of the interval where the arguments of `abs` and `sign`

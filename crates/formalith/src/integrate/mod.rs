@@ -68,7 +68,7 @@ use crate::{
         },
         sign::{SignMode, sign_set},
     },
-    term::{Expand, Mul, Normalize, Term},
+    term::{Expand, Fun, Mul, Normalize, Term},
 };
 
 use poly::Poly;
@@ -162,6 +162,10 @@ impl Term<Real> {
         profile_scope!("integrate_definite");
         // Antiderivatives evaluated at the bounds often give sums which cancel once expanded, like iterated integrals
         definite::integrate(self, x, a, b).map(|res| {
+            // Whole series keep their factored terms
+            if crate::sum::has_held_sum(&res) {
+                return res;
+            }
             let expanded = res.expand();
             if size(&expanded) < size(&res) {
                 expanded
@@ -229,6 +233,12 @@ impl Integrator {
         {
             let args = fun.get_args::<Real>()?;
             return crate::sum::integrate_held_sum(args, x, &mut |t| self.integrate(t, x));
+        }
+        // A whole series times other factors, with them inside its terms
+        if let Some(sum) = held_sum_product(f, x)
+            && let Some(res) = self.integrate(&sum, x)
+        {
+            return Some(res);
         }
         if let Some(g) = merge_square_roots(f, x).or_else(|| pull_common_factors(f, x)) {
             return self.integrate(&g, x);
@@ -444,4 +454,31 @@ fn is_positive(u: &Expr, x: Symbol) -> bool {
         && c.iter()
             .enumerate()
             .all(|(i, c)| if i % 2 == 1 { *c == 0 } else { *c >= 0 })
+}
+
+/// The product `f` of a held sum `{$sum_(k = a)^oo t_k$}` and factors `g` depending on `x` as the held sum
+/// `{$sum_(k = a)^oo g t_k$}`, `None` for other terms (or when `g` has the index `k`).
+fn held_sum_product(f: &Expr, x: Symbol) -> Option<Expr> {
+    let Term::Mul(mul) = f else {
+        return None;
+    };
+    let mut sums = mul.iter().filter(|factor| {
+        matches!(factor, Term::Fun(fun) if fun.get_ident() == Context::held_sum())
+    });
+    let (Some(Term::Fun(sum)), None) = (sums.next(), sums.next()) else {
+        return None;
+    };
+    let [body, k @ Term::Symbol(index), rest @ ..] = sum.get_args::<Real>()?.as_slice() else {
+        return None;
+    };
+    let others = mul
+        .iter()
+        .filter(|factor| !matches!(factor, Term::Fun(fun) if fun.get_ident() == Context::held_sum()))
+        .fold(value(mul.coefficient.clone()), |res, factor| res * factor);
+    if !depends(&others, x) || depends(&others, index.symbol) {
+        return None;
+    }
+    let mut args = vec![others * body, k.clone()];
+    args.extend(rest.iter().cloned());
+    Some(Term::Fun(Box::new(Fun::new(Context::held_sum(), args, R))).normalize())
 }
