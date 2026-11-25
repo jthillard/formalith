@@ -28,7 +28,7 @@ use std::{str::FromStr, time::Duration};
 const POINTS: usize = 5;
 /// Relative (or absolute, near 0) tolerance between `approx` and the f64 evaluation.
 const F64_TOLERANCE: f64 = 1e-9;
-/// Relative perturbation of the point estimating the conditioning of the f64 evaluation.
+/// Relative perturbation of each intermediate result estimating the conditioning of the f64 evaluation.
 const PERTURBATION: f64 = 1e-12;
 /// Relative error of the intermediate f64 results, compared with [`PERTURBATION`].
 const ROUNDING: f64 = 1e-15;
@@ -79,6 +79,7 @@ fn approx(input: &str) -> Verdict {
     if let Some(name) = numeric.unsupported() {
         return Verdict::Skip(format!("`{name}` has no f64 form in `{f}`"));
     }
+    let perturbed = perturb(&numeric);
     let mut rng = case_rng(input);
     let mut checked = 0;
     for _ in 0..POINTS {
@@ -105,9 +106,9 @@ fn approx(input: &str) -> Verdict {
         if !fast.is_finite() {
             continue;
         }
-        // The rounding of intermediate results acts like a perturbation of the point, amplified by the
-        // conditioning: near a pole of an inner function, the f64 evaluation can't be trusted to the tolerance
-        let perturbed = numeric.eval(&[x0.mul_add(PERTURBATION, x0)]);
+        // The rounding of intermediate results is amplified by the conditioning: near a pole of an outer
+        // function, the f64 evaluation can't be trusted to the tolerance
+        let perturbed = perturbed.eval(&[x0]);
         let rounding_error = (perturbed - fast).abs() * (ROUNDING / PERTURBATION);
         if !perturbed.is_finite() || rounding_error > F64_TOLERANCE * exact.abs().max(1.0) {
             continue;
@@ -124,6 +125,25 @@ fn approx(input: &str) -> Verdict {
     } else {
         Verdict::Skip(format!("only {checked} points evaluated"))
     }
+}
+
+/// `numeric` with every intermediate result (the point included) multiplied by `1 + PERTURBATION`, constants
+/// staying exact (orders of `polygamma` must stay integers).
+fn perturb(numeric: &Numeric) -> Numeric {
+    let node = match numeric {
+        Numeric::Const(_) | Numeric::Unsupported(_) => return numeric.clone(),
+        Numeric::Var(_) => numeric.clone(),
+        Numeric::Add(terms) => Numeric::Add(terms.iter().map(perturb).collect()),
+        Numeric::Mul(factors) => Numeric::Mul(factors.iter().map(perturb).collect()),
+        Numeric::Pow(base, exponent) => {
+            Numeric::Pow(Box::new(perturb(base)), Box::new(perturb(exponent)))
+        }
+        Numeric::RationalPow(base, num, den) => {
+            Numeric::RationalPow(Box::new(perturb(base)), *num, *den)
+        }
+        Numeric::Fun(fun, args) => Numeric::Fun(*fun, args.iter().map(perturb).collect()),
+    };
+    Numeric::Mul(vec![Numeric::Const(1. + PERTURBATION), node])
 }
 
 /// The rational `p/q` of a sampled point.
@@ -273,5 +293,11 @@ fn bug_ill_conditioned_f64_evaluation() {
     // `{$-59581.74$}`, so the rounding of the argument changed the f64 evaluation by `{$2 dot 10^(-7)$}`: such
     // points are skipped
     let verdict = approx("polygamma(2, polygamma(2, ((-1*x + -2) * 2/4))); 1.9; 2");
+    assert!(!matches!(verdict, Verdict::Wrong(_)), "{verdict:?}");
+    // `{$op("erf")(-3x - 1)$}` is `{$-1 + 10^(-9)$}` there, near a pole of `{$psi'$}`: its rounding (`{$10^(-16)$}`) changed
+    // the f64 evaluation by `{$4 dot 10^(-8)$}`, while perturbing the point doesn't change the rounded `erf`
+    let verdict = approx(
+        "(polygamma(1, erf((-3*x + -1))) / (((3*x + 1) + (2*x + 1)) / (3/1)^3)); 1.08; 1.09",
+    );
     assert!(!matches!(verdict, Verdict::Wrong(_)), "{verdict:?}");
 }

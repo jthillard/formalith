@@ -78,7 +78,10 @@ fn limit(input: &str) -> Verdict {
                     return Verdict::Skip(format!("`{result}` isn't a number"));
                 };
                 let (e_far, e_near) = ((v_far - l).abs(), (v_near - l).abs());
-                if e_near > 1e-3 * l.abs().max(1.0) && e_near >= e_far / 5.0 {
+                // Small, or shrinking at least at a logarithmic rate (an error in `1/ln` halves between `10^-4`
+                // and `10^-8`, `ln(10^3)/ln(10^5) = 0.6` at infinity, more with an offset like in `1/(1 - ln x)`),
+                // while a wrong limit keeps a constant error
+                if e_near > 1e-3 * l.abs().max(1.0) && e_near > 0.75 * e_far {
                     return Verdict::Wrong(format!(
                         "lim = {result} = {l} but f({far}) = {v_far}, f({near}) = {v_near}"
                     ));
@@ -124,6 +127,7 @@ fn limits() {
             "floor(x); 2; -1",
             "(ln(x) + x)*(1 + 2*x); 0",
             "1 - ln(x); 0",
+            "1/(x^2 - ln(x)); 0",
         ],
         limit,
     );
