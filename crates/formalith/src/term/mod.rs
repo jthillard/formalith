@@ -1509,19 +1509,39 @@ impl<T: Ring> Term<T> {
                 (num, den)
             }
             Self::Add(add) => {
-                let mut num = Self::zero(self.get_set());
-                let mut den = Self::one(self.get_set());
-
-                for term in add {
-                    let (n, d) = term.as_fraction(unify);
-                    if d == den {
-                        num += n;
-                    } else {
-                        num *= &d;
-                        num += n * &den;
-                        den *= &d;
+                let set = self.get_set();
+                let fractions: Vec<_> = add.iter().map(|term| term.as_fraction(unify)).collect();
+                // Each distinct denominator once, `{$a/x + b/y + c/x = (a y + b x + c y)/(x y)$}`; multiplying the
+                // growing numerator by each new denominator instead nests it, and is exponential in the number of
+                // terms
+                let mut denominators: Vec<&Self> = vec![];
+                for (_, d) in &fractions {
+                    if !d.is_one() && !denominators.contains(&d) {
+                        denominators.push(d);
                     }
                 }
+                let cofactors: Vec<_> = (0..denominators.len())
+                    .map(|j| {
+                        denominators
+                            .iter()
+                            .enumerate()
+                            .filter(|&(l, _)| l != j)
+                            .fold(Self::one(set), |c, (_, d)| c * *d)
+                    })
+                    .collect();
+                let den = denominators.iter().fold(Self::one(set), |den, d| den * *d);
+                let num = fractions.iter().fold(Self::zero(set), |num, (n, d)| {
+                    // Terms without denominator are multiplied by the whole one
+                    let cofactor = denominators
+                        .iter()
+                        .position(|other| *other == d)
+                        .map_or(&den, |j| &cofactors[j]);
+                    if cofactor.is_one() {
+                        num + n
+                    } else {
+                        num + n * cofactor
+                    }
+                });
                 (num, den)
             }
             Self::Pow(pow) => {

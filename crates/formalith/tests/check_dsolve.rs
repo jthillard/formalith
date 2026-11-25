@@ -209,3 +209,9 @@ fn bug_dsolve_irrational_characteristic_roots_panic() {
 fn bug_dsolve_third_order_is_slow() {
     regression("2*y''' + y'' - 3*y' + y = cos(3*x)");
 }
+
+#[test]
+fn bug_dsolve_sin_forcing_is_slow() {
+    // `as_fraction` of the expanded particular solution was exponential in its number of terms
+    regression("1*y'' + -1*y' + 3*y = sin(x), y(0) = 1, y'(0) = 1");
+}
