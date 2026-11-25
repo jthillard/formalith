@@ -1,7 +1,7 @@
 //! Integrals of trigonometric and hyperbolic expressions.
 
 use crate::field::real::expr::{
-    Expr, depends, fun, one, ratio, size, sqrt, unary, value, variable,
+    Expr, depends, fun, one, ratio, size, sqrt, unary, value, variable, zero,
 };
 use malachite::{Rational, base::num::arithmetic::traits::Abs};
 
@@ -103,12 +103,12 @@ pub(super) fn hyperbolic_as_exp(f: &Expr, x: Symbol) -> Option<Expr> {
     (rewritten != *f).then_some(rewritten)
 }
 
-/// A product with two factors `sin` or `cos` of different arguments, written as a sum. When the product has a
-/// factor which isn't trigonometric, like `{$e^x$}`, factors of the same argument are merged too
-/// (`{$sin u cos u = sin(2u) / 2$}`), and powers are reduced (`{$sin^2 u = (1 - cos 2u) / 2$}`), so that the
-/// product becomes a sum of terms with a single `sin` or `cos`.
+/// A product with two factors `sin` or `cos` of different arguments, written as a sum, the rewrite being repeated
+/// on its terms (`{$sin a sin b cos c$}` has a single `sin` or `cos` per term). When the product has a factor which
+/// isn't trigonometric, like `{$e^x$}`, factors of the same argument are merged too (`{$sin u cos u = sin(2u) / 2$}`),
+/// and powers are reduced (`{$sin^2 u = (1 - cos 2u) / 2$}`), so that the product becomes a sum of terms with a
+/// single `sin` or `cos`.
 fn product_to_sum(f: &Expr) -> Option<Expr> {
-    let factors = factors(f);
     let is_trig = |factor: &Expr| {
         let base = match factor {
             Term::Pow(pow) => &*pow.base,
@@ -116,7 +116,31 @@ fn product_to_sum(f: &Expr) -> Option<Expr> {
         };
         matches!(unary(base), Some((Context::SIN | Context::COS, _)))
     };
-    let linearize = factors.iter().any(|factor| !is_trig(factor));
+    let linearize = factors(f).iter().any(|factor| !is_trig(factor));
+    let mut res = product_to_sum_once(f, linearize)?;
+    // Each rewrite lowers the number of trigonometric factors of a term, this only bounds the size of the result
+    for _ in 0..8 {
+        let terms = match &res {
+            Term::Add(add) => add.iter().cloned().collect(),
+            _ => vec![res.clone()],
+        };
+        let mut changed = false;
+        let rewritten = terms.into_iter().fold(zero(), |sum, term| {
+            sum + product_to_sum_once(&term, linearize)
+                .inspect(|_| changed = true)
+                .unwrap_or(term)
+        });
+        if !changed {
+            break;
+        }
+        res = rewritten;
+    }
+    Some(res)
+}
+
+/// One step of [`product_to_sum`], merging factors of the same argument and reducing powers when `linearize`.
+fn product_to_sum_once(f: &Expr, linearize: bool) -> Option<Expr> {
+    let factors = factors(f);
     let (sin, cos) = (
         |v: Expr| fun(Context::SIN, v),
         |v: Expr| fun(Context::COS, v),

@@ -230,3 +230,13 @@ fn bug_integrate_sqrt_over_linear_panics() {
 fn bug_integrate_product_of_square_roots_hangs() {
     regression("sqrt(2*x + 1)*sqrt(3*x + 1)", antiderivative);
 }
+
+#[test]
+fn bug_integrate_constant_times_three_trig_factors() {
+    // The constant factor used up the integrator's depth before the second product-to-sum rewrite
+    regression("2*sin(3*x/2)*sin(x)*cos(x)", antiderivative);
+    regression(
+        "sqrt(11)*exp(-x/2)*sin(sqrt(11)*x/2)*sin(x)*cos(x)",
+        antiderivative,
+    );
+}

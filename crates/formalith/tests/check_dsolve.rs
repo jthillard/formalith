@@ -215,3 +215,9 @@ fn bug_dsolve_sin_forcing_is_slow() {
     // `as_fraction` of the expanded particular solution was exponential in its number of terms
     regression("1*y'' + -1*y' + 3*y = sin(x), y(0) = 1, y'(0) = 1");
 }
+
+#[test]
+fn bug_dsolve_complex_roots_with_sin_2x_forcing() {
+    // The sums and constant factors of the variation of parameters used up the integrator's depth
+    regression("y'' - y' + 3*y = sin(2*x)");
+}
