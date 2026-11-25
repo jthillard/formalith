@@ -13,11 +13,29 @@ license-file = "LICENSE"
 formalith = { path = "crates/formalith" }
 formalith-session = { path = "crates/formalith-session" }
 
+# Debug builds: backtraces keep their lines, but binaries are much smaller and faster to link
+[profile.dev]
+debug = "line-tables-only"
+
+# Dependencies (malachite...) are built once, optimized, which speeds up the tests
+[profile.dev.package."*"]
+opt-level = 2
+debug = false
+
+# The fuzzers (`./dev fuzz --release`): optimized like `release`, but incremental, so that an edit doesn't rebuild the
+# whole crate
+[profile.fuzz]
+inherits = "release"
+incremental = true
+codegen-units = 256
+debug = "line-tables-only"
+
 # The wasm builds (`./dev web --release`, `./dev gui-web --release`): small binaries, native builds keep `release`
 [profile.wasm-release]
 inherits = "release"
 opt-level = "s"
-lto = "fat"
-codegen-units = 1
+# Thin LTO: builds about 35% faster than fat LTO with one codegen unit, for a wasm about 4% larger (brotli included)
+lto = "thin"
+codegen-units = 16
 strip = true
 panic = "abort"

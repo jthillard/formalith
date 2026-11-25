@@ -19,7 +19,7 @@ Commands:
 
 Options:
   --release   optimized build (wasm: profile wasm-release and wasm-opt; otherwise a debug build without wasm-opt),
-              recommended for fuzz
+              recommended for fuzz (profile fuzz: optimized and incremental)
   --profile   with the profiler window, F12 (gui, gui-web)
   --serve     serve the page once built, on port 8000 (web), 8001 (gui-web) or 8002 (docs)
 EOF
@@ -100,6 +100,8 @@ docs)
 test) exec cargo test --workspace "${cargo_flags[@]}" -- "${args[@]}" ;;
 fuzz)
     if ! ((${#args[@]})); then args=(fuzz); fi
+    # `--release` uses the profile `fuzz`, optimized but incremental
+    if [[ $release ]]; then cargo_flags=(--profile fuzz); fi
     exec cargo test -p formalith --test integration --no-fail-fast "${cargo_flags[@]}" -- --ignored "${args[@]}"
     ;;
 esac
