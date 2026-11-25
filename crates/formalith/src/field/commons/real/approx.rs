@@ -4,6 +4,8 @@
 //! then rounded to a number of significant decimal digits. The working precision is increased until the result
 //! has enough significant bits, which isn't a guarantee: the last digits can be wrong after a cancellation.
 
+use std::{cell::RefCell, thread::LocalKey};
+
 use malachite::{
     Integer, Natural, Rational,
     base::{
@@ -55,6 +57,13 @@ const MAX_EXACT_FACTORIAL: u64 = 10_000;
 const MAX_SUM_TERMS: i64 = 1000;
 /// Consecutive terms below the precision ending an infinite sum.
 const NEGLIGIBLE_TERMS: usize = 8;
+
+thread_local! {
+    /// `{$pi$}` at the last precisions used, see [`Fixed::cached`].
+    static PI: RefCell<Vec<(u64, Integer)>> = const { RefCell::new(Vec::new()) };
+    /// `{$ln 2$}` at the last precisions used.
+    static LN2: RefCell<Vec<(u64, Integer)>> = const { RefCell::new(Vec::new()) };
+}
 
 /// The substitution used by the numerical integration, depending on the bounds.
 enum Quadrature {
@@ -114,13 +123,42 @@ impl Fixed {
 
     /// `{$pi = 16 arctan(1/5) - 4 arctan(1/239)$}` (Machin's formula).
     fn pi(self) -> Integer {
-        self.arctan_inverse(5, false) * Integer::from(16)
-            - self.arctan_inverse(239, false) * Integer::from(4)
+        self.cached(&PI, || {
+            self.arctan_inverse(5, false) * Integer::from(16)
+                - self.arctan_inverse(239, false) * Integer::from(4)
+        })
     }
 
     /// `{$ln(2) = 2 "arctanh"(1/3)$}`.
     fn ln2(self) -> Integer {
-        self.arctan_inverse(3, true) << 1_u64
+        self.cached(&LN2, || self.arctan_inverse(3, true) << 1_u64)
+    }
+
+    /// A constant at this precision, computed by `compute` once per thread and precision (the terms of sums and
+    /// integrals use them again and again).
+    fn cached(
+        self,
+        cache: &'static LocalKey<RefCell<Vec<(u64, Integer)>>>,
+        compute: impl FnOnce() -> Integer,
+    ) -> Integer {
+        /// Number of precisions kept per constant.
+        const CACHED_PRECISIONS: usize = 4;
+        if let Some(value) = cache.with_borrow(|cache| {
+            cache
+                .iter()
+                .find(|(bits, _)| *bits == self.bits)
+                .map(|(_, value)| value.clone())
+        }) {
+            return value;
+        }
+        let value = compute();
+        cache.with_borrow_mut(|cache| {
+            if cache.len() >= CACHED_PRECISIONS {
+                cache.remove(0);
+            }
+            cache.push((self.bits, value.clone()));
+        });
+        value
     }
 
     /// `{$"arctanh"(y)$}` for `{$|y| < 1$}`, by its Taylor series.
@@ -1074,7 +1112,13 @@ const fn bits_for_digits(digits: u64) -> u64 {
 /// if the term contains symbols or can't be evaluated, like `{$ln(-1)$}`.
 pub fn approximate(term: &Term<Real>, digits: u64) -> Option<Rational> {
     let needed = bits_for_digits(digits) + GUARD_BITS / 2;
-    let max_bits = 4 * needed + 4096;
+    // Each term of a held sum is evaluated at the working precision, and more terms are needed as it grows, so a
+    // sum below `{$2^(-4 "needed")$}` is zero, like `{$sum (-1)^k pi^(2k + 1)/(2k + 1)!$}`
+    let max_bits = if has_held_sum(term) {
+        4 * needed
+    } else {
+        4 * needed + 4096
+    };
     let mut bits = needed + GUARD_BITS;
     loop {
         let value = Fixed { bits }.evaluate(term)?;
@@ -1097,6 +1141,22 @@ pub fn approximate(term: &Term<Real>, digits: u64) -> Option<Rational> {
         }
         let missing = u64::try_from(i64::try_from(needed).ok()? - significant).ok()?;
         bits = (bits + missing + GUARD_BITS).min(max_bits);
+    }
+}
+
+/// Whether `term` contains a held sum, the whole series of `series(f, x, a, oo)`.
+fn has_held_sum(term: &Term<Real>) -> bool {
+    match term {
+        Term::Value(_) | Term::Symbol(_) => false,
+        Term::Add(add) => add.iter().any(has_held_sum),
+        Term::Mul(mul) => mul.iter().any(has_held_sum),
+        Term::Pow(pow) => has_held_sum(&pow.base) || has_held_sum(&pow.exponant),
+        Term::Fun(fun) => {
+            fun.get_ident() == Context::held_sum()
+                || fun
+                    .get_args::<Real>()
+                    .is_some_and(|args| args.iter().any(has_held_sum))
+        }
     }
 }
 

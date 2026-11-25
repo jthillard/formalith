@@ -411,4 +411,10 @@ fn held_sums_term_by_term() {
         eval("approx(subs(series(1/(1 - x + 2*x^2), x, 0, oo), x, 1/10))"),
         "1.08695652173913"
     );
+    // Sums equal to zero are zero at a bounded precision, quickly
+    let start = std::time::Instant::now();
+    assert_eq!(eval("approx(subs(series(sin(x), x, 0, oo), x, pi))"), "0.0");
+    assert_eq!(eval("approx(subs(series(cos(x), x, 0, oo), x, pi/2))"), "0.0");
+    assert_eq!(eval("approx(subs(series(exp(x), x, 0, oo), x, 1) - e)"), "0.0");
+    assert!(start.elapsed().as_secs() < 10);
 }
