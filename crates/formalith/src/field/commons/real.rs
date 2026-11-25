@@ -3,7 +3,7 @@
 pub(crate) mod approx;
 pub(crate) mod expr;
 pub mod numeric;
-mod radicals;
+pub(crate) mod radicals;
 mod rewrite;
 pub(crate) mod rootof;
 pub(crate) mod sign;
@@ -239,6 +239,12 @@ impl Semiring for R<Rational> {
                     };
                     let positive = -Term::Mul(mul.clone());
                     return self.value(sign) * positive.pow(exponant);
+                }
+                (Term::Add(add), Term::Value(exponant))
+                    if exponant.value.denominator_ref() == &2u32
+                        && let Some(res) = self.half_angle_root(add, &exponant.value) =>
+                {
+                    return res;
                 }
                 (Term::Add(add), Term::Value(n))
                     if let Some(res) = radicals::power(add, &n.value) =>
@@ -642,6 +648,11 @@ impl Semiring for R<Rational> {
                     }
                 }
             },
+            Term::Add(add) => {
+                if let Some(res) = self.pythagorean(add) {
+                    return res;
+                }
+            }
             _ => {}
         }
         a
@@ -741,6 +752,45 @@ impl R<Rational> {
         let root = |x: Rational| self.value(x).pow(&self.value(Rational::from_signeds(1, 2)));
         let (plus, minus) = (root((&a + &d) / &two), root((&a - &d) / &two));
         Some(if b > 0 { plus + minus } else { plus - minus })
+    }
+
+    /// `{$(k plus.minus k cos a)^(m/2) = (2 k)^(m/2) |cos(a/2)|^m$}` (`{$|sin(a/2)|^m$}` for the minus sign) for a
+    /// constant angle `a` and `{$k > 0$}`, the sign of `{$cos(a/2)$}` being approximated, so that
+    /// `{$sqrt(2 + 2 cos 1) = 2 cos(1/2)$}`.
+    fn half_angle_root(self, add: &term::Add<Self>, exponant: &Rational) -> Option<Term<Self>> {
+        let (k, cos) = match add.iter().collect::<Vec<_>>().as_slice() {
+            [Term::Value(k), cos] | [cos, Term::Value(k)] => (&k.value, *cos),
+            _ => return None,
+        };
+        let (c, cos) = match cos {
+            Term::Mul(mul) => match mul.iter().collect::<Vec<_>>().as_slice() {
+                [cos] => (mul.coefficient.clone(), *cos),
+                _ => return None,
+            },
+            _ => (Rational::ONE, cos),
+        };
+        let (Context::COS, a) = expr::unary(cos)? else {
+            return None;
+        };
+        if *k <= 0u32
+            || (&c).abs() != *k
+            || !a.symbols().into_iter().all(Context::is_builtin_constant)
+        {
+            return None;
+        }
+        let half = a / &self.value(Rational::from(2));
+        let ident = if c > 0 { Context::COS } else { Context::SIN };
+        let f = self.fun(ident, half);
+        let root = match expr::constant_sign(&f) {
+            Some(Ordering::Greater) => f,
+            Some(Ordering::Less) => -f,
+            _ => self.fun(Context::ABS, f),
+        };
+        Some(
+            self.value(Rational::from(2) * k)
+                .pow(&self.value(exponant.clone()))
+                * root.pow(&self.value(exponant * Rational::from(2))),
+        )
     }
 
     /// Build the function `ident(arg)`, normalized.
@@ -850,6 +900,69 @@ impl R<Rational> {
             p += if p == 2 { 1 } else { 2 };
         }
         (s, r)
+    }
+
+    /// `{$c M sin(u)^2 + c M cos(u)^2 = c M$}`, for the pairs of terms of a sum with the same coefficient and the same
+    /// other factors `M`. Returns `None` if there is no such pair.
+    fn pythagorean(self, add: &term::Add<Self>) -> Option<Term<Self>> {
+        /// A term as its coefficient, the squared function and its argument, and its other factors.
+        type Split<'a> = (Rational, Symbol, &'a Term<Real>, Vec<&'a Term<Real>>);
+        fn split(term: &Term<Real>) -> Option<Split<'_>> {
+            let (coefficient, factors): (Rational, Vec<&Term<Real>>) = match term {
+                Term::Mul(mul) => (mul.coefficient.clone(), mul.iter().collect()),
+                _ => (Rational::ONE, vec![term]),
+            };
+            let (i, ident, arg) = factors.iter().enumerate().find_map(|(i, factor)| {
+                let Term::Pow(pow) = factor else { return None };
+                if !matches!(&**pow.exponant, Term::Value(n) if n.value == 2u32) {
+                    return None;
+                }
+                let (ident @ (Context::SIN | Context::COS), arg) = expr::unary(&pow.base)? else {
+                    return None;
+                };
+                Some((i, ident, arg))
+            })?;
+            let mut rest = factors;
+            rest.remove(i);
+            Some((coefficient, ident, arg, rest))
+        }
+        if !add
+            .iter()
+            .any(|t| split(t).is_some_and(|(_, ident, _, _)| ident == Context::SIN))
+        {
+            return None;
+        }
+        let terms: Vec<&Term<Self>> = add.iter().collect();
+        let splits: Vec<_> = terms.iter().map(|t| split(t)).collect();
+        let mut used = vec![false; terms.len()];
+        let mut res = Term::zero(self);
+        for i in 0..terms.len() {
+            let Some((c, Context::SIN, u, rest)) = &splits[i] else {
+                continue;
+            };
+            let partner = (0..terms.len()).find(|&j| {
+                !used[j]
+                    && matches!(&splits[j], Some((d, Context::COS, v, other))
+                        if d == c && v == u && other == rest)
+            });
+            if let Some(j) = partner {
+                used[i] = true;
+                used[j] = true;
+                res += rest
+                    .iter()
+                    .fold(self.value(c.clone()), |res, factor| res * *factor);
+            }
+        }
+        if !used.contains(&true) {
+            return None;
+        }
+        Some(
+            terms
+                .into_iter()
+                .zip(used)
+                .filter(|(_, used)| !used)
+                .fold(res, |res, (term, _)| res + term),
+        )
     }
 
     /// Merge positive constant radicals with the same exponant in a product, `{$2^(1/2) 3^(1/2) = 6^(1/2)$}`.

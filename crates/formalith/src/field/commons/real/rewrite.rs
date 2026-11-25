@@ -14,6 +14,8 @@ use crate::{
 
 /// Largest integer `k` for which `{$sin(k u)$}` and `{$cos(k u)$}` are expanded by `simplify`.
 const MAX_MULTIPLE_ANGLE: i64 = 6;
+/// Largest number of `sin` and `cos` factors (with multiplicity) of a product written as a sum by `simplify`.
+const MAX_LINEARIZED_FACTORS: usize = 8;
 
 /// `expand(u)`: the addition formulas of `sin` and `cos` on arguments that are sums, then the expansion.
 pub(super) fn expand(u: &Expr) -> Expr {
@@ -22,7 +24,8 @@ pub(super) fn expand(u: &Expr) -> Expr {
 
 /// `simplify(u)`: the simplification of `u`, or of `u` rewritten with `{$exp(c ln u) = u^c$}`, integer quotients of
 /// logarithms, hyperbolic functions as exponentials, trigonometric functions of sums and multiple angles, and
-/// even powers of `sin` with `cos`, whichever is smaller.
+/// even powers of `sin` with `cos`, or the expansion of `u` with its products of `sin` and `cos` written as sums,
+/// whichever is smaller.
 pub(super) fn simplify(u: &Expr) -> Expr {
     profile_scope!("simplify");
     let simplified = u.simplify();
@@ -31,11 +34,75 @@ pub(super) fn simplify(u: &Expr) -> Expr {
     let candidate = hyperbolic_free(&candidate);
     let candidate = trigonometric_sums(&candidate, true);
     let candidate = even_powers_of_sin(&candidate).simplify();
-    if size(&candidate) < size(&simplified) {
+    let mut res = if size(&candidate) < size(&simplified) {
         candidate
     } else {
         simplified
+    };
+    let linearized = products_to_sums(u);
+    if linearized != *u {
+        let linearized = linearized.expand();
+        if size(&linearized) < size(&res) {
+            res = linearized;
+        }
     }
+    res
+}
+
+/// Rewrite the products of `sin` and `cos` as sums, `{$sin a cos b = (sin(a + b) + sin(a - b))/2$}`,
+/// `{$cos a cos b = (cos(a - b) + cos(a + b))/2$}`, `{$sin a sin b = (cos(a - b) - cos(a + b))/2$}`, so that
+/// `{$cos(2 x) cos(3 x) + sin(2 x) sin(3 x) = cos x$}` once expanded.
+fn products_to_sums(term: &Expr) -> Expr {
+    map_tree(term, &|t| {
+        let Term::Mul(mul) = t else { return None };
+        let mut factors = vec![];
+        let mut rest = value(mul.coefficient.clone());
+        for factor in mul {
+            let factor = products_to_sums(factor);
+            let (base, n) = match &factor {
+                Term::Pow(pow) => (&*pow.base, pow.exponant.to_i64().filter(|n| *n > 0)),
+                _ => (&factor, Some(1)),
+            };
+            match (unary(base), n.and_then(|n| usize::try_from(n).ok())) {
+                (Some((ident @ (Context::SIN | Context::COS), arg)), Some(n)) => {
+                    factors.extend(std::iter::repeat_n((ident, arg.clone()), n));
+                }
+                _ => rest *= &factor,
+            }
+        }
+        if factors.len() < 2 || factors.len() > MAX_LINEARIZED_FACTORS {
+            return None;
+        }
+        // The product as a sum of `{$c f(a)$}`
+        let half = Rational::from_signeds(1, 2);
+        let mut sum = vec![(Rational::from(1), factors[0].0, factors[0].1.clone())];
+        for (g, b) in &factors[1..] {
+            let mut next = vec![];
+            for (c, f, a) in sum {
+                let c = c * &half;
+                let (plus, minus) = (&a + b, &a - b);
+                next.extend(match (f, *g) {
+                    (Context::SIN, Context::SIN) => {
+                        [(c.clone(), Context::COS, minus), (-c, Context::COS, plus)]
+                    }
+                    (Context::COS, Context::COS) => {
+                        [(c.clone(), Context::COS, minus), (c, Context::COS, plus)]
+                    }
+                    (Context::SIN, _) => {
+                        [(c.clone(), Context::SIN, plus), (c, Context::SIN, minus)]
+                    }
+                    // `{$cos a sin b = (sin(a + b) - sin(a - b))/2$}`
+                    _ => [(c.clone(), Context::SIN, plus), (-c, Context::SIN, minus)],
+                });
+            }
+            sum = next;
+        }
+        Some(
+            rest * sum
+                .into_iter()
+                .fold(Term::zero(R), |res, (c, f, a)| res + value(c) * fun(f, a)),
+        )
+    })
 }
 
 /// `term` with its hyperbolic functions written with exponentials.

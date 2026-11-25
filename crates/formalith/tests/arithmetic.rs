@@ -2,7 +2,7 @@
 use formalith::{
     field::real::R,
     parse, symbol,
-    term::{Normalize, Term},
+    term::{Expand, Normalize, Term},
 };
 use malachite::Rational;
 
@@ -499,8 +499,61 @@ fn rationalized_denominators() {
         parse!("1/(2^(1/3)+4^(1/3))", R),
         parse!("(2*2^(1/3)+4^(1/3)-2)/6", R)
     );
-    // Unrelated roots of different orders stay
-    assert!(matches!(parse!("1/(sqrt(2)+3^(1/3))", R), Term::Pow(_)));
+    // Bases and orders mixed, in the tower of the radicals
+    assert_eq!(
+        parse!("1/(sqrt(2)+3^(1/3))", R),
+        parse!(
+            "6-4*sqrt(2)+4*3^(1/3)+3*9^(1/3)-3*sqrt(2)*3^(1/3)-2*sqrt(2)*9^(1/3)",
+            R
+        )
+    );
+    assert_eq!(
+        parse!("1/(1+6^(1/4))", R),
+        parse!("(6^(1/4)-sqrt(6)+216^(1/4)-1)/5", R)
+    );
+    assert_eq!(
+        parse!("1/(1+(2/3)^(1/3))", R),
+        parse!("(3+12^(1/3)-18^(1/3))/5", R)
+    );
+    for x in [
+        "sqrt(2)+3^(1/3)",
+        "2^(1/2)+2^(1/3)",
+        "1+sqrt(2)+5^(1/4)",
+        "1+sqrt(2+sqrt(2))",
+        "sqrt(3)+sqrt(2+sqrt(2))",
+    ] {
+        let x = parse!(x, R);
+        assert!(!matches!(x.inv(), Term::Pow(_)), "{x}");
+        assert_eq!((&x * &x.inv()).expand(), rational(1, 1), "{x}");
+    }
+    // Nested radicals
+    assert_eq!(
+        parse!("1/(1+sqrt(2+sqrt(2)))", R),
+        parse!("1-sqrt(2)-sqrt(2+sqrt(2))+sqrt(2)*sqrt(2+sqrt(2))", R)
+    );
+}
+
+#[test]
+fn pythagorean_identity() {
+    assert_eq!(parse!("sin(x)^2+cos(x)^2", R), rational(1, 1));
+    assert_eq!(parse!("3*x*sin(y)^2+3*x*cos(y)^2+1", R), parse!("3*x+1", R));
+    assert_eq!(
+        parse!("sin(1)^2+2*cos(1)+cos(1)^2+1", R),
+        parse!("2+2*cos(1)", R)
+    );
+    // Only pairs with the same coefficient
+    assert!(matches!(parse!("2*sin(x)^2+cos(x)^2", R), Term::Add(_)));
+}
+
+#[test]
+fn half_angle_roots() {
+    assert_eq!(parse!("sqrt(2+2*cos(1))", R), parse!("2*cos(1/2)", R));
+    assert_eq!(parse!("sqrt(1-cos(1))", R), parse!("sqrt(2)*sin(1/2)", R));
+    assert_eq!(parse!("1/sqrt(2+2*cos(1))", R), parse!("1/(2*cos(1/2))", R));
+    // `{$cos 2 < 0$}`
+    assert_eq!(parse!("sqrt(2+2*cos(4))", R), parse!("-2*cos(2)", R));
+    // Not for symbolic angles, whose sign is unknown
+    assert!(matches!(parse!("sqrt(1+cos(x))", R), Term::Pow(_)));
 }
 
 #[test]

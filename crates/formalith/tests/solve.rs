@@ -708,6 +708,13 @@ fn trigonometric_equations_with_half_angle_forms() {
         solve("cos(x) + sin(x - 1) = 0"),
         ok("x = -frac(1, 4) pi+pi k+frac(1, 2) \\ k in ZZ")
     );
+    // The amplitude `{$sqrt((1 + cos 1)^2 + sin(1)^2) = 2 cos(1/2)$}`, by `{$sin^2 + cos^2 = 1$}` and the half angle
+    assert_eq!(
+        solve("sin(x) + sin(x + 1) = 1"),
+        ok(
+            "x = arcsin(frac(frac(1, 2), cos(frac(1, 2))))+2 pi k-frac(1, 2) \\ x = pi-arcsin(frac(frac(1, 2), cos(frac(1, 2))))+2 pi k-frac(1, 2) \\ k in ZZ"
+        )
+    );
 }
 
 #[test]

@@ -3,7 +3,7 @@ use formalith::{
     field::{complex::C, real::R},
     parse,
     parser::environment::Environment,
-    term::Expand,
+    term::{Expand, Term},
 };
 
 use crate::common::{line, pretty};
@@ -318,4 +318,19 @@ fn approximations() {
         eval("approx(x+exp(i))"),
         "x+0.54030230586814+0.841470984807897*i"
     );
+}
+
+#[test]
+fn rationalized_denominators() {
+    assert_eq!(parse!("1/(1+i*sqrt(2))", C), parse!("(1-i*sqrt(2))/3", C));
+    assert_eq!(parse!("1/(sqrt(2)+i)", C), parse!("(sqrt(2)-i)/3", C));
+    assert_eq!(parse!("(1+i*sqrt(3))^2", C), parse!("2*(i*sqrt(3)-1)", C));
+    assert_eq!(parse!("sqrt(2)*(1+i*sqrt(2))", C), parse!("sqrt(2)+2*i", C));
+    // Real radicals have the forms of `{$RR$}`
+    assert_eq!(eval("1/(1+sqrt(2))"), line(&parse!("1/(1+sqrt(2))", R)));
+    for z in ["1+i*sqrt(2)", "sqrt(2)+i*3^(1/3)", "i+sqrt(2+sqrt(2))"] {
+        let z = parse!(z, C);
+        assert!(!matches!(z.inv(), Term::Pow(_)), "{z}");
+        assert_eq!((&z * &z.inv()).expand(), parse!("1", C), "{z}");
+    }
 }

@@ -4,7 +4,10 @@ use std::cmp::Ordering;
 
 use malachite::{
     Integer, Rational,
-    base::num::{arithmetic::traits::UnsignedAbs, basic::traits::Zero},
+    base::num::{
+        arithmetic::traits::UnsignedAbs,
+        basic::traits::{One, Zero},
+    },
 };
 
 use super::C;
@@ -15,10 +18,11 @@ use crate::{
         real::{
             R,
             expr::{self, Expr, Real, fun, half, one, size, value, variable, zero},
+            radicals,
             sign::{SignMode, sign},
         },
     },
-    term::{Expand, Fun, Normalize, Term, Value},
+    term::{Expand, Fun, Normalize, Term, Value, flags::Flags},
 };
 
 /// A complex expression over `{$CC$}`.
@@ -133,6 +137,74 @@ pub(super) fn join(u: &Expr, v: &Expr) -> Option<Complex> {
         return Some((&*pow.base / &c).expand().inv());
     }
     Some(res)
+}
+
+/// Whether `f` is a constant radical expression: Gaussian rationals and roots of positive rationals or of positive
+/// real radical sums, with sums, products and integer powers.
+pub(super) fn is_radical_constant(f: &Complex) -> bool {
+    if f.is_approximate() {
+        return false;
+    }
+    match f {
+        Term::Value(_) => true,
+        Term::Add(add) => add.iter().all(is_radical_constant),
+        Term::Mul(mul) => mul.iter().all(is_radical_constant),
+        Term::Pow(pow) => match (&*pow.base, &**pow.exponant) {
+            (Term::Value(b), Term::Value(e)) => {
+                b.value[1] == 0 && b.value[0] > 0 && e.value[1] == 0
+            }
+            // Integer powers of sums, and nested roots of positive real sums
+            (base @ Term::Add(_), Term::Value(e)) => {
+                e.value[1] == 0
+                    && is_radical_constant(base)
+                    && (e.value[0].denominator_ref() == &1u32
+                        || split(base).is_some_and(|(u, v)| {
+                            v.is_zero() && expr::constant_sign(&u) == Some(Ordering::Greater)
+                        }))
+            }
+            _ => false,
+        },
+        Term::Symbol(_) | Term::Fun(_) => false,
+    }
+}
+
+/// The product of the constant radical factors `factors` and of `c`, expanded through its parts, the real ones
+/// rationalizing their denominators (`{$1/(sqrt(2) + i) = (sqrt(2) - i)/3$}`). `None` when a part can't be written.
+pub(super) fn expand_radical_product(c: &[Rational; 2], factors: &[&Complex]) -> Option<Complex> {
+    let (u, v) = factors
+        .iter()
+        .try_fold((value(c[0].clone()), value(c[1].clone())), |z, f| {
+            Some(product(&z, &split(f)?))
+        })?;
+    join_expanded(&u, &v)
+}
+
+/// `{$u + i v$}` with both parts expanded, and the positive content of their rational coefficients out, as real
+/// radical sums are written: `{$(sqrt(2) - i)/3$}`.
+fn join_expanded(u: &Expr, v: &Expr) -> Option<Complex> {
+    let terms = |t: Expr| match t {
+        Term::Add(add) => add.iter().cloned().collect(),
+        t => vec![t],
+    };
+    let (u, v) = (terms(u.expand()), terms(v.expand()));
+    let coefficient = |t: &Expr| match t {
+        Term::Value(c) => c.value.clone(),
+        Term::Mul(mul) => mul.coefficient.clone(),
+        _ => Rational::ONE,
+    };
+    let content = radicals::content(u.iter().chain(&v).map(coefficient));
+    if content == 0u32 {
+        return Some(Term::zero(C));
+    }
+    let scale = value(Rational::ONE / &content);
+    let i = Term::Value(Value::new(C.i(), C));
+    let sum = u.iter().try_fold(Term::zero(C), |res, t| {
+        Some(res + to_complex(&(t * &scale))?)
+    })?;
+    let sum = v
+        .iter()
+        .try_fold(sum, |res, t| Some(res + &i * &to_complex(&(t * &scale))?))?;
+    Some(Term::Value(Value::new([content, Rational::ZERO], C)) * sum)
 }
 
 /// The real expression `f` as a complex expression, normalized. `None` for functions with non-real arguments.

@@ -307,6 +307,21 @@ impl C<R<Rational>> {
         Some(Term::Value(Value::new(z, self)))
     }
 
+    /// The expansion of the constant radical factors of a product, with its coefficient, when one of them is a sum
+    /// and there is another one or the coefficient isn't real (`{$sqrt(2) (1 + i sqrt(2)) = sqrt(2) + 2 i$}`). Other
+    /// factors are kept.
+    fn expand_radical_product(mul: &Mul<Self>) -> Option<Term<Self>> {
+        let (radicals, rest): (Vec<&Term<Self>>, Vec<&Term<Self>>) =
+            mul.iter().partition(|f| parts::is_radical_constant(f));
+        if !radicals.iter().any(|f| matches!(f, Term::Add(_)))
+            || (radicals.len() < 2 && mul.coefficient[1] == 0)
+        {
+            return None;
+        }
+        let product = parts::expand_radical_product(&mul.coefficient, &radicals)?;
+        Some(rest.into_iter().fold(product, |res, f| res * f))
+    }
+
     /// Normalize `base^exponant` where both are constants.
     fn normalize_constant_pow(
         self,
@@ -465,6 +480,14 @@ impl Semiring for C<R<Rational>> {
                         return res;
                     }
                 }
+                (Term::Add(_), Term::Value(exponant))
+                    if Self::as_integer(&exponant.value).is_some_and(|n| !(0..2).contains(&n))
+                        && parts::is_radical_constant(&a)
+                        && let Some(res) = parts::expand_radical_product(&self.one(), &[&a]) =>
+                {
+                    // `{$1/(1 + i sqrt(2)) = (1 - i sqrt(2))/3$}`, `{$(1 + i sqrt(3))^2 = 2 i sqrt(3) - 2$}`
+                    return res;
+                }
                 (Term::Mul(mul), Term::Value(exponant))
                     if Self::as_integer(&exponant.value).is_some() =>
                 {
@@ -592,6 +615,11 @@ impl Semiring for C<R<Rational>> {
                     }
                 }
             },
+            Term::Mul(mul) => {
+                if let Some(res) = Self::expand_radical_product(mul) {
+                    return res;
+                }
+            }
             _ => {}
         }
         a

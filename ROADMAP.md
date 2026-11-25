@@ -39,10 +39,13 @@ Ideas and known gaps, roughly by area. `AGENTS.md` describes what exists; this f
 
 ## Simplification
 
-- **Rationalizing denominators** mixing radicals of different orders and bases (`1/(√2 + ∛3)`), with nested
-  radicals (`1/(1 + √(2 + √2))`) or in `C`.
-- Trigonometric solutions with several angles or no half-angle form keep nested forms, like
-  `asin(1/√(sin(1)² + 2 cos(1) + cos(1)² + 1))` (`sin² + cos² = 1` isn't applied there).
+- Radical towers above dimension 64 (`1/(1 + 6^(1/64) + sqrt(5))`), nested roots of sums that aren't positive, and
+  sums that are zero divisors of their tower (a reducible `y^q - b`) stay unrationalized; products of nested radical
+  sums aren't expanded (expanding them made Ferrari's roots too slow).
+- Constant radicals aren't fully canonical across inputs: roots of different orders aren't merged
+  (`72^(1/6)` vs `sqrt(2) 3^(1/3)`).
+- Trigonometric forms with several unrelated constant angles keep nested forms; `simplify` only linearizes products
+  of at most 8 `sin` / `cos` factors.
 
 ## Approximation
 

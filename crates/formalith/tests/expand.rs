@@ -231,6 +231,15 @@ fn simplify_trigonometric_identities() {
         parse!("0", R)
     );
     assert_eq!(parse!("simplify(cosh(x)^2-sinh(x)^2)", R), parse!("1", R));
+    // Products written as sums
+    assert_eq!(
+        parse!("simplify(cos(2*x)*cos(3*x)+sin(2*x)*sin(3*x))", R),
+        parse!("cos(x)", R)
+    );
+    assert_eq!(
+        parse!("simplify(2*sin(x)*cos(y)-sin(x+y))", R),
+        parse!("sin(x-y)", R)
+    );
 }
 
 #[test]
