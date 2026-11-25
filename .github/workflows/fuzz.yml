@@ -25,8 +25,15 @@ jobs:
     timeout-minutes: 240
     steps:
       - uses: actions/checkout@v4
-      - run: rustup show
+      # The nightly of last Monday rather than that of `rust-toolchain.toml` (`RUSTUP_TOOLCHAIN` overrides it), so the
+      # cache keyed by the rustc version is rebuilt once a week instead of every day
+      - run: echo "RUSTUP_TOOLCHAIN=nightly-$(date -d 'last monday' +%F)" >> "$GITHUB_ENV"
+      - run: rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal
+      # rust-cache's key ignores `[profile]`: without this, a profile change restores stale dependencies that are rebuilt
+      # every run and never saved again (the key still matches)
       - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ hashFiles('Cargo.toml', '.cargo/config.toml') }}
       - name: Run the fuzzers
         env:
           FORMALITH_FUZZ_CASES: ${{ inputs.cases || '300' }}
