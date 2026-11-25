@@ -475,6 +475,16 @@ fn cyclic_integration_by_parts() {
 }
 
 #[test]
+fn integration_by_parts_before_expanding() {
+    // `{$u' v = x (x / sqrt(x^2 + 1) + 1) / (x + sqrt(x^2 + 1)) = x / sqrt(x^2 + 1)$}` only as a whole
+    check("ln(x+sqrt(x^2+1))");
+    assert_eq!(
+        integrate("integrate(ln(x+sqrt(x^2+1)), x)"),
+        integrate("x*ln(x+sqrt(x^2+1))-sqrt(x^2+1)")
+    );
+}
+
+#[test]
 fn antiderivative_of_erf() {
     check("erf(x)");
 }

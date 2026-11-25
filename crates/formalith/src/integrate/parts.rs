@@ -34,7 +34,12 @@ pub(super) fn integrate(integrator: &mut Integrator, f: &Expr, x: Symbol) -> Opt
     ))
     .normalize();
     let v = integrator.integrate(&dv, x)?;
-    let rest = integrator.integrate(&(u.derivative(x) * &v).expand(), x)?;
+    // Unexpanded first, since expanding can split a product simplifying as a whole (`{$x (x / sqrt(x^2 + 1) + 1) /
+    // (x + sqrt(x^2 + 1))$}`) into terms integrated separately into huge results
+    let rest = u.derivative(x) * &v;
+    let rest = integrator
+        .integrate(&rest, x)
+        .or_else(|| integrator.integrate(&rest.expand(), x))?;
     Some(u * &v - rest)
 }
 
