@@ -487,6 +487,48 @@ fn nf_bernoulli(k: u32) -> f32 {
     }
 }
 
+// The Bernoulli number `B_n` (`B_1 = -1/2`) for a natural `n`, NaN beyond the f32 range (`n > 64`).
+fn nf_bernoulli_number(nf: f32) -> f32 {
+    if nf_undef(nf) || nf < 0.0 || fract(nf) != 0.0 || nf > 64.0 {
+        return nf_nan();
+    }
+    let n = u32(nf);
+    if n == 1u {
+        return -0.5;
+    }
+    if n % 2u == 1u {
+        return 0.0;
+    }
+    var table = array<f32, 33>(
+        1.000000000e+00f, 1.666666667e-01f, -3.333333333e-02f, 2.380952381e-02f, -3.333333333e-02f,
+        7.575757576e-02f, -2.531135531e-01f, 1.166666667e+00f, -7.092156863e+00f, 5.497117794e+01f,
+        -5.291242424e+02f, 6.192123188e+03f, -8.658025311e+04f, 1.425517167e+06f, -2.729823107e+07f,
+        6.015808739e+08f, -1.511631577e+10f, 4.296146431e+11f, -1.371165521e+13f, 4.883323190e+14f,
+        -1.929657934e+16f, 8.416930476e+17f, -4.033807185e+19f, 2.115074864e+21f, -1.208662652e+23f,
+        7.500866746e+24f, -5.038778101e+26f, 3.652877648e+28f, -2.849876930e+30f, 2.386542750e+32f,
+        -2.139994926e+34f, 2.050097572e+36f, -2.093800591e+38f
+    );
+    return table[n / 2u];
+}
+
+// The Euler number `E_n` for a natural `n`, NaN beyond the f32 range (`n > 38`).
+fn nf_euler_number(nf: f32) -> f32 {
+    if nf_undef(nf) || nf < 0.0 || fract(nf) != 0.0 || nf > 38.0 {
+        return nf_nan();
+    }
+    let n = u32(nf);
+    if n % 2u == 1u {
+        return 0.0;
+    }
+    var table = array<f32, 20>(
+        1.000000000e+00f, -1.000000000e+00f, 5.000000000e+00f, -6.100000000e+01f, 1.385000000e+03f,
+        -5.052100000e+04f, 2.702765000e+06f, -1.993609810e+08f, 1.939151214e+10f, -2.404879675e+12f,
+        3.703711882e+14f, -6.934887439e+16f, 1.551453416e+19f, -4.087072509e+21f, 1.252259641e+24f,
+        -4.415438932e+26f, 1.775193916e+29f, -8.072329924e+31f, 4.122206034e+34f, -2.348958053e+37f
+    );
+    return table[n / 2u];
+}
+
 // `psi^((m))(x)`, by the recurrence up to `x >= 10` then the asymptotic series.
 fn nf_polygamma(mf: f32, x0: f32) -> f32 {
     if nf_undef(mf) || nf_undef(x0) || mf < 0.0 || fract(mf) != 0.0 || mf > 100.0 || (x0 <= 0.0 && fract(x0) == 0.0)

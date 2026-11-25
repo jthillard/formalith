@@ -427,6 +427,9 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {{
             "piecewise(x < 0, -x, x <= 1, x^2, x > 2, a, x >= 3, b, 1)",
             "piecewise(x < 0, -x, x > 1, x^2)",
             "integrate(exp(x^3), x)",
+            "series(sin(x/8), x, 0, oo)",
+            "series(1/(1 - x/400), x, 0, oo)",
+            "series(tan(x/40) + 1/cos(x/40), x, 0, oo)",
         ];
         for input in cases {
             let expr = compile(input);

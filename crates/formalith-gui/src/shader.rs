@@ -1,8 +1,8 @@
 //! WGSL code of the graphs evaluated per pixel, implicit relations and regions: [`Numeric`] expressions compiled to
 //! WGSL functions, inside the shader drawing them ([`render`]). Curves are sampled on the CPU ([`crate::geometry`]).
 //!
-//! WGSL has no recursion, so the expression tree is flattened into a sequence of `let`s. Values are `f32`, undefined
-//! ones NaN, like with [`Numeric::eval`].
+//! WGSL has no recursion, so the expression tree is flattened into a sequence of `let`s, and the infinite sums of
+//! whole series into bounded loops. Values are `f32`, undefined ones NaN, like with [`Numeric::eval`].
 
 use std::fmt::Write as _;
 
@@ -19,21 +19,79 @@ pub const RENDER: &str = include_str!("shader/render.wgsl");
 pub const SURFACE: &str = include_str!("shader/surface.wgsl");
 /// The largest number of parameters of a drawn graph, the size of the parameter array of [`RENDER`].
 pub const MAX_PARAMS: usize = 64;
+/// Most terms of a sum, like [`Numeric::eval`].
+const MAX_SUM_TERMS: i64 = 2000;
+/// Number of consecutive negligible terms ending a sum.
+const NEGLIGIBLE_TERMS: usize = 8;
 
 /// Writes the statements of an expression.
 struct Emitter<'a> {
     out: &'a mut String,
     next: usize,
     param_offset: usize,
+    /// The indentation of the statements, deeper in the loops of sums.
+    depth: usize,
+    /// The variables of the indices of the sums being emitted, with the names of their values.
+    indices: Vec<(usize, String)>,
 }
 
 impl Emitter<'_> {
+    /// A new variable name.
+    fn fresh(&mut self, prefix: &str) -> String {
+        let name = format!("{prefix}{}", self.next);
+        self.next += 1;
+        name
+    }
+
+    /// Write a statement at the current indentation.
+    fn line(&mut self, statement: &str) {
+        let _ = writeln!(self.out, "{}{statement}", "    ".repeat(self.depth));
+    }
+
     /// Bind `value` to a new variable, returning its name.
     fn bind(&mut self, value: &str) -> String {
-        let name = format!("v{}", self.next);
-        self.next += 1;
-        let _ = writeln!(self.out, "    let {name} = {value};");
+        let name = self.fresh("v");
+        self.line(&format!("let {name} = {value};"));
         name
+    }
+
+    /// The partial sums of `body` for the variable `index` from `start`, until [`NEGLIGIBLE_TERMS`] consecutive
+    /// terms are negligible, like [`Numeric::eval`]; NaN when a term isn't finite (except after negligible terms,
+    /// since f32 overflows sooner) or after [`MAX_SUM_TERMS`] terms.
+    fn sum(&mut self, body: &Numeric, index: usize, start: i64) -> String {
+        let (total, small, done, i) = (
+            self.fresh("s"),
+            self.fresh("n"),
+            self.fresh("d"),
+            self.fresh("i"),
+        );
+        self.line(&format!("var {total} = 0.0;"));
+        self.line(&format!("var {small} = 0;"));
+        self.line(&format!("var {done} = false;"));
+        self.line(&format!(
+            "for (var {i} = 0; {i} < {MAX_SUM_TERMS}; {i}++) {{"
+        ));
+        self.depth += 1;
+        #[allow(clippy::cast_precision_loss)]
+        let k = self.bind(&format!("{} + f32({i})", literal(start as f64)));
+        self.indices.push((index, k));
+        let term = self.emit(body);
+        self.indices.pop();
+        // A term overflowing f32 after negligible ones is in the tail, like `{$x^k / k!$}` with `{$k! > 2^128$}`
+        self.line(&format!(
+            "if !nf_finite({term}) {{ {done} = {small} > 0; break; }}"
+        ));
+        self.line(&format!("{total} += {term};"));
+        self.line(&format!(
+            "if abs({term}) <= 6e-8 * max(abs({total}), 1e-30) {{"
+        ));
+        self.line(&format!(
+            "    {small}++; if {small} >= {NEGLIGIBLE_TERMS} {{ {done} = true; break; }}"
+        ));
+        self.line(&format!("}} else {{ {small} = 0; }}"));
+        self.depth -= 1;
+        self.line("}");
+        self.bind(&format!("select(nf_nan(), {total}, {done})"))
     }
 
     /// Write the statements computing `expr`, returning the WGSL expression of its value.
@@ -42,8 +100,19 @@ impl Emitter<'_> {
             Numeric::Const(value) => literal(*value),
             Numeric::Var(Graph::X) => "x".to_owned(),
             Numeric::Var(Graph::Y) => "y".to_owned(),
-            Numeric::Var(i) => format!("param({}u)", self.param_offset + i - 2),
+            Numeric::Var(i) => self
+                .indices
+                .iter()
+                .rev()
+                .find(|(index, _)| index == i)
+                .map_or_else(
+                    || format!("param({}u)", self.param_offset + i - 2),
+                    |(_, name)| name.clone(),
+                ),
             Numeric::Add(terms) => self.fold(terms, " + ", "0.0"),
+            Numeric::Mul(factors) if !self.indices.is_empty() && factors.len() > 1 => {
+                self.scaled_product(factors)
+            }
             Numeric::Mul(factors) => self.fold(factors, " * ", "1.0"),
             Numeric::Pow(base, exponent) => {
                 let base = self.emit(base);
@@ -64,9 +133,33 @@ impl Emitter<'_> {
                 let args: Vec<String> = args.iter().map(|arg| self.emit(arg)).collect();
                 self.function(*fun, &args)
             }
-            // Infinite sums, drawn on the CPU only
-            Numeric::Sum { .. } | Numeric::Unsupported(_) => "nf_nan()".to_owned(),
+            Numeric::Sum { body, index, start } => self.sum(body, *index, *start),
+            Numeric::Unsupported(_) => "nf_nan()".to_owned(),
         }
+    }
+
+    /// The product of `factors` with their mantissas and exponents multiplied separately (`frexp` / `ldexp`), since
+    /// the general terms of series have huge and tiny factors overflowing f32, like `{$30^(2k - 1) 1600^(-k)$}`.
+    /// The plain product when a factor isn't finite.
+    fn scaled_product(&mut self, factors: &[Numeric]) -> String {
+        let factors: Vec<String> = factors.iter().map(|factor| self.emit(factor)).collect();
+        let (mantissa, exponent) = (self.fresh("m"), self.fresh("e"));
+        self.line(&format!("var {mantissa} = 1.0;"));
+        self.line(&format!("var {exponent} = 0;"));
+        for factor in &factors {
+            let parts = self.bind(&format!("frexp({factor})"));
+            self.line(&format!("{mantissa} *= {parts}.fract;"));
+            self.line(&format!("{exponent} += {parts}.exp;"));
+        }
+        let finite = factors
+            .iter()
+            .map(|factor| format!("nf_finite({factor})"))
+            .collect::<Vec<_>>()
+            .join(" && ");
+        self.bind(&format!(
+            "select({}, ldexp({mantissa}, {exponent}), {finite})",
+            factors.join(" * ")
+        ))
     }
 
     /// The sum or product of `terms`, `empty` without terms.
@@ -125,8 +218,8 @@ impl Emitter<'_> {
                 };
                 return self.bind(&format!("{name}({}, {})", arg(0), arg(1)));
             }
-            // Integer sequences, only used in the general terms of series, which the GPU doesn't sum
-            NumFn::Bernoulli | NumFn::Euler => return "nf_nan()".to_owned(),
+            NumFn::Bernoulli => "nf_bernoulli_number",
+            NumFn::Euler => "nf_euler_number",
             NumFn::Lt | NumFn::Le | NumFn::Gt | NumFn::Ge | NumFn::Eq | NumFn::Ne => {
                 let name = match fun {
                     NumFn::Lt => "nf_lt",
@@ -202,6 +295,8 @@ pub fn function(expr: &Numeric, name: &str, param_offset: usize) -> String {
         out: &mut out,
         next: 0,
         param_offset,
+        depth: 1,
+        indices: Vec::new(),
     };
     let value = emitter.emit(expr);
     let _ = writeln!(out, "    return {value};\n}}");
@@ -310,7 +405,7 @@ pub(crate) mod tests {
     }
 
     /// Expressions using every kind of node and function.
-    pub const EXPRESSIONS: [&str; 15] = [
+    pub const EXPRESSIONS: [&str; 17] = [
         "x^2 + 3*x*y - 1/2",
         "sqrt(x) + x^(1/3) + x^(-2/5) + x^y + 2^x + x^123456789012",
         "exp(x) + ln(x) + sin(x) + cos(x) + tan(x)",
@@ -326,6 +421,8 @@ pub(crate) mod tests {
         "10^40 * x + 10^-50 + oo",
         "integrate(exp(x^3), x)",
         "x",
+        "series(exp(x*y), x, 0, oo) + series(tan(x), x, 0, oo) + series(1/cos(y), y, 0, oo)",
+        "series(exp(x), x, 0, oo) * series(1/(1 - y + 2*y^2), y, 0, oo)",
     ];
 
     /// Check that `source` is valid WGSL.

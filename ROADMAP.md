@@ -17,7 +17,8 @@ Ideas and known gaps, roughly by area. `AGENTS.md` describes what exists; this f
 - **Held sums**:
   - definite integrals on the boundary of the disk of convergence (`integrate(series(1/(1 + x), x, 0, oo), x, 0, 1)`,
     Abel's theorem) and on infinite intervals;
-  - partial sums on the GPU (`Numeric::Sum` is NaN there).
+  - partial sums on the GPU are in f32, so general terms overflowing it (`x^k` with a large `x`, `(2k)!`, Bernoulli
+    numbers beyond `B_64`) give NaN where the CPU still sums them.
 
 ## Solving
 
