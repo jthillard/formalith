@@ -28,7 +28,10 @@ use formalith::{
     dynamic::Evaluated,
     field::{
         complex::{C, Complex, parts, real_parts},
-        real::{R, Real, numeric::Numeric},
+        real::{
+            R, Real,
+            numeric::{Numeric, free_symbols},
+        },
     },
     parser::{Parser, environment::Statement},
     term::{Term, relation::Relation},
@@ -214,7 +217,7 @@ fn xy() -> (Symbol, Symbol) {
 fn params<'a>(terms: impl IntoIterator<Item = &'a Term<Real>>, excluded: &[Symbol]) -> Vec<Symbol> {
     let mut params: Vec<Symbol> = terms
         .into_iter()
-        .flat_map(Term::symbols)
+        .flat_map(free_symbols)
         .collect::<BTreeSet<_>>()
         .into_iter()
         .filter(|symbol| !excluded.contains(symbol) && !Context::is_builtin_constant(*symbol))

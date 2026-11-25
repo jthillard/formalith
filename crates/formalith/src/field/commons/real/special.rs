@@ -62,6 +62,38 @@ pub fn bernoulli(n: usize) -> Rational {
     numbers[n].clone()
 }
 
+/// The Euler numbers computed so far, `{$E_0, E_1, ...$}`.
+static EULER: RwLock<Vec<Rational>> = RwLock::new(Vec::new());
+
+/// The Euler number `{$E_n$}`, the coefficient of `{$t^n / n!$}` in `{$1 / cosh t$}`: `{$E_2 = -1$}`, `{$E_4 = 5$}`.
+pub fn euler(n: usize) -> Rational {
+    if let Some(e) = EULER.read().expect("Euler numbers lock").get(n) {
+        return e.clone();
+    }
+    let mut numbers = EULER.write().expect("Euler numbers lock");
+    // `{$sum_(j = 0)^(m/2) binom(m, 2j) E_(2j) = 0$}` for an even `{$m > 0$}`
+    while numbers.len() <= n {
+        let m = numbers.len() as u64;
+        let e = if m == 0 {
+            Rational::ONE
+        } else if m % 2 == 1 {
+            Rational::ZERO
+        } else {
+            -numbers
+                .iter()
+                .enumerate()
+                .step_by(2)
+                .fold(Rational::ZERO, |sum, (j, e)| {
+                    let binomial =
+                        Natural::binomial_coefficient(Natural::from(m), Natural::from(j as u64));
+                    sum + Rational::from(binomial) * e
+                })
+        };
+        numbers.push(e);
+    }
+    numbers[n].clone()
+}
+
 /// The generalized harmonic number `{$H_n^((s)) = sum_(k = 1)^n 1/k^s$}`.
 fn harmonic(n: u64, s: u64) -> Rational {
     (1..=n).fold(Rational::ZERO, |sum, k| {
@@ -101,6 +133,15 @@ impl R<Rational> {
                 self.eval_polygamma(m, &q.value)
             }
             (Context::ZETA, [Term::Value(s)]) => self.eval_zeta(&s.value),
+            (ident @ (Context::BERNOULLI | Context::EULER), [Term::Value(n)]) => {
+                let n = usize::try_from(u64::try_from(&n.value).ok().filter(|n| *n <= MAX_ORDER)?)
+                    .ok()?;
+                Some(self.value(if ident == Context::BERNOULLI {
+                    bernoulli(n)
+                } else {
+                    euler(n)
+                }))
+            }
             _ => None,
         }
     }

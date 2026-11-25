@@ -326,9 +326,13 @@ impl Context {
     pub const LITTLE_O: Symbol = Symbol(101);
     /// Real root `rootof(p, x, k)`, the `k`-th real root of the polynomial `p` by increasing order
     pub const ROOTOF: Symbol = Symbol(102);
+    /// Bernoulli number `{$B_n$}`, with `{$B_1 = -1/2$}`
+    pub const BERNOULLI: Symbol = Symbol(103);
+    /// Euler number `{$E_n$}`, the coefficients of `{$1 / cosh t = sum_n E_n t^n / n!$}`
+    pub const EULER: Symbol = Symbol(104);
 
     #[rustfmt::skip]
-    const BUILTIN_NAMES: [&'static str; 103] = [
+    const BUILTIN_NAMES: [&'static str; 105] = [
         "abs", "det", "expand", "factor", "simplify", "re", "im", "conj", "sqrt", "root", "sign",
         "floor", "ceil", "min", "max", "gcd", "lcm", "quo", "rem", "diff", "solve", "approx",
         "exp", "ln", "sin", "cos", "tan", "pi", "e", "lim", "oo", "undefined",
@@ -340,7 +344,7 @@ impl Context {
         "I", "degree", "argmin", "argmax", "localmin",
         "localmax", "extrema", "localextrema", "subs", "numer", "denom", "roots", "resultant",
         "discriminant", "erfc", "round", "trunc", "isprime", "factorint", "zeros", "diag", "Si", "Ci",
-        "Ei", "arg", "o", "rootof",
+        "Ei", "arg", "o", "rootof", "bernoulli", "euler",
     ];
 
     /// The internal function `@sum(f, k, a, b)`, a sum which isn't evaluated, printed like `sum`: the result of

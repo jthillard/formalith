@@ -152,7 +152,25 @@ pub fn depends(term: &Expr, x: Symbol) -> bool {
 
 /// Whether `term` contains `{$oo$}` or `undefined`, which are only meaningful as limit points or results.
 pub fn has_special_constant(term: &Expr) -> bool {
-    depends(term, Context::OO) || depends(term, Context::UNDEFINED)
+    if !depends(term, Context::OO) && !depends(term, Context::UNDEFINED) {
+        return false;
+    }
+    match term {
+        Term::Value(_) => false,
+        Term::Symbol(_) => true,
+        Term::Add(add) => add.iter().any(has_special_constant),
+        Term::Mul(mul) => mul.iter().any(has_special_constant),
+        Term::Pow(pow) => has_special_constant(&pow.base) || has_special_constant(&pow.exponant),
+        // The upper bound `oo` of a whole series is left out
+        Term::Fun(fun) => fun.get_args::<Real>().is_none_or(|args| {
+            let args = if fun.get_ident() == Context::held_sum() {
+                &args[..args.len().saturating_sub(1)]
+            } else {
+                args
+            };
+            args.iter().any(has_special_constant)
+        }),
+    }
 }
 
 /// `Some(Greater)` for `{$oo$}`, `Some(Less)` for `{$-oo$}`, `None` otherwise.

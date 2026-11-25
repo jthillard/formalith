@@ -8,15 +8,17 @@ Ideas and known gaps, roughly by area. `AGENTS.md` describes what exists; this f
   base, so proportional or otherwise related bases (`sqrt(2 + 2x)` next to `sqrt(1 + x)`, `sqrt(x^2 + 2x + 1)`)
   only make its zero test inconclusive, and towers above dimension 16 are rejected.
 - **Petkovšek's *Hyper*** for recurrences without a two-term form, with exact arithmetic over algebraic numbers.
-  Today only rational functions with simple real poles are handled, by partial fractions.
-- **Real forms for complex poles.** `1/(1 - x + 2 x^2)` could give `r^k cos(k θ)` / `sin(k θ)` terms, like
-  `dsolve` does for complex characteristic roots. Multiple irrational poles are unsupported too.
+  Today only rational functions with simple poles, real or roots of quadratic factors, are handled, by partial
+  fractions.
+- **More poles of rational functions**: multiple irrational poles, complex roots of irreducible factors of degree 3
+  or more (`1/(1 + x + x^3)`).
 - **`series(f, x, a, oo)` in `C`**, through the real and imaginary parts like finite series.
-- **Known non-holonomic series**: `tan`, `sec`, `x / (e^x - 1)` with Bernoulli or Euler numbers
-  (`special::bernoulli`).
+- **Known non-holonomic series** beyond a kernel with Bernoulli or Euler numbers times a power of `x`:
+  `tan(x)^2`, `tan(x) / (1 + x)`, `tan(x)` at 1.
 - **Held sums**:
-  - derivatives and integrals term by term, so that `diff(series(...), x)` evaluates;
-  - partial sums for `approx` and for graphs (`Numeric` doesn't support them).
+  - definite integrals term by term, and integrals of terms that aren't a power of a linear term;
+  - `approx` of a held sum equal to zero raises the precision to its maximum, which is slow (seconds);
+  - partial sums on the GPU (`Numeric::Sum` is NaN there).
 - `exp(a ln u)` with a symbolic `a` is slow in the series engine: `series((1 + x)^a, x, 0, 8)` doesn't finish.
 
 ## Solving

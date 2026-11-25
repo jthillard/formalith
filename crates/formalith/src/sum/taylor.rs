@@ -36,8 +36,8 @@ use crate::{
     field::real::{
         R, approx,
         expr::{
-            Expr, Real, depends, fun, infinity_sign, map_tree, one, size, subs, try_map_operands,
-            unary, value, variable, zero,
+            Expr, Real, arg, depends, fun, infinity_sign, map_tree, one, size, subs,
+            try_map_operands, unary, value, variable, zero,
         },
     },
     limit::{Direction, LimitError, LimitResult, series_terms},
@@ -50,7 +50,7 @@ use crate::{
 };
 
 use super::{
-    super::holonomic,
+    super::{holonomic, integrate::rational},
     field::Params,
     integer_index, is_rational_function,
     product::{combine_factorials, duplicate_gammas},
@@ -134,6 +134,9 @@ fn whole_series(
     k: Symbol,
     split: bool,
 ) -> LimitResult<Expr> {
+    if let Some(res) = known_series(f, x, point, direction, k) {
+        return Ok(res);
+    }
     let res = split_series(f, x, point, direction, k, split);
     if res.is_err() && split && is_rational_function(f) && f.symbols().len() == 1 {
         return rational_series(f, x, point, direction, k).or(res);
@@ -141,10 +144,13 @@ fn whole_series(
     res
 }
 
-/// The series of `f` from the partial fractions over the real roots of its denominator, which must be simple:
-/// `{$A / (w - r)$}` gives `{$-A r^(-n - 1)$}` for the coefficient of `{$w^n$}`, `{$A = N(r) / D'(r)$}`. For
-/// rational functions with rational coefficients whose irreducible factors aren't linear, like
-/// `{$1 / (1 - x - x^2)$}`, whose coefficients satisfy a recurrence with constant coefficients (no two-term one).
+/// The series of `f` from the partial fractions over the roots of its denominator, which must be simple: a real
+/// root `r` gives `{$A / (w - r) = -A rho / (1 - rho w)$}` with `{$rho = 1 / r$}` and `{$A = N(r) / D'(r)$}`, a pair of
+/// complex roots, the roots of an irreducible quadratic factor `q`, gives
+/// `{$(a + b w) / (1 - p w + s w^2) = sum r^n (a cos(n theta) + (a p + 2b) / sqrt(4s - p^2) sin(n theta)) w^n$}`
+/// with `{$r = sqrt(s)$}` and `{$cos theta = p / (2 r)$}`. For rational functions with rational coefficients whose
+/// irreducible factors aren't linear, like `{$1 / (1 - x - x^2)$}` or `{$1 / (1 - x + 2 x^2)$}`, whose coefficients
+/// satisfy a recurrence with constant coefficients (no two-term one).
 fn rational_series(
     f: &Expr,
     x: Symbol,
@@ -169,7 +175,7 @@ fn rational_series(
         rational(&num).ok_or(LimitError::Unsupported)?,
         rational(&den).ok_or(LimitError::Unsupported)?,
     );
-    if den.coefficient(0) == 0u32 {
+    if den.coefficient(0) == 0u32 || den.gcd(&den.derivative()).degree() > 0 {
         return Err(LimitError::Unsupported);
     }
     let (quotient, rest) = num.div_rem(&den);
@@ -182,41 +188,84 @@ fn rational_series(
                 res + value(c.clone()) * wv.pow(&value(Rational::from(i)))
             })
     };
-    // `{$D(w) = d_0 product_i (1 - rho_i w)$}`, the `{$rho_i$}` being the roots of the reversed polynomial
-    let reversed = Poly::new(den.coefficients().iter().rev().cloned().collect());
-    let roots = eigen::real_roots(&term(&reversed), w).ok_or(LimitError::Unsupported)?;
-    if roots.len() != den.degree() || roots.iter().any(|(_, m)| *m != 1) {
+    let (rest_term, derivative) = (term(&rest), term(&den.derivative()));
+    let n = variable(k);
+    let mut general = zero();
+    for q in rational::factor(&den, w) {
+        let [q0, q1, q2] = q.coefficients() else {
+            general += real_poles(&q, &rest_term, &derivative, w, &n)?;
+            continue;
+        };
+        if q1 * q1 - Rational::from(4) * q0 * q2 >= 0u32 {
+            general += real_poles(&q, &rest_term, &derivative, w, &n)?;
+            continue;
+        }
+        // `{$q = q_0 (1 - p w + s w^2)$}`, and the part `{$P / q$}` of the partial fractions, `{$P = a + b w$}`
+        let (p, s) = (-(q1 / q0), q2 / q0);
+        let cofactor = den.exact_div(&q);
+        let numerator = rest.mul(&cofactor.inverse_mod(&q)).rem(&q);
+        let (a, b) = (numerator.coefficient(0) / q0, numerator.coefficient(1) / q0);
+        let root = |r: Rational| value(r).pow(&value(Rational::from_signeds(1, 2)));
+        let discriminant = Rational::from(4) * &s - &p * &p;
+        let theta = arg(
+            &value(&p / Rational::from(2)),
+            &(root(discriminant.clone()) / value(Rational::from(2))),
+        )
+        .ok_or(LimitError::Unsupported)?;
+        let angle = &n * &theta;
+        general += value(s).pow(&(&n / &value(Rational::from(2))))
+            * (value(a.clone()) * fun(Context::COS, angle.clone())
+                + value(a * p + Rational::from(2) * b) / root(discriminant)
+                    * fun(Context::SIN, angle));
+    }
+    let back = w_of_x(point, direction, x);
+    // The first coefficients, with the polynomial part, by dividing the power series, then the general term
+    let first = quotient.coefficients().len();
+    let mut coefficients: Vec<Rational> = vec![];
+    for i in 0..first {
+        let c = (1..=i).fold(num.coefficient(i), |c, j| {
+            c - den.coefficient(j) * &coefficients[i - j]
+        }) / den.coefficient(0);
+        coefficients.push(c);
+    }
+    let res = coefficients
+        .into_iter()
+        .enumerate()
+        .fold(zero(), |res, (i, c)| {
+            res + value(c) * w_power(&back, &value(Rational::from(i)))
+        });
+    let _guard = integer_index(k);
+    let general = tidy(&(general * w_power(&back, &n)));
+    Ok(res + held_sum(general, k, value(Rational::from(first))))
+}
+
+/// The coefficient of `{$w^n$}` of the partial fractions of `{$N / D$}` over the roots of its factor `q`, which must
+/// be real and simple: `{$B rho^n$}` for each root `r` of `q`, `{$rho = 1 / r$}`, with `D'` its derivative.
+fn real_poles(q: &Poly, rest: &Expr, derivative: &Expr, w: Symbol, n: &Expr) -> LimitResult<Expr> {
+    let wv = variable(w);
+    // `{$q(w) = q_0 product_i (1 - rho_i w)$}`, the `{$rho_i$}` being the roots of the reversed polynomial
+    let reversed = q
+        .coefficients()
+        .iter()
+        .rev()
+        .enumerate()
+        .fold(zero(), |res, (i, c)| {
+            res + value(c.clone()) * wv.pow(&value(Rational::from(i)))
+        });
+    let roots = eigen::real_roots(&reversed, w).ok_or(LimitError::Unsupported)?;
+    if roots.len() != q.degree() || roots.iter().any(|(_, m)| *m != 1) {
         return Err(LimitError::Unsupported);
     }
-    let (rest, derivative) = (term(&rest), term(&den.derivative()));
-    let n = variable(k);
-    // `{$A / (w - r) = -A rho / (1 - rho w)$}` with `{$r = 1 / rho$}` and `{$A = N(r) / D'(r)$}`
-    let mut general = zero();
+    let mut res = zero();
     for (rho, _) in &roots {
         let r = (one() / rho.clone()).simplify();
         let at = |p: &Expr| p.substitute(w, &r).map(|t| t.expand());
-        let a = at(&rest).ok_or(LimitError::Unsupported)?
-            / at(&derivative).ok_or(LimitError::Unsupported)?;
+        let a = at(rest).ok_or(LimitError::Unsupported)?
+            / at(derivative).ok_or(LimitError::Unsupported)?;
         let b = rationalize(&(-(a * rho)).simplify());
-        general += b * rho.pow(&n);
+        res += b * rho.pow(n);
     }
-    // `w` in terms of `x`
-    let back = match infinity_sign(point) {
-        Some(sign) => value(Rational::from(sign as i64)) / variable(x),
-        None if direction == Direction::Left => point - &variable(x),
-        None => variable(x) - point.clone(),
-    };
-    // The first coefficients, with the polynomial part, then the general term
-    let _guard = integer_index(k);
-    let first = quotient.coefficients().len();
-    let mut res = zero();
-    for (i, c) in quotient.coefficients().iter().enumerate() {
-        let i_term = value(Rational::from(i));
-        let c = (value(c.clone()) + subs(&general, k, &i_term)).simplify();
-        res += c * w_power(&back, &i_term);
-    }
-    let general = tidy(&(general * w_power(&back, &n)));
-    Ok(res + held_sum(general, k, value(Rational::from(first))))
+    Ok(res)
 }
 
 /// A fraction whose denominator is `{$a + b sqrt(c)$}` (rational `a`, `b`, `c`), multiplied by the conjugate
@@ -427,6 +476,199 @@ fn coefficients(
 struct Proven {
     recurrence: holonomic::recurrence::Recurrence,
     initial: Vec<(usize, Elem)>,
+}
+
+/// `w` in terms of `x`, the inverse of [`substitution`].
+fn w_of_x(point: &Expr, direction: Direction, x: Symbol) -> Expr {
+    match infinity_sign(point) {
+        Some(sign) => value(Rational::from(sign as i64)) / variable(x),
+        None if direction == Direction::Left => point - &variable(x),
+        None => variable(x) - point.clone(),
+    }
+}
+
+/// A function whose series at 0 has Bernoulli or Euler numbers as coefficients, so no recurrence.
+#[derive(Clone, Copy)]
+enum Kernel {
+    Tan,
+    Tanh,
+    Sec,
+    Sech,
+    Csc,
+    Csch,
+    Cot,
+    Coth,
+    /// `{$1 / (e^t - 1)$}`
+    ExpMinusOne,
+}
+
+impl Kernel {
+    /// The terms of the series in `t`: explicit terms `{$c t^e$}`, then `{$sum_(k >= s) c_k t^(e_k)$}` as
+    /// `{$(c_k, e_k, s)$}`.
+    fn series(self, k: Symbol) -> (Vec<(Expr, i64)>, Expr, Expr, i64) {
+        let n = variable(k);
+        let int = |i: i64| value(Rational::from(i));
+        let two_n = &int(2) * &n;
+        let four_n = int(4).pow(&n);
+        let sign = |shift: i64| int(-1).pow(&(&n + &int(shift)));
+        let bernoulli =
+            fun(Context::BERNOULLI, two_n.clone()) / fun(Context::FACTORIAL, two_n.clone());
+        let euler = fun(Context::EULER, two_n.clone()) / fun(Context::FACTORIAL, two_n.clone());
+        let odd = &two_n - &int(1);
+        match self {
+            // `{$tan t = sum_(k >= 1) (-1)^(k - 1) 4^k (4^k - 1) B_(2k) t^(2k - 1) / (2k)!$}`
+            Self::Tan => (
+                vec![],
+                sign(-1) * &four_n * (&four_n - &int(1)) * bernoulli,
+                odd,
+                1,
+            ),
+            Self::Tanh => (vec![], &four_n * &(&four_n - &int(1)) * bernoulli, odd, 1),
+            // `{$1 / cos t = sum_(k >= 0) (-1)^k E_(2k) t^(2k) / (2k)!$}`
+            Self::Sec => (vec![], sign(0) * euler, two_n, 0),
+            Self::Sech => (vec![], euler, two_n, 0),
+            // `{$1 / sin t = sum_(k >= 0) (-1)^(k + 1) (4^k - 2) B_(2k) t^(2k - 1) / (2k)!$}`
+            Self::Csc => (vec![], sign(1) * (&four_n - &int(2)) * bernoulli, odd, 0),
+            Self::Csch => (vec![], -((&four_n - &int(2)) * bernoulli), odd, 0),
+            // `{$cot t = sum_(k >= 0) (-1)^k 4^k B_(2k) t^(2k - 1) / (2k)!$}`
+            Self::Cot => (vec![], sign(0) * four_n * bernoulli, odd, 0),
+            Self::Coth => (vec![], four_n * bernoulli, odd, 0),
+            // `{$1 / (e^t - 1) = 1/t - 1/2 + sum_(k >= 1) B_(2k) t^(2k - 1) / (2k)!$}`
+            Self::ExpMinusOne => (
+                vec![(one(), -1), (value(Rational::from_signeds(-1, 2)), 0)],
+                bernoulli,
+                odd,
+                1,
+            ),
+        }
+    }
+}
+
+/// The kernel of `factors`, with its argument and a constant factor: `{$tan t$}`, `{$(cos t)^(-1)$}`,
+/// `{$cos t (sin t)^(-1)$}`, `{$(b e^t - b)^(-1)$}`...
+fn kernel(factors: &[&Expr]) -> Option<(Kernel, Expr, Expr)> {
+    let inverse = |t: &Expr| match t {
+        Term::Pow(pow) if **pow.exponant == value(Rational::from(-1)) => Some((*pow.base).clone()),
+        _ => None,
+    };
+    match factors {
+        [f] => {
+            if let Some((ident @ (Context::TAN | Context::TANH), t)) = unary(f) {
+                let kernel = if ident == Context::TAN {
+                    Kernel::Tan
+                } else {
+                    Kernel::Tanh
+                };
+                return Some((kernel, t.clone(), one()));
+            }
+            let base = inverse(f)?;
+            if let Some((ident, t)) = unary(&base) {
+                let kernel = match ident {
+                    Context::COS => Kernel::Sec,
+                    Context::COSH => Kernel::Sech,
+                    Context::SIN => Kernel::Csc,
+                    Context::SINH => Kernel::Csch,
+                    Context::TAN => Kernel::Cot,
+                    Context::TANH => Kernel::Coth,
+                    _ => return None,
+                };
+                return Some((kernel, t.clone(), one()));
+            }
+            // `{$b e^t - b$}`
+            let Term::Add(add) = &base else { return None };
+            let [a, b] = add.iter().collect::<Vec<_>>()[..] else {
+                return None;
+            };
+            let (exp, constant) = match (a, b) {
+                (Term::Value(c), e) | (e, Term::Value(c)) => (e, c.value.clone()),
+                _ => return None,
+            };
+            let (scale, exp) = match exp {
+                Term::Mul(mul) if mul.iter().count() == 1 => {
+                    (mul.coefficient.clone(), mul.iter().next()?)
+                }
+                _ => (Rational::from(1), exp),
+            };
+            match unary(exp) {
+                Some((Context::EXP, t)) if constant == -&scale => {
+                    Some((Kernel::ExpMinusOne, t.clone(), value(scale).inv()))
+                }
+                _ => None,
+            }
+        }
+        [a, b] => {
+            let (numerator, denominator) = match (inverse(a), inverse(b)) {
+                (None, Some(d)) => (*a, d),
+                (Some(d), None) => (*b, d),
+                _ => return None,
+            };
+            match (unary(numerator)?, unary(&denominator)?) {
+                ((Context::COS, t), (Context::SIN, u)) if t == u => {
+                    Some((Kernel::Cot, t.clone(), one()))
+                }
+                ((Context::COSH, t), (Context::SINH, u)) if t == u => {
+                    Some((Kernel::Coth, t.clone(), one()))
+                }
+                _ => None,
+            }
+        }
+        _ => None,
+    }
+}
+
+/// The series of `{$C w^m K(alpha w)$}` for a [`Kernel`] `K`, `C` and `{$alpha$}` free of `w` and an integer `m`, in
+/// terms of Bernoulli and Euler numbers, like `{$tan x$}` or `{$x / (e^x - 1)$}`.
+fn known_series(
+    f: &Expr,
+    x: Symbol,
+    point: &Expr,
+    direction: Direction,
+    k: Symbol,
+) -> Option<Expr> {
+    let w = Symbol::new("@hw");
+    let wv = variable(w);
+    let g = f.substitute(x, &substitution(point, direction, &wv))?;
+    let (mut c, factors): (Expr, Vec<&Expr>) = match &g {
+        Term::Mul(mul) => (value(mul.coefficient.clone()), mul.iter().collect()),
+        _ => (one(), vec![&g]),
+    };
+    let mut m = 0;
+    let mut kernel_factors = vec![];
+    for factor in factors {
+        if !depends(factor, w) {
+            c *= factor;
+        } else if *factor == wv {
+            m += 1;
+        } else if let Term::Pow(pow) = factor
+            && *pow.base == wv
+            && let Term::Value(e) = &**pow.exponant
+            && let Ok(e) = i64::try_from(&e.value)
+        {
+            m += e;
+        } else {
+            kernel_factors.push(factor);
+        }
+    }
+    let (kernel, t, scale) = kernel(&kernel_factors)?;
+    let alpha = (&t / &wv).normalize();
+    if depends(&alpha, w) || alpha.is_zero() {
+        return None;
+    }
+    let c = c * scale;
+    let back = w_of_x(point, direction, x);
+    let _guard = integer_index(k);
+    let (explicit, general, exponent, start) = kernel.series(k);
+    let mut res = zero();
+    for (coefficient, e) in explicit {
+        let e = value(Rational::from(e));
+        res +=
+            &c * &coefficient * alpha.pow(&e) * w_power(&back, &(&e + &value(Rational::from(m))));
+    }
+    let term = &c
+        * &general
+        * alpha.pow(&exponent)
+        * w_power(&back, &(&exponent + &value(Rational::from(m))));
+    Some(res + held_sum(tidy_term(&term, k), k, value(Rational::from(start))))
 }
 
 /// `x` in terms of `w`: `{$a + w$}`, `{$a - w$}` from the left, `{$s / w$}` at `{$s oo$}`.
@@ -682,6 +924,132 @@ fn w_power(w: &Expr, e: &Expr) -> Expr {
         }
         _ => w.pow(e),
     }
+}
+
+/// Leading terms of a held sum checked for zero by [`tidy_held_sum`].
+const MAX_ZERO_TERMS: usize = 8;
+/// Most leading terms of a held sum integrated separately, because they have a logarithm.
+const MAX_LOG_TERMS: i64 = 16;
+
+/// The derivative of the held sum `{$sum_(k = a)^oo f$}` of the arguments `[f, k, a, oo]` with respect to `x`, term
+/// by term, which holds inside the disk of convergence of a whole series: `{$sum_(k >= 0) x^k / k!$}` gives itself.
+pub fn derive_held_sum(args: &[Expr], x: Symbol) -> Option<Expr> {
+    let [body, Term::Symbol(k), a, b] = args else {
+        return None;
+    };
+    if k.symbol == x || depends(a, x) || *b != variable(Context::OO) {
+        return None;
+    }
+    Some(tidy_held_sum(&body.derivative(x), k.symbol, a, x))
+}
+
+/// An antiderivative of the held sum `{$sum_(k = a)^oo C(k) B^E$}` of the arguments `[f, k, a, oo]` with respect to
+/// `x`, term by term, `B` being linear in `x` and `E` affine in `k`: `{$C B^(E + 1) / ((E + 1) B')$}`. The terms
+/// where `{$E = -1$}` are integrated by `integrate`, giving logarithms. `None` for other terms.
+pub fn integrate_held_sum(
+    args: &[Expr],
+    x: Symbol,
+    integrate: &mut dyn FnMut(&Expr) -> Option<Expr>,
+) -> Option<Expr> {
+    let [body, Term::Symbol(k), Term::Value(a), b] = args else {
+        return None;
+    };
+    let k = k.symbol;
+    if k == x || *b != variable(Context::OO) {
+        return None;
+    }
+    let mut start = Integer::try_from(&a.value).ok()?;
+    let _guard = integer_index(k);
+    let (c, base, e) = power_of(body, x)?;
+    let slope = base.derivative(x);
+    if slope.is_zero() || depends(&slope, x) {
+        return None;
+    }
+    let (alpha, beta) = affine(&e, k)?;
+    let mut res = zero();
+    if alpha == 0u32 {
+        if beta == -1 {
+            return None;
+        }
+    } else if let Ok(k0) = Integer::try_from(&((Rational::from(-1) - beta) / alpha))
+        && k0 >= start
+    {
+        // `{$integral B^(-1) = ln|B| / B'$}` and the terms before
+        if &k0 - &start > MAX_LOG_TERMS {
+            return None;
+        }
+        while start <= k0 {
+            res += integrate(&subs(body, k, &value(Rational::from(&start))))?;
+            start += Integer::from(1);
+        }
+    }
+    let e1 = e + one();
+    let antiderivative = c * base.pow(&e1) / (e1 * slope);
+    Some(res + tidy_held_sum(&antiderivative, k, &value(Rational::from(start)), x))
+}
+
+/// The factor `{$B^E$}` of `body` depending on `x`, with `E` depending on `k`, as `(C, B, E)` with `{$C B^E$}` =
+/// `body` and `C` free of `x`.
+fn power_of(body: &Expr, x: Symbol) -> Option<(Expr, Expr, Expr)> {
+    let factors: Vec<&Expr> = match body {
+        Term::Mul(mul) => mul.iter().collect(),
+        _ => vec![body],
+    };
+    let mut dependent = factors.iter().filter(|f| depends(f, x));
+    let (Some(Term::Pow(pow)), None) = (dependent.next(), dependent.next()) else {
+        return None;
+    };
+    let c = match body {
+        Term::Mul(mul) => mul
+            .iter()
+            .filter(|f| !depends(f, x))
+            .fold(value(mul.coefficient.clone()), |res, f| res * f),
+        _ => one(),
+    };
+    if depends(&pow.exponant, x) {
+        return None;
+    }
+    Some((c, (*pow.base).clone(), (**pow.exponant).clone()))
+}
+
+/// `{$(alpha, beta)$}` with `{$e = alpha k + beta$}` for rationals `alpha` and `beta`.
+fn affine(e: &Expr, k: Symbol) -> Option<(Rational, Rational)> {
+    let at = |n: i64| match subs(e, k, &value(Rational::from(n))) {
+        Term::Value(c) => Some(c.value),
+        _ => None,
+    };
+    let beta = at(0)?;
+    let alpha = at(1)? - &beta;
+    (e - &(value(beta.clone()) + value(alpha.clone()) * variable(k)))
+        .expand()
+        .is_zero()
+        .then_some((alpha, beta))
+}
+
+/// The held sum `{$sum_(k = a)^oo f$}` of a series in `x` tidied: indexed by the exponent of its power `{$B^E$}` of
+/// `x` when `{$E = plus.minus k + c$}` for an integer `c`, its leading zero terms dropped, its general term tidied
+/// ([`tidy_term`]). So `{$sum_(k >= 0) k x^(k - 1) / k!$}` is `{$sum_(k >= 0) x^k / k!$}`.
+fn tidy_held_sum(body: &Expr, k: Symbol, a: &Expr, x: Symbol) -> Expr {
+    let _guard = integer_index(k);
+    let (mut body, mut a) = (body.clone(), a.clone());
+    if let Some((_, _, e)) = power_of(&body, x)
+        && let Some((s, c)) = affine(&e, k)
+        && (s == 1 || s == -1)
+        && c != 0u32
+        && c.denominator_ref() == &1u32
+    {
+        // The index `{$j = k + s c$}`, whose exponent is `{$s j$}`
+        let shift = value(s * c);
+        body = subs(&body, k, &(variable(k) - &shift));
+        a = &a + &shift;
+    }
+    for _ in 0..MAX_ZERO_TERMS {
+        if !subs(&body, k, &a).expand().is_zero() {
+            break;
+        }
+        a = &a + &one();
+    }
+    held_sum(tidy_term(&body, k), k, a)
 }
 
 /// `{$sum_(k = a)^oo f$}`, not evaluated.
@@ -1163,6 +1531,12 @@ mod tests {
             ("(x^3 + 1)/(1 - x - x^2)", "0"),
             ("1/(x^2 - x - 1)", "oo"),
             ("1/(1 - 2*x - x^2)", "0"),
+            // Bernoulli and Euler numbers
+            ("tan(x)", "0"),
+            ("1/cos(x)", "0"),
+            ("x/(exp(x) - 1)", "0"),
+            ("cot(x)", "0"),
+            ("tanh(2*x)", "0"),
         ] {
             let (f, point) = (parse!(f, R), parse!(point, R));
             let whole = f.infinite_series(x, &point, Direction::Both).unwrap();
@@ -1172,6 +1546,34 @@ mod tests {
                 .unwrap();
             assert!(
                 (&rebuilt - &truncated).expand().is_zero(),
+                "{f}: {whole} gives {rebuilt}, not {truncated}"
+            );
+        }
+    }
+
+    /// The whole series of rational functions with complex poles agree numerically with their truncated series,
+    /// `{$cos(n theta)$}` not being reduced for most `{$theta$}`.
+    #[test]
+    fn complex_poles_agree_with_truncated_series() {
+        let x = symbol!("x");
+        let order = Rational::from(8);
+        let point = parse!("0", R);
+        for f in [
+            "1/(1 - x + 2*x^2)",
+            "1/((1 - 2*x)*(1 + x + 2*x^2))",
+            "(x^3 + 2)/(3 + x^2 - x)",
+        ] {
+            let f = parse!(f, R);
+            let whole = f.infinite_series(x, &point, Direction::Both).unwrap();
+            let truncated = f.series(x, &point, &order, Direction::Both).unwrap();
+            let rebuilt = partial(&whole)
+                .series(x, &point, &order, Direction::Both)
+                .unwrap();
+            // Below `{$x^8$}`, at `{$x = 1/10$}`
+            let difference = subs(&(&rebuilt - &truncated), x, &parse!("1/10", R));
+            let error = approx::approximate(&difference, 15).unwrap();
+            assert!(
+                error.abs() < Rational::from_signeds(1, 1_000_000_000_000_i64),
                 "{f}: {whole} gives {rebuilt}, not {truncated}"
             );
         }

@@ -49,6 +49,12 @@ const MIN_QUADRATURE_LEVELS: u64 = 3;
 const MAX_QUADRATURE_LEVELS: u64 = 10;
 /// Bound of the parameter `s` of the nodes of the numerical integration.
 const MAX_QUADRATURE_S: u64 = 6;
+/// Largest natural number whose factorial is computed exactly.
+const MAX_EXACT_FACTORIAL: u64 = 10_000;
+/// Most terms of an infinite sum added.
+const MAX_SUM_TERMS: i64 = 1000;
+/// Consecutive terms below the precision ending an infinite sum.
+const NEGLIGIBLE_TERMS: usize = 8;
 
 /// The substitution used by the numerical integration, depending on the bounds.
 enum Quadrature {
@@ -852,6 +858,30 @@ impl Fixed {
         None
     }
 
+    /// `{$sum_(k = a)^oo f$}` by its partial sums, until [`NEGLIGIBLE_TERMS`] consecutive terms are below the
+    /// precision. `None` when
+    /// they don't become negligible after [`MAX_SUM_TERMS`] terms, outside of the disk of convergence of a series.
+    fn infinite_sum(self, f: &Term<Real>, k: Symbol, a: &Term<Real>) -> Option<Rational> {
+        let a = Integer::try_from(&self.evaluate(a)?).ok()?;
+        let mut sum = Integer::ZERO;
+        let mut negligible = 0;
+        for j in 0..MAX_SUM_TERMS {
+            let index = Term::Value(Value::new(Rational::from(&a + Integer::from(j)), super::R));
+            let term = self.from_rational(&self.evaluate(&bind(f, k, &index))?);
+            // Rounded down, tiny negative terms are -1
+            if (&term).unsigned_abs() <= 1u32 {
+                negligible += 1;
+                if negligible >= NEGLIGIBLE_TERMS {
+                    return Some(self.to_rational(sum));
+                }
+            } else {
+                negligible = 0;
+            }
+            sum += term;
+        }
+        None
+    }
+
     /// Evaluate a term without symbols, other than builtin constants.
     fn evaluate(self, term: &Term<Real>) -> Option<Rational> {
         match term {
@@ -901,7 +931,16 @@ impl Fixed {
                         self.lambert_w(&self.evaluate(x)?, false)
                     }
                     (Context::GAMMA, [x]) => self.gamma(&self.evaluate(x)?),
-                    (Context::FACTORIAL, [x]) => self.gamma(&(self.evaluate(x)? + Rational::ONE)),
+                    (Context::FACTORIAL, [x]) => {
+                        let x = self.evaluate(x)?;
+                        // Exact for natural numbers, like the terms of series
+                        match u64::try_from(&x) {
+                            Ok(n) if n <= MAX_EXACT_FACTORIAL => {
+                                Some(Rational::from(Natural::factorial(n)))
+                            }
+                            _ => self.gamma(&(x + Rational::ONE)),
+                        }
+                    }
                     (Context::BINOMIAL, [n, k]) => {
                         let (n, k) = (self.evaluate(n)?, self.evaluate(k)?);
                         if let (Ok(n), Ok(k)) = (Integer::try_from(&n), Integer::try_from(&k)) {
@@ -949,6 +988,9 @@ impl Fixed {
                     }
                     (Context::INTEGRATE, [f, Term::Symbol(x), a, b]) => {
                         self.integrate(f, x.symbol, a, b)
+                    }
+                    (ident, [f, Term::Symbol(k), a, _]) if ident == Context::held_sum() => {
+                        self.infinite_sum(f, k.symbol, a)
                     }
                     (
                         ident @ (Context::ASIN

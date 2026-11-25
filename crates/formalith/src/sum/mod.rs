@@ -31,6 +31,8 @@ mod polynomial;
 mod product;
 mod taylor;
 
+pub(crate) use taylor::{derive_held_sum, integrate_held_sum};
+
 use std::{cmp::Ordering, error::Error, fmt};
 
 use malachite::Rational;

@@ -39,6 +39,30 @@ fn test_function() {
 }
 
 #[test]
+fn test_whole_series() {
+    let mut session = Session::new();
+    // Partial sums, the index not being a parameter
+    let (_, graph) = draw(&mut session, "series(sin(x), x, 0, oo)");
+    let Some(Graph {
+        kind: GraphKind::Function { expr, derivative },
+        params,
+    }) = graph
+    else {
+        panic!("the series of sin is not a function");
+    };
+    assert!(params.is_empty(), "{params:?}");
+    assert_close(expr.eval(&[1., f64::NAN]), 1f64.sin());
+    assert_close(derivative.unwrap().eval(&[1., f64::NAN]), 1f64.cos());
+    let (_, graph) = draw(&mut session, "series(tan(x), x, 0, oo)");
+    let Some(GraphKind::Function { expr, .. }) = graph.map(|graph| graph.kind) else {
+        panic!("the series of tan is not a function");
+    };
+    assert_close(expr.eval(&[0.5, f64::NAN]), 0.5f64.tan());
+    // Outside of the disk of convergence
+    assert!(expr.eval(&[2., f64::NAN]).is_nan());
+}
+
+#[test]
 fn test_definitions() {
     let mut session = Session::new();
     let (text, graph) = draw(&mut session, "f(t) := t^3 - a*t");

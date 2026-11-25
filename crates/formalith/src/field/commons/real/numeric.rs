@@ -12,11 +12,44 @@ use malachite::{
     base::{num::conversion::traits::RoundingFrom, rounding_modes::RoundingMode},
 };
 
+use std::collections::BTreeSet;
+
 use super::expr::Real;
 use crate::{
     context::{Context, Symbol},
     term::{Term, relation::Relation},
 };
+
+/// The symbols `term` depends on, the variables of a [`Numeric`] compiled from it: its symbols, but the indices of
+/// the infinite sums of whole series.
+#[must_use]
+pub fn free_symbols(term: &Term<Real>) -> BTreeSet<Symbol> {
+    match term {
+        Term::Fun(fun) if fun.get_ident() == Context::held_sum() => {
+            let Some([body, Term::Symbol(k), bounds @ ..]) =
+                fun.get_args::<Real>().map(Vec::as_slice)
+            else {
+                return term.symbols();
+            };
+            let mut symbols = free_symbols(body);
+            symbols.remove(&k.symbol);
+            symbols.extend(bounds.iter().flat_map(free_symbols));
+            symbols
+        }
+        Term::Value(_) | Term::Symbol(_) => term.symbols(),
+        Term::Add(add) => add.iter().flat_map(free_symbols).collect(),
+        Term::Mul(mul) => mul.iter().flat_map(free_symbols).collect(),
+        Term::Pow(pow) => {
+            let mut symbols = free_symbols(&pow.base);
+            symbols.extend(free_symbols(&pow.exponant));
+            symbols
+        }
+        Term::Fun(fun) => fun.get_args::<Real>().map_or_else(
+            || term.symbols(),
+            |args| args.iter().flat_map(free_symbols).collect(),
+        ),
+    }
+}
 
 /// A real expression evaluated with `f64`, see [`Numeric::compile`].
 #[derive(Clone, Debug, PartialEq)]
@@ -36,9 +69,24 @@ pub enum Numeric {
     RationalPow(Box<Self>, i64, u64),
     /// A function applied to its arguments.
     Fun(NumFn, Vec<Self>),
+    /// An infinite sum `{$sum_(k >= "start") "body"$}`, the index `k` being the variable at `index`, evaluated by its
+    /// partial sums until the terms are negligible (`NaN` when they aren't after 2000 terms).
+    Sum {
+        /// The general term.
+        body: Box<Self>,
+        /// The variable of the index.
+        index: usize,
+        /// The first index.
+        start: i64,
+    },
     /// A part which can't be evaluated numerically, like an unevaluated integral, with its name.
     Unsupported(String),
 }
+
+/// Most terms of a [`Numeric::Sum`] evaluated.
+const MAX_SUM_TERMS: i64 = 2000;
+/// Consecutive negligible terms ending a [`Numeric::Sum`].
+const NEGLIGIBLE_TERMS: usize = 8;
 
 /// The functions a [`Numeric`] can apply.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -89,6 +137,10 @@ pub enum NumFn {
     GammaIm,
     /// `piecewise(c1, v1, c2, v2, ..., default)`
     Piecewise,
+    /// The Bernoulli number `{$B_n$}`
+    Bernoulli,
+    /// The Euler number `{$E_n$}`
+    Euler,
     /// A comparison of its two arguments, 1 if it holds, 0 otherwise.
     Lt,
     Le,
@@ -143,6 +195,8 @@ impl NumFn {
             Context::LAMBERTW => Self::LambertW,
             ident if ident == Context::lambertw_m1() => Self::LambertWm1,
             Context::SI => Self::Si,
+            Context::BERNOULLI => Self::Bernoulli,
+            Context::EULER => Self::Euler,
             Context::CI => Self::Ci,
             Context::EI => Self::Ei,
             Context::POLYGAMMA if arity == 2 => return Some(Self::Polygamma),
@@ -219,6 +273,7 @@ impl NumFn {
                     _ => None,
                 })
                 .unwrap_or(f64::NAN),
+            Self::Bernoulli | Self::Euler => integer_sequence(self, x),
             Self::Lt => truth(x < y),
             Self::Le => truth(x <= y),
             Self::Gt => truth(x > y),
@@ -227,6 +282,23 @@ impl NumFn {
             Self::Ne => truth(x != y),
         }
     }
+}
+
+/// Largest index of the Bernoulli and Euler numbers evaluated, beyond which they overflow.
+const MAX_SEQUENCE_INDEX: f64 = 400.;
+
+/// `{$B_n$}` or `{$E_n$}` from their exact values, for a natural `n`.
+fn integer_sequence(fun: NumFn, n: f64) -> f64 {
+    if !(0. ..=MAX_SEQUENCE_INDEX).contains(&n) || n.fract() != 0. {
+        return f64::NAN;
+    }
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let n = n as usize;
+    to_f64(&if fun == NumFn::Bernoulli {
+        super::special::bernoulli(n)
+    } else {
+        super::special::euler(n)
+    })
 }
 
 /// Round a rational to the nearest `f64`.
@@ -288,6 +360,25 @@ impl Numeric {
             Term::Fun(fun) if fun.get_ident() == Context::real_root() => {
                 Self::Const(super::approx::approximate(term, 17).map_or(f64::NAN, |x| to_f64(&x)))
             }
+            // A whole series, by its partial sums
+            Term::Fun(fun) if fun.get_ident() == Context::held_sum() => {
+                let unsupported = || Self::Unsupported(fun.get_ident_as_str().to_owned());
+                let Some([body, Term::Symbol(k), Term::Value(start), _]) =
+                    fun.get_args::<Real>().map(Vec::as_slice)
+                else {
+                    return unsupported();
+                };
+                let Ok(start) = i64::try_from(&start.value) else {
+                    return unsupported();
+                };
+                let mut with_index = vars.to_vec();
+                with_index.push(k.symbol);
+                Self::Sum {
+                    body: Box::new(Self::compile(body, &with_index)),
+                    index: vars.len(),
+                    start,
+                }
+            }
             Term::Fun(fun) => {
                 let name = || Self::Unsupported(fun.get_ident_as_str().to_owned());
                 let Some(args) = fun.get_args::<Real>() else {
@@ -308,7 +399,7 @@ impl Numeric {
                 terms.iter().find_map(Self::unsupported)
             }
             Self::Pow(base, exponent) => base.unsupported().or_else(|| exponent.unsupported()),
-            Self::RationalPow(base, ..) => base.unsupported(),
+            Self::RationalPow(base, ..) | Self::Sum { body: base, .. } => base.unsupported(),
             Self::Unsupported(name) => Some(name),
         }
     }
@@ -327,9 +418,56 @@ impl Numeric {
                 let args: Vec<f64> = args.iter().map(|arg| arg.eval(vars)).collect();
                 fun.apply(&args)
             }
+            Self::Sum { body, index, start } => sum(body, *index, *start, vars),
             Self::Unsupported(_) => f64::NAN,
         }
     }
+}
+
+impl Numeric {
+    /// Evaluate the expression like [`Numeric::eval`], `None` when a part of it isn't finite.
+    fn eval_finite(&self, vars: &[f64]) -> Option<f64> {
+        let all = |terms: &[Self]| {
+            terms
+                .iter()
+                .map(|term| term.eval_finite(vars))
+                .collect::<Option<Vec<_>>>()
+        };
+        let value = match self {
+            Self::Add(terms) => all(terms)?.into_iter().sum(),
+            Self::Mul(factors) => all(factors)?.into_iter().product(),
+            Self::Pow(base, exponent) => base.eval_finite(vars)?.powf(exponent.eval_finite(vars)?),
+            Self::RationalPow(base, num, den) => rational_pow(base.eval_finite(vars)?, *num, *den),
+            Self::Fun(fun, args) => fun.apply(&all(args)?),
+            _ => self.eval(vars),
+        };
+        value.is_finite().then_some(value)
+    }
+}
+
+/// The infinite sum of `body` for the variable `index` from `start`, `NaN` when it doesn't converge fast enough.
+fn sum(body: &Numeric, index: usize, start: i64, vars: &[f64]) -> f64 {
+    #![allow(clippy::cast_precision_loss)]
+    let mut vars = vars.to_vec();
+    vars.resize(index + 1, f64::NAN);
+    let (mut total, mut negligible) = (0., 0);
+    for k in start..start.saturating_add(MAX_SUM_TERMS) {
+        vars[index] = k as f64;
+        // An overflow in a term, like `{$(2k)!$}`, would make it vanish
+        let Some(term) = body.eval_finite(&vars) else {
+            return f64::NAN;
+        };
+        total += term;
+        if term.abs() <= 1e-17 * total.abs().max(1e-300) {
+            negligible += 1;
+            if negligible >= NEGLIGIBLE_TERMS {
+                return total;
+            }
+        } else {
+            negligible = 0;
+        }
+    }
+    f64::NAN
 }
 
 /// The Euler-Mascheroni constant.
@@ -846,6 +984,16 @@ mod tests {
 
     fn assert_close(a: f64, b: f64) {
         assert!((a - b).abs() <= 1e-9 * (1. + b.abs()), "{a} != {b}");
+    }
+
+    #[test]
+    fn infinite_sums() {
+        assert_close(eval("series(exp(x), x, 0, oo)", 1.), std::f64::consts::E);
+        assert_close(eval("series(1/(1 - x), x, 0, oo)", 0.5), 2.);
+        assert!(eval("series(1/(1 - x), x, 0, oo)", 2.).is_nan());
+        assert_close(eval("bernoulli(x)", 12.), -691. / 2730.);
+        assert_close(eval("euler(x)", 4.), 5.);
+        assert!(eval("bernoulli(x)", 0.5).is_nan());
     }
 
     #[test]

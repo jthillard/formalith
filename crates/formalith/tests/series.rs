@@ -316,7 +316,6 @@ fn whole_series() {
     assert!(!whole("erf(x) + exp(x), x, 0").contains("series"));
     // Finite series, and series without a hypergeometric general term
     assert_eq!(whole("x^2 + 1, x, 0"), "x^2+1");
-    assert_eq!(whole("tan(x), x, 0"), "series(tan(x), x, 0, oo)");
     assert_eq!(whole("abs(x), x, 0"), "series(abs(x), x, 0, oo)");
     // Proofs which can't be done stay unevaluated
     assert_eq!(
@@ -328,9 +327,68 @@ fn whole_series() {
         whole("1/(1 - x - x^2), x, 0"),
         "sum((1/10*(5^(1/2)+5)*((1/2*(5^(1/2))+1/2)^k)+1/10*(-(5^(1/2))+5)*((-1/2*(5^(1/2))+1/2)^k))*(x^k), k, 0, oo)"
     );
-    // Complex poles without a period
+    // Complex poles without a period, `{$r^k cos(k theta)$}` and `{$r^k sin(k theta)$}`
     assert_eq!(
         whole("1/(1 - x + 2*x^2), x, 0"),
-        "series((-x+2*(x^2)+1)^-1, x, 0, oo)"
+        "sum((cos(k*atan(7^(1/2)))+1/7*sin(k*atan(7^(1/2)))*(7^(1/2)))*(x^k)*(2^(1/2*k)), k, 0, oo)"
+    );
+}
+
+#[test]
+fn whole_series_with_bernoulli_and_euler_numbers() {
+    assert_eq!(
+        whole("tan(x), x, 0"),
+        "sum((4^k-1)*(x^(2*k-1))*((2*k)!^-1)*bernoulli(2*k)*((-1)^(k+1))*(4^k), k, 1, oo)"
+    );
+    assert_eq!(
+        whole("1/cos(x), x, 0"),
+        "sum((x^(2*k))*((2*k)!^-1)*euler(2*k)*((-1)^k), k, 0, oo)"
+    );
+    assert_eq!(
+        whole("x/(exp(x) - 1), x, 0"),
+        "-1/2*x+sum((x^(2*k))*((2*k)!^-1)*bernoulli(2*k), k, 1, oo)+1"
+    );
+    assert!(whole("cot(x), x, 0").contains("bernoulli"));
+    assert!(whole("1/(1 - exp(-x)), x, 0").contains("bernoulli"));
+    assert!(whole("tanh(2*x) + sin(x), x, 0").contains("bernoulli"));
+}
+
+#[test]
+fn held_sums_term_by_term() {
+    let eval = |input: &str| line(&parse!(input, R));
+    // Derivatives and antiderivatives of whole series, indexed by the exponent
+    assert_eq!(
+        eval("diff(series(exp(x), x, 0, oo), x)"),
+        "sum((x^k)*(k!^-1), k, 0, oo)"
+    );
+    assert_eq!(
+        eval("diff(series(sin(x), x, 0, oo), x)"),
+        "sum((x^(2*k))*((2*k)!^-1)*((-1)^k), k, 0, oo)"
+    );
+    assert_eq!(
+        eval("integrate(series(exp(x), x, 0, oo), x)"),
+        "sum((x^k)*(k!^-1), k, 1, oo)"
+    );
+    assert_eq!(
+        eval("integrate(series(1/(1 - x), x, 0, oo), x)"),
+        "sum((x^k)*(k^-1), k, 1, oo)"
+    );
+    // The term in `{$x^(-1)$}` gives a logarithm
+    assert_eq!(
+        eval("integrate(series(exp(x)/x, x, 0, oo), x)"),
+        "ln(abs(x))+sum((x^k)*(k^-1)*(k!^-1), k, 1, oo)"
+    );
+    // Partial sums
+    assert_eq!(
+        eval("approx(subs(series(exp(x), x, 0, oo), x, 1))"),
+        "2.71828182845905"
+    );
+    assert_eq!(
+        eval("approx(subs(series(tan(x), x, 0, oo), x, 1/2))"),
+        eval("approx(tan(1/2))")
+    );
+    assert_eq!(
+        eval("approx(subs(series(1/(1 - x + 2*x^2), x, 0, oo), x, 1/10))"),
+        "1.08695652173913"
     );
 }

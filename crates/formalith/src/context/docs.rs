@@ -1221,6 +1221,24 @@ pub static BUILTIN_DOCS: [BuiltinDoc; Context::BUILTIN_NAMES.len()] = [
             ex("approx(rootof(x^5 - x - 1, 1))", "1.16730397826142"),
         ],
     ),
+    doc(
+        Context::BERNOULLI,
+        Special,
+        "bernoulli(n)",
+        "The Bernoulli number B_n, the coefficient of t^n/n! in t/(e^t - 1).",
+        "Exact values for natural numbers n <= 1000, B_1 being -1/2. They are the general terms of the whole \
+         series of tan, cot, csc, tanh and t/(e^t - 1).",
+        &[ex("bernoulli(10)", "5/66"), ex("bernoulli(1)", "-1/2")],
+    ),
+    doc(
+        Context::EULER,
+        Special,
+        "euler(n)",
+        "The Euler number E_n, the coefficient of t^n/n! in 1/cosh(t).",
+        "Exact values for natural numbers n <= 1000, zero for odd n. They are the general terms of the whole \
+         series of sec and 1/cosh.",
+        &[ex("euler(10)", "-50521"), ex("euler(3)", "0")],
+    ),
 ];
 
 #[cfg(test)]

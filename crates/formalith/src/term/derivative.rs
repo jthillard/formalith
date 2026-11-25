@@ -60,7 +60,12 @@ impl<T: Derivable<ExponantSet = T, ProductCoefficientSet = T>> Term<T> {
             }
             // A real root of a polynomial, a constant
             Self::Fun(fun) if fun.get_ident() == Context::real_root() => Self::zero(set),
+            // A function of other symbols, like `bernoulli(2k)` in a series
+            Self::Fun(_) if !self.symbols().contains(&x) => Self::zero(set),
             Self::Fun(fun) => {
+                if let Some(res) = set.derivative_function(&**fun, x) {
+                    return res;
+                }
                 // `{$d/dx integral f dif x = f$}`
                 if fun.get_ident() == Context::INTEGRATE
                     && let Some([f, Self::Symbol(variable)]) =

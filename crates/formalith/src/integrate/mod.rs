@@ -223,6 +223,13 @@ impl Integrator {
         if !constant.is_one() {
             return Some(constant * self.integrate(&g, x)?);
         }
+        // A whole series, term by term
+        if let Term::Fun(fun) = f
+            && fun.get_ident() == Context::held_sum()
+        {
+            let args = fun.get_args::<Real>()?;
+            return crate::sum::integrate_held_sum(args, x, &mut |t| self.integrate(t, x));
+        }
         if let Some(g) = merge_square_roots(f, x).or_else(|| pull_common_factors(f, x)) {
             return self.integrate(&g, x);
         }

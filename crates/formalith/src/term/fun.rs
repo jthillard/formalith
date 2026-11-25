@@ -258,6 +258,16 @@ impl<From: Set, T: Set> Print for Fun<From, T> {
                 u.print(options, f)?;
                 return f.write_str(")");
             }
+            if let (Context::BERNOULLI | Context::EULER, [n]) = (self.ident, args.as_slice()) {
+                // `{$B_n$}`, `{$E_n$}`
+                f.write_str(if self.ident == Context::BERNOULLI {
+                    "B_("
+                } else {
+                    "E_("
+                })?;
+                n.print(options, f)?;
+                return f.write_str(")");
+            }
             if (matches!(self.ident, Context::SUM | Context::PRODUCT)
                 || self.ident == Context::held_sum())
                 && let [fun, k, a, b] = args.as_slice()

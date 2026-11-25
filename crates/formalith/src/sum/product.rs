@@ -233,7 +233,8 @@ pub(super) fn combine_factorials(term: &Expr) -> Expr {
     absorb_factors(res)
 }
 
-/// Rewrite `{$u^(-1) u! = (u - 1)!$}` and `{$u / u! = 1 / (u - 1)!$}` in a product, repeatedly.
+/// Rewrite `{$u^(-1) u! = (u - 1)!$}`, `{$u / u! = 1 / (u - 1)!$}` and `{$(u + 1)^e u!^e = (u + 1)!^e$}` in a
+/// product, repeatedly.
 fn absorb_factors(term: Expr) -> Expr {
     let Term::Mul(mul) = &term else {
         return term;
@@ -250,8 +251,8 @@ fn absorb_factors(term: Expr) -> Expr {
         let Some((Context::FACTORIAL, u)) = unary(base) else {
             continue;
         };
-        // A factor `{$(plus.minus u)^(-e)$}`
-        let Some((j, sign)) = factors.iter().enumerate().find_map(|(j, t)| {
+        // A factor `{$(plus.minus u)^(-e)$}`, or `{$(u + 1)^e$}`
+        let Some((j, sign, shift)) = factors.iter().enumerate().find_map(|(j, t)| {
             let (base, e) = match t {
                 Term::Pow(pow) => match &**pow.exponant {
                     Term::Value(e) => (&*pow.base, e.value.clone()),
@@ -259,12 +260,14 @@ fn absorb_factors(term: Expr) -> Expr {
                 },
                 _ => (t, Rational::from(1)),
             };
-            if j == i || e != -&exponent {
+            if j == i {
                 None
-            } else if base == u {
-                Some((j, Rational::from(1)))
-            } else if (base + u).expand().is_zero() {
-                Some((j, Rational::from(-1)))
+            } else if e == -&exponent && base == u {
+                Some((j, Rational::from(1), -one()))
+            } else if e == -&exponent && (base + u).expand().is_zero() {
+                Some((j, Rational::from(-1), -one()))
+            } else if e == exponent && (base - &(u + &one())).expand().is_zero() {
+                Some((j, Rational::from(1), one()))
             } else {
                 None
             }
@@ -276,7 +279,7 @@ fn absorb_factors(term: Expr) -> Expr {
             .enumerate()
             .filter(|(index, _)| *index != i && *index != j)
             .fold(value(&mul.coefficient * sign), |res, (_, t)| res * t)
-            * fun(Context::FACTORIAL, u - &one()).pow(&value(exponent));
+            * fun(Context::FACTORIAL, u + &shift).pow(&value(exponent));
         return absorb_factors(res);
     }
     term

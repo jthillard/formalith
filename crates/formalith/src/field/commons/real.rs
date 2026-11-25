@@ -1091,7 +1091,9 @@ impl R<Rational> {
                 | Context::BETA
                 | Context::DIGAMMA
                 | Context::POLYGAMMA
-                | Context::ZETA,
+                | Context::ZETA
+                | Context::BERNOULLI
+                | Context::EULER,
                 args,
             ) => self.eval_gamma_family(ident, args),
             (Context::LAMBERTW, [x]) if !x.is_approximate() => self.eval_lambertw(x, true),
@@ -1642,6 +1644,14 @@ impl Field for R<Rational> {}
 impl Derivable for R<Rational> {
     fn derivative(&self, _: &Self::Element, _: Symbol) -> Self::Element {
         Rational::ZERO
+    }
+
+    fn derivative_function(&self, fun: &dyn term::Function<Self>, x: Symbol) -> Option<Term<Self>> {
+        // A whole series, term by term
+        if fun.get_ident() != Context::held_sum() {
+            return None;
+        }
+        crate::sum::derive_held_sum(fun.get_args::<Self>()?, x)
     }
 }
 

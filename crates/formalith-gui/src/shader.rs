@@ -62,7 +62,8 @@ impl Emitter<'_> {
                 let args: Vec<String> = args.iter().map(|arg| self.emit(arg)).collect();
                 self.function(*fun, &args)
             }
-            Numeric::Unsupported(_) => "nf_nan()".to_owned(),
+            // Infinite sums, drawn on the CPU only
+            Numeric::Sum { .. } | Numeric::Unsupported(_) => "nf_nan()".to_owned(),
         }
     }
 
@@ -122,6 +123,8 @@ impl Emitter<'_> {
                 };
                 return self.bind(&format!("{name}({}, {})", arg(0), arg(1)));
             }
+            // Integer sequences, only used in the general terms of series, which the GPU doesn't sum
+            NumFn::Bernoulli | NumFn::Euler => return "nf_nan()".to_owned(),
             NumFn::Lt | NumFn::Le | NumFn::Gt | NumFn::Ge | NumFn::Eq | NumFn::Ne => {
                 let name = match fun {
                     NumFn::Lt => "nf_lt",

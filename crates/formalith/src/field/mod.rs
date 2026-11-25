@@ -9,7 +9,7 @@ use crate::{
     field::{cartesian::CartesianPower, matrix::M, polynomial::Poly},
     parser::{Parser, ParserError},
     printer::{PrettyPrinter, PrintOptions},
-    term::{Add, Mul, Pow, SymbolTerm, Term, TermSet, Value},
+    term::{Add, Function, Mul, Pow, SymbolTerm, Term, TermSet, Value},
     traits::optional_default::OptionalDefault,
 };
 
@@ -440,4 +440,13 @@ pub trait Field: Ring {
 pub trait Derivable: Ring {
     /// The derivative of the element `expr` with respect to `x`.
     fn derivative(&self, expr: &Self::Element, x: Symbol) -> Self::Element;
+
+    /// The derivative of a function with a rule specific to the set, like the held sums of whole series in
+    /// `{$RR$}`, `None` for the generic rules.
+    fn derivative_function(&self, _fun: &dyn Function<Self>, _x: Symbol) -> Option<Term<Self>>
+    where
+        Self: Sized,
+    {
+        None
+    }
 }

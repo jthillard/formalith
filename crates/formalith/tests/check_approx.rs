@@ -131,7 +131,10 @@ fn approx(input: &str) -> Verdict {
 /// staying exact (orders of `polygamma` must stay integers).
 fn perturb(numeric: &Numeric) -> Numeric {
     let node = match numeric {
-        Numeric::Const(_) | Numeric::Unsupported(_) => return numeric.clone(),
+        // The terms of sums are functions of an integer index
+        Numeric::Const(_) | Numeric::Unsupported(_) | Numeric::Sum { .. } => {
+            return numeric.clone();
+        }
         Numeric::Var(_) => numeric.clone(),
         Numeric::Add(terms) => Numeric::Add(terms.iter().map(perturb).collect()),
         Numeric::Mul(factors) => Numeric::Mul(factors.iter().map(perturb).collect()),
