@@ -64,7 +64,10 @@ fn limit(input: &str) -> Verdict {
             "undefined" => {}
             "oo" | "-oo" => {
                 let sign = if result == "oo" { 1.0 } else { -1.0 };
-                if !(v_near * sign > 1e2 && v_near * sign > v_far * sign) {
+                // Large, or growing by a fraction of a logarithm over the four decades between the points
+                // (`ln(10^-8)` is only about -18)
+                let large = v_near * sign > 1e2 || (v_near - v_far) * sign > 1.0;
+                if !(large && v_near * sign > v_far * sign) {
                     return Verdict::Wrong(format!(
                         "lim = {result} but f({near}) = {v_near}, f({far}) = {v_far}"
                     ));
@@ -119,6 +122,8 @@ fn limits() {
             "gamma(x)*x; 0; 1",
             "abs(x)/x; 0; -1",
             "floor(x); 2; -1",
+            "(ln(x) + x)*(1 + 2*x); 0",
+            "1 - ln(x); 0",
         ],
         limit,
     );
