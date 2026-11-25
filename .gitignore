@@ -5,3 +5,4 @@
 /crates/formalith-gui/LICENSE
 /crates/formalith-gui/www/worker-pkg
 /crates/formalith-gui-worker/LICENSE
+.codegraph
