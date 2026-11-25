@@ -2,9 +2,12 @@
 //!
 //! Curves `y = f(x)`, `x = g(y)`, implicit curves and
 //! regions in `x` and `y` (also intersections of several relations, like `x^2 + y^2 < 1, y > 0`), points, and the
-//! areas of definite integrals `integrate(f, x, a, b)`. In `C`, functions `f(z)` are drawn as the images of the
-//! lines of a grid ([`GraphKind::ComplexMap`]), functions of a real `x` as curves (with their real and imaginary
-//! parts when they aren't real, [`GraphKind::ComplexCurve`]), and constants as points `(Re, Im)`.
+//! areas of definite integrals `integrate(f, x, a, b)`, and surfaces `z = f(x, y)` ([`GraphKind::Surface`]) for
+//! expressions in both `x` and `y`, definitions of two parameters and equations `z = f(x, y)`. In `C`, functions
+//! `f(z)` are drawn as the images of the lines of a grid, or in 3D as the surface `|f|` colored by `arg f`
+//! ([`GraphKind::ComplexMap`]), real ones as surfaces `f(x + i y)`, functions of a real `x` as curves (with their
+//! real and imaginary parts when they aren't real, [`GraphKind::ComplexCurve`]), and constants as points
+//! `(Re, Im)`.
 //!
 //! Graphs are compiled to [`Numeric`] expressions, evaluated with the values `[x, y, params...]`: `x` at index
 //! [`Graph::X`], `y` at index [`Graph::Y`] and the parameters of [`Graph::params`] after them.
@@ -83,9 +86,15 @@ pub enum GraphKind {
         /// The upper bound, which may depend on the parameters.
         b: Numeric,
     },
+    /// The surface `z = f(x, y)`.
+    Surface {
+        /// `f(x, y)`.
+        expr: Numeric,
+    },
     /// The images under a complex function `f` of the lines of the grid `Re z = k` and `Im z = k` for integers
-    /// `k` between `-10` and `10`, in the plane `(Re f, Im f)`, from a function of `z` in `C`. Both parts are
-    /// evaluated with `x = Re z` and `y = Im z`.
+    /// `k` between `-10` and `10`, in the plane `(Re f, Im f)`, from a function of `z` in `C` which isn't real. In
+    /// 3D, the surface of height `|f(x + i y)|` colored by `arg f`. Both parts are evaluated with `x = Re z` and
+    /// `y = Im z`.
     ComplexMap {
         /// `Re f(x + i y)`.
         re: Numeric,
@@ -189,9 +198,9 @@ impl Graph {
     #[must_use]
     pub fn unsupported(&self) -> Option<&str> {
         match &self.kind {
-            GraphKind::Function { expr, .. } | GraphKind::InverseFunction { expr } => {
-                expr.unsupported()
-            }
+            GraphKind::Function { expr, .. }
+            | GraphKind::InverseFunction { expr }
+            | GraphKind::Surface { expr } => expr.unsupported(),
             GraphKind::Implicit { relations } => relations
                 .iter()
                 .find_map(|relation| relation.expr.unsupported()),
@@ -226,16 +235,20 @@ fn params<'a>(terms: impl IntoIterator<Item = &'a Term<Real>>, excluded: &[Symbo
     params
 }
 
-/// Compile `parts` with the variables `[x, y, params...]`, `x` being `var` in place of the symbol `x`.
+/// Compile `parts` with the variables `[x, y, params...]`, `x` and `y` being `vars` in place of the symbols `x` and
+/// `y`.
 fn compile_all(
     parts: &[&Term<Real>],
-    var: Symbol,
+    [xvar, yvar]: [Symbol; 2],
     kind: impl FnOnce(Vec<Numeric>) -> GraphKind,
 ) -> Graph {
     profile_scope!("compile graph");
     let (x, y) = xy();
-    let params = params(parts.iter().copied(), &[var, x, y]);
-    let vars: Vec<Symbol> = [var, y].into_iter().chain(params.iter().copied()).collect();
+    let params = params(parts.iter().copied(), &[xvar, yvar, x, y]);
+    let vars: Vec<Symbol> = [xvar, yvar]
+        .into_iter()
+        .chain(params.iter().copied())
+        .collect();
     Graph {
         kind: kind(
             parts
@@ -253,7 +266,7 @@ fn compile<const N: usize>(
     var: Symbol,
     kind: impl FnOnce([Numeric; N]) -> GraphKind,
 ) -> Graph {
-    compile_all(&parts, var, |compiled| {
+    compile_all(&parts, [var, xy().1], |compiled| {
         kind(compiled.try_into().expect("One expression per part"))
     })
 }
@@ -271,6 +284,13 @@ fn function(f: &Term<Real>, var: Symbol) -> Graph {
             expr,
             derivative: evaluable(derivative),
         }
+    })
+}
+
+/// The surface `z = f(x, y)`, `x` and `y` being `vars`.
+fn surface(f: &Term<Real>, vars: [Symbol; 2]) -> Graph {
+    compile_all(&[f], vars, |compiled| GraphKind::Surface {
+        expr: compiled.into_iter().next().expect("One expression"),
     })
 }
 
@@ -318,11 +338,17 @@ fn integral_graph(line: &str, env: &Environment) -> Option<Graph> {
 /// The graph of a relation `lhs op rhs`, if it depends on `x` or `y`.
 fn relation_graph(lhs: &Term<Real>, relation: Relation, rhs: &Term<Real>) -> Option<Graph> {
     let (x, y) = xy();
+    let z = Symbol::new("z");
     let is = |term: &Term<Real>, symbol| matches!(term, Term::Symbol(s) if s.symbol() == symbol);
     let free_of = |term: &Term<Real>, symbol| !term.symbols().contains(&symbol);
     let comparison = Comparison::new(relation)?;
     if !(free_of(lhs, x) && free_of(rhs, x) && free_of(lhs, y) && free_of(rhs, y)) {
         if comparison == Comparison::Equal {
+            for (side, other) in [(lhs, rhs), (rhs, lhs)] {
+                if is(side, z) && free_of(other, z) {
+                    return Some(surface(other, [x, y]));
+                }
+            }
             for (side, other) in [(lhs, rhs), (rhs, lhs)] {
                 if is(side, y) && free_of(other, y) {
                     return Some(function(other, x));
@@ -350,7 +376,7 @@ fn region_graph(relations: &[(&Term<Real>, Relation, &Term<Real>)]) -> Option<Gr
         return None;
     }
     let differences: Vec<&Term<Real>> = differences.iter().collect();
-    Some(compile_all(&differences, xy().0, |exprs| {
+    Some(compile_all(&differences, xy().into(), |exprs| {
         GraphKind::Implicit {
             relations: exprs
                 .into_iter()
@@ -533,16 +559,20 @@ pub(crate) fn evaluate(
         return Ok((Evaluated::new(statement), Some(graph)));
     }
     let statement = env.eval(line, R).map_err(|err| err.to_string())?;
-    let graph = match &statement {
-        Statement::Expression(term) => {
-            let symbols = term.symbols();
-            (symbols.contains(&x) && !symbols.contains(&y)).then(|| function(term, x))
+    let graph_of = |term: &Term<Real>| {
+        let symbols = term.symbols();
+        match (symbols.contains(&x), symbols.contains(&y)) {
+            (true, false) => Some(function(term, x)),
+            (_, true) => Some(surface(term, [x, y])),
+            (false, false) => None,
         }
+    };
+    let graph = match &statement {
+        Statement::Expression(term) => graph_of(term),
         Statement::Definition { params, body, .. } => match params.as_slice() {
             [param] => Some(function(body, *param)),
-            [] if body.symbols().contains(&x) && !body.symbols().contains(&y) => {
-                Some(function(body, x))
-            }
+            [p, q] => Some(surface(body, [*p, *q])),
+            [] => graph_of(body),
             _ => None,
         },
         _ => None,
@@ -550,10 +580,14 @@ pub(crate) fn evaluate(
     Ok((Evaluated::new(statement), graph))
 }
 
-/// The graph of a complex function `f` of `var`, see [`GraphKind::ComplexMap`].
+/// The graph of a complex function `f` of `var`, see [`GraphKind::ComplexMap`], or the surface `Re f` when `f` is
+/// real.
 fn complex_map(f: &Term<Complex>, var: Symbol) -> Option<Graph> {
     let (x, y) = xy();
     let (re, im) = parts(f, var, x, y)?;
+    if im.is_zero() {
+        return Some(surface(&re, [x, y]));
+    }
     let params = params([&re, &im], &[x, y]);
     let vars: Vec<Symbol> = [x, y].into_iter().chain(params.iter().copied()).collect();
     Some(Graph {
@@ -677,6 +711,32 @@ mod tests {
     }
 
     #[test]
+    fn test_surface() {
+        let mut env = Environment::new();
+        let surface = |line: &str, env: &mut Environment| {
+            let (_, graph) = evaluate(line, env).unwrap();
+            let graph = graph.unwrap_or_else(|| panic!("No graph for {line}"));
+            let GraphKind::Surface { expr } = graph.kind else {
+                panic!("Expected a surface for {line}");
+            };
+            (expr, graph.params)
+        };
+        let (expr, params) = surface("x*y", &mut env);
+        assert_eq!(expr.eval(&[2., 3.]), 6.);
+        assert_eq!(params, Vec::<String>::new());
+        let (expr, _) = surface("f(u, v) := u^2 - v", &mut env);
+        assert_eq!(expr.eval(&[2., 3.]), 1.);
+        let (expr, _) = surface("z = x^2 + y^2", &mut env);
+        assert_eq!(expr.eval(&[1., 2.]), 5.);
+        let (expr, params) = surface("a*x*y", &mut env);
+        assert_eq!(params, ["a"]);
+        assert_eq!(expr.eval(&[1., 2., 3.]), 6.);
+        // A curve, not a surface
+        let (_, graph) = evaluate("y = x^2", &mut env).unwrap();
+        assert!(matches!(graph.unwrap().kind, GraphKind::Function { .. }));
+    }
+
+    #[test]
     fn test_complex_map() {
         let mut env = Environment::new();
         let (_, graph) = evaluate_complex("z^2", &mut env).unwrap();
@@ -690,6 +750,12 @@ mod tests {
         assert!(matches!(graph.kind, GraphKind::ComplexMap { .. }));
         assert_eq!(graph.params, ["a"]);
         assert!(evaluate_complex("x + y", &mut env).unwrap().1.is_none());
+        // Real functions of `z` are surfaces
+        let (_, graph) = evaluate_complex("abs(z)", &mut env).unwrap();
+        let Some(GraphKind::Surface { expr }) = graph.map(|graph| graph.kind) else {
+            panic!("Expected a surface");
+        };
+        assert!((expr.eval(&[3., 4.]) - 5.).abs() < 1e-12);
         assert!(evaluate_complex("x + z", &mut env).unwrap().1.is_none());
         let (_, graph) = evaluate_complex("sin(x)", &mut env).unwrap();
         assert!(matches!(graph.unwrap().kind, GraphKind::Function { .. }));

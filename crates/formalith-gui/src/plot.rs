@@ -2,6 +2,7 @@
 //! in `f64` on the CPU ([`crate::geometry`]) over a window around the view, sampled again when the view leaves it or
 //! is zoomed, and drawn as lines; implicit relations and regions are plot items running their shader over the plot
 //! ([`crate::gpu`]). The remarkable points of the selected curve are searched on the CPU ([`crate::analysis`]).
+//! Surfaces are drawn by the 3D view ([`crate::space`]) instead.
 
 use std::{cell::RefCell, collections::HashMap, ops::RangeInclusive, sync::Arc};
 
@@ -21,7 +22,7 @@ use formalith_session::{
 use crate::{
     analysis::{Kind, Point, intersections, remarkable_points},
     geometry::{GRID_K, Polyline, View, area, sample_function, sample_grid, sample_path},
-    gpu::{self, GraphCallback, Shader, UNIFORMS},
+    gpu::{GraphCallback, Shader, UNIFORMS},
     shader::{self, MAX_PARAMS},
 };
 
@@ -170,11 +171,12 @@ fn function_xy<'a>(expr: &'a Numeric, params: &[f64]) -> impl Fn(f64, f64) -> f6
 }
 
 impl Plotter {
-    /// The plot, drawing with the GPU of `cc`.
+    /// The plot, drawing with the GPU if `gpu` is given ([`gpu::install`]), and colors in linear space if it is
+    /// `true`.
     #[must_use]
-    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
+    pub fn new(gpu: Option<bool>) -> Self {
         Self {
-            gpu: cc.wgpu_render_state.as_ref().map(gpu::install),
+            gpu,
             ..Self::default()
         }
     }
@@ -480,6 +482,8 @@ impl Plotter {
                     draw_lines(plot_ui, drawable, Slot::Path, &families[0], drawable.color);
                 }
             },
+            // Drawn in the 3D view
+            GraphKind::Surface { .. } => {}
         }
     }
 
@@ -620,7 +624,7 @@ const fn curve(graph: &Graph) -> Option<(&Numeric, Option<&Numeric>)> {
 }
 
 /// The premultiplied components of `color`, in linear space or not.
-fn color(color: Color32, linear: bool) -> [f32; 4] {
+pub(crate) fn color(color: Color32, linear: bool) -> [f32; 4] {
     if linear {
         egui::Rgba::from(color).to_array()
     } else {
@@ -690,7 +694,7 @@ fn label(name: &str, x: f64, y: f64) -> String {
 }
 
 /// Format a coordinate with at most 6 decimals.
-fn format_number(value: f64) -> String {
+pub(crate) fn format_number(value: f64) -> String {
     let rounded = format!("{value:.6}");
     let trimmed = rounded.trim_end_matches('0').trim_end_matches('.');
     if trimmed == "-0" {
@@ -783,6 +787,7 @@ fn hover(
                 }
             }
             GraphKind::Point { .. }
+            | GraphKind::Surface { .. }
             | GraphKind::ComplexMap { .. }
             | GraphKind::ComplexCurve { .. } => {
                 continue;

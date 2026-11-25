@@ -15,6 +15,8 @@ use formalith_session::{
 pub const PRELUDE: &str = include_str!("shader/prelude.wgsl");
 /// The template of [`render`].
 pub const RENDER: &str = include_str!("shader/render.wgsl");
+/// The template of [`surface`].
+pub const SURFACE: &str = include_str!("shader/surface.wgsl");
 /// The largest number of parameters of a drawn graph, the size of the parameter array of [`RENDER`].
 pub const MAX_PARAMS: usize = 64;
 
@@ -244,6 +246,49 @@ pub fn render(relations: &[(&Numeric, Comparison)]) -> String {
     out
 }
 
+/// What a surface of the 3D view shows, see [`surface`].
+#[derive(Clone, Copy, Debug)]
+pub enum SurfaceKind<'a> {
+    /// The height `f(x, y)`.
+    Real(&'a Numeric),
+    /// The modulus of the complex function with the real part `re(x, y)` and the imaginary part `im(x, y)`, colored
+    /// by its argument.
+    Complex {
+        /// The real part.
+        re: &'a Numeric,
+        /// The imaginary part.
+        im: &'a Numeric,
+    },
+}
+
+/// The shader drawing a surface in the 3D view, see [`SURFACE`].
+#[must_use]
+pub fn surface(kind: SurfaceKind<'_>) -> String {
+    let mut out = format!("{PRELUDE}\n{SURFACE}\n");
+    match kind {
+        SurfaceKind::Real(expr) => {
+            out.push_str(&function(expr, "F", 0));
+            out.push_str(
+                "const COMPLEX: bool = false;\n\
+                 fn surface_value(x: f32, y: f32) -> vec3<f32> {\n    \
+                     return vec3<f32>(F(x, y), 0.0, 0.0);\n}\n",
+            );
+        }
+        SurfaceKind::Complex { re, im } => {
+            out.push_str(&function(re, "F", 0));
+            out.push_str(&function(im, "G", 0));
+            out.push_str(
+                "const COMPLEX: bool = true;\n\
+                 fn surface_value(x: f32, y: f32) -> vec3<f32> {\n    \
+                     let value = vec2<f32>(F(x, y), G(x, y));\n    \
+                     let modulus = length(value);\n    \
+                     return vec3<f32>(modulus, value / modulus);\n}\n",
+            );
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use formalith_session::formalith::{
@@ -332,5 +377,13 @@ pub(crate) mod tests {
             (&re, Comparison::Equal),
             (&im, Comparison::Less),
         ]));
+        validate(&surface(SurfaceKind::Complex { re: &re, im: &im }));
+    }
+
+    #[test]
+    fn test_surface() {
+        for input in EXPRESSIONS {
+            validate(&surface(SurfaceKind::Real(&compile(input))));
+        }
     }
 }

@@ -1,6 +1,8 @@
 //! Drawing of implicit relations and regions on the GPU: a paint callback runs the shader of a graph
-//! ([`crate::shader::render`]) over the whole plot, with its view, colors and parameters as uniforms.
+//! ([`crate::shader::render`]) over the whole plot, with its view, colors and parameters as uniforms. The surfaces of
+//! the 3D view are drawn by [`scene`].
 
+pub mod scene;
 #[cfg(feature = "profile")]
 pub mod timer;
 
@@ -72,11 +74,10 @@ pub fn install(render_state: &egui_wgpu::RenderState) -> bool {
     {
         resources.timer = timer::RenderTimer::new(&render_state.device, &render_state.queue);
     }
-    render_state
-        .renderer
-        .write()
-        .callback_resources
-        .insert(resources);
+    let scene = scene::SceneResources::new(&render_state.device, format);
+    let mut renderer = render_state.renderer.write();
+    renderer.callback_resources.insert(resources);
+    renderer.callback_resources.insert(scene);
     format.is_srgb()
 }
 

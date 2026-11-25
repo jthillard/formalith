@@ -213,12 +213,18 @@ fn test_integrals() {
     assert_close(expr.eval(&[3., f64::NAN, 2.]), 9.);
     assert_eq!(a.eval(&[f64::NAN, f64::NAN, 2.]), f64::NEG_INFINITY);
     assert_close(b.eval(&[f64::NAN, f64::NAN, 2.]), 2.);
-    // Bounds depending on the variable give functions, integrands in two variables nothing
+    // Bounds depending on the variable give functions, integrands in two variables the surface of the result
     assert!(matches!(
         draw(&mut session, "integrate(t, t, 0, x)").1.unwrap().kind,
         GraphKind::Function { .. }
     ));
-    assert_eq!(draw(&mut session, "integrate(x*y, x, 0, 1)").1, None);
+    assert!(matches!(
+        draw(&mut session, "integrate(x*y, x, 0, 1)")
+            .1
+            .unwrap()
+            .kind,
+        GraphKind::Surface { .. }
+    ));
 }
 
 #[test]

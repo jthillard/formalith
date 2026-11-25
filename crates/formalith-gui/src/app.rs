@@ -1,15 +1,18 @@
-//! The application: a list of lines with their results and parameters, next to the plot of their graphs.
+//! The application: a list of lines with their results and parameters, next to the plot of their graphs, in 2D or
+//! in 3D.
 
 use std::collections::{BTreeMap, HashMap};
 
 use eframe::egui::{self, Color32, RichText, TextEdit, TextStyle};
-use formalith_session::graph::GraphKind;
+use formalith_session::graph::{Graph, GraphKind};
 use serde::{Deserialize, Serialize};
 
 use crate::{
     evaluator::{BackendFactory, Evaluator},
+    gpu,
     plot::{ComplexView, Drawable, Plotter},
     protocol::{LineResult, Reply, Request, RequestLine, ResultKind},
+    space::{Space, is_surface},
     typeset::Typesetter,
 };
 
@@ -24,7 +27,7 @@ const PALETTE: [[u8; 3]; 6] = [
 ];
 
 /// Inputs shown as examples.
-const EXAMPLES: [&str; 12] = [
+const EXAMPLES: [&str; 13] = [
     "y = a*sin(b*x)",
     "f(x) := x^3 - 3*x",
     "y = f(x - 1) + 1",
@@ -37,6 +40,7 @@ const EXAMPLES: [&str; 12] = [
     "x^3 - 2*x = 0",
     "tan(x)",
     "diff(x^x, x)",
+    "z = sin(x)*cos(y)",
 ];
 
 /// The key of the state saved between sessions.
@@ -77,6 +81,16 @@ impl Default for Slider {
     }
 }
 
+/// The view of the graphs.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+enum PlotView {
+    /// The 2D plot.
+    #[default]
+    Plane,
+    /// The 3D view of the surfaces.
+    Space,
+}
+
 /// The state saved between sessions.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(default)]
@@ -88,6 +102,7 @@ struct State {
     equal_aspect: bool,
     /// Whether results are typeset with Typst.
     typst: bool,
+    view: PlotView,
 }
 
 impl Default for State {
@@ -99,6 +114,7 @@ impl Default for State {
             set: "R".to_owned(),
             equal_aspect: true,
             typst: true,
+            view: PlotView::Plane,
         };
         for text in ["y = a*sin(x)", "x^2 + y^2 < 9"] {
             state.add_line(state.lines.len(), text.to_owned());
@@ -145,6 +161,7 @@ pub struct App {
     /// The images of the results.
     typesetter: Typesetter,
     plotter: Plotter,
+    space: Space,
     /// The line whose curve shows its remarkable points.
     selected: Option<u64>,
     /// The line to give the keyboard focus.
@@ -162,6 +179,7 @@ impl App {
             .storage
             .and_then(|storage| eframe::get_value(storage, STORAGE_KEY))
             .unwrap_or_default();
+        let gpu = cc.wgpu_render_state.as_ref().map(gpu::install);
         Self {
             state,
             evaluator: Evaluator::new(backends),
@@ -169,7 +187,8 @@ impl App {
             edited: true,
             results: HashMap::new(),
             typesetter: Typesetter::default(),
-            plotter: Plotter::new(cc),
+            plotter: Plotter::new(gpu),
+            space: Space::new(gpu),
             selected: None,
             focus: None,
             #[cfg(feature = "profile")]
@@ -206,7 +225,16 @@ impl App {
                             self.state.params.entry(param.clone()).or_default();
                         }
                     }
+                    let new_surface = is_new_surface(
+                        result.graph.as_ref(),
+                        self.results
+                            .get(&id)
+                            .and_then(|evaluated| evaluated.result.graph.as_ref()),
+                    );
                     self.results.insert(id, Evaluated { generation, result });
+                    if new_surface && !self.has_flat_graph() {
+                        self.state.view = PlotView::Space;
+                    }
                 }
                 #[cfg(feature = "profile")]
                 Reply::Profile { lanes } => self.profiler.add_lanes(lanes),
@@ -242,6 +270,20 @@ impl App {
             // Check for stuck requests even without replies
             ctx.request_repaint_after(std::time::Duration::from_millis(500));
         }
+    }
+
+    /// Check if a visible line has a graph drawn only in the 2D plot.
+    fn has_flat_graph(&self) -> bool {
+        self.state
+            .lines
+            .iter()
+            .filter(|line| line.visible)
+            .any(|line| {
+                self.results
+                    .get(&line.id)
+                    .and_then(|evaluated| evaluated.result.graph.as_ref())
+                    .is_some_and(|graph| !is_surface(graph))
+            })
     }
 
     /// Check if the result of the line `id` is outdated.
@@ -320,6 +362,7 @@ impl App {
                     ui.checkbox(&mut self.state.typst, "Typeset results with Typst");
                     if ui.button("Reset the view").clicked() {
                         self.plotter.reset_view();
+                        self.space.reset_view();
                     }
                     #[cfg(feature = "profile")]
                     if ui.button("Profiler (F12)").clicked() {
@@ -355,6 +398,8 @@ impl App {
             let has_graph = graph.is_some();
             let is_complex_curve =
                 graph.is_some_and(|graph| matches!(graph.kind, GraphKind::ComplexCurve { .. }));
+            let only_in_space = self.state.view == PlotView::Plane
+                && graph.is_some_and(|graph| matches!(graph.kind, GraphKind::Surface { .. }));
             let line = &mut self.state.lines[index];
             let selected = self.selected == Some(id);
             let frame = egui::Frame::group(ui.style()).fill(if selected {
@@ -419,6 +464,9 @@ impl App {
                         .filter(|_| typst)
                         .and_then(|source| self.typesetter.get(ui.ctx(), source));
                     result_label(ui, id, result, image, pending);
+                    if only_in_space {
+                        ui.weak("drawn in the 3D view");
+                    }
                 } else if !line.text.trim().is_empty() {
                     ui.horizontal(|ui| {
                         ui.spinner();
@@ -524,6 +572,14 @@ impl App {
     }
 }
 
+/// Check if `graph` is a surface, when the `previous` graph of its line wasn't.
+fn is_new_surface(graph: Option<&Graph>, previous: Option<&Graph>) -> bool {
+    let surface = |graph: Option<&Graph>| {
+        graph.is_some_and(|graph| matches!(graph.kind, GraphKind::Surface { .. }))
+    };
+    surface(graph) && !surface(previous)
+}
+
 /// Show the result of a line, as its typeset `image` (URI and bytes) if given, faded while a newer one is computed.
 fn result_label(
     ui: &mut egui::Ui,
@@ -580,6 +636,7 @@ impl eframe::App for App {
         self.animate(&ctx);
         let ids: Vec<u64> = self.state.lines.iter().map(|line| line.id).collect();
         self.plotter.retain(&ids);
+        self.space.retain(&ids);
 
         let narrow = ui.available_width() < 700.;
         let panel = if narrow {
@@ -589,11 +646,27 @@ impl eframe::App for App {
         };
         panel.resizable(true).show(ui, |ui| self.lines_panel(ui));
         egui::CentralPanel::default().show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.selectable_value(&mut self.state.view, PlotView::Plane, "2D")
+                    .on_hover_text("Curves, regions and points");
+                ui.selectable_value(&mut self.state.view, PlotView::Space, "3D")
+                    .on_hover_text(
+                        "Surfaces z = f(x, y), and functions of z in C (height |f|, colored by arg f). Drag to \
+                         rotate, right-drag to pan, scroll to zoom, double-click to reset",
+                    );
+            });
             let mut plotter = std::mem::take(&mut self.plotter);
+            let mut space = std::mem::take(&mut self.space);
             let drawables = self.drawables();
-            plotter.show(ui, &drawables, self.selected, self.state.equal_aspect);
+            match self.state.view {
+                PlotView::Plane => {
+                    plotter.show(ui, &drawables, self.selected, self.state.equal_aspect);
+                }
+                PlotView::Space => space.show(ui, &drawables),
+            }
             drop(drawables);
             self.plotter = plotter;
+            self.space = space;
         });
         #[cfg(feature = "profile")]
         {

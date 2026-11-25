@@ -5,7 +5,8 @@
 //! Lines are evaluated off the interface thread ([`evaluator`]) and come back with their graphs compiled to
 //! numerical expressions ([`formalith_session::graph`]), drawn without the CAS ([`plot`]): curves are sampled in
 //! `f64` on the CPU ([`geometry`]), with their remarkable points ([`analysis`]), and implicit relations and regions
-//! are compiled to WGSL ([`shader`]) and drawn per pixel on the GPU ([`gpu`]). In the browser, the worker is a
+//! are compiled to WGSL ([`shader`]) and drawn per pixel on the GPU ([`gpu`]). Surfaces `z = f(x, y)` and complex
+//! functions `f(z)` are drawn in a 3D view ([`space`]), evaluated on the GPU at the vertices of a grid. In the browser, the worker is a
 //! separate wasm module (`formalith-gui-worker`), so this one doesn't hold the CAS.
 //!
 //! With the feature `profile`, a profiler window ([`profiler`]) records all of it, down to the CAS and the GPU.
@@ -36,6 +37,8 @@ pub mod profiler;
 pub mod protocol;
 #[cfg(feature = "ui")]
 pub mod shader;
+#[cfg(feature = "ui")]
+pub mod space;
 #[cfg(feature = "ui")]
 pub mod typeset;
 
