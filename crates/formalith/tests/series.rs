@@ -202,6 +202,26 @@ fn series_of_compositions() {
 }
 
 #[test]
+fn series_with_symbolic_exponents() {
+    let start = std::time::Instant::now();
+    let binomial = "1 + a*x + a*(a-1)/2*x^2 + a*(a-1)*(a-2)/6*x^3";
+    let expanded = |input: &str| line(&parse!(&format!("expand({})", series(input)), R));
+    let expected = line(&parse!(&format!("expand({binomial})"), R));
+    assert_eq!(expanded("series((1 + x)^a, x, 0, 4)"), expected);
+    assert_eq!(expanded("series(exp(a*ln(1 + x)), x, 0, 4)"), expected);
+    // Higher orders and other bases finish quickly too
+    for input in [
+        "series((1 + x)^a, x, 0, 8)",
+        "series(exp(a*ln(1 + x)), x, 0, 8)",
+        "series((1 + x + x^2)^a, x, 0, 8)",
+        "series((1 + x)^a/(1 - x)^b, x, 0, 8)",
+    ] {
+        assert!(series(input).contains("x^7"), "{input}");
+    }
+    assert!(start.elapsed().as_secs() < 20);
+}
+
+#[test]
 fn series_of_logarithms_stay_logarithms() {
     assert_eq!(series("series(ln(x), x, 0, 3, 1)"), "ln(x)");
 }

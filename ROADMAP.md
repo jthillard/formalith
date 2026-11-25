@@ -19,7 +19,6 @@ Ideas and known gaps, roughly by area. `AGENTS.md` describes what exists; this f
   - definite integrals term by term, and integrals of terms that aren't a power of a linear term;
   - `approx` of a held sum equal to zero raises the precision to its maximum, which is slow (seconds);
   - partial sums on the GPU (`Numeric::Sum` is NaN there).
-- `exp(a ln u)` with a symbolic `a` is slow in the series engine: `series((1 + x)^a, x, 0, 8)` doesn't finish.
 
 ## Solving
 
