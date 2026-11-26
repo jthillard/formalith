@@ -208,6 +208,17 @@ fn algebraic_substitutions() {
         integrate("integrate(sqrt(r/x - 1), x)"),
         integrate("x*sqrt(r/x - 1) - r*atan(sqrt(r/x - 1))")
     );
+    // Symbolic bounds at the zeros of the numerator and denominator of the radicand
+    let mut env = Environment::new();
+    env.eval("assume(r > 0)", R).unwrap();
+    assert_eq!(
+        line(&parse!("integrate(sqrt(r/x - 1), x, 0, r)", R, &env)),
+        integrate("pi*r/2")
+    );
+    assert_eq!(
+        line(&parse!("integrate(sqrt(r/x - 1), x, 0, r/2)", R, &env)),
+        integrate("r/2 + pi*r/4")
+    );
     for f in [
         "sqrt(1/x - 1)",
         "sqrt((1 - x)/x)",

@@ -401,6 +401,11 @@ fn symbolic(f: &Expr, x: Symbol, a: &Expr, b: &Expr) -> IntegrateResult<Expr> {
         return Err(IntegrateError::Unsupported);
     }
     let (mut regular_a, mut regular_b) = (true, true);
+    // Numerators and denominators separately, `{$r / x - 1 = (r - x) / x$}` having linear factors
+    let critical: Vec<Expr> = critical
+        .iter()
+        .flat_map(|u| <[Expr; 2]>::from(u.as_fraction(true)))
+        .collect();
     for u in &critical {
         for factor in factors(u) {
             let factor = match (&factor, unary(&factor)) {
