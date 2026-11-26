@@ -408,6 +408,7 @@ fn limits_of_exponential_integrals() {
     assert_eq!(lim("lim(Si(x), x, oo)"), "1/2*pi");
     assert_eq!(lim("lim(Si(x), x, -oo)"), "-1/2*pi");
     assert_eq!(lim("lim(Ci(x), x, oo)"), "0");
+    assert_eq!(lim("lim(Ci(abs(x)), x, -oo)"), "0");
     assert_eq!(lim("lim(Ei(x), x, -oo)"), "0");
     // `{$"Ei"(x) ~ e^x / x$}`
     assert_eq!(lim("lim(Ei(x)*x*exp(-x), x, oo)"), "1");

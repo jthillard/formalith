@@ -435,6 +435,16 @@ fn ln_abs(u: &Expr, x: Symbol) -> Expr {
     }
 }
 
+/// `{$"Ci"(u)$}`, or `{$"Ci"(|u|)$}` when `u` may be negative, `{$"Ci"$}` being real for positive arguments only:
+/// `{$"Ci"(|u|)' = cos(u) / u u'$}` on both sides.
+fn ci_abs(u: &Expr, x: Symbol) -> Expr {
+    if is_positive(u, x) {
+        fun(Context::CI, u.clone())
+    } else {
+        fun(Context::CI, fun(Context::ABS, u.clone()))
+    }
+}
+
 /// Whether `u` is positive for every `x`, which is checked on constants, exponentials, and polynomials of degree
 /// two or with only even powers and non-negative coefficients.
 fn is_positive(u: &Expr, x: Symbol) -> bool {

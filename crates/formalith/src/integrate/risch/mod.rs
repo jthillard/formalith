@@ -6,15 +6,19 @@
 //!    normal, plus a polynomial `r` in `{$t_n$}` (and `{$1 / t_n$}` for an exponential),
 //! 2. the residues of `h` are the roots of `{$R(z) = "res"_t(d, a - z D d)$}`: when one isn't a constant, `f` has
 //!    no elementary integral, otherwise each rational residue `{$alpha$}` gives `{$alpha ln gcd(d, a - alpha D d)$}`,
+//!    and the roots of an irreducible quadratic factor of `R` give the same logarithms with a gcd over
+//!    `{$K(alpha)$}`, written with square roots, or with `ln` and `atan` for complex roots (see [`quadratic`]),
 //! 3. the remaining polynomial `{$p = sum p_i t^i$}` is integrated coefficient by coefficient: for
 //!    `{$t = ln u$}`, `{$integral p_m$}` must be in `{$K_(n - 1)$}` up to a constant times `t` (limited
 //!    integration), for `{$t = e^a$}`, `{$p_i t^i$}` is the derivative of `{$y t^i$}` with `{$D y + i D a y = p_i$}`
 //!    (Risch differential equation, see [`rde`]), and `{$p_0$}` is integrated recursively in `{$K_(n - 1)$}`.
 //!
-//! Steps that the implementation doesn't decide (irrational residues outside of `{$QQ(x)$}`, cancellation cases
+//! Steps that the implementation doesn't decide (residues of degree 3 or more over `{$QQ$}` outside of
+//! `{$QQ(x)$}`, cancellation cases
 //! of the differential equation) make it fail with [`RischError::Unsupported`], so
 //! [`RischError::NonElementary`] is a proof.
 
+mod quadratic;
 mod rde;
 mod tower;
 
@@ -34,6 +38,7 @@ use super::{
 
 use crate::polynom::fraction as field;
 use field::{EPoly, Elem, interpolate};
+use quadratic::Quadratic;
 use rational::rational_roots;
 use tower::{Kind, Tower};
 
@@ -75,6 +80,15 @@ pub(super) fn canonical(f: &Expr, x: Symbol) -> Option<(Expr, usize)> {
 struct Integral {
     part: Elem,
     logs: Expr,
+}
+
+/// The residues `{$alpha$}` of `h` at the roots of a factor of the Rothstein-Trager resultant, with
+/// `{$S(alpha, t) = gcd(d, a - alpha D d)$}`.
+enum Residue {
+    /// A rational residue.
+    Rational(Rational, EPoly),
+    /// The roots of an irreducible quadratic, with `{$S(alpha, t) = s_0 + alpha s_1$}`.
+    Quadratic(Quadratic, EPoly, EPoly),
 }
 
 struct Risch<'a> {
@@ -131,11 +145,19 @@ impl Risch<'_> {
         let mut logs = zero();
         // `{$p = h - sum alpha D S / S + r$}`
         let mut p = h.plus(&r);
-        for (alpha, s) in self.residue_reduce(&h, level)? {
-            let s = Elem::from_poly(level, &s);
-            let alpha_elem = Elem::rational(alpha.clone());
-            p = p.minus(&alpha_elem.times(&self.d(&s).divide(&s)));
-            logs += value(alpha) * ln_abs(&self.tower.to_term(&s), self.tower.x());
+        for residue in self.residue_reduce(&h, level)? {
+            match residue {
+                Residue::Rational(alpha, s) => {
+                    let s = Elem::from_poly(level, &s);
+                    let alpha_elem = Elem::rational(alpha.clone());
+                    p = p.minus(&alpha_elem.times(&self.d(&s).divide(&s)));
+                    logs += value(alpha) * ln_abs(&self.tower.to_term(&s), self.tower.x());
+                }
+                Residue::Quadratic(quadratic, s0, s1) => {
+                    p = p.minus(&quadratic.trace_log_derivative(self.tower, &s0, &s1, level));
+                    logs += quadratic.logs(self.tower, &s0, &s1, level, self.tower.x());
+                }
+            }
         }
         let (num, den) = p.fraction(level);
         let rest = match self.tower.kind(level) {
@@ -219,13 +241,13 @@ impl Risch<'_> {
         (g, h, r)
     }
 
-    /// The rational residues `{$alpha$}` of `h` with `{$S = gcd(d, a - alpha D d)$}`, for `{$h = a / d$}` with
-    /// `d` square-free and normal.
+    /// The residues `{$alpha$}` of `h` with `{$S = gcd(d, a - alpha D d)$}`, for `{$h = a / d$}` with `d`
+    /// square-free and normal.
     ///
     /// # Errors
-    /// [`RischError::NonElementary`] when a residue isn't a constant, [`RischError::Unsupported`] when one is
-    /// irrational.
-    fn residue_reduce(&self, h: &Elem, level: usize) -> RischResult<Vec<(Rational, EPoly)>> {
+    /// [`RischError::NonElementary`] when a residue isn't a constant, [`RischError::Unsupported`] when one is a
+    /// root of an irreducible factor of degree 3 or more.
+    fn residue_reduce(&self, h: &Elem, level: usize) -> RischResult<Vec<Residue>> {
         if h.is_zero() {
             return Ok(vec![]);
         }
@@ -242,17 +264,31 @@ impl Risch<'_> {
             .map(|c| c.as_rational().cloned())
             .collect();
         let r = Poly::new(r.ok_or(RischError::NonElementary)?);
-        let (roots, split) = rational_roots(&r, self.tower.x());
-        if !split {
-            return Err(RischError::Unsupported);
+        let mut residues = vec![];
+        for square_free in r.square_free() {
+            if square_free.degree() == 0 {
+                continue;
+            }
+            for q in rational::factor(&square_free, self.tower.x()) {
+                match q.degree() {
+                    1 => {
+                        let alpha = -q.coefficient(0) / q.coefficient(1);
+                        let s = d.gcd(&a.sub(&dd.scale(&Elem::rational(alpha.clone()))));
+                        residues.push(Residue::Rational(alpha, s));
+                    }
+                    2 => {
+                        let quadratic = Quadratic {
+                            p: q.coefficient(1),
+                            q: q.coefficient(0),
+                        };
+                        let (s0, s1) = quadratic.gcd(&d, &a, &dd);
+                        residues.push(Residue::Quadratic(quadratic, s0, s1));
+                    }
+                    _ => return Err(RischError::Unsupported),
+                }
+            }
         }
-        Ok(roots
-            .into_iter()
-            .map(|alpha| {
-                let s = d.gcd(&a.sub(&dd.scale(&Elem::rational(alpha.clone()))));
-                (alpha, s)
-            })
-            .collect())
+        Ok(residues)
     }
 
     /// `{$R(z) = "res"_t(d, a - z b)$}`, interpolated from its values at `{$z = 0, ..., deg d$}`.
@@ -320,4 +356,79 @@ fn to_rational_poly(p: &EPoly) -> Poly {
 
 fn from_rational_poly(p: &Poly) -> EPoly {
     p.map(|c| Elem::rational(c.clone()))
+}
+
+#[cfg(test)]
+mod tests {
+    use malachite::base::num::{arithmetic::traits::Abs, basic::traits::One};
+
+    use super::*;
+    use crate::{
+        field::real::{R, approx::approximate, expr::one},
+        parse, symbol,
+        term::Term,
+    };
+
+    /// The integral of `f` by the Risch algorithm, checked by differentiating it at a few points.
+    fn check(f: &str) -> Expr {
+        let x = symbol!("x");
+        let f = parse!(f, R);
+        let integral = integrate(&f, x).unwrap_or_else(|err| panic!("{f}: {err:?}"));
+        let difference: Expr = integral.derivative(x) - f.clone();
+        for point in ["3/10", "7/10", "13/10", "21/10"] {
+            let at = difference.substitute(x, &parse!(point, R)).unwrap();
+            // Shifted by 1, as approximating an exact 0 raises the precision until its maximum
+            let error = approximate(&(at + one()).normalize(), 20).unwrap() - Rational::ONE;
+            assert!(
+                (&error).abs() < Rational::from_signeds(1, 10_000_000_000_i64),
+                "{f}: {integral}, derivative error at {point}: {error}"
+            );
+        }
+        integral
+    }
+
+    fn has(term: &Expr, ident: crate::context::Symbol) -> bool {
+        match term {
+            Term::Fun(fun) => {
+                fun.get_ident() == ident
+                    || fun
+                        .get_args::<R<Rational>>()
+                        .is_some_and(|args| args.iter().any(|arg| has(arg, ident)))
+            }
+            Term::Add(add) => add.iter().any(|t| has(t, ident)),
+            Term::Mul(mul) => mul.iter().any(|t| has(t, ident)),
+            Term::Pow(pow) => has(&pow.base, ident) || has(&pow.exponant, ident),
+            _ => false,
+        }
+    }
+
+    #[test]
+    fn quadratic_residues() {
+        use crate::context::Context;
+        // Real residues `{$plus.minus sqrt(2) / 4$}`
+        let integral = check("exp(x)/(exp(2*x) - 2)");
+        assert!(has(&integral, Context::LN), "{integral}");
+        // Complex residues `{$plus.minus i sqrt(2) / 4$}`, `{$atan(e^x / sqrt(2)) / sqrt(2)$}`
+        let integral = check("exp(x)/(exp(2*x) + 2)");
+        assert!(has(&integral, Context::ATAN), "{integral}");
+        check("1/(x*(ln(x)^2 + 3))");
+        // Complex residues with a real part
+        check("exp(x)/(exp(2*x) + exp(x) + 1)");
+        check("exp(2*x)/(exp(2*x) + exp(x) + 1)");
+        // `{$sum_(alpha = plus.minus i) alpha ln(t^2 + alpha t + 1)$}` with `{$t = ln x$}`, through Rioboo's extended
+        // gcd steps
+        let integral = check("2*(ln(x)^2 - 1)/(x*(ln(x)^4 + 3*ln(x)^2 + 1))");
+        assert!(has(&integral, Context::ATAN), "{integral}");
+        // Mixed with rational residues
+        check("exp(x)/(exp(2*x) + 2) + 1/(x*ln(x))");
+    }
+
+    #[test]
+    fn non_elementary_still_proved() {
+        let x = symbol!("x");
+        assert_eq!(
+            integrate(&parse!("exp(x)/x", R), x).err(),
+            Some(RischError::NonElementary)
+        );
+    }
 }

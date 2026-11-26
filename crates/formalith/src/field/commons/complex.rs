@@ -560,6 +560,11 @@ impl Semiring for C<R<Rational>> {
                         return res;
                     }
                 }
+                Context::CI => {
+                    if let Some(res) = fun.get_arg::<Self>().and_then(parts::negative_ci) {
+                        return res;
+                    }
+                }
                 Context::APPROX => {
                     if let Some(res) = fun
                         .get_args::<Self>()

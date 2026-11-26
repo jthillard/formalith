@@ -17,7 +17,7 @@ use crate::{
     term::{Expand, Term},
 };
 
-use super::{Integrator, factors, linear, ln_abs, poly::Poly};
+use super::{Integrator, ci_abs, factors, linear, ln_abs, poly::Poly};
 
 pub(super) fn integrate(_: &mut Integrator, f: &Expr, x: Symbol) -> Option<Expr> {
     match f {
@@ -124,7 +124,8 @@ fn exp_trig(f: &Expr, x: Symbol) -> Option<Expr> {
 /// `{$integral g(a x + b) / (p x + q)$}` for `{$g = exp$}`, `sin` or `cos`, with the exponential, sine and cosine
 /// integrals: with `{$t = p x + q$}`, `{$a x + b = alpha t + beta$}`, `{$integral e^(alpha t + beta) / t = e^beta "Ei"(alpha t)$}`,
 /// `{$integral sin(alpha t + beta) / t = cos(beta) "Si"(alpha t) + sin(beta) "Ci"(alpha t)$}` and
-/// `{$integral cos(alpha t + beta) / t = cos(beta) "Ci"(alpha t) - sin(beta) "Si"(alpha t)$}`.
+/// `{$integral cos(alpha t + beta) / t = cos(beta) "Ci"(alpha t) - sin(beta) "Si"(alpha t)$}`, with
+/// `{$"Ci"(|alpha t|)$}` when `{$alpha t$}` may be negative.
 fn exponential_integral(f: &Expr, x: Symbol) -> Option<Expr> {
     let [first, second] = factors(f).try_into().ok()?;
     let ((ident, u), t) = match (&first, &second) {
@@ -145,10 +146,7 @@ fn exponential_integral(f: &Expr, x: Symbol) -> Option<Expr> {
         return None;
     }
     let scaled = (&alpha * t).expand();
-    let (si, ci) = (
-        fun(Context::SI, scaled.clone()),
-        fun(Context::CI, scaled.clone()),
-    );
+    let (si, ci) = (fun(Context::SI, scaled.clone()), ci_abs(&scaled, x));
     let (cos, sin) = (
         fun(Context::COS, beta.clone()),
         fun(Context::SIN, beta.clone()),

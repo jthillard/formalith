@@ -145,6 +145,22 @@ pub(super) fn principal_ln(z: &Complex) -> Option<Complex> {
     join(&a, &b)
 }
 
+/// `{$"Ci"(z) = "Ci"(-z) + i pi$}` for a negative real constant `z`, the principal value.
+pub(super) fn negative_ci(z: &Complex) -> Option<Complex> {
+    if !is_constant(z) {
+        return None;
+    }
+    let (u, v) = split(z)?;
+    if !is_ci_of_negative(&u, &v) {
+        return None;
+    }
+    join(&fun(Context::CI, -u), &variable(Context::PI))
+}
+
+fn is_ci_of_negative(u: &Expr, v: &Expr) -> bool {
+    v.is_zero() && sign(u, SignMode::APPROXIMATE) == Some(Ordering::Less)
+}
+
 /// `{$u + i v$}` as a complex expression, simplified when it is small (simplifying sums of several
 /// exponentials and trigonometric functions may not finish).
 pub(super) fn join(u: &Expr, v: &Expr) -> Option<Complex> {
@@ -477,6 +493,9 @@ fn split_fun(ident: Symbol, args: &[(Expr, Expr)], numeric: bool) -> Option<(Exp
         (Context::CONJ, [(u, v)]) => Some((u.clone(), -v)),
         (Context::ABS, [(u, v)]) if !v.is_zero() => Some((modulus(u, v), zero())),
         (Context::LN, [(u, v)]) if is_complex_ln(u, v) => split_ln(u, v, numeric),
+        (Context::CI, [(u, v)]) if is_ci_of_negative(u, v) => {
+            Some((fun(Context::CI, -u), variable(Context::PI)))
+        }
         _ if args.iter().all(|(_, v)| v.is_zero()) => {
             let args = args.iter().map(|(u, _)| u.clone()).collect();
             Some((

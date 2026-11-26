@@ -1181,10 +1181,15 @@ pub static BUILTIN_DOCS: [BuiltinDoc; Context::BUILTIN_NAMES.len()] = [
         Special,
         "Ci(x)",
         "Cosine integral, euler_gamma + ln x + the integral of (cos(t) - 1)/t from 0 to x, for x > 0.",
-        "Ci(oo) = 0. It is the antiderivative of cos(a x + b)/x.",
+        "Ci(oo) = 0. It is the antiderivative of cos(a x + b)/x, written Ci(|a x|) when a x may be negative. In C, \
+         Ci(-x) = Ci(x) + i pi for x > 0.",
         &[
             ex("diff(Ci(x), x)", "cos(x)/x"),
-            ex("integrate(cos(2*x)/x, x)", "op(\"Ci\")(2 x)"),
+            ex("integrate(cos(2*x)/x, x)", "op(\"Ci\")(2 abs(x))"),
+            ex(
+                "integrate(cos(x)/x, x, -2, -1)",
+                "op(\"Ci\")(1) - op(\"Ci\")(2)",
+            ),
         ],
     ),
     doc(

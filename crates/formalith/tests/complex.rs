@@ -191,6 +191,13 @@ fn euler_identity_and_involutions() {
 }
 
 #[test]
+fn cosine_integral_of_negative_values() {
+    // The principal value `{$"Ci"(-x) = "Ci"(x) + i pi$}`
+    assert_eq!(parse!("Ci(-2)", C), parse!("Ci(2) + i*pi", C));
+    assert_eq!(parse!("Ci(3)", C), parse!("Ci(3)", C));
+}
+
+#[test]
 fn integrals_of_real_and_imaginary_parts() {
     assert_eq!(
         eval("integrate(exp(-x)*exp(-2*i*pi*x*t), x, 0, oo)"),

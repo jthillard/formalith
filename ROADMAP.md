@@ -75,8 +75,8 @@ Ideas and known gaps, roughly by area. `AGENTS.md` describes what exists; this f
 ## Integration
 
 - The algebraic case of the Risch algorithm: roots in the tower.
-- Irrational residues above `QQ(x)` in Rothstein-Trager.
-- `Ci` only for positive arguments.
+- Rothstein-Trager residues at the roots of irreducible factors of degree 3 or more above `QQ(x)` (quadratic ones
+  are done).
 
 ## Inequalities and optimization
 

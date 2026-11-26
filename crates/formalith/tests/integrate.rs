@@ -186,9 +186,17 @@ fn risch() {
         "exp(x)*(x^2-2*x+1)/(x^2+1)^2",
         "ln(x)^2+2*ln(x)",
         "(ln(x)+1)*exp(x*ln(x))*(1+x*ln(x))",
+        // Residues at the roots of irreducible quadratics, real or complex
+        "exp(x)/(exp(2*x)-2)",
+        "exp(x)/(exp(2*x)+exp(x)+1)+x*exp(x)",
+        "2*(ln(x)^2-1)/(x*(ln(x)^4+3*ln(x)^2+1))",
     ] {
         check(f);
     }
+    assert_eq!(
+        integrate("approx(integrate(exp(x)/(exp(2*x) - 3), x, 1, 2))"),
+        "0.297089142233134"
+    );
 }
 
 /// Rationalizing substitutions `{$t = y^(1 / L)$}` for roots of a Möbius function `y`, and Euler's substitutions for
@@ -572,11 +580,22 @@ fn exponential_integrals() {
     assert_eq!(integrate("integrate(exp(x)/x, x)"), "Ei(x)");
     assert_eq!(integrate("integrate(1/ln(x), x)"), "Ei(ln(x))");
     assert_eq!(integrate("integrate(sin(x)/x, x)"), "Si(x)");
-    assert_eq!(integrate("integrate(cos(2*x)/x, x)"), "Ci(2*x)");
+    // `{$"Ci"(|u|)$}`, real on both sides
+    assert_eq!(
+        integrate("integrate(cos(2*x)/x, x)"),
+        integrate("Ci(2*abs(x))")
+    );
     assert_eq!(
         integrate("integrate(sin(x + 1)/x, x)"),
-        integrate("sin(1)*Ci(x) + cos(1)*Si(x)")
+        integrate("sin(1)*Ci(abs(x)) + cos(1)*Si(x)")
     );
+    assert_eq!(
+        integrate("integrate(cos(x)/x, x, -2, -1)"),
+        integrate("Ci(1) - Ci(2)")
+    );
+    assert_eq!(integrate("integrate(cos(x)/x, x, -1, 1)"), "undefined");
+    check_at("cos(x)/x", &["-21/10", "-3/10", "3/10", "21/10"]);
+    check_at("sin(2*x - 1)/x", &["-21/10", "-3/10", "3/10", "21/10"]);
     assert_eq!(
         integrate("integrate(exp(x + 1)/(2*x + 3), x)"),
         integrate("exp(-1/2)*Ei(x + 3/2)/2")
