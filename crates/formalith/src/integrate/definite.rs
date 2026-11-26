@@ -5,6 +5,9 @@
 //! (from the substitution `{$t = tan(u / 2)$}`). Other denominators must keep the same sign on the interval, which
 //! is checked at sample points.
 //!
+//! An integrand provably not real on a part of the interval (a base of an even root or an argument of `ln`
+//! negative at a bound or at the middle, see [`not_real`]) gives `undefined`.
+//!
 //! Before that, parts of the integrand made of inverse trigonometric functions which are constant on the interval
 //! are replaced by their value, and on symmetric intervals `{$[-b, b]$}`, `{$f(x) + f(-x)$}` is integrated on
 //! `{$[0, b]$}` when it simplifies to a rational function.
@@ -50,6 +53,7 @@ use crate::{
         sign::{SignMode, linear_form, sign_set},
     },
     limit::{Direction, LimitError},
+    optimize::univariate::{Condition, collect_conditions, has_step},
     solve::polynomial::PolynomialRoots,
     term::{Expand, Term},
 };
@@ -199,6 +203,9 @@ pub(super) fn integrate(f: &Expr, x: Symbol, a: &Expr, b: &Expr) -> IntegrateRes
     if a == b {
         return Ok(zero());
     }
+    if not_real(f, x, a, b) {
+        return Err(IntegrateError::Undefined);
+    }
     let numeric = |t: &Expr| is_infinite(t) || is_constant(t);
     let interval = if numeric(a) && numeric(b) {
         let (a, b) = (approximate_bound(a)?, approximate_bound(b)?);
@@ -264,6 +271,58 @@ pub(super) fn integrate(f: &Expr, x: Symbol, a: &Expr, b: &Expr) -> IntegrateRes
         .map(|(_, point)| (point.clone(), false));
     bounds.splice(1..1, inner);
     Ok(series + evaluate(&antiderivative, x, &bounds)?)
+}
+
+/// Whether `f` is provably not real on a part of `{$[a, b]$}` of positive length: a base of an even root, an
+/// argument of `ln`... (see [`collect_conditions`], constant ones included, like `{$sqrt(-1)$}`) is negative at a
+/// finite bound or at the middle, so near it in the interval, being continuous there (`f` has no steps). Signs of
+/// parameters come from the assumptions, like `{$x/r - 1$}` at `{$r = 1$}` with `{$x < 1$}`.
+fn not_real(f: &Expr, x: Symbol, a: &Expr, b: &Expr) -> bool {
+    // Conditions of inactive `piecewise` branches and of held calls with their own variables don't apply
+    let mut bound = std::collections::BTreeSet::new();
+    cases::bound_symbols(f, &mut bound);
+    if has_step(f) || !bound.is_empty() {
+        return false;
+    }
+    let mut conditions = vec![];
+    collect_conditions(f, x, true, &mut conditions);
+    let finite: Vec<&Expr> = [a, b].into_iter().filter(|t| !is_infinite(t)).collect();
+    let middle = (finite.len() == 2).then(|| (a + b) * half());
+    let points: Vec<&Expr> = finite.into_iter().chain(middle.as_ref()).collect();
+    conditions.iter().any(|(u, condition)| {
+        !matches!(condition, Condition::NonZero)
+            && points.iter().any(|p| {
+                let at = subs(u, x, p);
+                // `u` must be finite at the point, like `{$1/r - 1$}` isn't at 0
+                !has_special_constant(&at) && !has_division_by_zero(&at) && is_negative(&at)
+            })
+    })
+}
+
+/// Whether `term` is provably negative, from its sign or from those of its numerator and denominator, like
+/// `{$1/x - 1 = (1 - x)/x$}` with `{$x > 1$}`.
+fn is_negative(term: &Expr) -> bool {
+    let sign = |t: &Expr| sign_set(t, SignMode::APPROXIMATE);
+    sign(term) == SignSet::NEGATIVE || {
+        let (num, den) = term.as_fraction(true);
+        sign(&num.expand()) * sign(&den.expand()) == SignSet::NEGATIVE
+    }
+}
+
+/// Whether `term` contains a division by zero, like `{$1/0 - 1$}`.
+fn has_division_by_zero(term: &Expr) -> bool {
+    term.is_division_by_zero()
+        || match term {
+            Term::Value(_) | Term::Symbol(_) => false,
+            Term::Add(add) => add.iter().any(has_division_by_zero),
+            Term::Mul(mul) => mul.iter().any(has_division_by_zero),
+            Term::Pow(pow) => {
+                has_division_by_zero(&pow.base) || has_division_by_zero(&pow.exponant)
+            }
+            Term::Fun(fun) => fun
+                .get_args::<Real>()
+                .is_some_and(|args| args.iter().any(has_division_by_zero)),
+        }
 }
 
 /// `{$S(b) - S(a)$}` for the terms `S` of the antiderivative `{$F = S + R$}` with a held sum, as `(S(b) - S(a), R)`,

@@ -54,7 +54,7 @@ const MAX_DERIVATIVE_ORDER: usize = 6;
 
 /// A condition for `f` to be defined, on a subterm `u`.
 #[derive(Clone, Copy, Debug)]
-enum Condition {
+pub enum Condition {
     /// `{$u > 0$}`, like in `{$ln u$}`
     Positive,
     /// `{$u >= 0$}`, like in `{$sqrt(u)$}`
@@ -143,7 +143,7 @@ impl<'a> Analysis<'a> {
         }
         let derivative = f.derivative(x).normalize();
         let mut conditions = vec![];
-        collect_conditions(f, x, &mut conditions);
+        collect_conditions(f, x, false, &mut conditions);
         // Special points, where `f` may stop being defined or differentiable
         let mut special = vec![];
         for (u, _) in &conditions {
@@ -611,7 +611,7 @@ fn without_steps(term: &Expr, x: Symbol, sample: &Expr) -> Result<Expr, SolveErr
 }
 
 /// Whether `term` contains `floor`, `ceil` or `piecewise`, whose jumps aren't found.
-fn has_step(term: &Expr) -> bool {
+pub fn has_step(term: &Expr) -> bool {
     match term {
         Term::Value(_) | Term::Symbol(_) => false,
         Term::Add(add) => add.iter().any(has_step),
@@ -665,20 +665,28 @@ fn walk(term: &Expr, visit: &mut impl FnMut(&Expr)) {
     }
 }
 
-/// Push to `res` the conditions for `term` to be defined, those of its subterms first.
-fn collect_conditions(term: &Expr, x: Symbol, res: &mut Vec<(Expr, Condition)>) {
-    if !depends(term, x) {
+/// Push to `res` the conditions for `term` to be defined, those of its subterms first. Only those of parts
+/// depending on `x`, unless `constants`, so that `{$sqrt(-1)$}` gives `{$-1 >= 0$}`.
+pub fn collect_conditions(
+    term: &Expr,
+    x: Symbol,
+    constants: bool,
+    res: &mut Vec<(Expr, Condition)>,
+) {
+    if !constants && !depends(term, x) {
         return;
     }
+    let recurse =
+        |t: &Expr, res: &mut Vec<(Expr, Condition)>| collect_conditions(t, x, constants, res);
     match term {
         Term::Value(_) | Term::Symbol(_) => {}
-        Term::Add(add) => add.iter().for_each(|t| collect_conditions(t, x, res)),
-        Term::Mul(mul) => mul.iter().for_each(|t| collect_conditions(t, x, res)),
+        Term::Add(add) => add.iter().for_each(|t| recurse(t, res)),
+        Term::Mul(mul) => mul.iter().for_each(|t| recurse(t, res)),
         Term::Pow(pow) => {
-            collect_conditions(&pow.base, x, res);
-            collect_conditions(&pow.exponant, x, res);
+            recurse(&pow.base, res);
+            recurse(&pow.exponant, res);
             let (base, exponent): (&Expr, &Expr) = (&pow.base, &pow.exponant);
-            if !depends(base, x) {
+            if !constants && !depends(base, x) {
                 return;
             }
             match exponent {
@@ -690,7 +698,10 @@ fn collect_conditions(term: &Expr, x: Symbol, res: &mut Vec<(Expr, Condition)>) 
                         res.push((base.clone(), Condition::NonNegative));
                     }
                 }
-                e if !is_integer(e) => res.push((base.clone(), Condition::Positive)),
+                // Not for constant bases, like `{$(-1)^k$}` in a sum
+                e if !is_integer(e) && depends(base, x) => {
+                    res.push((base.clone(), Condition::Positive));
+                }
                 _ => {}
             }
         }
@@ -699,7 +710,7 @@ fn collect_conditions(term: &Expr, x: Symbol, res: &mut Vec<(Expr, Condition)>) 
                 return;
             };
             for t in args {
-                collect_conditions(t, x, res);
+                recurse(t, res);
             }
             let [u] = args.as_slice() else {
                 return;

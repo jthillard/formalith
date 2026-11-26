@@ -35,7 +35,7 @@
 //! ```
 
 mod multivariate;
-mod univariate;
+pub(crate) mod univariate;
 
 use malachite::{
     Rational,

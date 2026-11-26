@@ -903,3 +903,28 @@ fn iterated_integrals() {
     let res = integrate("integrate(integrate(1/(y-x/2), y, 0, x), x, 0, 1)");
     assert!(res.starts_with("integrate("), "{res}");
 }
+
+#[test]
+fn non_real_integrands() {
+    // Not real on a part of the interval
+    assert_eq!(integrate("integrate(sqrt(-1), t, 0, 1)"), "undefined");
+    assert_eq!(integrate("integrate(sqrt(-t), t, 1, 2)"), "undefined");
+    assert_eq!(integrate("integrate(ln(t - 3), t, 0, 1)"), "undefined");
+    // Bases vanishing or infinite at the bounds
+    assert_eq!(integrate("integrate(sqrt(t), t, 0, 1)"), "2/3");
+    assert_eq!(integrate("integrate(sqrt(1 - t^2), t, -1, 1)"), "1/2*pi");
+    assert_eq!(integrate("integrate(sqrt(1/t - 1), t, 0, 1)"), "1/2*pi");
+    // Split on the values of `x`, the base being negative near `t = 1` for `x < 1`
+    assert_eq!(
+        integrate("integrate(sqrt(x/t - 1), t, 1, x)"),
+        "piecewise(x < 1, undefined, -((x-1)^(1/2)-x*atan((x-1)^(1/2))))"
+    );
+    // `ln t` isn't real on `(x, 0)` for `x < 0`
+    let res = integrate("integrate(exp(-t^2)*ln(t), t, 1, x)");
+    assert!(res.starts_with("piecewise(x < 0, undefined, "), "{res}");
+    // Conditions of held sums and of inactive branches don't apply
+    assert_eq!(
+        integrate("integrate(integrate(x/y, y, x, 2*x), x, 1, 2)"),
+        integrate("-5/2*ln(2) + 2*ln(4)")
+    );
+}

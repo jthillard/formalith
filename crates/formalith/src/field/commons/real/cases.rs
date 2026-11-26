@@ -100,7 +100,7 @@ fn recorded(eval: &dyn Fn(&[Expr]) -> Option<Expr>, args: &[Expr]) -> (Option<Ex
 
 /// Add to `symbols` the variables bound by the calculus builtins and held sums in `term`, like `k` in
 /// `{$sum_(k = 0)^oo x^k$}`.
-fn bound_symbols(term: &Expr, symbols: &mut BTreeSet<Symbol>) {
+pub fn bound_symbols(term: &Expr, symbols: &mut BTreeSet<Symbol>) {
     match term {
         Term::Value(_) | Term::Symbol(_) => {}
         Term::Add(add) => add.iter().for_each(|t| bound_symbols(t, symbols)),

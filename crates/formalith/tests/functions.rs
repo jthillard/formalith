@@ -435,8 +435,8 @@ fn derivatives_of_variable_powers() {
 #[test]
 fn derivative_of_an_integral_with_a_variable_bound() {
     assert_eq!(
-        parse!("diff(integrate(exp(-t^2)*ln(t), t, 1, x), x)", R),
-        parse!("exp(-x^2)*ln(x)", R)
+        parse!("diff(integrate(exp(-t^2)*ln(t^2 + 1), t, 1, x), x)", R),
+        parse!("exp(-x^2)*ln(x^2 + 1)", R)
     );
 }
 
