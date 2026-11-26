@@ -63,6 +63,9 @@ pub fn sign_set(term: &Expr, mode: SignMode) -> SignSet {
             .iter()
             .all(|symbol| Context::is_builtin_constant(*symbol))
         && let Some(value) = approximate(term, DIGITS)
+        // Indistinguishable from zero at the maximum precision, like `{$sin(10^(-2000))$}`: zero is only known
+        // structurally
+        && value != 0
     {
         return SignSet::from_ordering(value.sign());
     }

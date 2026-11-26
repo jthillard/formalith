@@ -19,14 +19,7 @@ use std::{cmp::Ordering, collections::HashMap, fmt::Debug};
 
 use malachite::{
     Integer, Natural, Rational,
-    base::{
-        num::{
-            arithmetic::traits::Parity,
-            basic::traits::{One, Zero},
-            conversion::traits::RoundingFrom,
-        },
-        rounding_modes::RoundingMode,
-    },
+    base::num::basic::traits::{One, Zero},
 };
 
 use crate::{
@@ -577,7 +570,7 @@ impl PolynomialRoots for C<R<Rational>> {
                     4 => complex_cubic_roots(&coefficients),
                     5 => {
                         let convert = |t: Term<R<Rational>>| from_real(&t);
-                        quartic_roots(&coefficients, convert, Self::roots, approximate_sign)
+                        quartic_roots(&coefficients, convert, Self::roots, sign)
                     }
                     _ => None,
                 }
@@ -837,55 +830,16 @@ fn complex_cbrt(t: &Term<C<R<Rational>>>) -> Term<C<R<Rational>>> {
 
 /// The sign of `t`, if it is real and can be approximated.
 fn real_sign(t: &Term<C<R<Rational>>>) -> Option<Ordering> {
-    approximate_sign(&to_real(t)?)
+    sign(&to_real(t)?)
 }
 
-/// The sign of `term` like [`sign`], also approximating constants with functions, like the trigonometric form of
-/// the roots of a cubic.
-fn approximate_sign(term: &Term<R<Rational>>) -> Option<Ordering> {
-    sign(term).or_else(|| constant_sign(term))
-}
-
-/// The sign of `term`, if it is zero, can be approximated, or follows from the assumptions on its symbols.
+/// The sign of `term`, if it is zero, follows from the assumptions on its symbols, or is that of an approximation
+/// of a constant accurate enough to decide it ([`constant_sign`]).
 fn sign(term: &Term<R<Rational>>) -> Option<Ordering> {
     if term.is_zero() {
         return Some(Ordering::Equal);
     }
-    // Too close to zero to trust the approximation
-    approximate(term)
-        .filter(|value| value.abs() > 1e-9)
-        .and_then(|value| value.partial_cmp(&0.))
-        .or_else(|| sign_set(term, SignMode::STRUCTURAL).strict())
-}
-
-/// Approximate `term` with a float, if it doesn't contain any symbol or function.
-fn approximate(term: &Term<R<Rational>>) -> Option<f64> {
-    let rational = |value: &Rational| f64::rounding_from(value, RoundingMode::Nearest).0;
-    let res = match term {
-        Term::Value(value) => rational(&value.value),
-        Term::Add(add) => add.iter().map(approximate).sum::<Option<f64>>()?,
-        Term::Mul(mul) => {
-            rational(&mul.coefficient) * mul.iter().map(approximate).product::<Option<f64>>()?
-        }
-        Term::Pow(pow) => {
-            let base = approximate(&pow.base)?;
-            match &**pow.exponant {
-                // Roots of odd order of negative numbers are real, `{$(-8)^(1/3) = -2$}`
-                Term::Value(e) if base < 0. && e.value.denominator_ref().odd() => {
-                    let power = (-base).powf(rational(&e.value));
-                    if e.value.numerator_ref().odd() {
-                        -power
-                    } else {
-                        power
-                    }
-                }
-                _ => base.powf(approximate(&pow.exponant)?),
-            }
-        }
-        Term::Symbol(_) | Term::Fun(_) => return None,
-    };
-    // Even roots of negative numbers
-    res.is_finite().then_some(res)
+    constant_sign(term)
 }
 
 /// The greatest common divisor of `a` and `b`.

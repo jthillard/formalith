@@ -395,8 +395,7 @@ impl<'a> Cad<'a> {
 
     /// The sign of the constant `c`.
     fn constant_sign(c: &Expr) -> Result<Ordering, SolveError> {
-        approximate(&c.normalize(), DIGITS)
-            .map(|approximation| approximation.cmp(&Rational::ZERO))
+        crate::field::real::expr::constant_sign(&c.normalize())
             .ok_or_else(|| SolveError::Inequality(format!("can't find the sign of `{}`", plain(c))))
     }
 

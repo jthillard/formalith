@@ -34,3 +34,19 @@ fn expand_powers_of_products() {
         "(x^(1/2))*(y^(1/2))"
     );
 }
+
+#[test]
+fn signs_of_radicals_in_roots() {
+    // The discriminant `{$10^20 sqrt(2) - 141421356237309504881$}` is about `{$-0.83$}`, positive in floats
+    assert_eq!(
+        eval_r("solve(x^2 + 10^10*2^(1/4)*x + 141421356237309504881/4 = 0, x)"),
+        "no solution"
+    );
+}
+
+#[test]
+fn constants_indistinguishable_from_zero() {
+    // `{$sin(10^(-2000))$}` is positive, but zero at the maximum precision of approximations
+    assert!(eval_r("sin(10^(-2000)) > 0").starts_with("error"));
+    assert_eq!(eval_r("sin(pi) > 0"), "no solution");
+}

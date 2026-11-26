@@ -53,7 +53,7 @@ use crate::{
         real::{
             Real,
             approx::approximate_fixed,
-            expr::{Expr, constant_sign, depends, size, subs, zero},
+            expr::{Expr, constant_sign, depends, fun, map_tree, size, subs, zero},
         },
     },
     printer::{PrettyPrint, PrettyPrinter, Print, PrintOptions},
@@ -400,6 +400,19 @@ fn compare(p: &Expr, q: &Expr) -> Option<Ordering> {
         return Some(approximation.sign());
     }
     if difference.expand().is_zero() {
+        return Some(Ordering::Equal);
+    }
+    // Limits write `{$tan u$}` as `{$sin u / cos u$}`, and approximations don't decide zero
+    let sine_cosine = map_tree(&difference, &|t| match t {
+        Term::Fun(f) if f.get_ident() == Context::TAN => {
+            f.get_args::<Real>().and_then(|args| match args.as_slice() {
+                [u] => Some(fun(Context::SIN, u.clone()) / fun(Context::COS, u.clone())),
+                _ => None,
+            })
+        }
+        _ => None,
+    });
+    if sine_cosine != difference && sine_cosine.normalize().expand().is_zero() {
         return Some(Ordering::Equal);
     }
     constant_sign(&difference)

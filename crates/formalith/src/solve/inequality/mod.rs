@@ -16,7 +16,7 @@ use crate::{
     context::{Context, Symbol, assumptions::SignSet},
     field::{
         Set,
-        real::{R, approx::approximate},
+        real::{R, expr::constant_sign},
     },
     printer::{PrettyPrint, PrettyPrinter, Print, PrintOptions},
     term::{Normalize, Term, relation::Relation},
@@ -377,11 +377,9 @@ impl SolveInequality for R<Rational> {
         // Relations without unknowns are true or false
         for inequality in inequalities.iter().filter(|i| symbols(i).is_empty()) {
             let f = (inequality.lhs.clone() - inequality.rhs.clone()).normalize();
-            let sign = approximate(&f, DIGITS)
-                .ok_or_else(|| {
-                    SolveError::Inequality(format!("can't find the sign of `{}`", super::plain(&f)))
-                })?
-                .cmp(&Rational::from(0));
+            let sign = constant_sign(&f).ok_or_else(|| {
+                SolveError::Inequality(format!("can't find the sign of `{}`", super::plain(&f)))
+            })?;
             if inequality.relation.holds(SignSet::from_ordering(sign)) != Some(true) {
                 return Ok(Region {
                     unknowns,
