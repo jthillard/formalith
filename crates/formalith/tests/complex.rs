@@ -217,7 +217,7 @@ fn integrals_of_real_and_imaginary_parts() {
     // No limit at infinity
     assert_eq!(eval("integrate(exp(i*x), x, 0, oo)"), "undefined");
     // Real integrands keep their infinite values
-    assert_eq!(eval("integrate(1, x, 0, oo)"), "oo");
+    assert_eq!(eval("integrate(1, x, 0, oo)"), "+oo");
     let mut env = Environment::new();
     env.eval("assume(a > 0)", R).unwrap();
     assert_eq!(

@@ -99,6 +99,37 @@ fn pretty_print_constants() {
 }
 
 #[test]
+fn print_positive_infinity() {
+    // Signed when it stands alone, not as an operand
+    assert_eq!(line(&parse!("oo", R)), "+oo");
+    assert_eq!(pretty(&parse!("oo", R)), "+∞");
+    assert_eq!(typst(&parse!("oo", R)), "+oo");
+    assert_eq!(line(&parse!("x + oo", R)), "oo+x");
+    assert_eq!(pretty(&parse!("x + oo", R)), "∞ + x");
+    assert_eq!(pretty(&parse!("x^oo", R)), " ∞\nx ");
+    assert_eq!(pretty(&parse!("lim(1/x, x, 0, 1)", R)), "+∞");
+    assert_eq!(line(&parse!("f(oo)", R)), "f(+oo)");
+    // The printed form parses back
+    assert_eq!(parse!(line(&parse!("oo", R)), R), parse!("oo", R));
+}
+
+#[test]
+fn pretty_print_piecewise() {
+    assert_eq!(
+        pretty(&parse!("piecewise(x < 0, -x, x)", R)),
+        "⎧ -x  if x < 0 \n⎩ x   otherwise"
+    );
+    assert_eq!(
+        pretty(&parse!("piecewise(x < 0, -x, x > 1, x^2/2, oo)", R)),
+        "⎧ -x  if x < 0 \n⎪  2           \n⎨ x            \n⎪ ──  if x > 1 \n⎪ 2            \n⎩ +∞  otherwise"
+    );
+    assert_eq!(
+        typst(&parse!("piecewise(x < 0, -x, oo)", R)),
+        "cases(-x & \"if \" x < 0, +oo & \"otherwise\")"
+    );
+}
+
+#[test]
 fn pretty_print_integrals() {
     assert_eq!(
         pretty(&parse!("integrate(exp(x^3), x)", R)),
@@ -110,7 +141,7 @@ fn pretty_print_integrals() {
     );
     assert_eq!(
         pretty(&parse!("integrate(f(x)+1, x, -oo, oo)", R)),
-        "∞               \n⌠               \n⎮  (f(x) + 1) dx\n⌡               \n-∞              "
+        "+∞              \n⌠               \n⎮  (f(x) + 1) dx\n⌡               \n-∞              "
     );
     assert_eq!(
         pretty(&parse!("integrate(f(x)/x, x, 0, pi)", R)),

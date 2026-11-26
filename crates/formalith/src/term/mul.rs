@@ -155,7 +155,7 @@ impl<T: Set> Mul<T> {
                 if matches!(factor, Term::Add(_)) {
                     Self::group(factor, &options, f)?;
                 } else {
-                    Print::print(factor, &options, f)?;
+                    factor.print_operand(options, f)?;
                 }
             }
             Ok(())
@@ -287,12 +287,12 @@ impl<T: Set> Mul<T> {
                 Term::Pow(pow) if pow.exponant.is_strictly_negative() => {
                     let factor = Term::Pow(pow.with_negated_exponant()).normalize();
                     den.push((
-                        PrettyPrint::pretty_print(&factor, &options),
+                        factor.pretty_print_operand(options),
                         matches!(factor, Term::Add(_)),
                     ));
                 }
                 _ => num.push((
-                    PrettyPrint::pretty_print(factor, &options),
+                    factor.pretty_print_operand(options),
                     matches!(factor, Term::Add(_)),
                 )),
             }

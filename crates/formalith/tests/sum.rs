@@ -112,10 +112,10 @@ fn infinite_sums() {
     assert_eq!(eval("sum(1/(k^2-1), k, 2, oo)"), "3/4");
     assert_eq!(eval("sum(1/(k*(k+1)), k, 1, oo)"), "1");
     assert_eq!(eval("sum(k/factorial(k+1), k, 0, oo)"), "1");
-    assert_eq!(eval("sum(1/k, k, 1, oo)"), "oo");
+    assert_eq!(eval("sum(1/k, k, 1, oo)"), "+oo");
     assert_eq!(eval("sum(-k, k, 0, oo)"), "-oo");
     assert_eq!(eval("sum(k, k, -oo, 0)"), "-oo");
-    assert_eq!(eval("sum(1, k, 0, oo)"), "oo");
+    assert_eq!(eval("sum(1, k, 0, oo)"), "+oo");
     assert_eq!(eval("sum((-1)^k, k, 0, oo)"), "undefined");
     // Known series
     assert_eq!(eval("sum(1/k^s, k, 1, oo)"), eval("zeta(s)"));
@@ -146,7 +146,7 @@ fn products() {
     assert_eq!(eval("product(c, k, 1, n)"), eval("c^n"));
     // Wallis product
     assert_eq!(eval("product(4*k^2/(4*k^2-1), k, 1, oo)"), eval("pi/2"));
-    assert_eq!(eval("product(1+1/k, k, 1, oo)"), "oo");
+    assert_eq!(eval("product(1+1/k, k, 1, oo)"), "+oo");
     assert_eq!(eval("product(1-1/k^2, k, 2, oo)"), "1/2");
     assert!(eval("product(k^2+1, k, 1, n)").starts_with("product("));
 }

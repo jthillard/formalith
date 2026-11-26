@@ -105,8 +105,8 @@ impl<T: Set> Pow<T> {
             radicand.root(index.map(|index| index.pretty_print(&options)).as_ref());
             return radicand;
         }
-        let mut base = (*self.base).pretty_print(&options);
-        let exponant = (**self.exponant).pretty_print(&options);
+        let mut base = self.base.pretty_print_operand(options);
+        let exponant = self.exponant.pretty_print_operand(options);
         if match &*self.base {
             Term::Mul(_) | Term::Add(_) => true,
             // `-1^x` reads as `-(1^x)`

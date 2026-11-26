@@ -71,5 +71,5 @@ fn eval_inequalities() {
     let eval = |input| SetChoice::R.eval(input, false, &mut Environment::new());
     assert_eq!(eval("x^2 <= 4"), Ok("x ∈ [-2, 2]".to_owned()));
     assert_eq!(eval("x^2 >= 0"), Ok("x ∈ ℝ".to_owned()));
-    assert_eq!(eval("x^2*(x-1) >= 0"), Ok("x ∈ {0} ∪ [1, ∞)".to_owned()));
+    assert_eq!(eval("x^2*(x-1) >= 0"), Ok("x ∈ {0} ∪ [1, +∞)".to_owned()));
 }

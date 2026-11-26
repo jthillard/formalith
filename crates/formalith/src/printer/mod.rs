@@ -151,7 +151,7 @@ pub trait Print {
         if need_paren {
             Self::group_delim("(", options, f)?;
         }
-        elem.print(options, f)?;
+        elem.print_operand(*options, f)?;
         if need_paren {
             Self::group_delim(")", options, f)?;
         }
@@ -628,6 +628,52 @@ impl PrettyPrinter {
         *self = center(self);
         self.stack(&center(lower));
         self.baseline = baseline;
+    }
+    /// Lay out the cases of a piecewise function, one per line, like `{$cases(v_1 & "if" c_1, d & "otherwise")$}`:
+    /// each value followed by `if` and its condition, or by `otherwise` without one, values aligned on the left,
+    /// after a brace.
+    ///
+    /// ```text
+    /// ⎧ -x  if x < 0
+    /// ⎨ x²  if x < 1
+    /// ⎩ 1   otherwise
+    /// ```
+    #[must_use]
+    pub fn cases(rows: Vec<(Self, Option<Self>)>) -> Self {
+        let width = rows
+            .iter()
+            .map(|(value, _)| value.width())
+            .max()
+            .unwrap_or(0);
+        let mut res = Self::empty();
+        for (mut value, condition) in rows {
+            let padding = width - value.width();
+            for line in &mut value.lines {
+                line.push_str(&" ".repeat(padding));
+            }
+            value.width = width;
+            match condition {
+                Some(condition) => {
+                    value.concat("  if ", false, &condition);
+                }
+                None => value.concat("  otherwise", false, &Self::empty()),
+            }
+            res.stack(&value);
+        }
+        res.baseline = res.height().saturating_sub(1) / 2;
+        let height = res.height();
+        for (i, line) in res.lines.iter_mut().enumerate() {
+            let brace = match (height, i) {
+                (1, _) => '{',
+                (_, 0) => '⎧',
+                (_, i) if i == height - 1 => '⎩',
+                (_, i) if i == (height - 1) / 2 => '⎨',
+                _ => '⎪',
+            };
+            line.insert_str(0, &format!("{brace} "));
+        }
+        res.width += 2;
+        res
     }
     /// Add `sym` at the left of self, converting it to unicode drawings chars.
     pub fn left(&mut self, sym: char) {

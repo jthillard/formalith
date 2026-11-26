@@ -361,7 +361,7 @@ pub static BUILTIN_DOCS: [BuiltinDoc; Context::BUILTIN_NAMES.len()] = [
                 "x = (b + 1)/(a + 1), y = (1 - a b)/(a + 1)",
             ),
             ex("solve(x^2 = 2, x)", "x = sqrt(2) \\ x = -sqrt(2)"),
-            ex("solve(x^2 > 1, x)", "x in (-oo, -1) union (1, oo)"),
+            ex("solve(x^2 > 1, x)", "x in (-oo, -1) union (1, +oo)"),
             ex(
                 "solve(sin(x) = cos(x), x)",
                 "x = frac(1, 4) pi + pi k \\ k in ZZ",
@@ -462,7 +462,7 @@ pub static BUILTIN_DOCS: [BuiltinDoc; Context::BUILTIN_NAMES.len()] = [
          is undefined.",
         &[
             ex("lim(sin(x)/x, x, 0)", "1"),
-            ex("lim(1/x, x, 0, 1)", "oo"),
+            ex("lim(1/x, x, 0, 1)", "+oo"),
             ex("lim(x*sin(1/x), x, 0)", "0"),
         ],
     ),
@@ -472,7 +472,7 @@ pub static BUILTIN_DOCS: [BuiltinDoc; Context::BUILTIN_NAMES.len()] = [
         "oo",
         "Infinity, a limit point or the result of a limit.",
         "",
-        &[ex("exp(-oo)", "0"), ex("lim(1/x, x, 0, 1)", "oo")],
+        &[ex("exp(-oo)", "0"), ex("lim(1/x, x, 0, 1)", "+oo")],
     ),
     doc(
         Context::UNDEFINED,
@@ -496,14 +496,14 @@ pub static BUILTIN_DOCS: [BuiltinDoc; Context::BUILTIN_NAMES.len()] = [
         &[
             ex("series(exp(x), x, 0, 4)", "1 + x + x^2/2 + x^3/6 + o(x^3)"),
             ex("series(sin(x), x, 0)", "x - x^3/6 + x^5/120 + o(x^5)"),
-            ex("series(exp(x), x, 0, oo)", "sum_(k = 0)^oo x^k/k!"),
+            ex("series(exp(x), x, 0, oo)", "sum_(k = 0)^(+oo) x^k/k!"),
             ex(
                 "series(sin(x), x, 0, oo)",
-                "sum_(k = 0)^oo (-1)^k x^(2k + 1)/(2k + 1)!",
+                "sum_(k = 0)^(+oo) (-1)^k x^(2k + 1)/(2k + 1)!",
             ),
             ex(
                 "series(ln(1 + x), x, 0, oo)",
-                "sum_(k = 1)^oo (-1)^(k + 1) x^k/k",
+                "sum_(k = 1)^(+oo) (-1)^(k + 1) x^k/k",
             ),
         ],
     ),

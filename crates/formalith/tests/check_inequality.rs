@@ -150,7 +150,7 @@ fn union_pieces(union: &str) -> Result<Vec<Piece>, String> {
             let [lo, hi]: [String; 2] = split_top(inner, ',')
                 .try_into()
                 .map_err(|_| format!("bad interval `{piece}`"))?;
-            let bound = |b: String| (b != "oo" && b != "-oo").then_some(b);
+            let bound = |b: String| (b != "+oo" && b != "-oo").then_some(b);
             Ok(Piece::Interval {
                 lo: bound(lo),
                 hi: bound(hi),
@@ -400,7 +400,7 @@ fn oracle_detects_wrong_regions() {
     let wrong = |input: &str, output: &str| matches!(verify(input, output), Verdict::Wrong(_));
     assert!(wrong("x^2 < 4", "x ∈ (-2, 3)"));
     assert!(wrong("x^2 < 4", "x ∈ (-1, 2)"));
-    assert!(wrong("x^2 > 1", "x ∈ (1, oo)"));
+    assert!(wrong("x^2 > 1", "x ∈ (1, +oo)"));
     assert!(wrong("x^2 + y^2 < 1", "x ∈ (-1, 1), y ∈ (-1, 1)"));
     assert!(wrong("x^2 = 4, x > 0", "x = -2"));
     assert!(wrong("x^2 + 1 > 0", "no solution"));

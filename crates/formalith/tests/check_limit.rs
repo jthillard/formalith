@@ -62,8 +62,8 @@ fn limit(input: &str) -> Verdict {
         checked = true;
         match result.as_str() {
             "undefined" => {}
-            "oo" | "-oo" => {
-                let sign = if result == "oo" { 1.0 } else { -1.0 };
+            "+oo" | "-oo" => {
+                let sign = if result == "+oo" { 1.0 } else { -1.0 };
                 // Large, or growing by a fraction of a logarithm over the four decades between the points
                 // (`ln(10^-8)` is only about -18)
                 let large = v_near * sign > 1e2 || (v_near - v_far) * sign > 1.0;

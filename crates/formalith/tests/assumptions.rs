@@ -42,7 +42,7 @@ fn assume_statements() {
     assert_eq!(eval(&["assume(a > 0)", "assume(a)"]), "a > 0");
     assert_eq!(eval(&["assume(a)"]), "no assumption");
     // Outside of `assume`, a comparison is an inequality, restricted by the assumptions
-    assert_eq!(eval(&["solve(a > 0)"]), "a ∈ (0, ∞)");
+    assert_eq!(eval(&["solve(a > 0)"]), "a ∈ (0, +∞)");
     assert_eq!(eval(&["assume(a < 0)", "solve(a^2 < 4)"]), "a ∈ (-2, 0)");
 }
 
@@ -121,9 +121,9 @@ fn integrals() {
 
 #[test]
 fn limits() {
-    assert_eq!(eval(&["assume(a > 0)", "lim(exp(a*x), x, oo)"]), "oo");
+    assert_eq!(eval(&["assume(a > 0)", "lim(exp(a*x), x, oo)"]), "+oo");
     assert_eq!(eval(&["assume(a < 0)", "lim(exp(a*x), x, oo)"]), "0");
-    assert_eq!(eval(&["assume(a > 0)", "lim(a*x, x, oo)"]), "oo");
+    assert_eq!(eval(&["assume(a > 0)", "lim(a*x, x, oo)"]), "+oo");
     assert_eq!(eval(&["assume(a < 0)", "lim(a*x, x, oo)"]), "-oo");
     assert_eq!(eval(&["lim(a*x, x, oo)"]), expr("sign(a)*oo"));
     // Split at `{$a = -1$}`, where the sign of `{$ln(-a)$}` changes
@@ -133,7 +133,7 @@ fn limits() {
     );
     assert_eq!(
         eval(&["assume(a > 1)", "lim(1/(a - 1)^n, n, oo)"]),
-        "piecewise(a < 2, oo, a = 2, 1, 0)"
+        "piecewise(a < 2, +oo, a = 2, 1, 0)"
     );
 }
 
@@ -278,7 +278,7 @@ fn linear_signs() {
 
 #[test]
 fn linear_limits() {
-    assert_eq!(eval(&["assume(a > 1)", "lim(a^n, n, oo)"]), "oo");
+    assert_eq!(eval(&["assume(a > 1)", "lim(a^n, n, oo)"]), "+oo");
     assert_eq!(eval(&["assume(a > 0, a < 1)", "lim(a^n, n, oo)"]), "0");
 }
 

@@ -131,7 +131,7 @@ fn unsupported_series_stay_unevaluated() {
         "series(x^(1/2), x, 0, 2)"
     );
     // Not a power series
-    assert_eq!(series("series(exp(x), x, oo)"), "series(exp(x), x, oo)");
+    assert_eq!(series("series(exp(x), x, oo)"), "series(exp(x), x, +oo)");
     assert_eq!(series("series(exp(1/x), x, 0)"), "series(exp(x^-1), x, 0)");
     assert_eq!(series("series(floor(x), x, 0)"), "series(floor(x), x, 0)");
     assert_eq!(series("series(x^2, x+1, 0)"), "series(x^2, x+1, 0)");
@@ -269,46 +269,46 @@ fn whole(input: &str) -> String {
 #[test]
 fn whole_series() {
     let cases = [
-        ("exp(x), x, 0", "sum((x^k)*(k!^-1), k, 0, oo)"),
+        ("exp(x), x, 0", "sum((x^k)*(k!^-1), k, 0, +oo)"),
         (
             "sin(x), x, 0",
-            "sum((x^(2*k+1))*((2*k+1)!^-1)*((-1)^k), k, 0, oo)",
+            "sum((x^(2*k+1))*((2*k+1)!^-1)*((-1)^k), k, 0, +oo)",
         ),
         (
             "cos(x), x, 0",
-            "sum((x^(2*k))*((2*k)!^-1)*((-1)^k), k, 0, oo)",
+            "sum((x^(2*k))*((2*k)!^-1)*((-1)^k), k, 0, +oo)",
         ),
         // `{$4^k$}` rather than `{$2^(2k)$}`
         (
             "cos(2*x), x, 0",
-            "sum((x^(2*k))*((2*k)!^-1)*((-1)^k)*(4^k), k, 0, oo)",
+            "sum((x^(2*k))*((2*k)!^-1)*((-1)^k)*(4^k), k, 0, +oo)",
         ),
         (
             "atan(x), x, 0",
-            "sum(((2*k+1)^-1)*(x^(2*k+1))*((-1)^k), k, 0, oo)",
+            "sum(((2*k+1)^-1)*(x^(2*k+1))*((-1)^k), k, 0, +oo)",
         ),
         (
             "asin(x), x, 0",
-            "sum(((2*k+1)^-1)*(x^(2*k+1))*(2*k)!*(k!^-2)*(4^(-k)), k, 0, oo)",
+            "sum(((2*k+1)^-1)*(x^(2*k+1))*(2*k)!*(k!^-2)*(4^(-k)), k, 0, +oo)",
         ),
         (
             "ln(1 + x), x, 0",
-            "sum((x^k)*(k^-1)*((-1)^(k+1)), k, 1, oo)",
+            "sum((x^k)*(k^-1)*((-1)^(k+1)), k, 1, +oo)",
         ),
-        ("(1 + x)^a, x, 0", "sum((x^k)*binomial(a, k), k, 0, oo)"),
-        ("1/(1 + x^2), x, 0", "sum((x^(2*k))*((-1)^k), k, 0, oo)"),
+        ("(1 + x)^a, x, 0", "sum((x^k)*binomial(a, k), k, 0, +oo)"),
+        ("1/(1 + x^2), x, 0", "sum((x^(2*k))*((-1)^k), k, 0, +oo)"),
         (
             "1/((1 - x)*(1 - 2*x)), x, 0",
-            "sum((2^(k+1)-1)*(x^k), k, 0, oo)",
+            "sum((2^(k+1)-1)*(x^k), k, 0, +oo)",
         ),
-        ("exp(x), x, 1", "sum(((x-1)^k)*exp(1)*(k!^-1), k, 0, oo)"),
+        ("exp(x), x, 1", "sum(((x-1)^k)*exp(1)*(k!^-1), k, 0, +oo)"),
         // Laurent series, and at infinity
-        ("exp(x)/x, x, 0", "sum((x^k)*((k+1)!^-1), k, -1, oo)"),
-        ("1/(x - 1), x, oo", "sum(x^(-k), k, 1, oo)"),
+        ("exp(x)/x, x, 0", "sum((x^k)*((k+1)!^-1), k, -1, +oo)"),
+        ("1/(x - 1), x, oo", "sum(x^(-k), k, 1, +oo)"),
         // Nested radicals, by the differential equation of the algebraic function
         (
             "sqrt(1 + sqrt(1 + x)), x, 0",
-            "sum(-((4*k-1)^-1)*(x^k)*((2*k)!^-2)*(4*k)!*((-1)^k)*(2^(-4*k+1/2)), k, 0, oo)",
+            "sum(-((4*k-1)^-1)*(x^k)*((2*k)!^-2)*(4*k)!*((-1)^k)*(2^(-4*k+1/2)), k, 0, +oo)",
         ),
     ];
     for (f, expected) in cases {
@@ -317,17 +317,17 @@ fn whole_series() {
     // Sums of series with different general terms
     assert_eq!(
         whole("exp(x) + sin(x), x, 0"),
-        "sum((x^k)*(k!^-1), k, 0, oo)+sum((x^(2*k+1))*((2*k+1)!^-1)*((-1)^k), k, 0, oo)"
+        "sum((x^k)*(k!^-1), k, 0, +oo)+sum((x^(2*k+1))*((2*k+1)!^-1)*((-1)^k), k, 0, +oo)"
     );
     // Only proven general terms: `{$x^40$}` breaks the recurrence of `{$e^x$}`
     assert_eq!(
         whole("exp(x) + x^40, x, 0"),
-        "x^40+sum((x^k)*(k!^-1), k, 0, oo)"
+        "x^40+sum((x^k)*(k!^-1), k, 0, +oo)"
     );
     // A Puiseux series with nested radicals, proven in the tower of its radicals
     assert_eq!(
         line(&parse!("series(sqrt(1 + sqrt(x)), x, 0, oo, 1)", R)),
-        "sum(-((2*k-1)^-1)*(x^(1/2*k))*(2*k)!*(k!^-2)*((-1)^k)*(4^(-k)), k, 0, oo)"
+        "sum(-((2*k-1)^-1)*(x^(1/2*k))*(2*k)!*(k!^-2)*((-1)^k)*(4^(-k)), k, 0, +oo)"
     );
     // Rational terms of a sum split into partial fractions, and a polynomial factor distributed
     assert!(!whole("-sin(x) + 1/((4 - x)*(3 + x)), x, 0").contains("series"));
@@ -336,21 +336,21 @@ fn whole_series() {
     assert!(!whole("erf(x) + exp(x), x, 0").contains("series"));
     // Finite series, and series without a hypergeometric general term
     assert_eq!(whole("x^2 + 1, x, 0"), "x^2+1");
-    assert_eq!(whole("abs(x), x, 0"), "series(abs(x), x, 0, oo)");
+    assert_eq!(whole("abs(x), x, 0"), "series(abs(x), x, 0, +oo)");
     // Proofs which can't be done stay unevaluated
     assert_eq!(
         whole("x*exp(x^2)*cos(x), x, 0"),
-        "series(x*exp(x^2)*cos(x), x, 0, oo)"
+        "series(x*exp(x^2)*cos(x), x, 0, +oo)"
     );
     // Irrational poles, Fibonacci numbers by Binet's formula
     assert_eq!(
         whole("1/(1 - x - x^2), x, 0"),
-        "sum((1/10*(5^(1/2)+5)*((1/2*(5^(1/2))+1/2)^k)+1/10*(-(5^(1/2))+5)*((-1/2*(5^(1/2))+1/2)^k))*(x^k), k, 0, oo)"
+        "sum((1/10*(5^(1/2)+5)*((1/2*(5^(1/2))+1/2)^k)+1/10*(-(5^(1/2))+5)*((-1/2*(5^(1/2))+1/2)^k))*(x^k), k, 0, +oo)"
     );
     // Complex poles without a period, `{$r^k cos(k theta)$}` and `{$r^k sin(k theta)$}`
     assert_eq!(
         whole("1/(1 - x + 2*x^2), x, 0"),
-        "sum((cos(k*atan(7^(1/2)))+1/7*sin(k*atan(7^(1/2)))*(7^(1/2)))*(x^k)*(2^(1/2*k)), k, 0, oo)"
+        "sum((cos(k*atan(7^(1/2)))+1/7*sin(k*atan(7^(1/2)))*(7^(1/2)))*(x^k)*(2^(1/2*k)), k, 0, +oo)"
     );
 }
 
@@ -418,7 +418,7 @@ fn whole_series_with_related_radicals() {
     assert_eq!(whole("sqrt(1 + x)*sqrt(1 - x) - sqrt(1 - x^2), x, 0"), "0");
     assert_eq!(
         whole("sqrt(2 + 2*x) - sqrt(2)*sqrt(1 + x) + exp(x), x, 0"),
-        "sum((x^k)*(k!^-1), k, 0, oo)"
+        "sum((x^k)*(k!^-1), k, 0, +oo)"
     );
 }
 
@@ -426,15 +426,15 @@ fn whole_series_with_related_radicals() {
 fn whole_series_with_bernoulli_and_euler_numbers() {
     assert_eq!(
         whole("tan(x), x, 0"),
-        "sum((4^k-1)*(x^(2*k-1))*((2*k)!^-1)*bernoulli(2*k)*((-1)^(k+1))*(4^k), k, 1, oo)"
+        "sum((4^k-1)*(x^(2*k-1))*((2*k)!^-1)*bernoulli(2*k)*((-1)^(k+1))*(4^k), k, 1, +oo)"
     );
     assert_eq!(
         whole("1/cos(x), x, 0"),
-        "sum((x^(2*k))*((2*k)!^-1)*euler(2*k)*((-1)^k), k, 0, oo)"
+        "sum((x^(2*k))*((2*k)!^-1)*euler(2*k)*((-1)^k), k, 0, +oo)"
     );
     assert_eq!(
         whole("x/(exp(x) - 1), x, 0"),
-        "-1/2*x+sum((x^(2*k))*((2*k)!^-1)*bernoulli(2*k), k, 1, oo)+1"
+        "-1/2*x+sum((x^(2*k))*((2*k)!^-1)*bernoulli(2*k), k, 1, +oo)+1"
     );
     assert!(whole("cot(x), x, 0").contains("bernoulli"));
     assert!(whole("1/(1 - exp(-x)), x, 0").contains("bernoulli"));
@@ -442,7 +442,7 @@ fn whole_series_with_bernoulli_and_euler_numbers() {
     // Powers, through the Riccati equations: `{$tan^2 = tan' - 1$}`
     assert_eq!(
         whole("tan(x)^2, x, 0"),
-        "sum((4^k-1)*(2*k-1)*(x^(2*k-2))*((2*k)!^-1)*bernoulli(2*k)*((-1)^(k+1))*(4^k), k, 2, oo)"
+        "sum((4^k-1)*(2*k-1)*(x^(2*k-2))*((2*k)!^-1)*bernoulli(2*k)*((-1)^(k+1))*(4^k), k, 2, +oo)"
     );
     assert!(whole("1/cos(x)^2, x, 0").starts_with("sum("));
     assert!(whole("1/sinh(x)^4, x, 0").contains("bernoulli"));
@@ -476,24 +476,24 @@ fn held_sums_term_by_term() {
     // Derivatives and antiderivatives of whole series, indexed by the exponent
     assert_eq!(
         eval("diff(series(exp(x), x, 0, oo), x)"),
-        "sum((x^k)*(k!^-1), k, 0, oo)"
+        "sum((x^k)*(k!^-1), k, 0, +oo)"
     );
     assert_eq!(
         eval("diff(series(sin(x), x, 0, oo), x)"),
-        "sum((x^(2*k))*((2*k)!^-1)*((-1)^k), k, 0, oo)"
+        "sum((x^(2*k))*((2*k)!^-1)*((-1)^k), k, 0, +oo)"
     );
     assert_eq!(
         eval("integrate(series(exp(x), x, 0, oo), x)"),
-        "sum((x^k)*(k!^-1), k, 1, oo)"
+        "sum((x^k)*(k!^-1), k, 1, +oo)"
     );
     assert_eq!(
         eval("integrate(series(1/(1 - x), x, 0, oo), x)"),
-        "sum((x^k)*(k^-1), k, 1, oo)"
+        "sum((x^k)*(k^-1), k, 1, +oo)"
     );
     // The term in `{$x^(-1)$}` gives a logarithm
     assert_eq!(
         eval("integrate(series(exp(x)/x, x, 0, oo), x)"),
-        "ln(abs(x))+sum((x^k)*(k^-1)*(k!^-1), k, 1, oo)"
+        "ln(abs(x))+sum((x^k)*(k^-1)*(k!^-1), k, 1, +oo)"
     );
     // Partial sums
     assert_eq!(
@@ -511,7 +511,7 @@ fn held_sums_term_by_term() {
     // Definite integrals term by term, inside the disk of convergence
     assert_eq!(
         eval("integrate(series(exp(x^2), x, 0, oo), x, 0, 1)"),
-        "sum(((2*k+1)^-1)*(k!^-1), k, 0, oo)"
+        "sum(((2*k+1)^-1)*(k!^-1), k, 0, +oo)"
     );
     for (integrand, a, b) in [
         ("series(exp(x^2), x, 0, oo)", "0", "1"),

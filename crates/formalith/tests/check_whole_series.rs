@@ -44,7 +44,7 @@ fn split_sums(output: &str) -> Option<(String, Vec<HeldSum>)> {
         if args.len() != 4 {
             return None;
         }
-        if args[3] == "oo" {
+        if args[3] == "+oo" {
             res.push_str(&format!("chk_s{}", sums.len()));
             sums.push(HeldSum {
                 term: args[0].clone(),
@@ -221,14 +221,14 @@ fn verify(input: &str, output: &str) -> Verdict {
 #[test]
 fn oracle_detects_wrong_terms() {
     let wrong = |input: &str, output: &str| matches!(verify(input, output), Verdict::Wrong(_));
-    assert!(wrong("exp(x); 0", "sum((x^k)*((k+1)!^-1), k, 0, oo)"));
+    assert!(wrong("exp(x); 0", "sum((x^k)*((k+1)!^-1), k, 0, +oo)"));
     // Right up to `{$x^20$}`
     assert!(wrong(
         "1/(1 - x); 0",
-        "sum(x^k, k, 0, 19) + sum(2*x^k, k, 20, oo)"
+        "sum(x^k, k, 0, 19) + sum(2*x^k, k, 20, +oo)"
     ));
     assert!(matches!(
-        verify("exp(x); 0", "sum((x^k)*(k!^-1), k, 0, oo)"),
+        verify("exp(x); 0", "sum((x^k)*(k!^-1), k, 0, +oo)"),
         Verdict::Pass
     ));
 }

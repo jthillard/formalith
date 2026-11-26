@@ -532,6 +532,15 @@ impl<From: Set, T: Set> Fun<From, T> {
                 res.big_operator("lim", &lower, None);
                 res
             }
+            (Context::PIECEWISE, args) if !args.is_empty() => PrettyPrinter::cases(
+                args.chunks(2)
+                    .map(|pair| match pair {
+                        [condition, value] => (pretty(value), Some(pretty(condition))),
+                        [default] => (pretty(default), None),
+                        _ => unreachable!("chunks of two"),
+                    })
+                    .collect(),
+            ),
             (Context::DIFF, [f, x, order @ ..]) if order.len() <= 1 => {
                 let order = order.first().map(pretty);
                 let order = order.filter(|order| order.lines != ["1"]);

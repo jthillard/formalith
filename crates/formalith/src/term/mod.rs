@@ -1653,8 +1653,40 @@ impl<T: Set> Display for Term<T> {
         PrettyPrint::fmt(self, &PrintOptions::default(), f)
     }
 }
+impl<T: Set> Term<T> {
+    /// Whether the term is the positive infinity `{$oo$}`, printed with a sign when it stands alone.
+    fn is_positive_infinity(&self) -> bool {
+        matches!(self, Self::Symbol(symbol) if symbol.symbol == Context::OO)
+    }
+    /// Print the term as an operand of a sum, product or power: like [`Print::print`], but the positive infinity
+    /// has no sign there (`{$x + oo$}`, not `{$x + +oo$}`).
+    pub(crate) fn print_operand(
+        &self,
+        options: PrintOptions,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        match self {
+            Self::Symbol(symbol) => Print::print(symbol, &options, f),
+            _ => Print::print(self, &options, f),
+        }
+    }
+    /// Pretty print the term as an operand of a sum, product or power: like [`PrettyPrint::pretty_print`], but the
+    /// positive infinity has no sign there.
+    pub(crate) fn pretty_print_operand(&self, options: PrintOptions) -> PrettyPrinter {
+        match self {
+            Self::Symbol(symbol) => PrettyPrint::pretty_print(symbol, &options),
+            _ => PrettyPrint::pretty_print(self, &options),
+        }
+    }
+}
+
 impl<T: Set> Print for Term<T> {
     fn print(&self, options: &PrintOptions, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.is_positive_infinity() {
+            // A standalone positive infinity is signed, `{$+oo$}`
+            Self::operator("+", options, f)?;
+            return self.print_operand(*options, f);
+        }
         match self {
             Self::Value(value) => Print::print(value, options, f),
             Self::Symbol(symbol) => Print::print(symbol, options, f),
@@ -1667,6 +1699,11 @@ impl<T: Set> Print for Term<T> {
 }
 impl<T: Set> PrettyPrint for Term<T> {
     fn pretty_print(&self, options: &PrintOptions) -> PrettyPrinter {
+        if self.is_positive_infinity() {
+            let mut res = PrettyPrinter::from("+".to_string());
+            res.concat("", false, &self.pretty_print_operand(*options));
+            return res;
+        }
         match self {
             Self::Value(value) => PrettyPrint::pretty_print(value, options),
             Self::Symbol(symbol) => PrettyPrint::pretty_print(symbol, options),

@@ -123,7 +123,7 @@ impl<T: Set> Interval<T> {
         f.write_str(", ")?;
         match &self.hi {
             Some(hi) => hi.print(&options, f)?,
-            None => f.write_str("oo")?,
+            None => f.write_str("+oo")?,
         }
         f.write_str(if self.hi_closed { "]" } else { ")" })
     }
@@ -137,7 +137,7 @@ impl<T: Set> Interval<T> {
         }
         let bound = |bound: &Option<Term<T>>, positive| {
             bound.as_ref().map_or_else(
-                || PrettyPrinter::from(if positive { "∞" } else { "-∞" }.to_owned()),
+                || PrettyPrinter::from(if positive { "+∞" } else { "-∞" }.to_owned()),
                 |bound| bound.pretty_print(&options),
             )
         };

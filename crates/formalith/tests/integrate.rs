@@ -316,8 +316,8 @@ fn gaussian_integrals() {
         integrate("integrate(exp(-x^2/2), x, -oo, oo)/sqrt(2*pi)"),
         "1"
     );
-    assert_eq!(integrate("integrate(exp(x^2), x, 0, oo)"), "oo");
-    assert_eq!(integrate("integrate(exp(x^2), x, -oo, oo)"), "oo");
+    assert_eq!(integrate("integrate(exp(x^2), x, 0, oo)"), "+oo");
+    assert_eq!(integrate("integrate(exp(x^2), x, -oo, oo)"), "+oo");
 }
 
 #[test]
@@ -337,7 +337,7 @@ fn error_function() {
         integrate("lim(x*(1-erf(x))*exp(x^2), x, oo)"),
         integrate("1/sqrt(pi)")
     );
-    assert_eq!(integrate("lim(erfi(x), x, oo)"), "oo");
+    assert_eq!(integrate("lim(erfi(x), x, oo)"), "+oo");
     assert_eq!(integrate("lim(erfi(x), x, -oo)"), "-oo");
     assert_eq!(
         integrate("lim(x*exp(-x^2)*erfi(x), x, oo)"),
@@ -395,8 +395,8 @@ fn definite_integrals() {
     assert_eq!(integrate("integrate(sin(x), x, 0, pi)"), "2");
     assert_eq!(integrate("integrate(x^2, x, 1, 0)"), "-1/3");
     assert_eq!(integrate("integrate(1/x, x, -1, 1)"), "undefined");
-    assert_eq!(integrate("integrate(1/x^2, x, -1, 1)"), "oo");
-    assert_eq!(integrate("integrate(1/x, x, 1, oo)"), "oo");
+    assert_eq!(integrate("integrate(1/x^2, x, -1, 1)"), "+oo");
+    assert_eq!(integrate("integrate(1/x, x, 1, oo)"), "+oo");
     assert_eq!(integrate("integrate(sin(x), x, 0, oo)"), "undefined");
     assert_eq!(
         integrate("integrate(1/(2+cos(x)), x, 0, 2*pi)"),
@@ -422,7 +422,7 @@ fn definite_integrals() {
     assert_eq!(integrate("integrate(abs(x^2-1), x, -2, 2)"), "4");
     assert_eq!(integrate("integrate(sign(x), x, -1, 2)"), "1");
     assert_eq!(integrate("integrate(x*exp(-abs(x)), x, -oo, oo)"), "0");
-    assert_eq!(integrate("integrate(abs(x), x, -oo, 1)"), "oo");
+    assert_eq!(integrate("integrate(abs(x), x, -oo, 1)"), "+oo");
     assert_eq!(
         integrate("integrate(exp(-abs(x))*cos(2*pi*x*t), x, -oo, oo)"),
         integrate("2/(4*pi^2*t^2 + 1)")
@@ -631,7 +631,7 @@ fn non_elementary_integrals_stay_unevaluated() {
 
 #[test]
 fn improper_integrals() {
-    assert_eq!(integrate("integrate(1/x, x, 0, 1)"), "oo");
+    assert_eq!(integrate("integrate(1/x, x, 0, 1)"), "+oo");
     assert_eq!(integrate("integrate(x*ln(x), x, 0, 1)"), "-1/4");
     assert_eq!(integrate("integrate(exp(x), x, -oo, 0)"), "1");
     assert_eq!(integrate("integrate(exp(-x)*x^5, x, 0, oo)"), "120");

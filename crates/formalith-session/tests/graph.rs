@@ -124,7 +124,7 @@ fn test_relations() {
     assert!(text.contains('2'), "{text}");
     assert!(matches!(graph.unwrap().kind, GraphKind::Implicit { .. }));
     let (text, graph) = draw(&mut session, "x > 1");
-    assert_eq!(text, "x ∈ (1, oo)");
+    assert_eq!(text, "x ∈ (1, +oo)");
     assert!(matches!(graph.unwrap().kind, GraphKind::Implicit { .. }));
     // Systems are only solved
     assert_eq!(draw(&mut session, "x + y = 3, x - y = 1").1, None);
@@ -147,7 +147,7 @@ fn test_regions() {
     };
     // Solved when possible, drawn as the intersection
     let (text, relations) = region(&mut session, "x > 0, y > 0");
-    assert_eq!(text, "x ∈ (0, oo), y ∈ (0, oo)");
+    assert_eq!(text, "x ∈ (0, +oo), y ∈ (0, +oo)");
     assert_eq!(relations.len(), 2);
     assert!(inside(&relations, 1., 1.));
     assert!(!inside(&relations, 1., -1.));

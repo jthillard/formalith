@@ -550,19 +550,19 @@ fn rational_equations() {
 fn inequalities() {
     assert_eq!(
         solve("x^2 - 3*x + 2 > 0"),
-        ok("x in (-oo, 1) union (2, oo)")
+        ok("x in (-oo, 1) union (2, +oo)")
     );
     assert_eq!(solve("x^2 <= 4"), ok("x in [-2, 2]"));
     // Roots of the denominator are excluded
     assert_eq!(
         solve("(x-1)/(x+2) >= 0"),
-        ok("x in (-oo, -2) union [1, oo)")
+        ok("x in (-oo, -2) union [1, +oo)")
     );
     assert_eq!(solve("x^2 + 1 < 0"), ok("\"no solution\""));
     assert_eq!(solve("x^2 >= 0"), ok("x in RR"));
     assert_eq!(solve("x^2 <= 0"), ok("x = 0"));
-    assert_eq!(solve("x^2*(x-1) >= 0"), ok("x in {0} union [1, oo)"));
-    assert_eq!(solve("x != 1"), ok("x in (-oo, 1) union (1, oo)"));
+    assert_eq!(solve("x^2*(x-1) >= 0"), ok("x in {0} union [1, +oo)"));
+    assert_eq!(solve("x != 1"), ok("x in (-oo, 1) union (1, +oo)"));
     assert_eq!(solve("x^2 < 2"), ok("x in (-sqrt(2), sqrt(2))"));
     assert_eq!(solve("1 < 2"), ok("\"true\""));
 }
@@ -581,7 +581,7 @@ fn systems_of_inequalities() {
 
 #[test]
 fn inequalities_in_several_unknowns() {
-    assert_eq!(solve("x > 0, y > 0"), ok("x in (0, oo), y in (0, oo)"));
+    assert_eq!(solve("x > 0, y > 0"), ok("x in (0, +oo), y in (0, +oo)"));
     assert_eq!(
         solve("x^2 + y^2 < 1"),
         ok("x in (-1, 1), y in (-sqrt(-x^2+1), sqrt(-x^2+1))")
@@ -594,29 +594,29 @@ fn inequalities_in_several_unknowns() {
     assert_eq!(solve("y > x^2, y < 1"), ok("x in (-1, 1), y in (x^2, 1)"));
     assert_eq!(
         solve("x*y > 0"),
-        ok("x in (-oo, 0), y in (-oo, 0) \\ x in (0, oo), y in (0, oo)")
+        ok("x in (-oo, 0), y in (-oo, 0) \\ x in (0, +oo), y in (0, +oo)")
     );
     assert_eq!(
         solve("y^2 > x"),
-        ok("x in (-oo, 0), y in RR \\ x in [0, oo), y in (-oo, -sqrt(x)) union (sqrt(x), oo)")
+        ok("x in (-oo, 0), y in RR \\ x in [0, +oo), y in (-oo, -sqrt(x)) union (sqrt(x), +oo)")
     );
     assert_eq!(
         solve("a*x > 1"),
-        ok("a in (-oo, 0), x in (-oo, frac(1, a)) \\ a in (0, oo), x in (frac(1, a), oo)")
+        ok("a in (-oo, 0), x in (-oo, frac(1, a)) \\ a in (0, +oo), x in (frac(1, a), +oo)")
     );
     assert_eq!(
         solve("x + y = 1, x != y"),
-        ok("x in (-oo, frac(1, 2)), y = -x+1 \\ x in (frac(1, 2), oo), y = -x+1")
+        ok("x in (-oo, frac(1, 2)), y = -x+1 \\ x in (frac(1, 2), +oo), y = -x+1")
     );
     // The lines cross at `{$x = -4/3$}`, sampling must not land on it
     assert_eq!(
         solve("y < -2*x - 3, y < x + 1"),
         ok(
-            "x in (-oo, -frac(4, 3)], y in (-oo, x+1) \\ x in (-frac(4, 3), oo), y in (-oo, -2 x-3)"
+            "x in (-oo, -frac(4, 3)], y in (-oo, x+1) \\ x in (-frac(4, 3), +oo), y in (-oo, -2 x-3)"
         )
     );
     // The unknowns in the given order
-    assert_eq!(solve("solve(x > 0, x, y)"), ok("x in (0, oo), y in RR"));
+    assert_eq!(solve("solve(x > 0, x, y)"), ok("x in (0, +oo), y in RR"));
     assert_eq!(
         solve("solve(x^2 + y^2 < 1, y, x)"),
         ok("y in (-1, 1), x in (-sqrt(-y^2+1), sqrt(-y^2+1))")

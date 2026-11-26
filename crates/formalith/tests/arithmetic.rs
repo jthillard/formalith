@@ -436,9 +436,9 @@ fn arithmetic_with_infinity() {
     assert_eq!(eval_r("oo - oo"), "undefined");
     assert_eq!(eval_r("oo/oo"), "undefined");
     assert_eq!(eval_r("0*oo"), "undefined");
-    assert_eq!(eval_r("oo + 1"), "oo");
-    assert_eq!(eval_r("2*oo"), "oo");
-    assert_eq!(eval_r("oo*oo"), "oo");
+    assert_eq!(eval_r("oo + 1"), "+oo");
+    assert_eq!(eval_r("2*oo"), "+oo");
+    assert_eq!(eval_r("oo*oo"), "+oo");
     assert_eq!(eval_r("-2*pi*oo"), "-oo");
     assert_eq!(eval_r("oo^-1"), "0");
     // Symbols aren't assumed finite

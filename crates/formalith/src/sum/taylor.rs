@@ -98,7 +98,7 @@ impl Term<Real> {
     /// let series = parse!("sin(x)", R).infinite_series(x, &parse!("0", R), Direction::Both).unwrap();
     /// assert_eq!(
     ///     series.with_options(PrintOptions::typst()).to_string(),
-    ///     "sum_(k = 0)^(oo) frac(x^(2 k+1) (-1)^k, (2 k+1)!)"
+    ///     "sum_(k = 0)^(+oo) frac(x^(2 k+1) (-1)^k, (2 k+1)!)"
     /// );
     /// ```
     pub fn infinite_series(
@@ -2602,6 +2602,6 @@ mod tests {
             .infinite_series(x, &parse!("0", R), Direction::Right)
             .unwrap();
         let typst = whole.with_options(PrintOptions::typst()).to_string();
-        assert_eq!(typst, "sum_(k = 0)^(oo) frac(x^(k+frac(1, 2)), k!)");
+        assert_eq!(typst, "sum_(k = 0)^(+oo) frac(x^(k+frac(1, 2)), k!)");
     }
 }

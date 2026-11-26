@@ -144,7 +144,7 @@ impl<T: Set> Add<T> {
                         if i != 0 {
                             Self::operator("+", &options, f)?;
                         }
-                        Print::print(term, &options, f)?;
+                        term.print_operand(options, f)?;
                     }
                 }
             }
@@ -213,7 +213,7 @@ impl<T: Set> Add<T> {
                         res.as_mut().unwrap().concat("-", true, &elem);
                     }
                     _ => {
-                        let elem = PrettyPrint::pretty_print(term, &options);
+                        let elem = term.pretty_print_operand(options);
                         if let Some(res) = &mut res {
                             res.concat("+", true, &elem);
                         } else {
