@@ -903,7 +903,7 @@ impl<T: Ring> Branch<T> {
         if depth > MAX_DEPTH {
             return Err(SolveError::Unsolvable(plain(&self.equations[0].term)));
         }
-        if !self.clean_up() {
+        if !self.clean_up()? {
             return Ok(());
         }
         if self.equations.is_empty() {
@@ -932,13 +932,18 @@ impl<T: Ring> Branch<T> {
     /// Remove equations which are zero, or repeated, and non-zero terms without unknowns. Returns `false` if an
     /// equation without unknowns isn't zero, one with unknowns can't be zero under the assumptions, or a term assumed
     /// non-zero is zero, so that the branch has no solution.
-    fn clean_up(&mut self) -> bool {
+    ///
+    /// # Errors
+    ///
+    /// An equation without unknowns which is neither proven zero nor proven non-zero, like
+    /// `{$8 cos(pi/7)^3 - 4 cos(pi/7)^2 - 4 cos(pi/7) + 1$}`, which is zero.
+    fn clean_up(&mut self) -> Result<bool, SolveError> {
         let mut nonzero = vec![];
         for term in std::mem::take(&mut self.nonzero) {
             if self.has_unknown(&term) {
                 nonzero.push(term);
             } else if term.is_zero() || term.simplify().is_zero() {
-                return false;
+                return Ok(false);
             }
         }
         self.nonzero = nonzero;
@@ -949,17 +954,20 @@ impl<T: Ring> Branch<T> {
                 if equation.term.is_zero() || equation.term.simplify().is_zero() {
                     continue;
                 }
-                return false;
+                if matches!(equation.term, Term::Value(_)) || T::is_nonzero(&equation.term) {
+                    return Ok(false);
+                }
+                return Err(SolveError::Unsolvable(plain(&equation.term)));
             }
             if T::is_nonzero(&equation.term) {
-                return false;
+                return Ok(false);
             }
             if equations.iter().all(|e| e.term != equation.term) {
                 equations.push(equation);
             }
         }
         self.equations = equations;
-        true
+        Ok(true)
     }
 
     /// Factor the equations which aren't factored yet. The first one which is a product gives a branch for each

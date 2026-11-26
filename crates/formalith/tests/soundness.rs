@@ -94,3 +94,10 @@ fn zero_tests_of_leading_coefficients() {
         "+oo"
     );
 }
+
+#[test]
+fn undecided_constant_equations() {
+    // The constant is zero without simplifying to it, so the branch isn't dropped as without solution
+    assert!(eval_r("x = cos(pi/7), 8*x^3 - 4*x^2 - 4*x + 1 = 0").starts_with("error"));
+    assert_eq!(eval_r("x = 1, x^2 = 2"), "no solution");
+}
