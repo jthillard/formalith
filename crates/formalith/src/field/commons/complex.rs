@@ -684,6 +684,14 @@ impl Semiring for C<R<Rational>> {
                 _ => {}
             }
         }
+        // Constant radical sums with nested roots are expanded through their parts, which have a canonical form
+        if let Term::Add(_) = &a
+            && parts::has_nested_root(&a)
+            && parts::is_radical_constant(&a)
+            && let Some(res) = parts::expand_radical_sum(&a)
+        {
+            return res;
+        }
         a
     }
 }
@@ -819,6 +827,19 @@ pub fn parts(f: &Term<Complex>, z: Symbol, a: Symbol, b: Symbol) -> Option<(Expr
 /// `None` when a part can't be written.
 pub(crate) fn exact_parts(f: &Term<Complex>) -> Option<(Expr, Expr)> {
     parts::split(f)
+}
+
+/// The real expression `f` as a complex one, with its functions (which `TryExprFrom` doesn't convert). `None` for
+/// functions with arguments in another set.
+pub(crate) fn from_real(f: &Expr) -> Option<Term<Complex>> {
+    parts::to_complex(f)
+}
+
+/// The real expression equal to the complex expression `f`, if it is real, every symbol being assumed real.
+pub(crate) fn to_real(f: &Term<Complex>) -> Option<Expr> {
+    TryExprFrom::<Complex>::try_from_expr(&R, f.clone())
+        .ok()
+        .or_else(|| parts::real(f))
 }
 
 /// The real and imaginary parts `{$(u, v)$}` of `{$f = u + i v$}`, every symbol of `f` being assumed real, for

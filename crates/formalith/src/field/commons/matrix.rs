@@ -407,7 +407,13 @@ impl<T: Ring> M<T> {
             Context::EIGENVECTORS => VectorSpaceElement::Vector(
                 eigenspaces()?
                     .into_iter()
-                    .map(|(_, _, basis)| basis)
+                    .map(|(_, _, basis)| {
+                        // An eigenspace isn't `{$\{0\}$}`: its zero tests failed, like for the trigonometric form
+                        // of the roots of a cubic
+                        (!basis.data.iter().all(|e| basis.set.is_zero(e))).then_some(basis)
+                    })
+                    .collect::<Option<Vec<_>>>()?
+                    .into_iter()
                     .reduce(|vectors, basis| vectors.concat_columns(&basis))?,
             ),
             _ => return None,

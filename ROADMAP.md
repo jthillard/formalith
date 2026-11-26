@@ -90,8 +90,10 @@ Ideas and known gaps, roughly by area. `AGENTS.md` describes what exists; this f
 
 ## Matrices
 
-- Eigenvalues in `M(C)` are limited by the roots `C` finds: cubics aren't solved there
-  (`eigenvalues([[3, 2, 3], [-2, 2, -1], [3, 1, -1]])`), unlike in `R` (Cardano), and non-rational quartics neither.
+- Eigenvalues in the trigonometric form of Cardano's or Ferrari's roots (cubics with three real roots, quartics like
+  `x^4 + x + 1` in `C`) stay unevaluated in `M` and `M(C)`: expansion can't prove `p(λ) = 0`
+  (`cos(acos(c)/3)`), so multiplicities and eigenspaces aren't found. Reducing modulo the minimal polynomial of
+  `λ` would. Cubics and quartics with non-rational coefficients (Gaussian ones in `M(C)`) aren't solved.
 
 ## GUI
 

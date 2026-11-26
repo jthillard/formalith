@@ -437,6 +437,10 @@ fn linear_systems_with_new_parameters() {
 fn cubics_and_quintics() {
     assert!(solve("x^3 + x + 1 = 0").is_ok());
     assert!(solve("x^3 - 3*x + 1 = 0").is_ok());
+    // In `{$CC$}`, the conjugate roots next to Cardano's real root
+    let count = |s: Result<String, String>| s.map(|s| s.matches(" \\ ").count() + 1);
+    assert_eq!(count(solve_in("C", "x^3 + x + 1 = 0")), Ok(3));
+    assert_eq!(count(solve_in("C", "x^3 - 3*x + 1 = 0")), Ok(3));
 }
 
 #[test]
@@ -527,6 +531,11 @@ fn polynomials_without_radical_roots() {
     );
     // Irreducible quartic over the rationals without real root, whose radicals aren't found
     assert_eq!(solve("x^4 + x + 1 = 0"), ok("\"no solution\""));
+    // In `{$CC$}`, Ferrari's method with the resolvent root in trigonometric form
+    assert_eq!(
+        solve_in("C", "x^4 + x + 1 = 0").map(|s| s.matches(" \\ ").count() + 1),
+        Ok(4)
+    );
 }
 
 #[test]

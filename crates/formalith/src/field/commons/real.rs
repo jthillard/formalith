@@ -632,6 +632,8 @@ impl Semiring for R<Rational> {
                 }
                 a
             }
+            // `{$2 u^2 - c/u = 0$}` for `{$u = c^(1/3)$}`, so that zero tests by expansion work with nested roots
+            Term::Add(add) => radicals::canonical_sum(add).unwrap_or(a),
             _ => a,
         }
     }

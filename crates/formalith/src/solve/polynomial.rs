@@ -36,11 +36,13 @@ use crate::{
     },
     field::{
         Monoid, Ring, Semiring, TryElementFrom, TryExprFrom,
-        complex::C,
+        complex::{C, from_real, to_real},
         integer::Z,
         modular::Zn,
         real::{
-            R, rootof,
+            R,
+            expr::{Expr, constant_sign},
+            rootof,
             sign::{SignMode, sign_set},
         },
     },
@@ -213,7 +215,7 @@ impl PolynomialRoots for R<Rational> {
             [_, _, _, _] => cubic_roots(&values(coefficients)?),
             [_, _, _, _, _] => {
                 let coefficients = values(coefficients)?;
-                quartic_roots(&coefficients, Some, Self::roots)
+                quartic_roots(&coefficients, Some, Self::roots, sign)
                     .or_else(|| Some(rootof::real_roots(&Poly::new(coefficients))))
             }
             _ => {
@@ -246,7 +248,8 @@ fn depressed_quartic(
 }
 
 /// The roots of the quartic given by `[e, d, c, b, a]` with rational coefficients, by Ferrari's method, in a set
-/// `T` whose elements are built from real radicals with `convert` and whose quadratics are solved by `roots`.
+/// `T` whose elements are built from real radicals with `convert` and whose quadratics are solved by `roots`, the
+/// sign of the resolvent root being found by `sign`.
 /// The depressed quartic `{$t^4 + p t^2 + q t + r$}` with `{$q != 0$}` is
 /// `{$(t^2 + p/2 + m)^2 - 2m (t - q/(4m))^2$}` for a positive root `{$m$}` of the resolvent cubic
 /// `{$8m^3 + 8p m^2 + (2p^2 - 8r) m - q^2$}`, a rational one if possible, so it splits into
@@ -255,6 +258,7 @@ fn quartic_roots<T: Ring>(
     coefficients: &[Rational],
     convert: impl Fn(Term<R<Rational>>) -> Option<Term<T>>,
     roots: impl Fn(&[Term<T>]) -> Option<Vec<Term<T>>>,
+    sign: impl Fn(&Term<R<Rational>>) -> Option<Ordering>,
 ) -> Option<Vec<Term<T>>> {
     let value = |value: Rational| Term::constant(value, R);
     let (shift, p, q, r) = depressed_quartic(coefficients)?;
@@ -406,35 +410,58 @@ fn roots_of_unity(n: usize) -> Vec<Term<C<R<Rational>>>> {
         .collect()
 }
 
-/// The real roots of the cubic `{$a x^3 + b x^2 + c x + d$}` with rational coefficients `[d, c, b, a]`. With
-/// `{$x = t - b/(3 a)$}`, it becomes `{$t^3 + p t + q$}`, whose roots are given by Cardano's formula when
-/// `{$Delta = (q/2)^2 + (p/3)^3 > 0$}` (one real root), the trigonometric form
-/// `{$t_k = 2 sqrt(-p/3) cos(1/3 acos((3 q)/(2 p) sqrt(-3/p)) - (2 pi k)/3)$}` when `{$Delta < 0$}` (three real
-/// roots), and `{$(3 q)/p$}`, `{$-(3 q)/(2 p)$}` when `{$Delta = 0$}`.
-fn cubic_roots(coefficients: &[Rational]) -> Option<Vec<Term<R<Rational>>>> {
+/// The depressed form `{$t^3 + p t + q$}` of the cubic `{$a x^3 + b x^2 + c x + d$}` given by `[d, c, b, a]`, with
+/// `{$x = t + s$}`, as `(s, p, q)`.
+fn depressed_cubic(coefficients: &[Rational]) -> Option<(Rational, Rational, Rational)> {
     let [d, c, b, a] = coefficients else {
         return None;
     };
-    let value = |value: Rational| Term::constant(value, R);
-    let ratio = |p: i64, q: i64| Rational::from_signeds(p, q);
     let p = (Rational::from(3) * a * c - b * b) / (Rational::from(3) * a * a);
     let q = (Rational::from(2) * b * b * b - Rational::from(9) * a * b * c
         + Rational::from(27) * a * a * d)
         / (Rational::from(27) * a * a * a);
-    let shift = value(-(b / (Rational::from(3) * a)));
-    let discriminant = (&q * &q) / Rational::from(4) + (&p * &p * &p) / Rational::from(27);
-    let roots = match discriminant.cmp(&Rational::ZERO) {
+    Some((-(b / (Rational::from(3) * a)), p, q))
+}
+
+/// The discriminant `{$Delta = (q/2)^2 + (p/3)^3$}` of the depressed cubic `{$t^3 + p t + q$}`, positive when it
+/// has a single real root.
+fn cubic_discriminant(p: &Rational, q: &Rational) -> Rational {
+    (q * q) / Rational::from(4) + (p * p * p) / Rational::from(27)
+}
+
+/// The real numbers `{$(u, v)$}` of Cardano's formula for `{$t^3 + p t + q$}` with `{$Delta > 0$}`, whose real root
+/// is `{$u + v$}`: `{$u$}` is the real cube root of `{$-q/2 - "sgn"(q) sqrt(Delta)$}` (not zero), and
+/// `{$v = -p/(3 u)$}` rather than the cube root of `{$-q/2 + "sgn"(q) sqrt(Delta)$}`, so that both are in the tower
+/// of a single cube root and `{$u v = -p/3$}` is known to the normalization.
+fn cardano(p: &Rational, q: &Rational) -> Option<(Expr, Expr)> {
+    let value = |value: Rational| Term::constant(value, R);
+    let root = value(cubic_discriminant(p, q)).pow(&value(Rational::from_signeds(1, 2)));
+    let half = value(-q / Rational::from(2));
+    let cube = if *q > 0 { half - root } else { half + root };
+    let u = real_roots(&cube, 3).pop()?;
+    let v = value(-p / Rational::from(3)) / &u;
+    Some((u, v))
+}
+
+/// The real roots of the cubic `{$a x^3 + b x^2 + c x + d$}` with rational coefficients `[d, c, b, a]`. With
+/// `{$x = t - b/(3 a)$}`, it becomes `{$t^3 + p t + q$}`, whose roots are given by Cardano's formula when
+/// `{$Delta = (q/2)^2 + (p/3)^3 > 0$}` (one real root, see [`cardano`]), the trigonometric form
+/// `{$t_k = 2 sqrt(-p/3) cos(1/3 acos((3 q)/(2 p) sqrt(-3/p)) - (2 pi k)/3)$}` when `{$Delta < 0$}` (three real
+/// roots), and `{$(3 q)/p$}`, `{$-(3 q)/(2 p)$}` when `{$Delta = 0$}`.
+fn cubic_roots(coefficients: &[Rational]) -> Option<Vec<Term<R<Rational>>>> {
+    let value = |value: Rational| Term::constant(value, R);
+    let ratio = |p: i64, q: i64| Rational::from_signeds(p, q);
+    let (shift, p, q) = depressed_cubic(coefficients)?;
+    let shift = value(shift);
+    let roots = match cubic_discriminant(&p, &q).cmp(&Rational::ZERO) {
         Ordering::Equal if p == 0 => vec![Term::zero(R)],
         Ordering::Equal => vec![
             value(Rational::from(3) * &q / &p),
             value(Rational::from(-3) * &q / (Rational::from(2) * &p)),
         ],
         Ordering::Greater => {
-            let root = value(discriminant).pow(&value(ratio(1, 2)));
-            let half = value(-&q / Rational::from(2));
-            let (u, v) = (&half + &root, half - root);
-            let cube_root = |t: &Term<R<Rational>>| real_roots(t, 3).pop();
-            vec![cube_root(&u)? + cube_root(&v)?]
+            let (u, v) = cardano(&p, &q)?;
+            vec![(u + v).expand()]
         }
         Ordering::Less => {
             let pi = Term::Symbol(SymbolTerm::new(Context::PI, R));
@@ -466,9 +493,41 @@ fn cubic_roots(coefficients: &[Rational]) -> Option<Vec<Term<R<Rational>>>> {
     Some(roots.into_iter().map(|t| t + &shift).collect())
 }
 
+/// The roots in `{$CC$}` of the cubic with rational coefficients `[d, c, b, a]`: the real ones of [`cubic_roots`],
+/// and when `{$Delta > 0$}`, the conjugate roots `{$s - (u + v)/2 plus.minus i sqrt(3)/2 (u - v)$}` next to the real
+/// root `{$s + u + v$}` (see [`cardano`]).
+fn complex_cubic_roots(coefficients: &[Rational]) -> Option<Vec<Term<C<R<Rational>>>>> {
+    let convert = |t: Term<R<Rational>>| from_real(&t);
+    let (shift, p, q) = depressed_cubic(coefficients)?;
+    if cubic_discriminant(&p, &q) <= 0 {
+        return cubic_roots(coefficients)?
+            .into_iter()
+            .map(convert)
+            .collect();
+    }
+    let (u, v) = cardano(&p, &q)?;
+    let shift = convert(Term::constant(shift, R))?;
+    let (sum, difference) = (convert((&u + &v).expand())?, convert((u - v).expand())?);
+    // `{$i sqrt(3) / 2$}`
+    let i_sqrt_3 = complex(-3).pow(&Term::constant(
+        [Rational::from_signeds(1, 2), Rational::ZERO],
+        C,
+    )) / complex(2);
+    let half = &sum / &complex(2);
+    let imaginary = (i_sqrt_3 * difference).expand();
+    Some(vec![
+        (&shift + &sum).expand(),
+        (&shift - &half - &imaginary).expand(),
+        (shift - half + imaginary).expand(),
+    ])
+}
+
 impl PolynomialRoots for C<R<Rational>> {
     /// Polynomials of degree one or two, and polynomials of these degrees in `{$x^k$}` with `{$k$}` a product of
-    /// twos and threes, like `{$x^2 + 2$}` or `{$x^6 - 2$}`, are solved with radicals. Other polynomials aren't solved.
+    /// twos and threes, like `{$x^2 + 2$}` or `{$x^6 - 2$}`, are solved with radicals, as well as cyclotomic
+    /// polynomials, cubics with rational coefficients (see [`complex_cubic_roots`]) and quartics with rational
+    /// coefficients (see [`quartic_roots`], whose resolvent root may be in trigonometric form). Other polynomials
+    /// aren't solved.
     fn roots(coefficients: &[Term<Self>]) -> Option<Vec<Term<Self>>> {
         // A polynomial in `x^k`
         let k = (1..coefficients.len())
@@ -503,12 +562,14 @@ impl PolynomialRoots for C<R<Rational>> {
                 if let Some(n) = cyclotomic_order(&monic) {
                     return Some(roots_of_unity(n));
                 }
-                if coefficients.len() == 5 {
-                    let convert =
-                        |t: Term<R<Rational>>| C.try_from_expr(t).ok().map(|t| t.normalize());
-                    return quartic_roots(&coefficients, convert, Self::roots);
+                match coefficients.len() {
+                    4 => complex_cubic_roots(&coefficients),
+                    5 => {
+                        let convert = |t: Term<R<Rational>>| from_real(&t);
+                        quartic_roots(&coefficients, convert, Self::roots, approximate_sign)
+                    }
+                    _ => None,
                 }
-                None
             }
         }
     }
@@ -746,7 +807,7 @@ pub fn split_complex(t: &ComplexTerm) -> Option<(ComplexTerm, ComplexTerm)> {
             _ => ([Rational::ONE, Rational::ZERO], term.clone()),
         };
         // The rest must be real
-        TryExprFrom::<C<R<Rational>>>::try_from_expr(&R, rest.clone()).ok()?;
+        to_real(&rest)?;
         let [a, b] = coefficient;
         re += Term::constant([a, Rational::ZERO], C) * &rest;
         im += Term::constant([b, Rational::ZERO], C) * rest;
@@ -765,7 +826,13 @@ fn complex_cbrt(t: &Term<C<R<Rational>>>) -> Term<C<R<Rational>>> {
 
 /// The sign of `t`, if it is real and can be approximated.
 fn real_sign(t: &Term<C<R<Rational>>>) -> Option<Ordering> {
-    sign(&TryExprFrom::<C<R<Rational>>>::try_from_expr(&R, t.clone()).ok()?)
+    approximate_sign(&to_real(t)?)
+}
+
+/// The sign of `term` like [`sign`], also approximating constants with functions, like the trigonometric form of
+/// the roots of a cubic.
+fn approximate_sign(term: &Term<R<Rational>>) -> Option<Ordering> {
+    sign(term).or_else(|| constant_sign(term))
 }
 
 /// The sign of `term`, if it is zero, can be approximated, or follows from the assumptions on its symbols.

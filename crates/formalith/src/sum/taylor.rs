@@ -376,17 +376,21 @@ fn general_poles(rest: &Poly, den: &Poly, n: &Expr) -> LimitResult<Expr> {
 fn root_parts(q: &Poly) -> Option<Vec<(Expr, Expr)>> {
     let complex = |c: &Rational| Term::constant([c.clone(), Rational::ZERO], C);
     let coefficients: Vec<_> = q.coefficients().iter().map(complex).collect();
-    if let Some(roots) = <C<R<Rational>> as PolynomialRoots>::roots(&coefficients)
+    // Not for cubics and the trigonometric form of Ferrari's roots, as `rootof` below, whose powers reduce
+    // canonically and which approximate quickly (radicals from Cardano's formula are slow in the general terms)
+    if q.degree() != 3
+        && let Some(roots) = <C<R<Rational>> as PolynomialRoots>::roots(&coefficients)
         && roots.len() == q.degree()
         && let Some(parts) = roots
             .iter()
             .map(rational::split)
             .collect::<Option<Vec<_>>>()
+        && !parts
+            .iter()
+            .any(|(u, v)| has_function(u, Context::ACOS) || has_function(v, Context::ACOS))
     {
         return Some(parts);
     }
-    // As `rootof`, whose powers reduce canonically and which approximate quickly (radicals from Cardano's formula
-    // are slow in the general terms)
     let real: Vec<Expr> = crate::field::real::rootof::real_roots(q);
     if real.len() + 2 != q.degree() {
         return None;
@@ -412,6 +416,22 @@ fn root_parts(q: &Poly) -> Option<Vec<(Expr, Expr)>> {
     parts.push((u.clone(), v.clone()));
     parts.push((u, -v));
     Some(parts)
+}
+
+/// Whether `term` contains the function `ident`.
+fn has_function(term: &Expr, ident: Symbol) -> bool {
+    match term {
+        Term::Value(_) | Term::Symbol(_) => false,
+        Term::Add(add) => add.iter().any(|t| has_function(t, ident)),
+        Term::Mul(mul) => mul.iter().any(|t| has_function(t, ident)),
+        Term::Pow(pow) => has_function(&pow.base, ident) || has_function(&pow.exponant, ident),
+        Term::Fun(fun) => {
+            fun.get_ident() == ident
+                || fun
+                    .get_args::<R<Rational>>()
+                    .is_some_and(|args| args.iter().any(|t| has_function(t, ident)))
+        }
+    }
 }
 
 /// The power sums `{$p_m = sum rho^m$}` of the roots of the monic `q`, for `{$m < "count"$}`, by Newton's identities.

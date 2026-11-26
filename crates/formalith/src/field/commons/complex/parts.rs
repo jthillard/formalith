@@ -198,6 +198,20 @@ pub(super) fn is_radical_constant(f: &Complex) -> bool {
     }
 }
 
+/// Whether `f` contains a nested root, a non-integer power of a sum.
+pub(super) fn has_nested_root(f: &Complex) -> bool {
+    match f {
+        Term::Value(_) | Term::Symbol(_) | Term::Fun(_) => false,
+        Term::Add(add) => add.iter().any(has_nested_root),
+        Term::Mul(mul) => mul.iter().any(has_nested_root),
+        Term::Pow(pow) => {
+            matches!((&*pow.base, &**pow.exponant), (Term::Add(_), Term::Value(e))
+                if e.value[0].denominator_ref() != &1u32)
+                || has_nested_root(&pow.base)
+        }
+    }
+}
+
 /// The product of the constant radical factors `factors` and of `c`, expanded through its parts, the real ones
 /// rationalizing their denominators (`{$1/(sqrt(2) + i) = (sqrt(2) - i)/3$}`). `None` when a part can't be written.
 pub(super) fn expand_radical_product(c: &[Rational; 2], factors: &[&Complex]) -> Option<Complex> {
@@ -207,6 +221,14 @@ pub(super) fn expand_radical_product(c: &[Rational; 2], factors: &[&Complex]) ->
             Some(product(&z, &split(f)?))
         })?;
     join_expanded(&u, &v)
+}
+
+/// The constant radical sum `f` with its parts expanded, so that its nested roots have the canonical form of
+/// [`R`]'s expansion. `None` when a part can't be written.
+pub(super) fn expand_radical_sum(f: &Complex) -> Option<Complex> {
+    let (u, v) = split(f)?;
+    let i = Term::Value(Value::new(C.i(), C));
+    Some(to_complex(&u.expand())? + i * to_complex(&v.expand())?)
 }
 
 /// `{$u + i v$}` with both parts expanded, and the positive content of their rational coefficients out, as real
@@ -238,7 +260,7 @@ fn join_expanded(u: &Expr, v: &Expr) -> Option<Complex> {
 }
 
 /// The real expression `f` as a complex expression, normalized. `None` for functions with non-real arguments.
-fn to_complex(f: &Expr) -> Option<Complex> {
+pub(super) fn to_complex(f: &Expr) -> Option<Complex> {
     Some(match f {
         Term::Value(_) | Term::Symbol(_) => C.try_from_expr(f.clone()).ok()?,
         Term::Add(add) => add

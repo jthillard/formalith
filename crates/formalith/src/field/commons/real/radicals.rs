@@ -235,6 +235,16 @@ pub(super) fn power(add: &term::Add<super::Real>, n: &Rational) -> Option<Expr> 
     }
 }
 
+/// The canonical form of a radical sum with nested roots, computed in the tower of its radicals, so that its terms
+/// are monomials of the tower: `{$2 u^2 - c/u$}` is zero for `{$u = c^(1/3)$}`. `None` without nested root, or when
+/// the tower is too big.
+pub(super) fn canonical_sum(add: &term::Add<super::Real>) -> Option<Expr> {
+    if is_radical_sum(add, false) || !is_radical_sum(add, true) {
+        return None;
+    }
+    tower_product(&[&Term::Add(add.clone())])
+}
+
 /// The inverse of a non-zero radical sum, computed in the tower of its radicals.
 fn inverse(add: &term::Add<super::Real>) -> Option<Expr> {
     let sum = Term::Add(add.clone());

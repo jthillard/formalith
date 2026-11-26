@@ -819,6 +819,19 @@ fn complex_matrices() {
     assert_eq!(mc("det([[i, 1], [2, i]])"), "-3");
     assert_eq!(mc("[[i, 1], [2, i]]^-1"), mc("[[-i/3, 1/3], [2/3, -i/3]]"));
     assert_eq!(mc("roots(x^2 + 1)"), mc("[[-i], [i]]"));
+    // Cubics by Cardano's formula
+    let entries = |input: &str| {
+        let typst = SetChoice::MC
+            .eval(input, true, &mut Environment::new())
+            .unwrap();
+        assert!(typst.starts_with("mat("), "{typst}");
+        typst.matches(';').count() + 1
+    };
+    assert_eq!(
+        entries("eigenvalues([[3, 2, 3], [-2, 2, -1], [3, 1, -1]])"),
+        3
+    );
+    assert_eq!(entries("roots(x^3 + x + 1)"), 3);
     assert_eq!(mc("gradient(x^2 + i*y, x, y)"), mc("[[2*x], [i]]"));
     // Real matrices keep non-real eigenvalues unevaluated
     let m = SetChoice::M
