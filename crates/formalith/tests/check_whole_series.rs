@@ -292,6 +292,12 @@ fn whole_series_examples() {
             "1/((1 - x)^2*(1 + x^2)); 0",
             "1/(1 - x + 2*x^2)^2; 0",
             "(1 + x)/(1 - 3*x^2)^3; 0",
+            "exp(x)*cosh(2*x); 0",
+            "cosh(x)*cosh(2*x); 0",
+            "sinh(x)*exp(2*x); 0",
+            "exp(x)*sin(x)*cosh(x); 0",
+            "x*exp(-x)*cosh(3*x); 0",
+            "exp(2*x)*cos(x)^2; 0",
         ],
         whole_series,
     );

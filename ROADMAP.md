@@ -7,9 +7,9 @@ Ideas and known gaps, roughly by area. `AGENTS.md` describes what exists; this f
 - **Relations between radical bases** that aren't common factors over ℚ: nested radicals with related bases
   (`sqrt(1 + sqrt(1 + x))` next to `sqrt(2 + 2 sqrt(1 + x))`), bases vanishing at the point, and towers above
   dimension 64.
-- **Petkovšek's *Hyper*** for recurrences without a two-term form, with exact arithmetic over algebraic numbers.
-  Today only rational functions with simple poles, real or roots of quadratic factors, are handled, by partial
-  fractions.
+- **Petkovšek's *Hyper*** over algebraic numbers: ratios `Z` other than rational or Gaussian, factors `A` and `B`
+  with irrational roots, and recurrences with parameters; non-hypergeometric coefficients (`x e^(x^2) cos x`, whose
+  recurrence has no hypergeometric solution) would need d'Alembertian or Liouvillian solutions.
 - **More poles of rational functions**: irreducible factors of degree 4 or more with several pairs of complex roots
   that `C` doesn't find (`1/(1 + x + x^5)` has two pairs), and rational functions with symbolic or irrational
   coefficients.
@@ -78,7 +78,7 @@ Ideas and known gaps, roughly by area. `AGENTS.md` describes what exists; this f
 
 - **Zeilberger's algorithm** (creative telescoping) for definite hypergeometric sums, which Gosper's algorithm
   can't do: `sum(binomial(n, k), k, 0, n)`, `sum(k binomial(n, k), k, 0, n)` and `sum(binomial(n, k)^2, k, 0, n)`
-  stay unevaluated. Its recurrences would be solved by *Hyper* (see Series), and the parts exist: `gosper.rs`, the
+  stay unevaluated. Its recurrences could be solved by `holonomic/hyper.rs`, and the parts exist: `gosper.rs`, the
   parameter fractions `QQ(t)` and `solve_linear`.
 - `simplify` may not terminate on non-rational results (`sum::tidy` avoids it).
 

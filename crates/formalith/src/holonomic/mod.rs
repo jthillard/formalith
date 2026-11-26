@@ -7,6 +7,7 @@
 
 pub mod algebraic;
 pub mod dfinite;
+pub mod hyper;
 pub mod ore;
 pub mod ratfun;
 pub mod recurrence;

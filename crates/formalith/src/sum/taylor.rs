@@ -1412,7 +1412,13 @@ fn guess_series(
             Err(finite) => return Ok(finite),
         },
     };
-    let recurrence = guess(&found.elems).ok_or(LimitError::Unsupported)?;
+    let Some(recurrence) = guess(&found.elems) else {
+        // Sums of hypergeometric terms, from the recurrence of a holonomic function
+        return proven
+            .as_ref()
+            .and_then(|proven| hyper_series(&found, proven, k))
+            .ok_or(LimitError::Unsupported);
+    };
     // The guess must be proven: from the recurrence of a holonomic function, otherwise by its differential
     // equation
     let holds = match &proven {
@@ -1483,6 +1489,135 @@ fn guess_series(
         res += sum;
     }
     Ok(res)
+}
+
+/// The series whose coefficients, proven by the recurrence of `proven`, are a linear combination of its
+/// hypergeometric solutions (see [`holonomic::hyper`]) from an index `{$n_0$}` past the singular indices of the
+/// recurrence and of the solutions: `{$c_n = sum_i alpha_i h_i(n)$}` fitted on the coefficients, which proves it for
+/// every `{$n >= n_0$}` since both sides satisfy the recurrence and agree on more than its order consecutive
+/// indices. Complex solutions are written as real parts, conjugate pairs once: `{$2 |Z|^n (Re D(n) cos(n theta) - Im D(n)
+/// sin(n theta))$}` with `{$D = alpha C$}`. `None` when the coefficients aren't such a combination.
+fn hyper_series(found: &Coefficients, proven: &Proven, k: Symbol) -> Option<Expr> {
+    use holonomic::hyper::Gaussian;
+    /// Equations checking the fit, beyond the unknowns.
+    const CHECKS: usize = 8;
+    if found.q != 1u32 {
+        return None;
+    }
+    let values: Vec<Rational> = found
+        .elems
+        .iter()
+        .map(|c| c.as_rational().cloned())
+        .collect::<Option<_>>()?;
+    let recurrence = &proven.recurrence;
+    let solutions = holonomic::hyper::solutions(recurrence);
+    if solutions.is_empty() {
+        return None;
+    }
+    let order = recurrence.operator.coefficients.len() - 1;
+    // Past the natural roots of the leading coefficient and the roots of `A` and `B`
+    let leading = recurrence.operator.coefficients.last()?;
+    let mut n0 = recurrence.start;
+    for root in holonomic::ratfun::natural_roots(&leading.num)? {
+        n0 = n0.max(usize::try_from(root).ok()? + 1);
+    }
+    for solution in &solutions {
+        for p in [&solution.a, &solution.b] {
+            let (roots, _) = rational::rational_roots(p, Symbol::new("@hn"));
+            for root in roots {
+                if root >= 0u32 {
+                    let above = usize::try_from(&malachite::Integer::rounding_from(&root, RoundingMode::Floor).0).ok()? + 1;
+                    n0 = n0.max(above);
+                }
+            }
+        }
+    }
+    let rows = solutions.len().max(order) + CHECKS;
+    if n0 + rows > values.len() {
+        return None;
+    }
+    let lift = |r: &Rational| Gaussian::from_rational(r.clone());
+    let equations = (n0..n0 + rows)
+        .map(|n| {
+            let mut row = solutions
+                .iter()
+                .map(|s| s.eval(n0, n))
+                .collect::<Option<Vec<_>>>()?;
+            row.push(lift(&values[n]));
+            Some(row)
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let alpha = solve_linear(equations, solutions.len())?;
+    let w = &found.w;
+    let e0 = &found.e0;
+    let _guard = integer_index(k);
+    let exponent = |j: &Expr| value(e0.clone()) + j.clone();
+    let mut res = found.values[..n0]
+        .iter()
+        .enumerate()
+        .fold(zero(), |res, (j, c)| {
+            res + c * &w_power(w, &exponent(&value(Rational::from(j))))
+        });
+    let n = variable(k);
+    let l = Symbol::new("@j");
+    let poly = |p: &Poly<Rational>, v: &Expr| {
+        p.coefficients()
+            .iter()
+            .enumerate()
+            .fold(zero(), |res, (i, c)| res + value(c.clone()) * v.pow(&value(Rational::from(i))))
+    };
+    let conjugate = |z: &Gaussian| [z[0].clone(), -z[1].clone()];
+    let mut general = zero();
+    for (i, (solution, a)) in solutions.iter().zip(&alpha).enumerate() {
+        if a.is_zero() {
+            continue;
+        }
+        // Conjugate pairs once, the one with a positive imaginary part
+        let paired = solutions.iter().zip(&alpha).enumerate().any(|(j, (other, b))| {
+            j != i
+                && other.z == conjugate(&solution.z)
+                && other.a == solution.a
+                && other.b == solution.b
+                && *b == conjugate(a)
+        });
+        if paired && solution.z[1] < 0u32 {
+            continue;
+        }
+        let scale = if paired { Rational::from(2) } else { Rational::from(1) };
+        let d = solution.c.scale(a);
+        let (re, im) = (
+            poly(&d.map(|c| c[0].clone()), &n),
+            poly(&d.map(|c| c[1].clone()), &n),
+        );
+        let (u, v) = (value(solution.z[0].clone()), value(solution.z[1].clone()));
+        let part = if solution.z[1] == 0u32 {
+            u.pow(&n) * re
+        } else {
+            let theta = arg(&u, &v)?;
+            let modulus = (&u * &u + &v * &v).pow(&(&n / &value(Rational::from(2))));
+            let angle = &n * &theta;
+            modulus * (re * fun(Context::COS, angle.clone()) - im * fun(Context::SIN, angle))
+        };
+        let ratio = poly(&solution.a, &variable(l)) / poly(&solution.b, &variable(l));
+        let product = if solution.a == solution.b {
+            one()
+        } else {
+            ratio
+                .product(l, &value(Rational::from(n0)), &(&n - &one()))
+                .ok()?
+        };
+        general += value(scale) * part * product;
+    }
+    let term = general * w_power(w, &exponent(&n));
+    let start = value(Rational::from(n0));
+    if e0.denominator_ref() == &1u32 {
+        // Indexed by the exponent of `w`
+        let shifted = subs(&tidy_term(&term, k), k, &(&n - &value(e0.clone())));
+        res += held_sum(tidy(&shifted), k, &start + &value(e0.clone()));
+    } else {
+        res += held_sum(tidy_term(&term, k), k, start);
+    }
+    Some(res)
 }
 
 /// `{$w^e$}`, as `{$(plus.minus 1)^e x^(-e)$}` for `{$w = plus.minus 1/x$}`.

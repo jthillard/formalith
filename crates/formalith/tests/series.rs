@@ -299,7 +299,7 @@ fn whole_series() {
         ("1/(1 + x^2), x, 0", "sum((x^(2*k))*((-1)^k), k, 0, oo)"),
         (
             "1/((1 - x)*(1 - 2*x)), x, 0",
-            "sum(-(x^k)+(x^k)*(2^(k+1)), k, 0, oo)",
+            "sum((2^(k+1)-1)*(x^k), k, 0, oo)",
         ),
         ("exp(x), x, 1", "sum(((x-1)^k)*exp(1)*(k!^-1), k, 0, oo)"),
         // Laurent series, and at infinity
@@ -374,6 +374,22 @@ fn whole_series_of_rational_functions_with_multiple_or_irrational_poles() {
         line(&parse!("approx(subs(series(1/(1 - x + 2*x^2)^2, x, 0, oo), x, 1/5))", R)),
         line(&parse!("approx(1/(1 - 1/5 + 2/25)^2)", R))
     );
+}
+
+#[test]
+fn whole_series_from_hypergeometric_solutions() {
+    // No two-term recurrence: sums of hypergeometric terms with different ratios (Petkovšek's Hyper)
+    assert_eq!(
+        whole("exp(x)*cosh(2*x), x, 0"),
+        line(&parse!("sum(((-1)^k/(2*k!) + 3^k/(2*k!))*x^k, k, 0, oo)", R))
+    );
+    let sinh = whole("sinh(x)*exp(2*x), x, 0");
+    assert!(sinh.contains("3^(k-1)") || sinh.contains("3^k"), "{sinh}");
+    // Gaussian ratios `{$2 plus.minus i$}` and `{$plus.minus i$}`, as real parts
+    let gaussian = whole("exp(x)*sin(x)*cosh(x), x, 0");
+    assert!(gaussian.contains("cos(") && gaussian.contains("5^"), "{gaussian}");
+    // Not hypergeometric
+    assert!(whole("x*exp(x^2)*cos(x), x, 0").starts_with("series("));
 }
 
 #[test]
