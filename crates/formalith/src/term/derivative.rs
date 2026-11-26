@@ -100,8 +100,12 @@ impl<T: Derivable<ExponantSet = T, ProductCoefficientSet = T>> Term<T> {
                             }
                         })
                         .collect();
-                    return Self::Fun(Box::new(Fun::new(Context::PIECEWISE, args, set)))
-                        .normalize();
+                    // Its arguments are normalized: normalizing them again would evaluate held calls again (a
+                    // branch keeping an unevaluated integral would be integrated and differentiated forever)
+                    let mut res =
+                        set.normalize(Self::Fun(Box::new(Fun::new(Context::PIECEWISE, args, set))));
+                    res.set_normalized(true);
+                    return res;
                 }
                 // `{$d/dx psi^((m))(u) = psi^((m + 1))(u) u'$}`
                 if fun.get_ident() == Context::POLYGAMMA

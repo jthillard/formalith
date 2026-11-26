@@ -734,6 +734,9 @@ mod tests {
         // A curve, not a surface
         let (_, graph) = evaluate("y = x^2", &mut env).unwrap();
         assert!(matches!(graph.unwrap().kind, GraphKind::Function { .. }));
+        // A `piecewise` keeping an unevaluated integral, whose derivative must not evaluate it again
+        let (_, graph) = evaluate("integrate(sqrt(x/r-1),r,1,x)", &mut env).unwrap();
+        assert!(matches!(graph.unwrap().kind, GraphKind::Function { .. }));
     }
 
     #[test]

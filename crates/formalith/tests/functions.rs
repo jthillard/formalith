@@ -130,6 +130,22 @@ fn diff() {
 }
 
 #[test]
+fn diff_piecewise_with_held_call() {
+    // The integrals are `piecewise`s keeping an unevaluated integral in a branch, which must not be evaluated again
+    assert_eq!(
+        parse!("subs(diff(integrate(sqrt(x/t - 1), t, 1, x), x), x, 2)", R),
+        parse!("pi/4", R)
+    );
+    assert_eq!(
+        parse!(
+            "subs(diff(integrate(sqrt(1/t - 1), t, 1, x), x), x, 1/2)",
+            R
+        ),
+        parse!("1", R)
+    );
+}
+
+#[test]
 fn diff_unevaluated() {
     let is_diff = |term| matches!(term, Term::Fun(fun) if fun.get_ident() == Context::DIFF);
     assert!(is_diff(parse!("diff(f(x), x)", R)));
