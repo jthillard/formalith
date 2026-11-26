@@ -72,6 +72,9 @@ fn structural_sign(term: &Expr, mode: SignMode) -> SignSet {
             Context::UNDEFINED => SignSet::ANY,
             symbol => {
                 let sign = assumption(symbol).sign;
+                if sign.strict().is_none() {
+                    super::cases::record(symbol);
+                }
                 if mode.generic_nonzero && !sign.is_subset(SignSet::ZERO) {
                     sign.intersect(SignSet::NONZERO)
                 } else {

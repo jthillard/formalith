@@ -12,11 +12,14 @@ use malachite::{
 };
 
 use super::{
-    R,
+    R, cases,
     sign::{SignMode, sign_set},
 };
 use crate::{
-    context::{Context, Symbol},
+    context::{
+        Context, Symbol,
+        assumptions::{Assumption, Assumptions, SignSet},
+    },
     term::{Fun, Normalize, SymbolTerm, Term, relation::Relation},
 };
 
@@ -172,26 +175,46 @@ impl R<Rational> {
     pub(super) fn eval_piecewise(self, args: &[Term<Self>]) -> Option<Term<Self>> {
         let default = (args.len() % 2 == 1).then(|| args[args.len() - 1].clone());
         let mut kept = vec![];
+        let mut changed = false;
+        // The signs of symbols compared with 0 implied by the conditions before the current one being false
+        let mut before = Assumptions::current();
+        let mut flatten =
+            |condition: Option<&Term<Self>>, value: &Term<Self>, before: &Assumptions| {
+                let res = assumed_piecewise(condition, value, before);
+                changed |= res.is_some();
+                res.unwrap_or_else(|| value.clone())
+            };
         for [condition, value] in args.as_chunks::<2>().0 {
+            let value = &flatten(Some(condition), value, &before);
+            if let Some((s, signs)) = sign_condition(condition)
+                && before
+                    .assume(s, Assumption::sign(signs.complement()))
+                    .is_err()
+            {
+                // The condition can't be false
+                before = Assumptions::current();
+            }
             match decide(condition) {
                 Some(false) => {}
                 Some(true) if kept.is_empty() => return Some(value.clone()),
                 // Later conditions are never reached
                 Some(true) => {
                     kept.push(value.clone());
-                    return Some(self.call(Context::PIECEWISE, kept));
+                    return Some(cases::normalized_call(Context::PIECEWISE, kept));
                 }
                 None => kept.extend([condition.clone(), value.clone()]),
             }
         }
+        let default = default.map(|default| flatten(None, &default, &before));
         if kept.is_empty() {
             return Some(
                 default.unwrap_or_else(|| Term::Symbol(SymbolTerm::new(Context::UNDEFINED, self))),
             );
         }
-        let changed = kept.len() + usize::from(default.is_some()) != args.len();
+        let changed = changed || kept.len() + usize::from(default.is_some()) != args.len();
         kept.extend(default);
-        changed.then(|| self.call(Context::PIECEWISE, kept))
+        // Its arguments are normalized: normalizing them again would evaluate held calls again, see `cases`
+        changed.then(|| cases::normalized_call(Context::PIECEWISE, kept))
     }
 
     /// Build the function `ident(args)`, normalized.
@@ -264,6 +287,46 @@ impl R<Rational> {
 }
 
 /// Whether the condition `lhs op rhs` of a `piecewise` holds, `None` if it can't be decided.
+/// The symbol `s` and the signs of `s` for which `condition`, a comparison `s rel 0`, holds.
+fn sign_condition(condition: &Term<R<Rational>>) -> Option<(Symbol, SignSet)> {
+    let Term::Fun(condition) = condition else {
+        return None;
+    };
+    let relation = Relation::from_symbol(condition.get_ident())?;
+    match condition.get_args::<R<Rational>>()?.as_slice() {
+        [Term::Symbol(s), Term::Value(zero)] if zero.value == 0 => {
+            Some((s.symbol, relation.signs()))
+        }
+        _ => None,
+    }
+}
+
+/// The `piecewise` `value` of the branch of `condition` (`None` for the default value) simplified with `assumptions`
+/// and the condition assumed, when it is a comparison of a symbol with 0, so that splits on the sign of a parameter
+/// don't nest (see [`cases`]). `None` if nothing changes.
+fn assumed_piecewise(
+    condition: Option<&Term<R<Rational>>>,
+    value: &Term<R<Rational>>,
+    assumptions: &Assumptions,
+) -> Option<Term<R<Rational>>> {
+    let Term::Fun(inner) = value else {
+        return None;
+    };
+    if inner.get_ident() != Context::PIECEWISE {
+        return None;
+    }
+    let mut assumptions = assumptions.clone();
+    if let Some(condition) = condition {
+        let (s, signs) = sign_condition(condition)?;
+        assumptions.assume(s, Assumption::sign(signs)).ok()?;
+    }
+    if assumptions == Assumptions::current() {
+        return None;
+    }
+    let _assumed = assumptions.enter();
+    R.eval_piecewise(inner.get_args::<R<Rational>>()?)
+}
+
 fn decide(condition: &Term<R<Rational>>) -> Option<bool> {
     let Term::Fun(fun) = condition else {
         return None;

@@ -147,7 +147,16 @@ fn inner_integrals(
             let Term::Fun(fun) = t else {
                 return None;
             };
-            if fun.get_ident() != Context::INTEGRATE || !depends(t, x) {
+            if !depends(t, x) {
+                return None;
+            }
+            // Inner integrals split on the sign of `x` (see `field::commons::real::cases`) take their branch
+            if fun.get_ident() == Context::PIECEWISE {
+                let res = crate::term::Normalize::normalize(t);
+                changed.set(changed.get() || &res != t);
+                return Some(res);
+            }
+            if fun.get_ident() != Context::INTEGRATE {
                 return None;
             }
             let Some([g, Term::Symbol(y), c, d]) = fun.get_args::<Real>().map(Vec::as_slice) else {

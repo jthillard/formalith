@@ -727,8 +727,53 @@ fn improper_integral_with_parameter() {
         line(&parse!("integrate(exp(-a*x), x, 0, oo)", R, &env)),
         integrate("1/a")
     );
-    // Without assumption, the sign of `a` is unknown
-    assert!(integrate("integrate(exp(-a*x), x, 0, oo)").contains("integrate"));
+    // Without assumption, split on the sign of `a`
+    assert_eq!(
+        integrate("integrate(exp(-a*x), x, 0, oo)"),
+        integrate("piecewise(a <= 0, oo, 1/a)")
+    );
+}
+
+#[test]
+fn case_splits() {
+    // Every sign of `r` gives the same result
+    assert_eq!(
+        integrate("integrate(sqrt(r/x - 1), x, 0, r)"),
+        integrate("pi*r/2")
+    );
+    assert_eq!(
+        integrate("integrate(exp(a*x), x, 0, oo)"),
+        integrate("piecewise(a < 0, -1/a, oo)")
+    );
+    assert_eq!(
+        integrate("lim(exp(a*x), x, oo)"),
+        integrate("piecewise(a < 0, 0, a = 0, 1, oo)")
+    );
+    assert_eq!(
+        integrate("lim(x^a, x, 0, 1)"),
+        integrate("piecewise(a < 0, oo, a = 0, 1, 0)")
+    );
+    // Inside other expressions
+    assert_eq!(
+        integrate("2*integrate(exp(a*x), x, 0, oo) + 1"),
+        integrate("2*piecewise(a < 0, -1/a, oo) + 1")
+    );
+    // A branch staying unevaluated keeps the call, which isn't split again when normalized again
+    let partial = integrate("sum(exp(a*k), k, 0, oo)");
+    assert!(partial.starts_with("piecewise(a < 0,"), "{partial}");
+    assert_eq!(partial.matches("piecewise").count(), 1, "{partial}");
+    assert_eq!(integrate(&partial), partial);
+    // Assumptions decide the sign
+    let mut env = Environment::new();
+    env.eval("assume(a < 0)", R).unwrap();
+    assert_eq!(
+        line(&parse!("integrate(exp(a*x), x, 0, oo)", R, &env)),
+        integrate("-1/a")
+    );
+    // Without parameter, nothing to split
+    assert!(integrate("integrate(x/sqrt(1 + x^3), x)").starts_with("integrate("));
+    // Bound variables of inner sums aren't parameters
+    assert!(integrate("integrate(series(1/(1-x), x, 0, oo), x, 0, 2)").starts_with("integrate("));
 }
 
 #[test]

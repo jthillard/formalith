@@ -1,6 +1,7 @@
 //! The real field `{$RR$}`.
 
 pub(crate) mod approx;
+mod cases;
 pub(crate) mod expr;
 pub mod numeric;
 pub(crate) mod radicals;
@@ -525,45 +526,25 @@ impl Semiring for R<Rational> {
                         return res;
                     }
                 }
-                Context::LIM => {
-                    if let Some([f, Term::Symbol(x), point, direction @ ..]) =
-                        fun.get_args::<Self>().map(Vec::as_slice)
-                        && let Some(direction) = Direction::from_args(direction)
+                Context::LIM
+                | Context::SERIES
+                | Context::INTEGRATE
+                | Context::SUM
+                | Context::PRODUCT => {
+                    if let Some(args) = fun.get_args::<Self>()
+                        && let Some(Term::Symbol(x)) = args.get(1)
                     {
-                        match f.limit(x.symbol, point, direction) {
-                            Ok(res) => return res,
-                            Err(LimitError::Undefined) => {
-                                return Term::Symbol(SymbolTerm::new(Context::UNDEFINED, *self));
-                            }
-                            Err(_) => {}
+                        let ident = fun.get_ident();
+                        if let Some(res) = cases::evaluate(ident, args, x.symbol, &|args| {
+                            Self::eval_calculus(ident, args)
+                        }) {
+                            return res;
                         }
-                    }
-                }
-                Context::SERIES => {
-                    if let Some([f, Term::Symbol(x), point, rest @ ..]) =
-                        fun.get_args::<Self>().map(Vec::as_slice)
-                    {
-                        if let [Term::Symbol(oo), direction @ ..] = rest
-                            && oo.symbol == Context::OO
+                        // Whole series aren't normalized further
+                        if ident == Context::SERIES
+                            && matches!(args.get(3), Some(Term::Symbol(oo)) if oo.symbol == Context::OO)
                         {
-                            if let Some(direction) = Direction::from_args(direction)
-                                && let Ok(res) = f.infinite_series(x.symbol, point, direction)
-                            {
-                                return res;
-                            }
                             return a;
-                        }
-                        let (order, direction) = match rest {
-                            [] => (Some(Rational::from(6)), Some(Direction::Both)),
-                            [Term::Value(order), direction @ ..] => {
-                                (Some(order.value.clone()), Direction::from_args(direction))
-                            }
-                            _ => (None, None),
-                        };
-                        if let (Some(order), Some(direction)) = (order, direction)
-                            && let Ok(res) = f.series(x.symbol, point, &order, direction)
-                        {
-                            return res + remainder(x.symbol, point, &order);
                         }
                     }
                 }
@@ -574,46 +555,6 @@ impl Semiring for R<Rational> {
                         .and_then(|(f, x)| f.apart(x))
                     {
                         return res;
-                    }
-                }
-                Context::INTEGRATE => {
-                    let res = match fun.get_args::<Self>().map(Vec::as_slice) {
-                        Some([f, Term::Symbol(x)]) => f.integrate(x.symbol),
-                        Some([f, Term::Symbol(x), a, b]) => f.integrate_definite(x.symbol, a, b),
-                        _ => Err(IntegrateError::Unsupported),
-                    };
-                    match res {
-                        Ok(res) => return res,
-                        Err(IntegrateError::Divergent(sign)) => {
-                            let oo = Term::Symbol(SymbolTerm::new(Context::OO, *self));
-                            return if sign == Ordering::Less { -oo } else { oo };
-                        }
-                        Err(IntegrateError::Undefined) => {
-                            return Term::Symbol(SymbolTerm::new(Context::UNDEFINED, *self));
-                        }
-                        Err(IntegrateError::Unsupported | IntegrateError::NonElementary) => {}
-                    }
-                }
-                Context::SUM | Context::PRODUCT => {
-                    if let Some([f, Term::Symbol(k), a, b]) =
-                        fun.get_args::<Self>().map(Vec::as_slice)
-                    {
-                        let res = if fun.get_ident() == Context::SUM {
-                            f.sum(k.symbol, a, b)
-                        } else {
-                            f.product(k.symbol, a, b)
-                        };
-                        match res {
-                            Ok(res) => return res,
-                            Err(SumError::Divergent(sign)) => {
-                                let oo = Term::Symbol(SymbolTerm::new(Context::OO, *self));
-                                return if sign == Ordering::Less { -oo } else { oo };
-                            }
-                            Err(SumError::Undefined) => {
-                                return Term::Symbol(SymbolTerm::new(Context::UNDEFINED, *self));
-                            }
-                            Err(SumError::Unsupported) => {}
-                        }
                     }
                 }
                 Context::APPROX => {
@@ -1088,6 +1029,80 @@ impl R<Rational> {
         (1..=approx::MAX_DIGITS)
             .contains(&digits)
             .then(|| approx::approximate_term(x, digits))
+    }
+
+    /// Evaluate the calculus builtin `ident(args)` (`lim`, `series`, `integrate`, `sum` or `product`), `None` when
+    /// it stays unevaluated.
+    fn eval_calculus(ident: Symbol, args: &[Term<Self>]) -> Option<Term<Self>> {
+        let infinity = |sign: Ordering| {
+            let oo = Term::Symbol(SymbolTerm::new(Context::OO, R));
+            if sign == Ordering::Less { -oo } else { oo }
+        };
+        let undefined = || Term::Symbol(SymbolTerm::new(Context::UNDEFINED, R));
+        match ident {
+            Context::LIM => {
+                let [f, Term::Symbol(x), point, direction @ ..] = args else {
+                    return None;
+                };
+                match f.limit(x.symbol, point, Direction::from_args(direction)?) {
+                    Ok(res) => Some(res),
+                    Err(LimitError::Undefined) => Some(undefined()),
+                    Err(_) => None,
+                }
+            }
+            Context::SERIES => {
+                let [f, Term::Symbol(x), point, rest @ ..] = args else {
+                    return None;
+                };
+                if let [Term::Symbol(oo), direction @ ..] = rest
+                    && oo.symbol == Context::OO
+                {
+                    return f
+                        .infinite_series(x.symbol, point, Direction::from_args(direction)?)
+                        .ok();
+                }
+                let (order, direction) = match rest {
+                    [] => (Rational::from(6), Direction::Both),
+                    [Term::Value(order), direction @ ..] => {
+                        (order.value.clone(), Direction::from_args(direction)?)
+                    }
+                    _ => return None,
+                };
+                f.series(x.symbol, point, &order, direction)
+                    .ok()
+                    .map(|res| res + remainder(x.symbol, point, &order))
+            }
+            Context::INTEGRATE => {
+                let res = match args {
+                    [f, Term::Symbol(x)] => f.integrate(x.symbol),
+                    [f, Term::Symbol(x), a, b] => f.integrate_definite(x.symbol, a, b),
+                    _ => return None,
+                };
+                match res {
+                    Ok(res) => Some(res),
+                    Err(IntegrateError::Divergent(sign)) => Some(infinity(sign)),
+                    Err(IntegrateError::Undefined) => Some(undefined()),
+                    Err(IntegrateError::Unsupported | IntegrateError::NonElementary) => None,
+                }
+            }
+            Context::SUM | Context::PRODUCT => {
+                let [f, Term::Symbol(k), a, b] = args else {
+                    return None;
+                };
+                let res = if ident == Context::SUM {
+                    f.sum(k.symbol, a, b)
+                } else {
+                    f.product(k.symbol, a, b)
+                };
+                match res {
+                    Ok(res) => Some(res),
+                    Err(SumError::Divergent(sign)) => Some(infinity(sign)),
+                    Err(SumError::Undefined) => Some(undefined()),
+                    Err(SumError::Unsupported) => None,
+                }
+            }
+            _ => None,
+        }
     }
 
     fn eval_builtin(self, ident: Symbol, args: &[Term<Self>]) -> Option<Term<Self>> {

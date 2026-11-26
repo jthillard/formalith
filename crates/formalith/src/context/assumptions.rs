@@ -85,6 +85,12 @@ impl SignSet {
         !Self::from_ordering(sign).is_disjoint(self)
     }
 
+    /// The signs not in `self`.
+    #[must_use]
+    pub const fn complement(self) -> Self {
+        Self(!self.0 & Self::ANY.0)
+    }
+
     /// The signs of `-u` for `u` with signs in `self`.
     #[must_use]
     pub const fn neg(self) -> Self {
