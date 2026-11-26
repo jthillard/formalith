@@ -203,6 +203,11 @@ fn algebraic_substitutions() {
         integrate("integrate(sqrt(1/x - 1), x, 0, 1)"),
         integrate("pi/2")
     );
+    // With a parameter in the Möbius function
+    assert_eq!(
+        integrate("integrate(sqrt(r/x - 1), x)"),
+        integrate("x*sqrt(r/x - 1) - r*atan(sqrt(r/x - 1))")
+    );
     for f in [
         "sqrt(1/x - 1)",
         "sqrt((1 - x)/x)",

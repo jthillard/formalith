@@ -30,10 +30,7 @@ use crate::{
     term::{Expand, Term},
 };
 
-use super::{
-    Integrator,
-    poly::{Poly, rational_function as rational_function_of},
-};
+use super::{Integrator, poly::Poly};
 
 /// Largest size of the result, `MAX_SIZE_RATIO` times the size of the integrand plus `MAX_SIZE_EXTRA`.
 const MAX_SIZE_RATIO: usize = 8;
@@ -144,22 +141,18 @@ fn moebius(
     radicals: &[(Expr, Rational)],
 ) -> Option<Expr> {
     let (y, _) = &radicals[0];
-    let (num, den) = rational_function_of(y, x)?;
-    if num.degree() > 1 || den.degree() > 1 {
-        return None;
-    }
-    let (b, a) = (num.coefficient(0), num.coefficient(1));
-    let (d, c) = (den.coefficient(0), den.coefficient(1));
-    if &a * &d == &b * &c {
+    let (num, den) = y.as_fraction(true);
+    let ([b, a], [d, c]) = (linear_coefficients(&num, x)?, linear_coefficients(&den, x)?);
+    if (&a * &d - &b * &c).expand().is_zero() {
         return None;
     }
     // Other bases are `y` or `1/y`, as rational functions
     let mut signs = vec![];
     for (base, _) in radicals {
-        let (n, m) = rational_function_of(base, x)?;
-        if n.mul(&den) == m.mul(&num) {
+        let (n, m) = base.as_fraction(true);
+        if (&n * &den - &m * &num).expand().is_zero() {
             signs.push((base.clone(), 1));
-        } else if n.mul(&num) == m.mul(&den) {
+        } else if (&n * &num - &m * &den).expand().is_zero() {
             signs.push((base.clone(), -1));
         } else {
             return None;
@@ -172,13 +165,24 @@ fn moebius(
     let t_symbol = integrator.fresh_symbol();
     let t = variable(t_symbol);
     let t_l = t.pow(&value(l.clone()));
-    let x_t = (value(d) * &t_l - value(b)) / (value(a) - value(c) * &t_l);
+    let x_t = (d * &t_l - b) / (a - c * &t_l);
     let powers = |base: &Expr, e: &Rational| {
         let (_, sign) = signs.iter().find(|(b, _)| b == base)?;
         Some(t.pow(&value(e * &l * Rational::from(*sign))))
     };
     let t_x = y.pow(&value(Rational::from(1) / &l));
     substitute(integrator, f, x, t_symbol, &x_t, &powers, &t_x)
+}
+
+/// The coefficients `{$[b, a]$}` of a polynomial `{$a x + b$}` of degree at most one in `x`, which may contain other
+/// symbols (`{$r / x - 1 = (r - x) / x$}`).
+fn linear_coefficients(p: &Expr, x: Symbol) -> Option<[Expr; 2]> {
+    let a = p.derivative(x).expand();
+    if depends(&a, x) {
+        return None;
+    }
+    let b = (p - &(&a * &variable(x))).expand();
+    (!depends(&b, x)).then_some([b, a])
 }
 
 /// `{$integral f$}` for a rational function of `x` and `{$sqrt(q)$}`, `q` being quadratic, by Euler's
