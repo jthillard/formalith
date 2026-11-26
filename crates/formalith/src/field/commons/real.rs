@@ -561,7 +561,7 @@ impl Semiring for R<Rational> {
                 Context::APPROX => {
                     if let Some(res) = fun
                         .get_args::<Self>()
-                        .and_then(|args| Self::eval_approx(args))
+                        .and_then(|args| approx::eval_approx(args))
                     {
                         return res;
                     }
@@ -1064,20 +1064,6 @@ impl R<Rational> {
         let (an, ad) = a.numerator_and_denominator_ref();
         let (bn, bd) = b.numerator_and_denominator_ref();
         Rational::from_naturals(an.gcd(bn), ad.lcm(bd))
-    }
-
-    /// Evaluate the builtin function `ident` on `args`, returning `None` if it can't be evaluated.
-    /// Evaluate `approx(x)` or `approx(x, digits)`, returning `None` if `digits` isn't a valid number of digits.
-    fn eval_approx(args: &[Term<Self>]) -> Option<Term<Self>> {
-        profile_scope!("approx");
-        let (x, digits) = match args {
-            [x] => (x, approx::DEFAULT_DIGITS),
-            [x, Term::Value(digits)] => (x, u64::try_from(&digits.value).ok()?),
-            _ => return None,
-        };
-        (1..=approx::MAX_DIGITS)
-            .contains(&digits)
-            .then(|| approx::approximate_term(x, digits))
     }
 
     /// Evaluate the calculus builtin `ident(args)` (`lim`, `series`, `integrate`, `sum` or `product`), `None` when

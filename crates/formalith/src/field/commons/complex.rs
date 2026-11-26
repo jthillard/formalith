@@ -611,7 +611,7 @@ impl Semiring for C<R<Rational>> {
                 Context::APPROX => {
                     if let Some(res) = fun
                         .get_args::<Self>()
-                        .and_then(|args| approx::eval_approx(args))
+                        .and_then(|args| crate::field::real::approx::eval_approx(args))
                     {
                         return res;
                     }

@@ -1228,11 +1228,52 @@ pub(super) fn approximate_value(value: Rational) -> Term<Real> {
     res
 }
 
+/// A set whose terms are approximated by [`approximate_term`], from the approximations of their constants.
+pub trait Approximate: crate::field::Ring<ExponantSet = Self> {
+    /// The approximation of a constant `term` to `digits` significant digits (in each part), `None` when it isn't
+    /// a constant or can't be approximated.
+    fn approximate_constant(term: &Term<Self>, digits: u64) -> Option<Term<Self>>;
+    /// A coefficient of a product rounded to `digits` significant digits.
+    fn round_coefficient(
+        coefficient: &<Self::ProductCoefficientSet as crate::field::Set>::Element,
+        digits: u64,
+    ) -> <Self::ProductCoefficientSet as crate::field::Set>::Element;
+    /// Whether `value` is an integer, kept exact as an exponent.
+    fn is_integer(value: &Self::Element) -> bool;
+}
+
+impl Approximate for Real {
+    fn approximate_constant(term: &Term<Self>, digits: u64) -> Option<Term<Self>> {
+        approximate(term, digits).map(approximate_value)
+    }
+
+    fn round_coefficient(coefficient: &Rational, digits: u64) -> Rational {
+        round_significant(coefficient, digits)
+    }
+
+    fn is_integer(value: &Rational) -> bool {
+        *value.denominator_ref() == 1
+    }
+}
+
+/// Evaluate `{$"approx"(x, "digits")$}` (see [`approximate_term`]), `None` for invalid arguments.
+pub fn eval_approx<T: Approximate>(args: &[Term<T>]) -> Option<Term<T>> {
+    profile_scope!("approx");
+    let (x, digits) = match args {
+        [x] => (x, DEFAULT_DIGITS),
+        [x, Term::Value(digits)] => (x, u64::try_from(digits.set.to_i64(&digits.value)?).ok()?),
+        _ => return None,
+    };
+    (1..=MAX_DIGITS)
+        .contains(&digits)
+        .then(|| approximate_term(x, digits))
+}
+
 /// Approximate the numerical parts of `term` to `digits` significant digits, keeping symbols, like
 /// `{$x + 1.41421356237310$}` for `{$x + sqrt(2)$}`. Integer exponents are kept exact.
-pub(super) fn approximate_term(term: &Term<Real>, digits: u64) -> Term<Real> {
-    if let Some(value) = approximate(term, digits) {
-        return approximate_value(value);
+pub fn approximate_term<T: Approximate>(term: &Term<T>, digits: u64) -> Term<T> {
+    if let Some(res) = T::approximate_constant(term, digits) {
+        return res;
     }
     let set = term.get_set();
     match term {
@@ -1246,7 +1287,7 @@ pub(super) fn approximate_term(term: &Term<Real>, digits: u64) -> Term<Real> {
         .normalize(),
         Term::Mul(mul) => {
             let mut res = Mul::new(
-                round_significant(&mul.coefficient, digits),
+                T::round_coefficient(&mul.coefficient, digits),
                 mul.iter()
                     .map(|factor| approximate_term(factor, digits))
                     .collect(),
@@ -1256,14 +1297,14 @@ pub(super) fn approximate_term(term: &Term<Real>, digits: u64) -> Term<Real> {
             Term::Mul(res).normalize()
         }
         Term::Pow(pow) => {
-            let exponant: &Term<Real> = &pow.exponant;
+            let exponant: &Term<T> = &pow.exponant;
             let exponant = match exponant {
-                Term::Value(value) if *value.value.denominator_ref() == 1 => exponant.clone(),
+                Term::Value(value) if T::is_integer(&value.value) => exponant.clone(),
                 _ => approximate_term(exponant, digits),
             };
             approximate_term(&pow.base, digits).pow(&exponant)
         }
-        Term::Fun(fun) => fun.get_args::<Real>().map_or_else(
+        Term::Fun(fun) => fun.get_args::<T>().map_or_else(
             || term.clone(),
             |args| {
                 let args = args
