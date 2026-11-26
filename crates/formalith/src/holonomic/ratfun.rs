@@ -118,14 +118,8 @@ pub fn natural_roots(p: &EPoly) -> Option<Vec<u64>> {
     if p.is_zero() {
         return None;
     }
-    if let Some(coefficients) = p
-        .coefficients()
-        .iter()
-        .map(|c| c.as_rational().cloned())
-        .collect::<Option<Vec<_>>>()
-    {
-        let (roots, _) =
-            rational_roots(&Poly::new(coefficients), crate::context::Symbol::new("@n"));
+    if let Some(p) = p.to_rational() {
+        let (roots, _) = rational_roots(&p, crate::context::Symbol::new("@n"));
         return Some(
             roots
                 .into_iter()

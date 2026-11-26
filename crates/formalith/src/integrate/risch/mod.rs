@@ -22,7 +22,7 @@ mod quadratic;
 mod rde;
 mod tower;
 
-use malachite::{Rational, base::num::basic::traits::Zero};
+use malachite::Rational;
 
 use crate::{
     context::Symbol,
@@ -30,11 +30,7 @@ use crate::{
     term::Normalize,
 };
 
-use super::{
-    Expr, ln_abs,
-    poly::{Coefficient, Poly},
-    rational, trig,
-};
+use super::{Expr, ln_abs, poly::Coefficient, rational, trig};
 
 use crate::polynom::fraction as field;
 use field::{EPoly, Elem, interpolate};
@@ -121,18 +117,16 @@ impl Risch<'_> {
     fn integrate_rational(&self, f: &Elem) -> RischResult<Integral> {
         let (a, d) = f.fraction(1);
         let (g, h, r) = self.hermite(&a, &d, 1);
-        let r = to_rational_poly(&r.fraction(1).0).antiderivative();
-        let part = g.plus(&Elem::from_poly(1, &from_rational_poly(&r)));
+        // Coefficients of level 0 are rational
+        let rational = |p: &EPoly| p.to_rational().ok_or(RischError::Unsupported);
+        let r = rational(&r.fraction(1).0)?.antiderivative();
+        let part = g.plus(&Elem::from_poly(1, &EPoly::from_rational(&r)));
         let logs = if h.is_zero() {
             zero()
         } else {
             let (num, den) = h.fraction(1);
-            rational::integrate(
-                &to_rational_poly(&num),
-                &to_rational_poly(&den),
-                self.tower.x(),
-            )
-            .ok_or(RischError::Unsupported)?
+            rational::integrate(&rational(&num)?, &rational(&den)?, self.tower.x())
+                .ok_or(RischError::Unsupported)?
         };
         Ok(Integral { part, logs })
     }
@@ -258,12 +252,7 @@ impl Risch<'_> {
         let dd = self.d_poly(&d, level);
         let r = Self::resultant_in_z(&d, &a, &dd);
         let r = r.monic();
-        let r: Option<Vec<_>> = r
-            .coefficients()
-            .iter()
-            .map(|c| c.as_rational().cloned())
-            .collect();
-        let r = Poly::new(r.ok_or(RischError::NonElementary)?);
+        let r = r.to_rational().ok_or(RischError::NonElementary)?;
         let mut residues = vec![];
         for square_free in r.square_free() {
             if square_free.degree() == 0 {
@@ -347,15 +336,6 @@ impl Risch<'_> {
             None => Err(RischError::Unsupported),
         }
     }
-}
-
-/// The polynomial of `{$QQ[x]$}` with the given coefficients of level 0.
-fn to_rational_poly(p: &EPoly) -> Poly {
-    p.map(|c| c.as_rational().cloned().unwrap_or(Rational::ZERO))
-}
-
-fn from_rational_poly(p: &Poly) -> EPoly {
-    p.map(|c| Elem::rational(c.clone()))
 }
 
 #[cfg(test)]

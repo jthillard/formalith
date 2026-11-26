@@ -7,7 +7,7 @@
 //! and `{$e^(a_j)$}` being the monomials of the tower, and `{$ln u$}` iff `{$u' / u$}` is such a combination.
 //! Dependent ones are written with the existing monomials, when the exponents are integers.
 
-use crate::field::real::expr::{fun, value, variable, zero};
+use crate::field::real::expr::{fun, value, variable};
 use malachite::{
     Rational,
     base::num::{arithmetic::traits::Lcm, basic::traits::One},
@@ -162,36 +162,14 @@ impl Tower {
 
     /// The element as an expression.
     pub(super) fn to_term(&self, f: &Elem) -> Expr {
-        match f {
-            Elem::Rational(r) => value(r.clone()),
-            Elem::Fraction(_) => {
-                let level = f.level();
-                let (num, den) = f.fraction(level);
-                let num = self.poly_to_term(&num, level);
-                if den.is_one() {
-                    num
-                } else {
-                    num / self.poly_to_term(&den, level)
-                }
-            }
-        }
+        f.to_term(&|level| &self.monomials[level - 1].term)
     }
 
     /// The polynomial in the monomial of level `level` as an expression.
     pub(super) fn poly_to_term(&self, p: &EPoly, level: usize) -> Expr {
-        let t = &self.monomials[level - 1].term;
-        p.coefficients()
-            .iter()
-            .enumerate()
-            .filter(|(_, c)| !c.is_zero())
-            .fold(zero(), |res, (i, c)| {
-                let c = self.to_term(c);
-                res + match i {
-                    0 => c,
-                    1 => c * t,
-                    _ => c * t.pow(&value(Rational::from(i))),
-                }
-            })
+        p.to_term(&self.monomials[level - 1].term, &|level| {
+            &self.monomials[level - 1].term
+        })
     }
 
     /// The expression as an element of the tower, adding the monomials it needs.

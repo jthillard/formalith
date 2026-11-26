@@ -193,13 +193,7 @@ fn rational_series(
         .ok_or(LimitError::Unsupported)?;
     let mut params = Params::default();
     let (num, den) = params.rational(&g, w).ok_or(LimitError::Unsupported)?;
-    let rational = |p: &EPoly| {
-        p.coefficients()
-            .iter()
-            .map(|c| c.as_rational().cloned())
-            .collect::<Option<Vec<_>>>()
-            .map(Poly::new)
-    };
+    let rational = EPoly::to_rational;
     let (num, den) = (
         rational(&num).ok_or(LimitError::Unsupported)?,
         rational(&den).ok_or(LimitError::Unsupported)?,

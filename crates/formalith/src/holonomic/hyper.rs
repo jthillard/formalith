@@ -116,13 +116,7 @@ pub fn solutions(recurrence: &Recurrence) -> Vec<Solution> {
 
 /// The coefficients `{$P_s$}` of the recurrence as polynomials over `{$QQ$}`, `None` if they aren't.
 fn rational_coefficients(recurrence: &Recurrence) -> Option<Vec<Poly<Rational>>> {
-    let rational = |p: &crate::polynom::fraction::EPoly| {
-        p.coefficients()
-            .iter()
-            .map(|c| c.as_rational().cloned())
-            .collect::<Option<Vec<_>>>()
-            .map(Poly::new)
-    };
+    let rational = crate::polynom::fraction::EPoly::to_rational;
     recurrence
         .operator
         .coefficients

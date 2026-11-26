@@ -118,13 +118,8 @@ impl Risch<'_> {
         let r = r.monic();
         let positive = |n: &Rational| *n > 0 && n.denominator_ref() == &1u32;
         let x = self.tower.x();
-        if let Some(q) = r
-            .coefficients()
-            .iter()
-            .map(|c| c.as_rational().cloned())
-            .collect::<Option<Vec<_>>>()
-        {
-            return Ok(rational_roots(&Poly::new(q), x)
+        if let Some(q) = r.to_rational() {
+            return Ok(rational_roots(&q, x)
                 .0
                 .into_iter()
                 .filter(positive)

@@ -120,14 +120,7 @@ pub(super) fn rational(f: &Expr, k: Symbol) -> Option<Expr> {
     if den.degree() == 0 {
         return None;
     }
-    let to_rational = |p: &EPoly| -> Option<Poly> {
-        let coefficients: Option<Vec<_>> = p
-            .coefficients()
-            .iter()
-            .map(|c| c.as_rational().cloned())
-            .collect();
-        Some(Poly::new(coefficients?))
-    };
+    let to_rational = EPoly::to_rational;
     let (num, den) = (to_rational(&num)?, to_rational(&den)?);
     let (roots, split) = rational_roots(&den, k);
     if !split {

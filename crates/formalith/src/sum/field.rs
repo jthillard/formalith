@@ -1,11 +1,9 @@
 //! Coefficients of sums: polynomials in the index `k` with coefficients in `{$QQ(t_1, ..., t_n)$}`, each `{$t_i$}`
 //! being a subterm free of `k` (a parameter, `{$sqrt(2)$}`, `{$pi$}`...), considered transcendental.
 
-use malachite::Rational;
-
 use crate::{
     context::Symbol,
-    field::real::expr::{Expr, depends, value, variable, zero},
+    field::real::expr::{Expr, depends, variable},
     polynom::{
         dense::Coefficient,
         fraction::{EPoly, Elem},
@@ -103,36 +101,12 @@ impl Params {
 
     /// The element as an expression.
     pub(crate) fn to_term(&self, e: &Elem) -> Expr {
-        match e {
-            Elem::Rational(r) => value(r.clone()),
-            Elem::Fraction(_) => {
-                let level = e.level();
-                let (num, den) = e.fraction(level);
-                let t = &self.atoms[level - 1];
-                let num = self.poly_to_term(&num, t);
-                if den.is_one() {
-                    num
-                } else {
-                    num / self.poly_to_term(&den, t)
-                }
-            }
-        }
+        e.to_term(&|level| &self.atoms[level - 1])
     }
 
     /// The polynomial in `x` as an expression.
     pub(crate) fn poly_to_term(&self, p: &EPoly, x: &Expr) -> Expr {
-        p.coefficients()
-            .iter()
-            .enumerate()
-            .filter(|(_, c)| !c.is_zero())
-            .fold(zero(), |res, (i, c)| {
-                let c = self.to_term(c);
-                res + match i {
-                    0 => c,
-                    1 => c * x,
-                    _ => c * x.pow(&value(Rational::from(i))),
-                }
-            })
+        p.to_term(x, &|level| &self.atoms[level - 1])
     }
 
     /// The polynomial in `k` as an expression.

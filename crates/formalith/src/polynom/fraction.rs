@@ -36,6 +36,66 @@ pub struct Fraction {
 pub type EPoly = Poly<Elem>;
 
 impl Elem {
+    /// The element as an expression, the generator `{$t_k$}` of level `k` being `generator(k)`.
+    pub(crate) fn to_term<'a>(
+        &self,
+        generator: &impl Fn(usize) -> &'a crate::field::real::expr::Expr,
+    ) -> crate::field::real::expr::Expr {
+        match self {
+            Self::Rational(r) => crate::field::real::expr::value(r.clone()),
+            Self::Fraction(_) => {
+                let level = self.level();
+                let (num, den) = self.fraction(level);
+                let t = generator(level);
+                let num = num.to_term(t, generator);
+                if den.is_one() {
+                    num
+                } else {
+                    num / den.to_term(t, generator)
+                }
+            }
+        }
+    }
+}
+
+impl EPoly {
+    /// The polynomial in `t` as an expression, its coefficients being written with [`Elem::to_term`].
+    pub(crate) fn to_term<'a>(
+        &self,
+        t: &crate::field::real::expr::Expr,
+        generator: &impl Fn(usize) -> &'a crate::field::real::expr::Expr,
+    ) -> crate::field::real::expr::Expr {
+        use crate::field::real::expr::{int, zero};
+        self.coefficients()
+            .iter()
+            .enumerate()
+            .filter(|(_, c)| !c.is_zero())
+            .fold(zero(), |res, (i, c)| {
+                let c = c.to_term(generator);
+                res + match i {
+                    0 => c,
+                    1 => c * t,
+                    _ => c * t.pow(&int(i64::try_from(i).expect("A small degree"))),
+                }
+            })
+    }
+
+    /// The polynomial over `{$QQ$}`, if every coefficient is rational.
+    pub(crate) fn to_rational(&self) -> Option<Poly<Rational>> {
+        self.coefficients()
+            .iter()
+            .map(|c| c.as_rational().cloned())
+            .collect::<Option<Vec<_>>>()
+            .map(Poly::new)
+    }
+
+    /// The polynomial `p` over `{$QQ$}`.
+    pub(crate) fn from_rational(p: &Poly<Rational>) -> Self {
+        p.map(|c| Elem::rational(c.clone()))
+    }
+}
+
+impl Elem {
     /// The generator `{$t_k$}` of level `{$k >= 1$}`.
     pub(crate) fn generator(level: usize) -> Self {
         Self::from_reduced(level, &EPoly::x(), &EPoly::one())

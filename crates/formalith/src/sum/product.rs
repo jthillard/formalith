@@ -72,12 +72,7 @@ fn polynomial(p: &EPoly, k: Symbol, params: &Params) -> Option<Expr> {
         0 => vec![],
         1 => vec![(p.coefficient(0).divide(&p.coefficient(1)).negate(), 1)],
         _ => {
-            let coefficients: Option<Vec<_>> = p
-                .coefficients()
-                .iter()
-                .map(|c| c.as_rational().cloned())
-                .collect();
-            let p = Poly::new(coefficients?);
+            let p = p.to_rational()?;
             let (roots, split) = rational_roots(&p, k);
             if !split {
                 return None;
