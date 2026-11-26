@@ -111,7 +111,7 @@ impl<T: Ring> Matrix<T> {
         let pivots: Vec<(usize, usize)> = (0..reduced.height())
             .filter_map(|row| {
                 (0..reduced.width())
-                    .find(|&column| !self.set.is_zero(&reduced[(row, column)]))
+                    .find(|&column| !self.set.vanishes(&reduced[(row, column)]))
                     .map(|column| (row, column))
             })
             .collect();

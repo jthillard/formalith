@@ -295,7 +295,7 @@ impl<T: Ring> Matrix<T> {
     fn back_substitution_left(&mut self, columns: usize) -> MatrixResult<()> {
         for line in (0..self.height()).rev() {
             // Find the pivot
-            if let Some(pivot) = (0..columns).find(|x| !self.set.is_zero(&self[(line, *x)])) {
+            if let Some(pivot) = (0..columns).find(|x| !self.set.vanishes(&self[(line, *x)])) {
                 if !self.set.is_one(&self[(line, pivot)]) {
                     self.scale_row(
                         line,
@@ -372,7 +372,7 @@ impl<T: Ring> Matrix<T> {
 
             // Find a non-null pivot
             let Some(pivot) =
-                (pivot_row..rows).find(|&i| !self.set.is_zero(&self.data[i * cols + pivot_col]))
+                (pivot_row..rows).find(|&i| !self.set.vanishes(&self.data[i * cols + pivot_col]))
             else {
                 continue;
             };
@@ -386,7 +386,7 @@ impl<T: Ring> Matrix<T> {
             for row in (pivot_row + 1)..rows {
                 let factor = self.data[row * cols + pivot_col].clone();
 
-                if !self.set.is_zero(&factor) {
+                if !self.set.vanishes(&factor) {
                     let pivot_val = self.data[pivot_row * cols + pivot_col].clone();
                     let ratio = self.set.mul(
                         &factor,

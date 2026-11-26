@@ -124,8 +124,14 @@ impl<T: Ring> Semiring for TermSet<T> {
 }
 
 impl<T: Ring> Ring for TermSet<T> {
+    /// The inverse of a term which doesn't vanish (see [`Ring::vanishes`]).
     fn try_inv(&self, a: &Self::Element) -> Option<Self::Element> {
-        Some(a.inv())
+        (!self.vanishes(a)).then(|| a.inv())
+    }
+
+    /// Whether the term is zero once its numerator is expanded.
+    fn vanishes(&self, a: &Self::Element) -> bool {
+        a.is_zero() || (!matches!(a, Term::Value(_)) && a.as_fraction(false).0.expand().is_zero())
     }
 
     fn as_fraction(&self, a: &Self::Element) -> (Self::Element, Self::Element) {

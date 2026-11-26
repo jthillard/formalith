@@ -101,3 +101,12 @@ fn undecided_constant_equations() {
     assert!(eval_r("x = cos(pi/7), 8*x^3 - 4*x^2 - 4*x + 1 = 0").starts_with("error"));
     assert_eq!(eval_r("x = 1, x^2 = 2"), "no solution");
 }
+
+#[test]
+fn vanishing_symbolic_pivots() {
+    // The second row is the first one over `{$x + 1$}`, the eliminated entry `{$x - 1 - (x^2 - 1)/(x + 1)$}` is zero
+    let m = "[[x+1, x^2-1],[1, x-1]]";
+    assert_eq!(eval_in("M", &[&format!("rank({m})")]), "1");
+    assert_eq!(eval_in("M", &[&format!("kernel({m})")]), "[[-x+1],[1]]");
+    assert!(!eval_in("M", &[&format!("{m}^(-1)")]).contains("0^-1"));
+}

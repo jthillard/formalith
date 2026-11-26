@@ -273,6 +273,11 @@ pub trait Semiring: Monoid {
 pub trait Ring: Group + Semiring {
     /// Try computing the inverse element of a, returning `None` if it doesn't exist.
     fn try_inv(&self, a: &Self::Element) -> Option<Self::Element>;
+    /// Whether `a` is zero, also when it isn't written as zero, like `{$x - 1 - (x^2 - 1)/(x + 1)$}` in
+    /// [`crate::term::TermSet`]: pivots of eliminations must not vanish. Defaults to [`Monoid::is_zero`].
+    fn vanishes(&self, a: &Self::Element) -> bool {
+        self.is_zero(a)
+    }
     /// Compute `{$"base"^"exponant"$}` by squaring, inverting `base` for negative exponants. Returns `None` when
     /// `base` isn't invertible for a negative exponant, or when the exponant doesn't fit in a `u64`.
     fn pow_integer(&self, base: &Self::Element, exponant: &Integer) -> Option<Self::Element> {
