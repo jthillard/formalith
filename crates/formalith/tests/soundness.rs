@@ -85,3 +85,12 @@ fn close_bounds_and_poles_of_definite_integrals() {
         eval_r("integrate((exp(x)-1)/(exp(x)-1-x-10^(-8)), x, -1/2, 1)").starts_with("integrate(")
     );
 }
+
+#[test]
+fn zero_tests_of_leading_coefficients() {
+    // The leading coefficient vanishes at the points where coefficients used to be evaluated
+    assert_eq!(
+        eval_r("lim((x-5)*(7*x-26)*(9*x-64)*exp(x) - exp(x/2), x, oo)"),
+        "+oo"
+    );
+}

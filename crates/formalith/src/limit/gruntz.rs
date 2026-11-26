@@ -720,8 +720,25 @@ impl Gruntz {
         if symbols.is_empty() {
             return approximate(c, DIGITS).is_some_and(|value| value == Rational::ZERO);
         }
+        // Polynomials and rational functions are zero when their expanded numerator is
+        let (numerator, _) = c.as_fraction(true);
+        let numerator = crate::term::Expand::expand(&numerator);
+        if numerator.is_zero() {
+            return true;
+        }
+        if is_polynomial(&numerator) {
+            return false;
+        }
+        // Points depending on `c`, so that a coefficient can't vanish at all of them by construction
+        let mut state = std::hash::DefaultHasher::new();
+        std::hash::Hash::hash(&format!("{c:?}"), &mut state);
+        let hash = std::hash::Hasher::finish(&state);
+        let points = (0..3).map(|k| {
+            let bits = (hash >> (16 * k)) & 0xffff;
+            (3 + i64::try_from(bits % 4096).unwrap_or(0), 997)
+        });
         let mut evaluated = false;
-        for (num, den) in ZERO_TEST_POINTS {
+        for (num, den) in ZERO_TEST_POINTS.into_iter().chain(points) {
             let at = symbols
                 .iter()
                 .zip(1..)
@@ -736,6 +753,21 @@ impl Gruntz {
             }
         }
         evaluated
+    }
+}
+
+/// Whether `term` is a polynomial in its symbols with rational coefficients: sums and products of symbols and
+/// their natural powers.
+fn is_polynomial(term: &Expr) -> bool {
+    match term {
+        Term::Value(_) | Term::Symbol(_) => true,
+        Term::Add(add) => add.iter().all(is_polynomial),
+        Term::Mul(mul) => mul.iter().all(is_polynomial),
+        Term::Pow(pow) => {
+            matches!(&*pow.base, Term::Symbol(_))
+                && matches!(&**pow.exponant, Term::Value(e) if e.value > 0 && e.value.denominator_ref() == &1u32)
+        }
+        Term::Fun(_) => false,
     }
 }
 
