@@ -187,17 +187,6 @@ fn real_roots(p: &Expr, x: Symbol) -> Result<Vec<Root>, SolveError> {
     approximated(values(solution))
 }
 
-/// The rationals of the coefficients `coefficients`, when they are all values.
-fn values_of(coefficients: &[Expr]) -> Option<Vec<Rational>> {
-    coefficients
-        .iter()
-        .map(|c| match c {
-            Term::Value(value) => Some(value.value.clone()),
-            _ => None,
-        })
-        .collect()
-}
-
 /// The roots `values`, approximated.
 fn approximated(values: Vec<Expr>) -> Result<Vec<Root>, SolveError> {
     values
@@ -677,7 +666,9 @@ impl<'a> Cad<'a> {
             }
             eliminated = Self::resultant(&p_form, &q_form)?;
         }
-        let Some(coefficients) = values_of(&polynomial_form(&eliminated, x)?) else {
+        let Some(coefficients) =
+            crate::solve::polynomial::values(&polynomial_form(&eliminated, x)?)
+        else {
             return Ok(None);
         };
         if coefficients.iter().all(|c| *c == 0) {
@@ -718,7 +709,8 @@ impl<'a> Cad<'a> {
                 )));
             }
             let form = polynomial_form(&p, x)?;
-            let eliminated = if form.len() > 3 && values_of(&form).is_none() {
+            let eliminated = if form.len() > 3 && crate::solve::polynomial::values(&form).is_none()
+            {
                 self.eliminated_roots(id, &p, sample)?
             } else {
                 None

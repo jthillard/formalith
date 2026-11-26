@@ -194,31 +194,23 @@ impl PolynomialRoots for R<Rational> {
     /// with rational coefficients have their real roots as `rootof` ([`rootof::real_roots`]), roots of polynomials
     /// with other coefficients aren't computed.
     fn roots(coefficients: &[Term<Self>]) -> Option<Vec<Term<Self>>> {
-        let value = |value: i64| Term::constant(Rational::from(value), R);
-        // A polynomial in `x^k`
-        let k = (1..coefficients.len())
-            .filter(|degree| !coefficients[*degree].is_zero())
-            .fold(0, gcd);
-        if k > 1 {
-            let coefficients: Vec<_> = coefficients.iter().step_by(k).cloned().collect();
-            let roots = Self::roots(&coefficients)?;
-            return Some(roots.iter().flat_map(|t| real_roots(t, k)).collect());
+        let square_roots = |discriminant: &Term<Self>| match sign(discriminant) {
+            Some(Ordering::Less) => vec![],
+            Some(Ordering::Equal) => vec![Term::zero(R)],
+            _ => {
+                let root = discriminant.pow(&Term::constant(Rational::from_signeds(1, 2), R));
+                vec![-&root, root]
+            }
+        };
+        if by_radicals(coefficients) {
+            return roots_by_radicals(
+                coefficients,
+                Self::roots,
+                |t, k| Some(real_roots(t, k)),
+                square_roots,
+            );
         }
         match coefficients {
-            [c, b] => Some(vec![-c / b]),
-            [c, b, a] => {
-                let discriminant = (b * b - value(4) * a * c).expand();
-                let (b, a) = (-b, value(2) * a);
-                Some(match sign(&discriminant) {
-                    Some(Ordering::Less) => vec![],
-                    Some(Ordering::Equal) => vec![b / a],
-                    _ => {
-                        let root =
-                            discriminant.pow(&Term::constant(Rational::from_signeds(1, 2), R));
-                        vec![(&b - &root) / &a, (b + root) / a]
-                    }
-                })
-            }
             [_, _, _, _] => cubic_roots(&values(coefficients)?),
             [_, _, _, _, _] => {
                 let coefficients = values(coefficients)?;
@@ -529,50 +521,82 @@ impl PolynomialRoots for C<R<Rational>> {
     /// coefficients (see [`quartic_roots`], whose resolvent root may be in trigonometric form). Other polynomials
     /// aren't solved.
     fn roots(coefficients: &[Term<Self>]) -> Option<Vec<Term<Self>>> {
-        // A polynomial in `x^k`
-        let k = (1..coefficients.len())
-            .filter(|degree| !coefficients[*degree].is_zero())
-            .fold(0, gcd);
-        if k > 1 {
-            let coefficients: Vec<_> = coefficients.iter().step_by(k).cloned().collect();
-            let roots = Self::roots(&coefficients)?;
-            return roots
-                .iter()
-                .map(|t| complex_roots(t, k))
-                .collect::<Option<Vec<_>>>()
-                .map(|roots| roots.into_iter().flatten().collect());
+        let square_roots = |discriminant: &Term<Self>| {
+            if discriminant.is_zero() {
+                return vec![Term::zero(C)];
+            }
+            let root = complex_sqrt(discriminant);
+            vec![-&root, root]
+        };
+        if by_radicals(coefficients) {
+            return roots_by_radicals(coefficients, Self::roots, complex_roots, square_roots);
         }
-        match coefficients {
-            [c, b] => Some(vec![-c / b]),
-            [c, b, a] => {
-                let discriminant = (b * b - complex(4) * a * c).expand();
-                let (b, a) = (-b, complex(2) * a);
-                if discriminant.is_zero() {
-                    return Some(vec![b / a]);
-                }
-                let root = complex_sqrt(&discriminant);
-                Some(vec![(&b - &root) / &a, (b + root) / a])
+        let coefficients = rational_coefficients(coefficients)?;
+        let monic: Vec<_> = coefficients
+            .iter()
+            .map(|c| c / coefficients.last().expect("The degree is at least one"))
+            .collect();
+        if let Some(n) = cyclotomic_order(&monic) {
+            return Some(roots_of_unity(n));
+        }
+        match coefficients.len() {
+            4 => complex_cubic_roots(&coefficients),
+            5 => {
+                let convert = |t: Term<R<Rational>>| from_real(&t);
+                quartic_roots(&coefficients, convert, Self::roots, sign)
             }
-            _ => {
-                let coefficients = rational_coefficients(coefficients)?;
-                let monic: Vec<_> = coefficients
-                    .iter()
-                    .map(|c| c / coefficients.last().expect("The degree is at least one"))
-                    .collect();
-                if let Some(n) = cyclotomic_order(&monic) {
-                    return Some(roots_of_unity(n));
-                }
-                match coefficients.len() {
-                    4 => complex_cubic_roots(&coefficients),
-                    5 => {
-                        let convert = |t: Term<R<Rational>>| from_real(&t);
-                        quartic_roots(&coefficients, convert, Self::roots, sign)
-                    }
-                    _ => None,
-                }
-            }
+            _ => None,
         }
     }
+}
+
+/// The roots of polynomials in `{$x^k$}` for `{$k > 1$}` from the roots `roots` of the polynomial in `{$x^k$}`
+/// and the `k`-th roots `kth_roots` of each one, of degree 1, and of degree 2 by the quadratic formula with the
+/// square roots `square_roots` of the discriminant (none, one zero, or two opposite ones), for the polynomials
+/// of [`by_radicals`]. `None` when roots can't be found.
+fn roots_by_radicals<T: Ring>(
+    coefficients: &[Term<T>],
+    roots: impl Fn(&[Term<T>]) -> Option<Vec<Term<T>>>,
+    kth_roots: impl Fn(&Term<T>, usize) -> Option<Vec<Term<T>>>,
+    square_roots: impl Fn(&Term<T>) -> Vec<Term<T>>,
+) -> Option<Vec<Term<T>>> {
+    let set = coefficients[0].get_set();
+    let k = power_step(coefficients);
+    if k > 1 {
+        let coefficients: Vec<_> = coefficients.iter().step_by(k).cloned().collect();
+        let mut res = vec![];
+        for root in roots(&coefficients)? {
+            res.extend(kth_roots(&root, k)?);
+        }
+        return Some(res);
+    }
+    match coefficients {
+        [c, b] => Some(vec![-c / b]),
+        [c, b, a] => {
+            let discriminant = (b * b - Term::nth(4, set) * a * c).expand();
+            let (b, a) = (-b, Term::nth(2, set) * a);
+            Some(
+                square_roots(&discriminant)
+                    .into_iter()
+                    .map(|root| (&b + &root) / &a)
+                    .collect(),
+            )
+        }
+        _ => None,
+    }
+}
+
+/// The gcd `k` of the degrees of the non-zero coefficients but the constant one, the polynomial being one in
+/// `{$x^k$}`.
+fn power_step<T: Ring>(coefficients: &[Term<T>]) -> usize {
+    (1..coefficients.len())
+        .filter(|degree| !coefficients[*degree].is_zero())
+        .fold(0, gcd)
+}
+
+/// Whether [`roots_by_radicals`] solves the polynomial: of degree 1 or 2, or in `{$x^k$}` for `{$k > 1$}`.
+fn by_radicals<T: Ring>(coefficients: &[Term<T>]) -> bool {
+    matches!(coefficients.len(), 2 | 3) || power_step(coefficients) > 1
 }
 
 /// The coefficients of a polynomial in `{$CC$}`, if they are all rational numbers.
@@ -734,7 +758,7 @@ impl PolynomialRoots for Z<Integer> {
 }
 
 /// The elements of `coefficients`, if they are all values.
-pub(super) fn values<T: Ring>(coefficients: &[Term<T>]) -> Option<Vec<T::Element>> {
+pub fn values<T: Ring>(coefficients: &[Term<T>]) -> Option<Vec<T::Element>> {
     coefficients
         .iter()
         .map(|coefficient| match coefficient {

@@ -250,17 +250,8 @@ pub(super) fn expand_radical_sum(f: &Complex) -> Option<Complex> {
 /// `{$u + i v$}` with both parts expanded, and the positive content of their rational coefficients out, as real
 /// radical sums are written: `{$(sqrt(2) - i)/3$}`.
 fn join_expanded(u: &Expr, v: &Expr) -> Option<Complex> {
-    let terms = |t: Expr| match t {
-        Term::Add(add) => add.iter().cloned().collect(),
-        t => vec![t],
-    };
-    let (u, v) = (terms(u.expand()), terms(v.expand()));
-    let coefficient = |t: &Expr| match t {
-        Term::Value(c) => c.value.clone(),
-        Term::Mul(mul) => mul.coefficient.clone(),
-        _ => Rational::ONE,
-    };
-    let content = radicals::content(u.iter().chain(&v).map(coefficient));
+    let (u, v) = (radicals::terms(&u.expand()), radicals::terms(&v.expand()));
+    let content = radicals::content(u.iter().chain(&v).map(radicals::coefficient));
     if content == 0u32 {
         return Some(Term::zero(C));
     }

@@ -91,7 +91,7 @@ fn factor(term: &Expr) -> Option<Factor<'_>> {
 }
 
 /// The terms of a sum, or the term itself.
-fn terms(term: &Expr) -> Vec<Expr> {
+pub fn terms(term: &Expr) -> Vec<Expr> {
     match term {
         Term::Add(add) => add.iter().cloned().collect(),
         _ => vec![term.clone()],
@@ -179,13 +179,17 @@ pub(super) fn expand_product(mul: &term::Mul<super::Real>) -> Option<Expr> {
     )
 }
 
-/// `(c, s)` with `{$t = c s$}`, `c` the positive content of the rational coefficients of the terms of `t`.
-fn content_out(term: &Expr) -> (Rational, Expr) {
-    let coefficient = |t: &Expr| match t {
+/// The rational coefficient of a term of a sum.
+pub fn coefficient(t: &Expr) -> Rational {
+    match t {
         Term::Value(v) => v.value.clone(),
         Term::Mul(mul) => mul.coefficient.clone(),
         _ => Rational::ONE,
-    };
+    }
+}
+
+/// `(c, s)` with `{$t = c s$}`, `c` the positive content of the rational coefficients of the terms of `t`.
+fn content_out(term: &Expr) -> (Rational, Expr) {
     let content = content(terms(term).iter().map(coefficient));
     if content == 0u32 || content == 1u32 {
         return (Rational::ONE, term.clone());
