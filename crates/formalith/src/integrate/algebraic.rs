@@ -8,7 +8,8 @@
 //! - Rational functions of `x` and `{$sqrt(q)$}` with `{$q = A x^2 + B x + C$}` (Euler's substitutions), `t` being
 //!   defined from `{$sqrt(q)$}` so that no sign is assumed: `{$t = sqrt(q) / (x - alpha)$}` for a rational root
 //!   `alpha` of `q`, `{$t = sqrt(q) + sqrt(A) x$}` when `A` is the square of a rational, `{$t = (sqrt(q) - sqrt(C)) / x$}`
-//!   when `C` is, and otherwise `{$t = sqrt(q / A) + x$}` for `{$A > 0$}`.
+//!   when `C` is, and otherwise `{$t = sqrt(q / A) + x$}` for `{$A > 0$}`. A quadratic `{$A (x + h)^2$}` with a
+//!   double root has `{$sqrt(q) = sqrt(A) |x + h|$}` instead.
 //!
 //! ```
 //! use formalith::{field::real::R, parse};
@@ -25,8 +26,8 @@ use malachite::{
 };
 
 use crate::{
-    context::Symbol,
-    field::real::expr::{Expr, depends, exp_of_ln, map_tree, size, sqrt, value, variable},
+    context::{Context, Symbol},
+    field::real::expr::{Expr, depends, exp_of_ln, fun, map_tree, size, sqrt, value, variable},
     term::{Expand, Term},
 };
 
@@ -43,6 +44,9 @@ pub(super) fn integrate(integrator: &mut Integrator, f: &Expr, x: Symbol) -> Opt
         return None;
     }
     if let Some(res) = moebius(integrator, f, x, &radicals) {
+        return Some(res);
+    }
+    if let Some(res) = perfect_square(integrator, f, x, &radicals) {
         return Some(res);
     }
     // Square roots of a quadratic polynomial: the smaller of the trigonometric and Euler's substitutions
@@ -185,6 +189,40 @@ fn linear_coefficients(p: &Expr, x: Symbol) -> Option<[Expr; 2]> {
     (!depends(&b, x)).then_some([b, a])
 }
 
+/// `{$integral f$}` for a rational function of `x` and `{$sqrt(q)$}`, `q` being a quadratic `{$a (x + h)^2$}`
+/// with a double root, which the substitutions don't handle (they degenerate to a constant `x`): for
+/// `{$a > 0$}`, `{$q^(n / 2) = a^(n / 2) |x + h|^n$}`, integrated by the search, else by `abs::integrate`. For
+/// `{$a < 0$}`, the integrand is only real at `{$x = -h$}`, so `None`.
+fn perfect_square(
+    integrator: &mut Integrator,
+    f: &Expr,
+    x: Symbol,
+    radicals: &[(Expr, Rational)],
+) -> Option<Expr> {
+    let q = &radicals[0].0;
+    if radicals.iter().any(|(b, _)| b != q) {
+        return None;
+    }
+    let (a, h, k) = super::table::quadratic(q, x)?;
+    if k != 0 || a < 0 {
+        return None;
+    }
+    let abs = fun(Context::ABS, variable(x) + value(h));
+    let g = map_tree(f, &|term| match term {
+        Term::Pow(pow) if *pow.base == *q => match &**pow.exponant {
+            Term::Value(e) => {
+                let n = value(&e.value * Rational::from(2));
+                Some(value(a.clone()).pow(&value(e.value.clone())) * abs.pow(&n))
+            }
+            _ => None,
+        },
+        _ => None,
+    });
+    integrator
+        .integrate(&g, x)
+        .or_else(|| super::abs::integrate(&g, x).ok())
+}
+
 /// `{$integral f$}` for a rational function of `x` and `{$sqrt(q)$}`, `q` being quadratic, by Euler's
 /// substitutions.
 fn euler(
@@ -212,7 +250,11 @@ fn euler(
     let two = Rational::from(2);
     let discriminant = &c1 * &c1 - Rational::from(4) * &c2 * &c0;
     // `(x(t), sqrt(q)(t), t(x))`
-    let (x_t, root_t, t_x) = if let Some(s) = (discriminant >= 0)
+    // A double root, see `perfect_square`
+    if discriminant == 0 {
+        return None;
+    }
+    let (x_t, root_t, t_x) = if let Some(s) = (discriminant > 0)
         .then(|| (&discriminant).checked_sqrt())
         .flatten()
     {

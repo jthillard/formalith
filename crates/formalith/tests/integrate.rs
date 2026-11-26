@@ -111,6 +111,9 @@ fn elementary_functions() {
         "exp(x)*sin(2*x)",
         "exp(-x)*cos(x)",
         "abs(x)",
+        "sqrt(2*x)*sqrt(x)",
+        "sqrt(2*x^2)",
+        "sqrt(3*(x - 1)^2)/x",
     ] {
         check(f);
     }

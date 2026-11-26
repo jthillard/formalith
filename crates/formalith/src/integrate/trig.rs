@@ -301,6 +301,10 @@ fn radicand(f: &Expr, x: Symbol) -> Option<Expr> {
 pub(super) fn substitute(integrator: &mut Integrator, f: &Expr, x: Symbol) -> Option<Expr> {
     let q = radicand(f, x)?;
     let (a, h, k) = table::quadratic(&q, x)?;
+    // `{$r = 0$}`: the substitution is degenerate (see `algebraic::integrate` for `{$q = a u^2$}`)
+    if k == 0 {
+        return None;
+    }
     let t_symbol = integrator.fresh_symbol();
     let t = variable(t_symbol);
     let (sin_t, cos_t) = (fun(Context::SIN, t.clone()), fun(Context::COS, t.clone()));

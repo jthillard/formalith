@@ -237,6 +237,12 @@ fn bug_integrate_product_of_square_roots_hangs() {
 }
 
 #[test]
+fn bug_integrate_root_of_square_is_zero() {
+    regression("sqrt(2*x)*sqrt(x)", antiderivative);
+    regression("sqrt(2*x^2)", antiderivative);
+}
+
+#[test]
 fn bug_integrate_constant_times_three_trig_factors() {
     // The constant factor used up the integrator's depth before the second product-to-sum rewrite
     regression("2*sin(3*x/2)*sin(x)*cos(x)", antiderivative);
