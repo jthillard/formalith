@@ -118,3 +118,12 @@ fn roots_modulo_large_primes() {
     // `{$-1$}` isn't a square modulo `{$p = 3 mod 4$}`
     assert_eq!(eval_in("Z/1000003", &["x^2 + 1 = 0"]), "no solution");
 }
+
+#[test]
+fn principal_branches_in_complex_calculus() {
+    // `{$RR$}` gives the real cube root `{$-2$}`, and an undefined integral where `{$sqrt(x)$}` isn't real
+    assert!(eval_in("C", &["lim(x^(1/3), x, -8)"]).starts_with("lim("));
+    assert!(eval_in("C", &["integrate(sqrt(x), x, -1, 0)"]).starts_with("integrate("));
+    assert_eq!(eval_in("C", &["lim(ln(x), x, -1)"]), "i*pi");
+    assert_eq!(eval_in("C", &["integrate(sqrt(x), x, 0, 1)"]), "2/3");
+}

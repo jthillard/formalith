@@ -5,7 +5,7 @@ use std::cmp::Ordering;
 use malachite::{
     Integer, Rational,
     base::num::{
-        arithmetic::traits::UnsignedAbs,
+        arithmetic::traits::{Parity, UnsignedAbs},
         basic::traits::{One, Zero},
     },
 };
@@ -367,6 +367,57 @@ pub(super) fn from_unit(f: &Expr, t: Symbol) -> Option<Complex> {
             Term::Fun(Box::new(Fun::new(function.get_ident(), args, C))).normalize()
         }
     })
+}
+
+/// The bases of the real parts `u` of a split term whose values in `{$RR$}` may differ from the principal branch in
+/// `{$CC$}`: bases depending on `x` of non-integer powers which aren't known to be non-negative (`{$(-8)^(1/3)$}`
+/// is `{$-2$}` in `{$RR$}`, `{$(-1)^(1/2)$}` undefined) and arguments of `ln` which aren't known to be positive,
+/// with whether they are bases of roots of odd order, the only ones evaluated at negative constants in `{$RR$}`.
+pub(super) fn real_only_bases(u: &Expr, x: Symbol, bases: &mut Vec<(Expr, bool)>) {
+    let known = |t: &Expr, allowed| {
+        crate::field::real::sign::sign_set(t, SignMode::APPROXIMATE).is_subset(allowed)
+    };
+    match u {
+        Term::Value(_) | Term::Symbol(_) => {}
+        Term::Add(add) => {
+            for t in add {
+                real_only_bases(t, x, bases);
+            }
+        }
+        Term::Mul(mul) => {
+            for t in mul {
+                real_only_bases(t, x, bases);
+            }
+        }
+        Term::Pow(pow) => {
+            let integer =
+                matches!(&**pow.exponant, Term::Value(e) if e.value.denominator_ref() == &1u32);
+            let odd = matches!(&**pow.exponant, Term::Value(e) if e.value.denominator_ref().odd());
+            if !integer
+                && expr::depends(&pow.base, x)
+                && !known(&pow.base, crate::context::assumptions::SignSet::NONNEGATIVE)
+            {
+                bases.push(((*pow.base).clone(), odd));
+            }
+            real_only_bases(&pow.base, x, bases);
+            real_only_bases(&pow.exponant, x, bases);
+        }
+        Term::Fun(function) => {
+            let Some(args) = function.get_args::<Real>() else {
+                return;
+            };
+            if function.get_ident() == Context::LN
+                && let [arg] = args.as_slice()
+                && expr::depends(arg, x)
+                && !known(arg, crate::context::assumptions::SignSet::POSITIVE)
+            {
+                bases.push((arg.clone(), false));
+            }
+            for t in args {
+                real_only_bases(t, x, bases);
+            }
+        }
+    }
 }
 
 /// The real expression `f`, if its imaginary part is zero.

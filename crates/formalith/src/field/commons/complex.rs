@@ -162,6 +162,46 @@ impl C<R<Rational>> {
         parts::from_unit(&res, t)
     }
 
+    /// Whether the calculus builtin `ident` of the parts `u + i v` of a function, with the other arguments
+    /// `rest`, is the same in `{$RR$}` as with the principal branches of `{$CC$}`: the bases of powers and `ln`
+    /// assumed real by the split (see [`parts::real_only_bases`]) must be positive near the point of `series`
+    /// (their limit there), and of `lim` unless their limit is a negative constant (kept as it is, like
+    /// `{$ln(-1) = i pi$}`, except by real roots of odd order), and non-negative between the bounds of a definite
+    /// integral (by interval arithmetic). Antiderivatives found in `{$RR$}` are those of `{$CC$}`.
+    fn principal_parts(ident: Symbol, u: &Expr, v: &Expr, x: Symbol, rest: &[Expr]) -> bool {
+        let mut bases = vec![];
+        parts::real_only_bases(u, x, &mut bases);
+        parts::real_only_bases(v, x, &mut bases);
+        if bases.is_empty() {
+            return true;
+        }
+        match (ident, rest) {
+            (Context::INTEGRATE, []) => true,
+            (Context::INTEGRATE, [a, b]) => {
+                let bound = |t: &Expr| crate::field::real::approx::approximate(t, expr::DIGITS);
+                let (Some(a), Some(b)) = (bound(a), bound(b)) else {
+                    return false;
+                };
+                let (lo, hi) = if a < b { (a, b) } else { (b, a) };
+                bases.iter().all(|(base, _)| {
+                    crate::limit::bounds::bounds_in(base, &[(x, (lo.clone(), hi.clone()))])
+                        .is_some_and(|(l, _)| l >= 0)
+                })
+            }
+            (Context::LIM | Context::SERIES, [point, ..]) => bases.iter().all(|(base, odd)| {
+                base.limit(x, point, Direction::Both).is_ok_and(|l| {
+                    l == variable(Context::OO)
+                        || match expr::constant_sign(&l) {
+                            Some(Ordering::Greater) => true,
+                            Some(Ordering::Less) => ident == Context::LIM && !odd,
+                            _ => false,
+                        }
+                })
+            }),
+            _ => false,
+        }
+    }
+
     /// Evaluate `integrate`, `lim` or `series` in `{$RR$}` on the real and imaginary parts of the function,
     /// every symbol being assumed real. The other arguments (bounds, point, order) must be real.
     fn eval_calculus(self, ident: Symbol, args: &[Term<Self>]) -> Option<Term<Self>> {
@@ -178,6 +218,9 @@ impl C<R<Rational>> {
             return Some(res);
         }
         let (u, v) = parts::split(f)?;
+        if !Self::principal_parts(ident, &u, &v, x, &rest) {
+            return None;
+        }
         // Each part is `Ok(Some(res))`, `Ok(None)` if unevaluated, or `Err(())` if it doesn't exist
         let eval = |part: &Expr| -> Result<Option<Expr>, ()> {
             match ident {
