@@ -30,7 +30,7 @@
 //! assert_eq!(parse!("lim(1/x, x, 0)", R), parse!("undefined", R));
 //! ```
 
-mod bounds;
+pub(crate) mod bounds;
 mod expansion;
 pub(crate) use expansion::{remainder, series_terms};
 mod gruntz;
@@ -40,7 +40,10 @@ use std::{cmp::Ordering, error::Error, fmt};
 
 use malachite::{
     Rational,
-    base::num::{arithmetic::traits::Floor, basic::traits::One},
+    base::num::{
+        arithmetic::traits::{Abs, Floor, Pow},
+        basic::traits::One,
+    },
 };
 
 use crate::{
@@ -363,8 +366,9 @@ fn rational_bound(term: &Expr, above: bool) -> LimitResult<Rational> {
     if let Term::Value(value) = term {
         return Ok(value.value.clone());
     }
-    let epsilon = Rational::from_signeds(1, 1_000_000_000_000_i64);
     let value = approximate(term, DIGITS).ok_or(LimitError::Unknown)?;
+    // The approximation has `DIGITS` significant digits
+    let epsilon = ((&value).abs() + Rational::ONE) / Rational::from(10u32).pow(20u64);
     Ok(if above {
         value + epsilon
     } else {

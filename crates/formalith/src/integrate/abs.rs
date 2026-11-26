@@ -8,7 +8,7 @@ use malachite::Rational;
 
 use super::{
     IntegrateError, IntegrateResult,
-    definite::{interior_point, zeros},
+    definite::{sample_between, sort_points, zeros},
     linear,
 };
 use crate::{
@@ -33,15 +33,16 @@ pub(super) fn integrate(f: &Expr, x: Symbol) -> IntegrateResult<Expr> {
     for u in &arguments {
         zeros(u, x, line, &mut points)?;
     }
-    points.sort_by(|(p, _), (q, _)| p.partial_cmp(q).unwrap_or(Ordering::Equal));
-    points.dedup_by(|(p, _), (q, _)| (*p - *q).abs() < 1e-12);
+    sort_points(&mut points);
     // The antiderivative on each interval between the zeros
-    let mut bounds = vec![f64::NEG_INFINITY];
-    bounds.extend(points.iter().map(|(p, _)| *p));
-    bounds.push(f64::INFINITY);
+    let oo = variable(Context::OO);
+    let mut bounds = vec![(f64::NEG_INFINITY, -&oo)];
+    bounds.extend(points.iter().cloned());
+    bounds.push((f64::INFINITY, oo));
     let mut pieces = vec![];
     for pair in bounds.windows(2) {
-        let sample = value(interior_point((pair[0], pair[1])).ok_or(IntegrateError::Unsupported)?);
+        let ((p, lower), (q, upper)) = (&pair[0], &pair[1]);
+        let sample = sample_between((*p, lower), (*q, upper)).ok_or(IntegrateError::Unsupported)?;
         let piece = without_abs(f, x, &sample).ok_or(IntegrateError::Unsupported)?;
         pieces.push((piece.integrate(x)?, sample));
     }

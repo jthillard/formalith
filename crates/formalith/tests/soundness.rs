@@ -66,3 +66,22 @@ fn close_roots_of_inequalities() {
     );
     assert!(eval_r("(x-sqrt(2))*(x-sqrt(2)-10^(-50)) < 0").starts_with("error"));
 }
+
+#[test]
+fn close_bounds_and_poles_of_definite_integrals() {
+    // Bounds and singular points equal as floats
+    assert_eq!(
+        eval_r("integrate(1, x, 1, 1+10^(-20))"),
+        "1/100000000000000000000"
+    );
+    assert_eq!(eval_r("integrate(1/(x-1+10^(-13)), x, 0, 1)"), "undefined");
+    // The sign of `{$|x - c|$}` on `{$(0, c)$}` from a sample point inside it
+    assert_eq!(
+        eval_r("integrate(abs(x - 10^(-30)), x, 0, 10^(-30))"),
+        "1/2000000000000000000000000000000000000000000000000000000000000"
+    );
+    // A denominator negative only on `{$|x| < 1.4 dot 10^(-4)$}`, between sample points
+    assert!(
+        eval_r("integrate((exp(x)-1)/(exp(x)-1-x-10^(-8)), x, -1/2, 1)").starts_with("integrate(")
+    );
+}

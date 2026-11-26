@@ -10,7 +10,7 @@ use std::cmp::Ordering;
 use malachite::{
     Rational,
     base::num::{
-        arithmetic::traits::Sign,
+        arithmetic::traits::{Floor, Sign},
         basic::traits::{NegativeOne, One, Zero},
     },
 };
@@ -43,7 +43,21 @@ pub(super) fn angles(term: &Expr) -> Vec<Symbol> {
 /// Bounds `{$[l, h]$}` of a constant term whose only symbols are angles and builtin constants, or `None` if it
 /// isn't bounded or has other symbols.
 pub(super) fn bounds(term: &Expr) -> Option<(Rational, Rational)> {
-    if !has_angle(term) {
+    bounds_in(term, &[])
+}
+
+/// A variable in an interval `{$[l, h]$}`.
+pub type Range = (Symbol, (Rational, Rational));
+
+/// Bounds `{$[l, h]$}` of a term whose only symbols are angles, builtin constants and the variables of `ranges` in
+/// their intervals, by interval arithmetic, or `None` if it isn't bounded or has other symbols.
+pub fn bounds_in(term: &Expr, ranges: &[Range]) -> Option<(Rational, Rational)> {
+    let has_range = |t: &Expr| {
+        t.symbols()
+            .into_iter()
+            .any(|s| is_angle(s) || ranges.iter().any(|(v, _)| *v == s))
+    };
+    if !has_range(term) {
         if !only_symbols(term, &[]) {
             return None;
         }
@@ -52,8 +66,13 @@ pub(super) fn bounds(term: &Expr) -> Option<(Rational, Rational)> {
             rational_bound(term, true).ok()?,
         ));
     }
+    let bounds = |t: &Expr| bounds_in(t, ranges);
     match term {
-        Term::Value(_) | Term::Symbol(_) => None,
+        Term::Value(_) => None,
+        Term::Symbol(symbol) => ranges
+            .iter()
+            .find(|(v, _)| *v == symbol.symbol)
+            .map(|(_, range)| range.clone()),
         Term::Add(add) => {
             add.iter()
                 .try_fold((Rational::ZERO, Rational::ZERO), |(lo, hi), term| {
@@ -68,7 +87,7 @@ pub(super) fn bounds(term: &Expr) -> Option<(Rational, Rational)> {
             })
         }
         Term::Pow(pow) => {
-            if has_angle(&pow.exponant) {
+            if has_range(&pow.exponant) {
                 return None;
             }
             let (lo, hi) = bounds(&pow.base)?;
@@ -103,7 +122,11 @@ pub(super) fn bounds(term: &Expr) -> Option<(Rational, Rational)> {
         Term::Fun(_) => {
             let (ident, arg) = unary(term)?;
             match ident {
-                Context::SIN | Context::COS => Some((Rational::NEGATIVE_ONE, Rational::ONE)),
+                Context::SIN | Context::COS => Some(
+                    bounds(arg)
+                        .and_then(|(lo, hi)| monotonic_trig(ident, &lo, &hi))
+                        .unwrap_or((Rational::NEGATIVE_ONE, Rational::ONE)),
+                ),
                 // Increasing functions
                 Context::EXP | Context::LN | Context::ATAN | Context::ERF | Context::ERFI => {
                     let (lo, hi) = bounds(arg)?;
@@ -139,6 +162,54 @@ pub(super) fn bounds_sign(term: &Expr) -> Option<Ordering> {
     } else {
         None
     }
+}
+
+/// Bounds of `{$sin u$}` or `{$cos u$}` for `{$u in [l, h]$}` when it is monotonic there, no extremum
+/// `{$k pi$}` (`{$pi/2 + k pi$}` for `sin`) being in the interval.
+fn monotonic_trig(ident: Symbol, lo: &Rational, hi: &Rational) -> Option<(Rational, Rational)> {
+    let pi = (
+        rational_bound(
+            &Term::Symbol(crate::term::SymbolTerm::new(
+                Context::PI,
+                crate::field::real::R,
+            )),
+            false,
+        )
+        .ok()?,
+        rational_bound(
+            &Term::Symbol(crate::term::SymbolTerm::new(
+                Context::PI,
+                crate::field::real::R,
+            )),
+            true,
+        )
+        .ok()?,
+    );
+    // The extrema are `{$(k + "shift") pi$}`, and `{$(lo, hi)$}` must be strictly between two of them
+    let shift = if ident == Context::SIN {
+        Rational::from_signeds(1, 2)
+    } else {
+        Rational::ZERO
+    };
+    if hi - lo >= 3 {
+        return None;
+    }
+    // `{$k$}` such that `{$(k + "shift") pi <= lo$}`, from both bounds of `{$pi$}`
+    let below = |x: &Rational| {
+        let k = |p: &Rational| Rational::from((x / p - &shift).floor());
+        let (a, b) = (k(&pi.0), k(&pi.1));
+        (a == b).then_some(a)
+    };
+    let k = below(lo)?;
+    if below(hi)? != k {
+        return None;
+    }
+    let at = |x: &Rational, above| rational_bound(&fun(ident, value(x.clone())), above).ok();
+    let (a_lo, a_hi, b_lo, b_hi) = (at(lo, false)?, at(lo, true)?, at(hi, false)?, at(hi, true)?);
+    Some((
+        if a_lo < b_lo { a_lo } else { b_lo },
+        if a_hi > b_hi { a_hi } else { b_hi },
+    ))
 }
 
 /// The product of two intervals.

@@ -68,8 +68,11 @@ use super::{
 
 /// Bits of the numerical check of values computed by substitution.
 const CHECK_BITS: u64 = 96;
-/// Samples checking the sign of denominators which aren't analyzed.
-const SAMPLES: i32 = 64;
+/// Maximum number of bisections of the interval in [`same_sign`].
+const MAX_BISECTIONS: u32 = 16;
+
+/// Maximum number of pieces evaluated by [`same_sign`].
+const MAX_EVALUATIONS: usize = 2048;
 /// Maximum number of poles of `tan` or zeros of `sin` and `cos` in the interval.
 const MAX_PERIODS: i64 = 1000;
 
@@ -228,10 +231,10 @@ pub(super) fn integrate(f: &Expr, x: Symbol, a: &Expr, b: &Expr) -> IntegrateRes
         return symbolic(f, x, a, b);
     }
     let (a_value, b_value) = (approximate_bound(a)?, approximate_bound(b)?);
-    match a_value.partial_cmp(&b_value) {
-        Some(Ordering::Equal) => return Ok(zero()),
-        Some(Ordering::Greater) => return integrate(f, x, b, a).map(|res| -res),
-        _ => {}
+    match compare_points((a_value, a), (b_value, b)) {
+        Ordering::Equal => return Ok(zero()),
+        Ordering::Greater => return integrate(f, x, b, a).map(|res| -res),
+        Ordering::Less => {}
     }
     let interval = (a_value, b_value);
     let f = &constant_parts(f, x, interval);
@@ -258,18 +261,22 @@ pub(super) fn integrate(f: &Expr, x: Symbol, a: &Expr, b: &Expr) -> IntegrateRes
     let mut points = vec![];
     singular_points(f, x, (a_value, b_value), &mut points)?;
     singular_points(&antiderivative, x, (a_value, b_value), &mut points)?;
-    points.sort_by(|(p, _), (q, _)| p.partial_cmp(q).unwrap_or(Ordering::Equal));
-    points.dedup_by(|(p, _), (q, _)| (*p - *q).abs() < 1e-12);
-    // Singular points are searched in the closed interval, the bounds being regular when none is found there
-    // Also equal infinite bounds
-    #[allow(clippy::float_cmp)]
-    let near = |p: f64, q: f64| (p - q).abs() < 1e-12 || p == q;
-    let regular = |bound: f64| !points.iter().any(|(p, _)| near(*p, bound));
-    let mut bounds = vec![(a.clone(), regular(a_value))];
-    bounds.push((b.clone(), regular(b_value)));
+    sort_points(&mut points);
+    // Singular points are searched in the closed interval, with approximations: those outside of it are dropped
+    points.retain(|(p, point)| {
+        compare_points((*p, point), (a_value, a)) != Ordering::Less
+            && compare_points((*p, point), (b_value, b)) != Ordering::Greater
+    });
+    // The bounds being regular when no singular point is found there
+    let near = |(p, point): &(f64, Expr), bound: (f64, &Expr)| {
+        compare_points((*p, point), bound) == Ordering::Equal
+    };
+    let regular = |bound: (f64, &Expr)| !points.iter().any(|point| near(point, bound));
+    let mut bounds = vec![(a.clone(), regular((a_value, a)))];
+    bounds.push((b.clone(), regular((b_value, b))));
     let inner = points
         .iter()
-        .filter(|(p, _)| !near(*p, a_value) && !near(*p, b_value))
+        .filter(|point| !near(point, (a_value, a)) && !near(point, (b_value, b)))
         .map(|(_, point)| (point.clone(), false));
     bounds.splice(1..1, inner);
     Ok(series + evaluate(&antiderivative, x, &bounds)?)
@@ -392,9 +399,11 @@ fn split_abs(
     for u in &arguments {
         zeros(u, x, interval, &mut points).ok()?;
     }
-    points.retain(|(p, _)| interior(*p, interval));
-    points.sort_by(|(p, _), (q, _)| p.partial_cmp(q).unwrap_or(Ordering::Equal));
-    points.dedup_by(|(p, _), (q, _)| (*p - *q).abs() < 1e-12);
+    sort_points(&mut points);
+    points.retain(|(p, point)| {
+        compare_points((*p, point), (interval.0, a)) == Ordering::Greater
+            && compare_points((*p, point), (interval.1, b)) == Ordering::Less
+    });
     let mut bounds = vec![(interval.0, a.clone())];
     bounds.extend(points);
     bounds.push((interval.1, b.clone()));
@@ -402,7 +411,7 @@ fn split_abs(
     let mut infinite: Option<Ordering> = None;
     for pair in bounds.windows(2) {
         let ((p, lower), (q, upper)) = (&pair[0], &pair[1]);
-        let sample = value(interior_point((*p, *q))?);
+        let sample = sample_between((*p, lower), (*q, upper))?;
         let piece = without_abs(f, x, &sample)?;
         match integrate(&piece, x, lower, upper) {
             Ok(res) => finite += res,
@@ -860,34 +869,112 @@ fn periodic_zeros(
     Ok(())
 }
 
-/// Check that `term` keeps the same sign on the finite interval, at sample points.
+/// Check that `term`, which isn't a polynomial, has a constant sign on the open interval, so no zero there: from
+/// the sign engine with the sign of `x` assumed, or by interval arithmetic ([`crate::limit::bounds::bounds_in`]) on pieces of a
+/// finite interval, bisected until each one has a sign, with the ranges of the variables of outer integrals.
 fn same_sign(term: &Expr, x: Symbol, interval: (f64, f64)) -> IntegrateResult<()> {
-    let mut sign = None;
-    for i in 1..SAMPLES {
-        let u = f64::from(i) / f64::from(SAMPLES);
-        // Samples spread on the whole interval, infinite ones being mapped from `(0, 1)`
-        let point = match (interval.0.is_finite(), interval.1.is_finite()) {
-            (true, true) => interval.0 + (interval.1 - interval.0) * u,
-            (true, false) => interval.0 + u / (1.0 - u),
-            (false, true) => interval.1 - (1.0 - u) / u,
-            (false, false) => (u - 0.5) / (u * (1.0 - u)),
+    // Intervals containing the approximated ones
+    let widen = |(lo, hi): (f64, f64)| -> Option<(Rational, Rational)> {
+        let (lo, hi) = (Rational::try_from(lo).ok()?, Rational::try_from(hi).ok()?);
+        let margin = |t: &Rational| (t.abs() + Rational::from(1)) / Rational::from(1_000_000_000);
+        Some((&lo - margin(&lo), &hi + margin(&hi)))
+    };
+    let structural = {
+        let sign = if interval.0 >= 0. {
+            Some(SignSet::POSITIVE)
+        } else if interval.1 <= 0. {
+            Some(SignSet::NEGATIVE)
+        } else {
+            None
         };
-        let point = Rational::try_from(point).map_err(|_| IntegrateError::Unsupported)?;
+        let mut assumptions = Assumptions::current();
+        if let Some(sign) = sign {
+            assumptions.assume(x, Assumption::sign(sign)).ok();
+        }
+        // `{$x > l$}` and `{$x < h$}` for the finite bounds, slightly widened
+        let variable = LinearForm::variable(Var::Symbol(x));
+        let (lo, hi) = (
+            widen((interval.0, interval.0)),
+            widen((interval.1, interval.1)),
+        );
+        if let Some((lo, _)) = lo {
+            let form = variable.add(&LinearForm::constant(-lo));
+            assumptions.assume_relation(&form, SignSet::POSITIVE).ok();
+        }
+        if let Some((_, hi)) = hi {
+            let form = LinearForm::constant(hi).add(&variable.neg());
+            assumptions.assume_relation(&form, SignSet::POSITIVE).ok();
+        }
+        let _guard = assumptions.enter();
         // The sign at a sample point says nothing about where to split parameters
-        let s = cases::unrecorded(|| {
-            term.substitute(x, &value(point))
-                .as_ref()
-                .and_then(range_sign)
-        })
-        .ok_or(IntegrateError::Unsupported)?;
-        match (sign, s) {
-            (_, Ordering::Equal) => return Err(IntegrateError::Unsupported),
-            (None, s) => sign = Some(s),
-            (Some(previous), s) if previous != s => return Err(IntegrateError::Unsupported),
-            _ => {}
+        cases::unrecorded(|| sign_set(term, SignMode::APPROXIMATE).strict())
+    };
+    if matches!(structural, Some(Ordering::Less | Ordering::Greater)) {
+        return Ok(());
+    }
+    let mut ranges: Vec<crate::limit::bounds::Range> = RANGES.with_borrow(|ranges| {
+        ranges
+            .iter()
+            .filter_map(|(v, interval)| Some((*v, widen(*interval)?)))
+            .collect()
+    });
+    let (lo, hi) = widen(interval).ok_or(IntegrateError::Unsupported)?;
+    let smallest = (&hi - &lo) / Rational::from(1u32 << MAX_BISECTIONS);
+    let mut pieces = vec![(lo, hi)];
+    let mut sign = None;
+    let mut evaluations = 0;
+    while let Some((lo, hi)) = pieces.pop() {
+        evaluations += 1;
+        if evaluations > MAX_EVALUATIONS {
+            return Err(IntegrateError::Unsupported);
+        }
+        ranges.push((x, (lo.clone(), hi.clone())));
+        let piece_sign = crate::limit::bounds::bounds_in(term, &ranges).and_then(|(l, h)| {
+            if l > 0 {
+                Some(Ordering::Greater)
+            } else if h < 0 {
+                Some(Ordering::Less)
+            } else {
+                None
+            }
+        });
+        ranges.pop();
+        match (piece_sign, sign) {
+            (Some(s), None) => sign = Some(s),
+            (Some(s), Some(previous)) if s != previous => return Err(IntegrateError::Unsupported),
+            (Some(_), Some(_)) => {}
+            (None, _) if &hi - &lo <= smallest => return Err(IntegrateError::Unsupported),
+            (None, _) => {
+                let middle = (&lo + &hi) / Rational::from(2);
+                pieces.push((middle.clone(), hi));
+                pieces.push((lo, middle));
+            }
         }
     }
     Ok(())
+}
+
+/// Compare the points `p` and `q`, real constants or infinities, given with their approximations. Approximations
+/// close to each other are compared exactly, by the sign of the difference: zero once expanded, or indistinguishable
+/// from zero at the maximum precision of [`constant_sign`], like `{$1$}` and `{$1 + 10^(-20)$}` aren't.
+pub(super) fn compare_points(p: (f64, &Expr), q: (f64, &Expr)) -> Ordering {
+    let ((p, p_term), (q, q_term)) = (p, q);
+    if p.is_infinite() || q.is_infinite() || (p - q).abs() > 1e-9 * (1. + p.abs().max(q.abs())) {
+        return p.partial_cmp(&q).unwrap_or(Ordering::Equal);
+    }
+    let difference = crate::term::Normalize::normalize(&(p_term.clone() - q_term.clone()));
+    if difference.is_zero() || difference.expand().is_zero() {
+        return Ordering::Equal;
+    }
+    constant_sign(&difference).unwrap_or(Ordering::Equal)
+}
+
+/// Sort the points with their approximations (see [`compare_points`]), removing duplicates.
+pub(super) fn sort_points(points: &mut Vec<(f64, Expr)>) {
+    points.sort_by(|(p, p_term), (q, q_term)| compare_points((*p, p_term), (*q, q_term)));
+    points.dedup_by(|(p, p_term), (q, q_term)| {
+        compare_points((*p, p_term), (*q, q_term)) == Ordering::Equal
+    });
 }
 
 /// Whether `p` is strictly inside the interval, away from its bounds.
@@ -910,6 +997,26 @@ pub(super) fn interior_point(interval: (f64, f64)) -> Option<Rational> {
         }
         (false, false) => Rational::from(0),
     })
+}
+
+/// A simple rational strictly between the points `p < q` given with their approximations (see
+/// [`compare_points`]), checked exactly, since the approximations of close points may be on the wrong side of them.
+pub(super) fn sample_between(p: (f64, &Expr), q: (f64, &Expr)) -> Option<Expr> {
+    let inside = |sample: &Rational| {
+        let point = value(sample.clone());
+        let approximation = f64::rounding_from(sample, RoundingMode::Nearest).0;
+        compare_points((approximation, &point), p) == Ordering::Greater
+            && compare_points((approximation, &point), q) == Ordering::Less
+    };
+    if let Some(sample) = interior_point((p.0, q.0)).filter(inside) {
+        return Some(value(sample));
+    }
+    // Between more accurate approximations
+    let (lo, hi) = (approximate(p.1, DIGITS)?, approximate(q.1, DIGITS)?);
+    (lo < hi)
+        .then(|| Rational::simplest_rational_in_open_interval(&lo, &hi))
+        .filter(inside)
+        .map(value)
 }
 
 /// Whether `term` contains `asin`, `acos` or `atan`.
