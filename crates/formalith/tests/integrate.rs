@@ -191,6 +191,44 @@ fn risch() {
     }
 }
 
+/// Rationalizing substitutions `{$t = y^(1 / L)$}` for roots of a Möbius function `y`, and Euler's substitutions for
+/// square roots of quadratic polynomials.
+#[test]
+fn algebraic_substitutions() {
+    assert_eq!(
+        integrate("integrate(sqrt(1/x - 1), x)"),
+        integrate("x*sqrt(1/x - 1) - atan(sqrt(1/x - 1))")
+    );
+    assert_eq!(
+        integrate("integrate(sqrt(1/x - 1), x, 0, 1)"),
+        integrate("pi/2")
+    );
+    for f in [
+        "sqrt(1/x - 1)",
+        "sqrt((1 - x)/x)",
+        "sqrt(x - x^2)/x",
+        "x/sqrt(1/x - 1)",
+    ] {
+        check_at(f, &["1/10", "3/10", "7/10", "9/10"]);
+    }
+    for f in [
+        "sqrt((x + 1)/(x - 1))",
+        "((x + 1)/(x + 2))^(1/3)",
+        "x^(1/3)/(1 + sqrt(x))",
+        "sqrt(x)/(1 + x^(1/3))",
+        "1/(x*sqrt(x^2 + x + 1))",
+        "1/((x + 1)*sqrt(x^2 - 1))",
+        "sqrt(x^2 + x)/x",
+        "1/(x^2*sqrt(2*x^2 + 3*x - 2))",
+        "1/(x*sqrt(2*x^2 + 3))",
+        "1/(1 + sqrt(x^2 + 2*x + 3))",
+    ] {
+        check_at(f, &["13/10", "21/10", "3"]);
+    }
+    // Elliptic, not elementary
+    assert!(integrate("integrate(x/sqrt(1 + x^3), x)").contains("integrate"));
+}
+
 #[test]
 fn non_elementary() {
     let x = symbol!("x");

@@ -116,6 +116,11 @@ fn antiderivatives() {
             "x * exp(x^2)",
             "1/(exp(x) + 1)",
             "sinh(2*x) * x",
+            "sqrt((x + 1)/(x - 1))",
+            "x^(1/3)/(1 + sqrt(x))",
+            "((x + 1)/(x + 2))^(1/3)",
+            "1/(x*sqrt(x^2 + x + 1))",
+            "1/(x^2*sqrt(2*x^2 + 3*x - 2))",
         ],
         antiderivative,
     );

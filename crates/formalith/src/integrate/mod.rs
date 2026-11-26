@@ -11,6 +11,10 @@
 //! - products of powers of `sin` and `cos` of a same argument, substituting `cos`, `sin` or `tan`, or reducing the
 //!   powers,
 //! - substitutions `{$u = g(x)$}` when `{$f / g'$}` is an expression of `u` (derivative-divides),
+//! - rationalizing substitutions for rational functions of `x` and of roots of a single Möbius function
+//!   `{$(a x + b) / (c x + d)$}`, like `{$sqrt(1 / x - 1)$}`, and Euler's substitutions for rational functions of
+//!   `x` and of the square root of a quadratic polynomial (or the trigonometric substitution when its result is
+//!   smaller), see [`algebraic`],
 //! - integration by parts, of logarithms and inverse functions, or of polynomials times functions that can be
 //!   integrated,
 //! - rewrites: hyperbolic functions as exponentials, products of trigonometric functions as sums, and the
@@ -38,6 +42,7 @@
 //! ```
 
 mod abs;
+mod algebraic;
 mod apart;
 pub(crate) use apart::apart_arguments;
 mod definite;
@@ -247,7 +252,7 @@ impl Integrator {
             table::integrate,
             trig::integrate_powers,
             substitution::integrate,
-            trig::substitute,
+            algebraic::integrate,
             parts::integrate,
             trig::integrate_rewritten,
         ];
