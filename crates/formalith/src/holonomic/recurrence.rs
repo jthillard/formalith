@@ -201,3 +201,58 @@ impl Recurrence {
         })
     }
 }
+
+/// The coefficients `{$c_0, ..., c_(count - 1)$}` of the power series solution of `{$L f = 0$}` with the first
+/// coefficients `initial` (`{$c_i = f^((i))(0) / i!$}`, as many as the order `r` of `L`), `L` being a differential
+/// operator in `w` with polynomial coefficients whose leading one doesn't vanish at 0 (an ordinary point).
+///
+/// The coefficient of `{$w^n$}` in `{$L f$}` is `{$sum_(i, j) a_(i j) (n - j + 1) ... (n - j + i) c_(n - j + i)$}`,
+/// whose highest index is `{$n + r$}`, from `{$a_(r 0) != 0$}`: it gives `{$c_(n + r)$}` for every `{$n >= 0$}`.
+/// `None` if the point isn't ordinary.
+pub fn power_series(op: &Operator, initial: &[Elem], count: usize) -> Option<Vec<Elem>> {
+    debug_assert_eq!(op.kind, Kind::Differential);
+    let r = op.order();
+    if initial.len() != r {
+        return None;
+    }
+    // `{$a_(i j)$}`, the denominators being constants
+    let a: Vec<Vec<Elem>> = op
+        .coefficients
+        .iter()
+        .map(|c| {
+            c.den.is_constant().then(|| {
+                let scale = c.den.leading().inverse();
+                c.num
+                    .coefficients()
+                    .iter()
+                    .map(|a| a.times(&scale))
+                    .collect()
+            })
+        })
+        .collect::<Option<_>>()?;
+    let lead = a[r].first().filter(|c| !c.is_zero())?.clone();
+    let mut c = initial.to_vec();
+    let mut n: i64 = 0;
+    while c.len() < count {
+        let mut sum = Elem::zero();
+        for (i, row) in a.iter().enumerate() {
+            for (j, a_ij) in row.iter().enumerate() {
+                let Ok(index) = usize::try_from(n + i as i64 - j as i64) else {
+                    continue;
+                };
+                if a_ij.is_zero() || (i == r && j == 0) {
+                    continue;
+                }
+                // `{$(n - j + 1) ... (n - j + i)$}`
+                let factor = (1..=i as i64).fold(Elem::one(), |p, l| {
+                    p.times(&Elem::integer(n - j as i64 + l))
+                });
+                sum = sum.plus(&a_ij.times(&factor).times(&c[index]));
+            }
+        }
+        let factor = (1..=r as i64).fold(lead.clone(), |p, l| p.times(&Elem::integer(n + l)));
+        c.push(sum.negate().divide(&factor));
+        n += 1;
+    }
+    Some(c)
+}

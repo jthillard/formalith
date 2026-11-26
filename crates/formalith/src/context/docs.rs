@@ -765,11 +765,16 @@ pub static BUILTIN_DOCS: [BuiltinDoc; Context::BUILTIN_NAMES.len()] = [
         "Solves an ordinary differential equation, with initial conditions like y(0) = 1 or y'(0) = 0.",
         "The function and the variable are found from the equation (y and x by default), or given as the last two \
          arguments. First order equations may be linear or separable, higher orders linear with constant \
-         coefficients. Constants are named c_1, c_2...",
+         coefficients, or homogeneous linear with rational coefficients, solved by power series at an ordinary \
+         point (0, or the point of the conditions). Constants are named c_1, c_2...",
         &[
             ex("dsolve(y' = x*y)", "y(x) = c_1 exp(x^2/2)"),
             ex("dsolve(y'' + y = 0, y(0) = 1, y'(0) = 0)", "y(x) = cos(x)"),
             ex("dsolve(diff(y(t), t) = t, y, t)", "y(t) = t^2/2 + c_1"),
+            ex(
+                "dsolve(y'' - x*y' - y = 0, y(0) = 1, y'(0) = 0)",
+                "y(x) = sum_(k = 0)^(+oo) frac(x^(2 k) 2^(-k), k!)",
+            ),
         ],
     ),
     doc(

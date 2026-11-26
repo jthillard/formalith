@@ -25,51 +25,51 @@ use crate::{
 
 use super::{OdeBranch, OdeError, OdeResult, integrate, placeholder, simplify_trigonometric, tidy};
 
-/// Solve the linear equation of order `n` with constant coefficients `{$e = 0$}`, written with the placeholders
-/// `@y0, ..., @y<n>`, with the integration `constants`.
-pub(super) fn solve(
-    e: &Expr,
-    n: usize,
-    x: Symbol,
-    constants: &[Symbol],
-) -> OdeResult<Vec<OdeBranch<Real>>> {
+/// The coefficients `{$a_0, ..., a_n$}` and the rest `{$-g$}` of the linear equation of order `n`
+/// `{$e = sum_k a_k y^((k)) - g = 0$}`, written with the placeholders `@y0, ..., @y<n>`, the coefficients and the
+/// rest being free of them.
+pub(super) fn linear_form(e: &Expr, n: usize) -> OdeResult<(Vec<Expr>, Expr)> {
     let unsupported = || {
         OdeError::Unsupported(
-            "only linear equations with constant coefficients can be solved above the first order"
-                .to_owned(),
+            "only linear equations can be solved above the first order".to_owned(),
         )
     };
     let ys: Vec<_> = (0..=n).map(placeholder).collect();
     let e = e.expand();
-    let coefficients = ys
-        .iter()
-        .map(|&y| match e.derivative(y).expand() {
-            Term::Value(a) => Some(a.value),
-            _ => None,
-        })
-        .collect::<Option<Vec<_>>>()
-        .ok_or_else(unsupported)?;
-    // `{$e = sum_k a_k y^((k)) - g$}`
+    let coefficients: Vec<_> = ys.iter().map(|&y| e.derivative(y).expand()).collect();
     let rest = ys.iter().fold(e.clone(), |t, y| subs(&t, *y, &zero()));
     let linear_part = ys
         .iter()
         .zip(&coefficients)
-        .fold(zero(), |s, (y, a)| s + value(a.clone()) * variable(*y));
-    if ys.iter().any(|y| depends(&rest, *y)) || !(e - linear_part - rest.clone()).expand().is_zero()
+        .fold(zero(), |s, (y, a)| s + a * &variable(*y));
+    if ys
+        .iter()
+        .any(|y| depends(&rest, *y) || coefficients.iter().any(|a| depends(a, *y)))
+        || !(e - linear_part - rest.clone()).expand().is_zero()
+        || coefficients[n].is_zero()
     {
         return Err(unsupported());
     }
+    Ok((coefficients, rest))
+}
+
+/// Solve the linear equation with constant `coefficients` `{$sum_k a_k y^((k)) + "rest" = 0$}` of order
+/// `{$n >= 1$}`, with the integration `constants`.
+pub(super) fn solve(
+    coefficients: &[Rational],
+    rest: &Expr,
+    x: Symbol,
+    constants: &[Symbol],
+) -> OdeResult<Vec<OdeBranch<Real>>> {
+    let n = coefficients.len() - 1;
     let lead = coefficients[n].clone();
-    if lead == Rational::ZERO {
-        return Err(unsupported());
-    }
-    let basis = basis(&Poly::new(coefficients), x)?;
+    let basis = basis(&Poly::new(coefficients.to_vec()), x)?;
     let mut res = basis
         .iter()
         .zip(constants)
         .fold(zero(), |s, (y, c)| s + variable(*c) * y);
     if !rest.is_zero() {
-        res += particular(&basis, &(-rest / value(lead)), x)?;
+        res += particular(&basis, &(-rest.clone() / value(lead)), x)?;
     }
     Ok(vec![OdeBranch::Explicit(tidy(&res))])
 }

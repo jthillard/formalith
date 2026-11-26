@@ -32,7 +32,7 @@ pub(crate) mod field;
 mod gosper;
 mod polynomial;
 mod product;
-mod taylor;
+pub(crate) mod taylor;
 mod zeilberger;
 
 pub(crate) use taylor::{

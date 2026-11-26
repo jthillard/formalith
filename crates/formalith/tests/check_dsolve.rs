@@ -67,6 +67,9 @@ fn dsolve(input: &str) -> Verdict {
         let Some(g) = line.strip_prefix("y(x) = ") else {
             continue; // Implicit solutions
         };
+        // Power series solutions are checked on their partial sums, since `sum(f, k, 0, +oo)` parsed back stays
+        // unevaluated: the rest is negligible for `{$|x| <= 2$}`
+        let g = &g.replace(", +oo)", ", 40)");
         // Derivatives by the derivative engine
         let mut derivatives = vec![g.to_owned()];
         for n in 1..=order {
@@ -138,6 +141,12 @@ fn equations() {
             "y'' + y = cos(x)",
             "y' = x*y, y(0) = 2",
             "y'' - y = exp(x), y(0) = 1, y'(0) = 2",
+            "y' = y, y'(0) = 3",
+            "y' = x/y, y'(1) = 2",
+            "y'' + x*y = 0",
+            "y'' + x*y = 0, y(0) = 1, y'(0) = -1",
+            "y'' - x*y' - y = 0",
+            "y'' - 2*x*y' + 2*y = 0",
         ],
         dsolve,
     );

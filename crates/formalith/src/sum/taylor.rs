@@ -116,7 +116,7 @@ impl Term<Real> {
 /// The index of the sums: `k`, or the first of `n`, `k_1`, `k_2`... not in the expression or the point.
 // Some name of the infinite sequence is unused
 #[allow(clippy::maybe_infinite_iter)]
-fn index(f: &Expr, point: &Expr) -> Symbol {
+pub fn index(f: &Expr, point: &Expr) -> Symbol {
     let mut used = f.symbols();
     used.extend(point.symbols());
     ["k".to_string(), "n".to_string()]
@@ -1479,16 +1479,28 @@ fn guess_series(
             Err(finite) => return Ok(finite),
         },
     };
+    series_from(found, proven.as_ref(), k, |found, recurrence| {
+        verify_by_ode(f, x, point, direction, found, recurrence)
+    })
+}
+
+/// The series with the coefficients `found`, from a guessed recurrence proven by the recurrence of `proven`, or
+/// by `verify` without it, else from the hypergeometric solutions of the recurrence of `proven`.
+fn series_from(
+    found: Coefficients,
+    proven: Option<&Proven>,
+    k: Symbol,
+    verify: impl FnOnce(&Coefficients, &Recurrence) -> bool,
+) -> LimitResult<Expr> {
     let Some(recurrence) = guess(&found.elems) else {
         // Sums of hypergeometric terms, from the recurrence of a holonomic function
         return proven
-            .as_ref()
             .and_then(|proven| hyper_series(&found, proven, k))
             .ok_or(LimitError::Unsupported);
     };
     // The guess must be proven: from the recurrence of a holonomic function, otherwise by its differential
     // equation
-    let holds = match &proven {
+    let holds = match proven {
         Some(proven) => proven.recurrence.proves(
             &proven.initial,
             &recurrence.p,
@@ -1496,7 +1508,7 @@ fn guess_series(
             recurrence.period,
             recurrence.start,
         ),
-        None => verify_by_ode(f, x, point, direction, &found, &recurrence),
+        None => verify(&found, &recurrence),
     };
     if !holds {
         return Err(LimitError::Unsupported);
@@ -1556,6 +1568,49 @@ fn guess_series(
         res += sum;
     }
     Ok(res)
+}
+
+/// The whole power series of the solution of `{$L f = 0$}` with the first coefficients `initial` (see
+/// [`holonomic::recurrence::power_series`]), `L` a differential operator in `w` with polynomial coefficients
+/// whose leading one doesn't vanish at 0, `w` being the expression `w` in `x` and `params` the generators of
+/// the coefficients. `None` when the coefficients have no proven two-term recurrence nor are a combination of
+/// hypergeometric terms.
+pub fn ode_series(
+    op: &holonomic::ore::Operator,
+    initial: &[Elem],
+    w: Expr,
+    params: Params,
+    k: Symbol,
+) -> Option<Expr> {
+    let elems = holonomic::recurrence::power_series(op, initial, MAX_COEFFICIENTS)?;
+    // Each coefficient is a combination of the `{$r + d$}` previous ones (`d` the largest degree of the
+    // coefficients of `L`), so that many zeros at the end make the series a polynomial
+    let window = op.order() + op.coefficients.iter().map(|c| c.num.degree()).max()?;
+    let last = elems.iter().rposition(|c| !c.is_zero());
+    if last.is_none_or(|last| last + window < elems.len()) {
+        return Some(elems.iter().enumerate().fold(zero(), |res, (j, c)| {
+            res + params.to_term(c) * w.pow(&value(Rational::from(j)))
+        }));
+    }
+    let recurrence = holonomic::recurrence::Recurrence::from_differential(op)?;
+    let initial = recurrence
+        .initial_indices()?
+        .into_iter()
+        .map(|index| Some((index, elems.get(index)?.clone())))
+        .collect::<Option<_>>()?;
+    let found = Coefficients {
+        w,
+        e0: Rational::from(0),
+        q: Rational::from(1),
+        values: elems.iter().map(|c| params.to_term(c)).collect(),
+        elems,
+        params,
+    };
+    let proven = Proven {
+        recurrence,
+        initial,
+    };
+    series_from(found, Some(&proven), k, |_, _| false).ok()
 }
 
 /// The series whose coefficients, proven by the recurrence of `proven`, are a linear combination of its

@@ -159,6 +159,74 @@ fn initial_conditions() {
 }
 
 #[test]
+fn slope_conditions() {
+    // `{$y'(a) = b$}` gives `{$y(a)$}` through the equation
+    assert_eq!(dsolve("dsolve(y' = y, y'(0) = 3)"), ok("y(x) = 3*exp(x)"));
+    assert_eq!(
+        dsolve("dsolve(y' = x/y, y'(1) = 2)"),
+        ok("y(x) = sqrt(x^2 - 3/4)")
+    );
+    // `{$y(0) = plus.minus 1$}`
+    assert_eq!(
+        dsolve("dsolve(y' = y^2, y'(0) = 1)"),
+        ok("y(x) = -1/(x + 1) \\ y(x) = -1/(x - 1)")
+    );
+    assert_eq!(
+        dsolve("dsolve(y' = y^2, y'(0) = -1)"),
+        Err("no solution satisfies the initial conditions".to_owned())
+    );
+    // Implicit solutions, `{$y(0) = 0$}`
+    assert_eq!(
+        dsolve("dsolve(y' = 1/(y + exp(y)), y'(0) = 1)"),
+        ok("exp(y(x)) + y(x)^2/2 = x + 1")
+    );
+}
+
+#[test]
+fn power_series() {
+    // Airy's equation
+    assert_eq!(
+        dsolve("dsolve(y'' + x*y = 0)").unwrap(),
+        "y(x) = c_1 sum_(k = 0)^(+oo) frac(x^(3 k) Gamma(frac(2, 3)) (-1)^k 9^(-k), k! Gamma(k+frac(2, 3)))+c_2 \
+         sum_(k = 0)^(+oo) frac(x^(3 k+1) Gamma(frac(4, 3)) (-1)^k 9^(-k), k! Gamma(k+frac(4, 3)))"
+    );
+    assert_eq!(
+        dsolve("dsolve(y'' + x*y = 0, y(0) = 1, y'(0) = 0)").unwrap(),
+        "y(x) = sum_(k = 0)^(+oo) frac(x^(3 k) Gamma(frac(2, 3)) (-1)^k 9^(-k), k! Gamma(k+frac(2, 3)))"
+    );
+    assert_eq!(
+        dsolve("dsolve(y'' - x*y' - y = 0)").unwrap(),
+        "y(x) = c_1 sum_(k = 0)^(+oo) frac(x^(2 k) 2^(-k), k!)+c_2 sum_(k = 0)^(+oo) frac(x^(2 k+1) (k+1)! \
+         2^(k+1), (2 k+2)!)"
+    );
+    // Hermite's equation, with a polynomial solution
+    assert_eq!(
+        dsolve("dsolve(y'' - 2*x*y' + 2*y = 0)").unwrap(),
+        "y(x) = x c_2+c_1 sum_(k = 0)^(+oo) -frac(x^(2 k), (2 k-1) k!)"
+    );
+    // Legendre's equation, converging for `{$|x| < 1$}`
+    assert_eq!(
+        dsolve("dsolve((1 - x^2)*y'' - 2*x*y' + 6*y = 0)").unwrap(),
+        "y(x) = c_1 (-3 x^2+1)+c_2 sum_(k = 0)^(+oo) -4 frac((k+1) x^(2 k+1), (16 k^2-4))"
+    );
+    assert_eq!(
+        dsolve("dsolve(x*y'' + y = 0)"),
+        Err("`0` is a singular point of the equation".to_owned())
+    );
+    assert_eq!(
+        dsolve("dsolve(y'' + (1 + x)*y = 0)"),
+        Err("no closed general term was found for the power series solutions".to_owned())
+    );
+    assert_eq!(
+        dsolve("dsolve(y'' + x*y = x)"),
+        Err(
+            "only homogeneous linear equations can be solved with non-constant coefficients"
+                .to_owned()
+        )
+    );
+}
+
+#[test]
 fn function_and_variable() {
     assert_eq!(
         dsolve("dsolve(diff(y(t), t) = t, y, t)"),
@@ -176,10 +244,17 @@ fn function_and_variable() {
 
 #[test]
 fn unsupported() {
-    let unsupported =
-        "only linear equations with constant coefficients can be solved above the first order";
-    assert_eq!(dsolve("dsolve(y'' = y^2)"), Err(unsupported.to_owned()));
-    assert_eq!(dsolve("dsolve(y'' + x*y = 0)"), Err(unsupported.to_owned()));
+    assert_eq!(
+        dsolve("dsolve(y'' = y^2)"),
+        Err("only linear equations can be solved above the first order".to_owned())
+    );
+    assert_eq!(
+        dsolve("dsolve(y'' + sin(x)*y = 0)"),
+        Err(
+            "the coefficients of a linear equation must be rational functions of the variable"
+                .to_owned()
+        )
+    );
     assert_eq!(
         dsolve("dsolve(y' = y, y(0) = 1, y(1) = 2)"),
         Err("too many initial conditions for an equation of order 1".to_owned())

@@ -161,6 +161,11 @@ impl R<Rational> {
                 return Some(Term::one(self));
             }
             Term::Mul(mul) => mul.coefficient.clone(),
+            // `{$W(e) = 1$}`, `e` being written `exp(1)` once normalized
+            Term::Fun(_) => {
+                return (principal && *x == self.call(Context::EXP, vec![Term::one(self)]))
+                    .then(|| Term::one(self));
+            }
             _ => return None,
         };
         let c_term = Term::constant(c.clone(), self);

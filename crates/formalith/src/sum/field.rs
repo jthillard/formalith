@@ -14,7 +14,7 @@ use crate::{
 };
 
 /// The subterms free of the index used as generators `{$t_1, ..., t_n$}`.
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct Params {
     atoms: Vec<Expr>,
 }

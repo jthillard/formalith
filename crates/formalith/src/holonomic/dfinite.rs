@@ -46,7 +46,7 @@ pub fn annihilator(f: &Expr, w: Symbol, params: &mut Params) -> Option<Operator>
 }
 
 /// The rational function `f` of `w`, if it is one.
-fn rational(f: &Expr, w: Symbol, params: &mut Params) -> Option<RatFun> {
+pub fn rational(f: &Expr, w: Symbol, params: &mut Params) -> Option<RatFun> {
     let (num, den) = params.rational(f, w)?;
     Some(RatFun { num, den })
 }

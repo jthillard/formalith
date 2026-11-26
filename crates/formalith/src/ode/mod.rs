@@ -5,8 +5,10 @@
 //! equation (integrating factor) or as a separable one, `{$integral dy / g(y) = integral f(x) dx + c_1$}` being
 //! solved for `y` when possible, and kept implicit otherwise. Linear equations of any order with constant
 //! coefficients are solved with the roots of their characteristic polynomial, a particular solution being found by
-//! variation of parameters. Integration constants are `c_1, c_2, ...`, and initial conditions like `y'(0) = 1` are
-//! solved for them.
+//! variation of parameters. Homogeneous linear equations with rational function coefficients, like
+//! `{$y'' + x y = 0$}`, are solved by power series at an ordinary point. Integration constants are `c_1, c_2, ...`,
+//! and initial conditions like `y'(0) = 1` are solved for them (`{$y'(a) = b$}` for a first-order equation
+//! `{$e(x, y, y') = 0$}` giving `{$y(a)$}` by `{$e(a, y(a), b) = 0$}`).
 //!
 //! ```
 //! use formalith::{field::real::R, ode::{Dsolve, OdeBranch}, parse, solve::Equation, symbol};
@@ -20,6 +22,7 @@
 
 mod first_order;
 mod linear;
+mod series;
 
 use std::{cell::Cell, error::Error, fmt};
 
@@ -158,7 +161,8 @@ pub trait Dsolve: Set {
     ///
     /// # Errors
     /// [`OdeError::Unsupported`] when the equation is neither a first-order linear or separable equation, nor a
-    /// linear equation with constant coefficients, or when it can't be solved, [`OdeError::NoSolution`] when the
+    /// linear equation with constant coefficients, nor a homogeneous linear equation with rational function
+    /// coefficients whose power series solutions have closed general terms, or when it can't be solved, [`OdeError::NoSolution`] when the
     /// initial conditions can't be satisfied.
     fn dsolve(
         &self,
@@ -214,7 +218,8 @@ impl Dsolve for Real {
                 "too many initial conditions for an equation of order {order}"
             )));
         }
-        if let Some(condition) = conditions.iter().find(|c| c.order >= order) {
+        // `{$y'(a) = b$}` is allowed for a first-order equation, giving the values of `{$y(a)$}`
+        if let Some(condition) = conditions.iter().find(|c| c.order >= order.max(2)) {
             return Err(OdeError::Unsupported(format!(
                 "the initial condition on the derivative of order {} is not determined by an equation of order \
                  {order}",
@@ -228,11 +233,45 @@ impl Dsolve for Real {
             .take(order)
             .collect();
         let branches = if order == 1 {
-            first_order::solve(&e, x, constants[0])?
+            let branches = first_order::solve(&e, x, constants[0])?;
+            let mut res = vec![];
+            for conditions in slope_conditions(&e, conditions, x)? {
+                match apply_conditions(branches.clone(), &conditions, x, &constants) {
+                    Ok(fixed) => {
+                        for branch in fixed {
+                            if !res.contains(&branch) {
+                                res.push(branch);
+                            }
+                        }
+                    }
+                    Err(OdeError::NoSolution) => {}
+                    Err(err) => return Err(err),
+                }
+            }
+            if res.is_empty() {
+                return Err(OdeError::NoSolution);
+            }
+            res
         } else {
-            linear::solve(&e, order, x, &constants)?
+            let (coefficients, rest) = linear::linear_form(&e, order)?;
+            let values: Option<Vec<_>> = coefficients
+                .iter()
+                .map(|a| match a {
+                    Term::Value(a) => Some(a.value.clone()),
+                    _ => None,
+                })
+                .collect();
+            match values {
+                Some(values) => apply_conditions(
+                    linear::solve(&values, &rest, x, &constants)?,
+                    conditions,
+                    x,
+                    &constants,
+                )?,
+                // The conditions fix the constants of the power series directly
+                None => series::solve(&coefficients, &rest, x, &constants, conditions)?,
+            }
         };
-        let branches = apply_conditions(branches, conditions, x, &constants)?;
         let y = Term::Fun(Box::new(Fun::new(function, vec![variable(x)], R))).normalize();
         let y0 = placeholder(0);
         Ok(OdeSolution {
@@ -289,6 +328,59 @@ fn mentions(term: &Expr, function: Symbol) -> bool {
     .is_err()
 }
 
+/// The initial conditions of the first-order equation `{$e(x, y, y') = 0$}` with each condition
+/// `{$y'(a) = b$}` replaced by `{$y(a) = v$}`, for each root `v` of `{$e(a, v, b) = 0$}`: one list per choice of
+/// roots.
+fn slope_conditions(
+    e: &Expr,
+    conditions: &[Condition<Real>],
+    x: Symbol,
+) -> OdeResult<Vec<Vec<Condition<Real>>>> {
+    let (y0, y1) = (placeholder(0), placeholder(1));
+    let mut res = vec![vec![]];
+    for condition in conditions {
+        let values = if condition.order == 0 {
+            vec![condition.value.clone()]
+        } else {
+            let at = subs(&subs(e, y1, &condition.value), x, &condition.point);
+            let solution = R
+                .solve_for(&[Equation::new(at, zero())], &[y0])
+                .map_err(|err| {
+                    OdeError::Unsupported(format!(
+                        "can't solve the initial condition on the derivative: {err}"
+                    ))
+                })?;
+            match solution {
+                Solution::NoSolution => vec![],
+                // Every value of `{$y(a)$}` has this slope, so the condition fixes nothing
+                Solution::Assignments(assignments) if assignments.is_empty() => continue,
+                Solution::Assignments(assignments) => {
+                    assignments.into_iter().map(|(_, v)| v).collect()
+                }
+                Solution::Alternatives(branches) => branches
+                    .into_iter()
+                    .filter_map(|a| a.into_iter().next().map(|(_, v)| v))
+                    .collect(),
+            }
+        };
+        res = res
+            .into_iter()
+            .flat_map(|list: Vec<Condition<Real>>| {
+                values.iter().map(move |v| {
+                    let mut list = list.clone();
+                    list.push(Condition {
+                        order: 0,
+                        point: condition.point.clone(),
+                        value: v.clone(),
+                    });
+                    list
+                })
+            })
+            .collect();
+    }
+    Ok(res)
+}
+
 /// Fix the constants of each solution with the initial conditions, dropping the solutions which can't satisfy them.
 fn apply_conditions(
     branches: Vec<OdeBranch<Real>>,
@@ -316,12 +408,7 @@ fn apply_conditions(
             OdeBranch::Implicit(equation) => conditions
                 .iter()
                 .map(|condition| {
-                    if condition.order != 0 {
-                        return Err(OdeError::Unsupported(
-                            "initial conditions on derivatives need an explicit solution"
-                                .to_owned(),
-                        ));
-                    }
+                    debug_assert_eq!(condition.order, 0, "replaced by `slope_conditions`");
                     let at =
                         |side: &Expr| subs(&subs(side, x, &condition.point), y0, &condition.value);
                     Ok(Equation::new(at(&equation.lhs), at(&equation.rhs)))

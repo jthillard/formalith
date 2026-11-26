@@ -97,9 +97,12 @@ Ideas and known gaps, roughly by area. `AGENTS.md` describes what exists; this f
 
 ## Differential equations
 
-- Higher orders with non-constant coefficients, like the Airy equation `y'' + x y = 0`. The holonomic engine
-  could give their power series solutions.
-- Implicit solutions only take `y(a) = b` conditions.
+- Linear equations with non-constant coefficients beyond homogeneous ones with rational coefficients at an
+  ordinary point: regular singular points (Frobenius series, Bessel's equation `x^2 y'' + x y' + (x^2 - 1) y = 0`),
+  closed forms instead of series (Cauchy-Euler `x^2 y'' + x y' - y = 0`), inhomogeneous equations, and solutions
+  whose coefficients have no two-term or hypergeometric recurrence (`y'' + (1 + x) y = 0`, Airy's equation at
+  `x0 = 1`). General terms of period 2 or more aren't reduced (`-4 (k + 1)/(16 k^2 - 4)` for Legendre's equation).
+- Nonlinear equations of order 2 or more (reduction of order for `y'' = f(y, y')`).
 
 ## Matrices
 
