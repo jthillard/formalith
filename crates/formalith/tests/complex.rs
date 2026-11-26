@@ -234,8 +234,14 @@ fn limits_and_series_of_real_and_imaginary_parts() {
 #[test]
 fn whole_series() {
     // A single sum with the imaginary unit as a parameter
-    assert_eq!(eval("series(exp(i*x), x, 0, oo)"), eval("sum(x^k*i^k/k!, k, 0, oo)"));
-    assert_eq!(eval("series(1/(1 - i*x), x, 0, oo)"), eval("sum(x^k*i^k, k, 0, oo)"));
+    assert_eq!(
+        eval("series(exp(i*x), x, 0, oo)"),
+        eval("sum(x^k*i^k/k!, k, 0, oo)")
+    );
+    assert_eq!(
+        eval("series(1/(1 - i*x), x, 0, oo)"),
+        eval("sum(x^k*i^k, k, 0, oo)")
+    );
     assert_eq!(
         eval("series(exp((1 + i)*x), x, 0, oo)"),
         eval("sum(x^k*(1 + i)^k/k!, k, 0, oo)")

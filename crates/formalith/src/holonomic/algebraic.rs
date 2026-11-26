@@ -290,7 +290,8 @@ fn split_bases(f: &Expr, w: Symbol) -> Expr {
         let Term::Value(e) = &**pow.exponant else {
             return None;
         };
-        if e.value.denominator_ref() == &1u32 || !depends(&pow.base, w) || has_radical(&pow.base, w) {
+        if e.value.denominator_ref() == &1u32 || !depends(&pow.base, w) || has_radical(&pow.base, w)
+        {
             return None;
         }
         split_base(&pow.base, &e.value, w)
@@ -346,7 +347,7 @@ fn split_base(b: &Expr, e: &Rational, w: Symbol) -> Option<Expr> {
     }
     let mut out = value(c).pow(&value(e.clone()));
     for (g, m) in res {
-        out = out * g.pow(&value(m * e));
+        out *= g.pow(&value(m * e));
     }
     (out != *b).then_some(out)
 }
@@ -470,11 +471,20 @@ mod tests {
     fn related_bases() {
         let t = symbol!("t");
         // Bases split into their factors share their generators, constant radicals are generators too
-        assert!(is_zero(&parse!("sqrt(2 + 2*t) - sqrt(2)*sqrt(1 + t)", R), t));
+        assert!(is_zero(
+            &parse!("sqrt(2 + 2*t) - sqrt(2)*sqrt(1 + t)", R),
+            t
+        ));
         assert!(is_zero(&parse!("sqrt(t^2 + 2*t + 1) - t - 1", R), t));
-        assert!(is_zero(&parse!("sqrt(1 - t)*sqrt(1 + t) - sqrt(1 - t^2)", R), t));
+        assert!(is_zero(
+            &parse!("sqrt(1 - t)*sqrt(1 + t) - sqrt(1 - t^2)", R),
+            t
+        ));
         assert!(is_zero(&parse!("(8 + 8*t)^(1/3) - 2*(1 + t)^(1/3)", R), t));
-        assert!(is_zero(&parse!("sqrt(2)*sqrt(2 + 2*t) - 2*sqrt(1 + t)", R), t));
+        assert!(is_zero(
+            &parse!("sqrt(2)*sqrt(2 + 2*t) - 2*sqrt(1 + t)", R),
+            t
+        ));
         // `{$sqrt((t - 1)^2) = 1 - t$}` near 0
         assert!(is_zero(&parse!("sqrt(t^2 - 2*t + 1) + t - 1", R), t));
         assert!(!is_zero(&parse!("sqrt(2 + 2*t) - sqrt(1 + t)", R), t));

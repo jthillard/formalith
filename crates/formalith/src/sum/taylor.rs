@@ -38,8 +38,8 @@ use crate::{
     field::real::{
         R, approx,
         expr::{
-            Expr, Real, arg, constant_sign, depends, fun, has_special_constant, infinity_sign, map_tree, one, size, subs,
-            try_map_operands, unary, value, variable, zero,
+            Expr, Real, arg, constant_sign, depends, fun, has_special_constant, infinity_sign,
+            map_tree, one, size, subs, try_map_operands, unary, value, variable, zero,
         },
     },
     limit::{Direction, LimitError, LimitResult, series_terms},
@@ -153,9 +153,7 @@ fn whole_series(
 /// `{$sqrt(2 + 2x) / sqrt(1 + x) = sqrt(2)$}`: a derivative of `f` is zero in the tower of its radicals, so `f` is its
 /// Taylor polynomial at the point (finite points only).
 fn algebraic_polynomial(f: &Expr, x: Symbol, point: &Expr, direction: Direction) -> Option<Expr> {
-    let radical = |t: &Expr| {
-        matches!(t, Term::Pow(pow) if matches!(&**pow.exponant, Term::Value(e) if e.value.denominator_ref() != &1u32) && depends(&pow.base, x))
-    };
+    let radical = |t: &Expr| matches!(t, Term::Pow(pow) if matches!(&**pow.exponant, Term::Value(e) if e.value.denominator_ref() != &1u32) && depends(&pow.base, x));
     let found = std::cell::Cell::new(false);
     map_tree(f, &|t| {
         found.set(found.get() || radical(t));
@@ -380,7 +378,10 @@ fn root_parts(q: &Poly) -> Option<Vec<(Expr, Expr)>> {
     let coefficients: Vec<_> = q.coefficients().iter().map(complex).collect();
     if let Some(roots) = <C<R<Rational>> as PolynomialRoots>::roots(&coefficients)
         && roots.len() == q.degree()
-        && let Some(parts) = roots.iter().map(rational::split).collect::<Option<Vec<_>>>()
+        && let Some(parts) = roots
+            .iter()
+            .map(rational::split)
+            .collect::<Option<Vec<_>>>()
     {
         return Some(parts);
     }
@@ -395,12 +396,18 @@ fn root_parts(q: &Poly) -> Option<Vec<(Expr, Expr)>> {
     let sum = real
         .iter()
         .fold(-value(q.coefficient(d - 1)), |res, r| res - r);
-    let sign = if d % 2 == 0 { Rational::from(1) } else { Rational::from(-1) };
+    let sign = if d % 2 == 0 {
+        Rational::from(1)
+    } else {
+        Rational::from(-1)
+    };
     let product = real
         .iter()
         .fold(value(sign * q.coefficient(0)), |res, r| res / r.clone());
     let u = (sum / value(Rational::from(2))).expand();
-    let v = (product - &u * &u).expand().pow(&value(Rational::from_signeds(1, 2)));
+    let v = (product - &u * &u)
+        .expand()
+        .pow(&value(Rational::from_signeds(1, 2)));
     let mut parts: Vec<(Expr, Expr)> = real.into_iter().map(|r| (r, zero())).collect();
     parts.push((u.clone(), v.clone()));
     parts.push((u, -v));
@@ -533,16 +540,21 @@ fn merge_sums(parts: &[Expr], x: Symbol) -> Expr {
             res += term;
             continue;
         };
-        match sums
-            .iter_mut()
-            .find(|[other, j, b]| j == k && !depends(&(body / &*other).simplify(), x) && start_gap(a, b).is_some())
-        {
+        match sums.iter_mut().find(|[other, j, b]| {
+            j == k && !depends(&(body / other).simplify(), x) && start_gap(a, b).is_some()
+        }) {
             Some([other, j, b]) => {
                 // The leading terms of the sum starting first, explicit
-                let Term::Symbol(index) = &*j else { unreachable!() };
+                let Term::Symbol(index) = &*j else {
+                    unreachable!()
+                };
                 let _guard = integer_index(index.symbol);
                 let gap = start_gap(a, b).unwrap_or(0);
-                let (early, late) = if gap > 0 { (other.clone(), body.clone()) } else { (body.clone(), other.clone()) };
+                let (early, late) = if gap > 0 {
+                    (other.clone(), body.clone())
+                } else {
+                    (body.clone(), other.clone())
+                };
                 let first = if gap > 0 { b.clone() } else { a.clone() };
                 for i in 0..gap.abs() {
                     res += subs(&early, index.symbol, &(&first + &value(Rational::from(i))));
@@ -825,8 +837,13 @@ fn known_series(
     let alpha = (&t / &wv).normalize();
     let c = c * scale;
     if depends(&alpha, w) || alpha.is_zero() {
-        return shifted_kernel(kernel, &t, w, k)
-            .map(|res| scale_held_sums(&substitute_w(&res, w, &back, k), &(c * w_power(&back, &value(Rational::from(m)))), x));
+        return shifted_kernel(kernel, &t, w, k).map(|res| {
+            scale_held_sums(
+                &substitute_w(&res, w, &back, k),
+                &(c * w_power(&back, &value(Rational::from(m)))),
+                x,
+            )
+        });
     }
     let _guard = integer_index(k);
     let (explicit, general, exponent, start) = kernel.series(k);
@@ -855,13 +872,21 @@ fn shifted_kernel(kernel: Kernel, t: &Expr, w: Symbol, k: Symbol) -> Option<Expr
     if beta.is_zero() || depends(&alpha, w) || alpha.is_zero() || depends(&beta, w) {
         return None;
     }
-    let (sin, cos) = (fun(Context::SIN, beta.clone()), fun(Context::COS, beta.clone()));
+    let (sin, cos) = (
+        fun(Context::SIN, beta.clone()),
+        fun(Context::COS, beta.clone()),
+    );
     let regular = |f: &Expr| matches!(constant_sign(f), Some(Ordering::Less | Ordering::Greater));
     let n = variable(k);
     let pi = variable(Context::PI);
     let int = |i: i64| value(Rational::from(i));
     let polygamma = |q: Expr| {
-        Term::Fun(Box::new(Fun::new(Context::POLYGAMMA, vec![n.clone(), q], R))).normalize()
+        Term::Fun(Box::new(Fun::new(
+            Context::POLYGAMMA,
+            vec![n.clone(), q],
+            R,
+        )))
+        .normalize()
     };
     let d = |q: Expr| polygamma(q.clone()) + int(-1).pow(&(&n + &int(1))) * polygamma(one() - q);
     let factorial = fun(Context::FACTORIAL, n.clone());
@@ -870,7 +895,8 @@ fn shifted_kernel(kernel: Kernel, t: &Expr, w: Symbol, k: Symbol) -> Option<Expr
     let half = value(Rational::from_signeds(1, 2));
     // `{$1/sin z = sum_m (-1)^m/(z - m pi)$}`, the even and odd `m` giving the poles of `{$cot(z/2)$}`
     let csc = |q: Expr| {
-        -(d(&q / &int(2)) - d((&q - &int(1)) / int(2))) / (factorial.clone() * (&int(2) * &pi).pow(&n1))
+        -(d(&q / &int(2)) - d((&q - &int(1)) / int(2)))
+            / (factorial.clone() * (&int(2) * &pi).pow(&n1))
     };
     let (first, general) = match kernel {
         Kernel::Tan if regular(&cos) => (
@@ -934,9 +960,10 @@ fn scale_held_sums(res: &Expr, factor: &Expr, x: Symbol) -> Expr {
                 Term::Mul(mul) => mul.iter().collect(),
                 _ => vec![term],
             };
-            let sum = factors.iter().copied().find(
-                |f| matches!(f, Term::Fun(fun) if fun.get_ident() == Context::held_sum()),
-            );
+            let sum = factors
+                .iter()
+                .copied()
+                .find(|f| matches!(f, Term::Fun(fun) if fun.get_ident() == Context::held_sum()));
             let Some(Term::Fun(sum)) = sum else {
                 return term * factor;
             };
@@ -961,7 +988,12 @@ fn linear_terms(res: &Expr) -> Vec<Expr> {
         Term::Mul(mul) => {
             let factors: Vec<&Expr> = mul.iter().collect();
             match factors.iter().position(|f| matches!(f, Term::Add(_))) {
-                Some(i) if factors.iter().enumerate().all(|(j, f)| j == i || f.symbols().is_empty()) => {
+                Some(i)
+                    if factors
+                        .iter()
+                        .enumerate()
+                        .all(|(j, f)| j == i || f.symbols().is_empty()) =>
+                {
                     let constant = factors
                         .iter()
                         .enumerate()
@@ -988,9 +1020,9 @@ fn cancel_leading_terms(res: &Expr) -> Expr {
         Term::Add(add) => add.iter().cloned().collect(),
         _ => vec![res.clone()],
     };
-    let (sums, others): (Vec<Expr>, Vec<Expr>) = terms.into_iter().partition(
-        |t| matches!(t, Term::Fun(fun) if fun.get_ident() == Context::held_sum()),
-    );
+    let (sums, others): (Vec<Expr>, Vec<Expr>) = terms
+        .into_iter()
+        .partition(|t| matches!(t, Term::Fun(fun) if fun.get_ident() == Context::held_sum()));
     let mut rest = others.into_iter().fold(zero(), |res, t| res + t);
     let mut out = zero();
     for sum in sums {
@@ -1053,7 +1085,9 @@ fn product_series(
                 .map(|t| replace_w(t, w, back))
                 .collect()
         } else {
-            linear_terms(&whole_series(&replace_w(&others, w, back), x, point, direction, k, true).ok()?)
+            linear_terms(
+                &whole_series(&replace_w(&others, w, back), x, point, direction, k, true).ok()?,
+            )
         };
         return multiply_series(&linear_terms(&known), &series, x, k);
     }
@@ -1082,9 +1116,9 @@ fn is_power_of(t: &Expr, w: Symbol) -> bool {
 /// b)/alpha)) A(j) B(N - alpha j)$}`. `None` for other sums.
 fn multiply_series(a: &[Expr], b: &[Expr], x: Symbol, k: Symbol) -> Option<Expr> {
     let split = |e: &[Expr]| -> (Vec<Expr>, Vec<Expr>) {
-        e.iter().cloned().partition(
-            |t| matches!(t, Term::Fun(fun) if fun.get_ident() == Context::held_sum()),
-        )
+        e.iter()
+            .cloned()
+            .partition(|t| matches!(t, Term::Fun(fun) if fun.get_ident() == Context::held_sum()))
     };
     let ((sums_a, explicit_a), (sums_b, explicit_b)) = (split(a), split(b));
     let mut parts = vec![];
@@ -1131,7 +1165,11 @@ fn convolve(a: &Expr, b: &Expr, x: Symbol, k: Symbol) -> Option<Expr> {
     if base != base_b || gamma != 1u32 || !(alpha == 1u32 || alpha == 2u32) {
         return None;
     }
-    let j = Symbol::new(if [k, x].contains(&Symbol::new("j")) { "i" } else { "j" });
+    let j = Symbol::new(if [k, x].contains(&Symbol::new("j")) {
+        "i"
+    } else {
+        "j"
+    });
     let _guard = integer_index(k);
     let _inner = integer_index(j);
     let (n, jv) = (variable(k), variable(j));
@@ -1140,7 +1178,7 @@ fn convolve(a: &Expr, b: &Expr, x: Symbol, k: Symbol) -> Option<Expr> {
     let upper = if alpha == 1u32 {
         &n - &value(b0.clone())
     } else {
-        fun(Context::FLOOR, (&n - &value(b0.clone())) / alpha_v.clone())
+        fun(Context::FLOOR, (&n - &value(b0.clone())) / alpha_v)
     };
     let inner = Term::Fun(Box::new(Fun::new(
         Context::SUM,
@@ -1189,11 +1227,15 @@ fn kernel_power(
         (Context::TAN, MIN_POWER..=-2) => (Kernel::Cot, (-1, -1), monomial(-e)),
         (Context::TANH, MIN_POWER..=-2) => (Kernel::Coth, (1, -1), monomial(-e)),
         // `{$1/cos^2 = 1 + tan^2$}`, `{$1/cosh^2 = 1 - tanh^2$}`, `{$1/sin^2 = 1 + cot^2$}`, `{$1/sinh^2 = coth^2 - 1$}`
-        (Context::COS, MIN_POWER..=-2) if e % 2 == 0 => (Kernel::Tan, (1, 1), binomial_power(1, 1, -e / 2)),
+        (Context::COS, MIN_POWER..=-2) if e % 2 == 0 => {
+            (Kernel::Tan, (1, 1), binomial_power(1, 1, -e / 2))
+        }
         (Context::COSH, MIN_POWER..=-2) if e % 2 == 0 => {
             (Kernel::Tanh, (1, -1), binomial_power(1, -1, -e / 2))
         }
-        (Context::SIN, MIN_POWER..=-2) if e % 2 == 0 => (Kernel::Cot, (-1, -1), binomial_power(1, 1, -e / 2)),
+        (Context::SIN, MIN_POWER..=-2) if e % 2 == 0 => {
+            (Kernel::Cot, (-1, -1), binomial_power(1, 1, -e / 2))
+        }
         (Context::SINH, MIN_POWER..=-2) if e % 2 == 0 => {
             (Kernel::Coth, (1, -1), binomial_power(-1, 1, -e / 2))
         }
@@ -1218,7 +1260,9 @@ fn kernel_power(
         polynomial
             .iter()
             .zip(&powers)
-            .fold(zero(), |res, (c, power)| res + value(Rational::from(*c)) * power),
+            .fold(zero(), |res, (c, power)| {
+                res + value(Rational::from(*c)) * power
+            }),
     )
 }
 
@@ -1236,14 +1280,17 @@ fn binomial_power(a: i64, b: i64, m: i64) -> Vec<i64> {
     let m = usize::try_from(m).unwrap_or(0);
     let mut res = vec![0; 2 * m + 1];
     for (i, c) in (0..=m).map(|i| (i, binomial_coefficient(m, i))) {
-        res[2 * i] = c * a.pow(u32::try_from(m - i).unwrap_or(0)) * b.pow(u32::try_from(i).unwrap_or(0));
+        res[2 * i] =
+            c * a.pow(u32::try_from(m - i).unwrap_or(0)) * b.pow(u32::try_from(i).unwrap_or(0));
     }
     res
 }
 
 /// `{$binom(m, i)$}`.
 fn binomial_coefficient(m: usize, i: usize) -> i64 {
-    (0..i).fold(1, |res, j| res * i64::try_from(m - j).unwrap_or(0) / i64::try_from(j + 1).unwrap_or(1))
+    (0..i).fold(1, |res, j| {
+        res * i64::try_from(m - j).unwrap_or(0) / i64::try_from(j + 1).unwrap_or(1)
+    })
 }
 
 /// `x` in terms of `w`: `{$a + w$}`, `{$a - w$}` from the left, `{$s / w$}` at `{$s oo$}`.
@@ -1526,7 +1573,11 @@ fn hyper_series(found: &Coefficients, proven: &Proven, k: Symbol) -> Option<Expr
             let (roots, _) = rational::rational_roots(p, Symbol::new("@hn"));
             for root in roots {
                 if root >= 0u32 {
-                    let above = usize::try_from(&malachite::Integer::rounding_from(&root, RoundingMode::Floor).0).ok()? + 1;
+                    let above = usize::try_from(
+                        &malachite::Integer::rounding_from(&root, RoundingMode::Floor).0,
+                    )
+                    .ok()?
+                        + 1;
                     n0 = n0.max(above);
                 }
             }
@@ -1564,7 +1615,9 @@ fn hyper_series(found: &Coefficients, proven: &Proven, k: Symbol) -> Option<Expr
         p.coefficients()
             .iter()
             .enumerate()
-            .fold(zero(), |res, (i, c)| res + value(c.clone()) * v.pow(&value(Rational::from(i))))
+            .fold(zero(), |res, (i, c)| {
+                res + value(c.clone()) * v.pow(&value(Rational::from(i)))
+            })
     };
     let conjugate = |z: &Gaussian| [z[0].clone(), -z[1].clone()];
     let mut general = zero();
@@ -1573,17 +1626,25 @@ fn hyper_series(found: &Coefficients, proven: &Proven, k: Symbol) -> Option<Expr
             continue;
         }
         // Conjugate pairs once, the one with a positive imaginary part
-        let paired = solutions.iter().zip(&alpha).enumerate().any(|(j, (other, b))| {
-            j != i
-                && other.z == conjugate(&solution.z)
-                && other.a == solution.a
-                && other.b == solution.b
-                && *b == conjugate(a)
-        });
+        let paired = solutions
+            .iter()
+            .zip(&alpha)
+            .enumerate()
+            .any(|(j, (other, b))| {
+                j != i
+                    && other.z == conjugate(&solution.z)
+                    && other.a == solution.a
+                    && other.b == solution.b
+                    && *b == conjugate(a)
+            });
         if paired && solution.z[1] < 0u32 {
             continue;
         }
-        let scale = if paired { Rational::from(2) } else { Rational::from(1) };
+        let scale = if paired {
+            Rational::from(2)
+        } else {
+            Rational::from(1)
+        };
         let d = solution.c.scale(a);
         let (re, im) = (
             poly(&d.map(|c| c[0].clone()), &n),
@@ -1746,7 +1807,9 @@ pub fn held_sum_at(args: &[Expr], x: Symbol, point: &Expr) -> Option<Expr> {
     }
     let next = subs(&body, k, &(variable(k) + one()));
     let ratio = fun(Context::ABS, &next / &body);
-    let limit = ratio.limit(k, &variable(Context::OO), Direction::Both).ok()?;
+    let limit = ratio
+        .limit(k, &variable(Context::OO), Direction::Both)
+        .ok()?;
     (constant_sign(&(one() - limit)) == Some(Ordering::Greater))
         .then(|| tidy_held_sum(&body, k, a, x))
 }

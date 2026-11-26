@@ -921,10 +921,16 @@ impl Fixed {
     }
 
     /// `{$sum_(k = a)^b f$}` for integer bounds, at most [`MAX_SUM_TERMS`] terms.
-    fn finite_sum(self, f: &Term<Real>, k: Symbol, a: &Term<Real>, b: &Term<Real>) -> Option<Rational> {
+    fn finite_sum(
+        self,
+        f: &Term<Real>,
+        k: Symbol,
+        a: &Term<Real>,
+        b: &Term<Real>,
+    ) -> Option<Rational> {
         let (a, b) = (self.evaluate(a)?, self.evaluate(b)?);
         let (a, b) = (Integer::try_from(&a).ok()?, Integer::try_from(&b).ok()?);
-        if &b - &a >= Integer::from(MAX_SUM_TERMS) {
+        if &b - &a >= MAX_SUM_TERMS {
             return None;
         }
         let mut sum = Integer::ZERO;
@@ -1048,7 +1054,9 @@ impl Fixed {
                         self.infinite_sum(f, k.symbol, a)
                     }
                     // The finite sums in the general terms of products of series
-                    (Context::SUM, [f, Term::Symbol(k), a, b]) => self.finite_sum(f, k.symbol, a, b),
+                    (Context::SUM, [f, Term::Symbol(k), a, b]) => {
+                        self.finite_sum(f, k.symbol, a, b)
+                    }
                     (
                         ident @ (Context::ASIN
                         | Context::ACOS

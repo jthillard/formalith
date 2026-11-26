@@ -169,7 +169,12 @@ fn products(roots: &[Rational]) -> Vec<Poly<Rational>> {
 }
 
 /// The solutions with the factors `A` and `B`.
-fn with_factors(p: &[Poly<Rational>], a: &Poly<Rational>, b: &Poly<Rational>, x: Symbol) -> Vec<Solution> {
+fn with_factors(
+    p: &[Poly<Rational>],
+    a: &Poly<Rational>,
+    b: &Poly<Rational>,
+    x: Symbol,
+) -> Vec<Solution> {
     let r = p.len() - 1;
     // `{$T_s(n) = P_s(n) product_(j < s) A(n + j) product_(j >= s) B(n + j)$}`
     let terms: Vec<Poly<Rational>> = (0..=r)
@@ -188,7 +193,13 @@ fn with_factors(p: &[Poly<Rational>], a: &Poly<Rational>, b: &Poly<Rational>, x:
     let leading = Poly::new(
         terms
             .iter()
-            .map(|t| if t.degree() == degree { t.coefficient(degree) } else { Rational::ZERO })
+            .map(|t| {
+                if t.degree() == degree {
+                    t.coefficient(degree)
+                } else {
+                    Rational::ZERO
+                }
+            })
             .collect(),
     );
     let mut res = vec![];
@@ -228,7 +239,10 @@ fn roots(p: &Poly<Rational>, x: Symbol) -> Vec<Gaussian> {
                     let (c0, c1, c2) = (q.coefficient(0), q.coefficient(1), q.coefficient(2));
                     let discriminant = &c1 * &c1 - Rational::from(4) * &c0 * &c2;
                     if let Some(root) = rational_sqrt(&-discriminant) {
-                        let (u, v) = (-c1 / (Rational::from(2) * &c2), root / (Rational::from(2) * &c2));
+                        let (u, v) = (
+                            -c1 / (Rational::from(2) * &c2),
+                            root / (Rational::from(2) * &c2),
+                        );
                         res.push([u.clone(), v.clone()]);
                         res.push([u, -v]);
                     }
@@ -271,7 +285,8 @@ fn polynomial_solution(terms: &[Poly<Rational>], z: &Gaussian) -> Option<Poly<Ga
         // `{$sum_(i < d) c_i col_i = -col_d$}`, `C` monic
         let equations: Vec<Vec<Gaussian>> = (0..rows)
             .map(|t| {
-                let mut row: Vec<Gaussian> = columns[..degree].iter().map(|c| c.coefficient(t)).collect();
+                let mut row: Vec<Gaussian> =
+                    columns[..degree].iter().map(|c| c.coefficient(t)).collect();
                 row.push(columns[degree].coefficient(t).negate());
                 row
             })

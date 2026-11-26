@@ -25,7 +25,9 @@ use crate::{
 #[must_use]
 pub fn free_symbols(term: &Term<Real>) -> BTreeSet<Symbol> {
     match term {
-        Term::Fun(fun) if fun.get_ident() == Context::held_sum() || fun.get_ident() == Context::SUM => {
+        Term::Fun(fun)
+            if fun.get_ident() == Context::held_sum() || fun.get_ident() == Context::SUM =>
+        {
             let Some([body, Term::Symbol(k), bounds @ ..]) =
                 fun.get_args::<Real>().map(Vec::as_slice)
             else {
@@ -393,7 +395,8 @@ impl Numeric {
             }
             // An unevaluated finite sum, term by term
             Term::Fun(fun) if fun.get_ident() == Context::SUM => {
-                let Some([body, Term::Symbol(k), from, to]) = fun.get_args::<Real>().map(Vec::as_slice)
+                let Some([body, Term::Symbol(k), from, to]) =
+                    fun.get_args::<Real>().map(Vec::as_slice)
                 else {
                     return Self::Unsupported(fun.get_ident_as_str().to_owned());
                 };
@@ -511,7 +514,10 @@ fn sum(body: &Numeric, index: usize, start: i64, vars: &[f64]) -> f64 {
 /// [`MAX_SUM_TERMS`] terms.
 fn finite_sum(body: &Numeric, index: usize, from: f64, to: f64, vars: &[f64]) -> f64 {
     #![allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
-    if from.fract() != 0. || to.fract() != 0. || !(to - from < MAX_SUM_TERMS as f64) {
+    if from.fract() != 0.
+        || to.fract() != 0.
+        || (to - from).partial_cmp(&(MAX_SUM_TERMS as f64)) != Some(std::cmp::Ordering::Less)
+    {
         return f64::NAN;
     }
     let mut vars = vars.to_vec();

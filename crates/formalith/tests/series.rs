@@ -362,16 +362,28 @@ fn whole_series_of_rational_functions_with_multiple_or_irrational_poles() {
     // Complex roots of a cubic: its real root as `rootof`, the pair from Vieta's formulas
     // (checked here rather than by `check_whole_series`, whose evaluation of each term is slow with `rootof`)
     let cubic = whole("1/(1 + x + x^3), x, 0");
-    assert!(cubic.contains("cos(") && cubic.contains("rootof"), "{cubic}");
+    assert!(
+        cubic.contains("cos(") && cubic.contains("rootof"),
+        "{cubic}"
+    );
     for point in ["1/3", "-1/4"] {
         assert_eq!(
-            line(&parse!(&format!("approx(subs(series(1/(1 + x + x^3), x, 0, oo), x, {point}))"), R)),
-            line(&parse!(&format!("approx(1/(1 + ({point}) + ({point})^3))"), R)),
+            line(&parse!(
+                &format!("approx(subs(series(1/(1 + x + x^3), x, 0, oo), x, {point}))"),
+                R
+            )),
+            line(&parse!(
+                &format!("approx(1/(1 + ({point}) + ({point})^3))"),
+                R
+            )),
             "{point}"
         );
     }
     assert_eq!(
-        line(&parse!("approx(subs(series(1/(1 - x + 2*x^2)^2, x, 0, oo), x, 1/5))", R)),
+        line(&parse!(
+            "approx(subs(series(1/(1 - x + 2*x^2)^2, x, 0, oo), x, 1/5))",
+            R
+        )),
         line(&parse!("approx(1/(1 - 1/5 + 2/25)^2)", R))
     );
 }
@@ -381,13 +393,19 @@ fn whole_series_from_hypergeometric_solutions() {
     // No two-term recurrence: sums of hypergeometric terms with different ratios (Petkovšek's Hyper)
     assert_eq!(
         whole("exp(x)*cosh(2*x), x, 0"),
-        line(&parse!("sum(((-1)^k/(2*k!) + 3^k/(2*k!))*x^k, k, 0, oo)", R))
+        line(&parse!(
+            "sum(((-1)^k/(2*k!) + 3^k/(2*k!))*x^k, k, 0, oo)",
+            R
+        ))
     );
     let sinh = whole("sinh(x)*exp(2*x), x, 0");
     assert!(sinh.contains("3^(k-1)") || sinh.contains("3^k"), "{sinh}");
     // Gaussian ratios `{$2 plus.minus i$}` and `{$plus.minus i$}`, as real parts
     let gaussian = whole("exp(x)*sin(x)*cosh(x), x, 0");
-    assert!(gaussian.contains("cos(") && gaussian.contains("5^"), "{gaussian}");
+    assert!(
+        gaussian.contains("cos(") && gaussian.contains("5^"),
+        "{gaussian}"
+    );
     // Not hypergeometric
     assert!(whole("x*exp(x^2)*cos(x), x, 0").starts_with("series("));
 }
@@ -430,15 +448,24 @@ fn whole_series_with_bernoulli_and_euler_numbers() {
     assert!(whole("1/sinh(x)^4, x, 0").contains("bernoulli"));
     // At regular points, by the partial fractions of `{$tan$}`
     let shifted = whole("tan(x), x, 1");
-    assert!(shifted.contains("polygamma") && shifted.contains("sin(1)"), "{shifted}");
+    assert!(
+        shifted.contains("polygamma") && shifted.contains("sin(1)"),
+        "{shifted}"
+    );
     assert!(whole("1/sin(x), x, 1").contains("polygamma"));
     // Poles stay unevaluated
     assert!(whole("tan(x), x, pi/2").starts_with("series("));
     // Products with other series, by Cauchy products
     let product = whole("tan(x)/(1 + x), x, 0");
-    assert!(product.contains("floor") && product.contains("bernoulli"), "{product}");
+    assert!(
+        product.contains("floor") && product.contains("bernoulli"),
+        "{product}"
+    );
     assert_eq!(
-        line(&parse!("approx(subs(series(exp(x)*tan(x), x, 0, oo), x, 1/2))", R)),
+        line(&parse!(
+            "approx(subs(series(exp(x)*tan(x), x, 0, oo), x, 1/2))",
+            R
+        )),
         line(&parse!("approx(exp(1/2)*tan(1/2))", R))
     );
 }
@@ -497,7 +524,9 @@ fn held_sums_term_by_term() {
         let integral = format!("integrate({integrand}, x, {a}, {b})");
         let res = eval(&integral);
         assert!(res.contains("sum("), "{integral}: {res}");
-        let function = integrand.replace(", x, 0, oo)", ")").replace("series(", "(");
+        let function = integrand
+            .replace(", x, 0, oo)", ")")
+            .replace("series(", "(");
         assert_eq!(
             eval(&format!("approx({integral})")),
             eval(&format!("approx(integrate({function}, x, {a}, {b}))")),
@@ -514,7 +543,13 @@ fn held_sums_term_by_term() {
     // Sums equal to zero are zero at a bounded precision, quickly
     let start = std::time::Instant::now();
     assert_eq!(eval("approx(subs(series(sin(x), x, 0, oo), x, pi))"), "0.0");
-    assert_eq!(eval("approx(subs(series(cos(x), x, 0, oo), x, pi/2))"), "0.0");
-    assert_eq!(eval("approx(subs(series(exp(x), x, 0, oo), x, 1) - e)"), "0.0");
+    assert_eq!(
+        eval("approx(subs(series(cos(x), x, 0, oo), x, pi/2))"),
+        "0.0"
+    );
+    assert_eq!(
+        eval("approx(subs(series(exp(x), x, 0, oo), x, 1) - e)"),
+        "0.0"
+    );
     assert!(start.elapsed().as_secs() < 10);
 }

@@ -238,7 +238,12 @@ pub(super) fn integrate(f: &Expr, x: Symbol, a: &Expr, b: &Expr) -> IntegrateRes
 /// `{$S(b) - S(a)$}` for the terms `S` of the antiderivative `{$F = S + R$}` with a held sum, as `(S(b) - S(a), R)`,
 /// when each one is a constant times a held sum converging at both bounds. `None` when `F` has no held sum, or when
 /// they don't converge.
-fn held_sums_at_bounds(antiderivative: &Expr, x: Symbol, a: &Expr, b: &Expr) -> Option<(Expr, Expr)> {
+fn held_sums_at_bounds(
+    antiderivative: &Expr,
+    x: Symbol,
+    a: &Expr,
+    b: &Expr,
+) -> Option<(Expr, Expr)> {
     let terms: Vec<&Expr> = match antiderivative {
         Term::Add(add) => add.iter().collect(),
         _ => vec![antiderivative],
@@ -253,7 +258,7 @@ fn held_sums_at_bounds(antiderivative: &Expr, x: Symbol, a: &Expr, b: &Expr) -> 
         let Some(Term::Fun(sum)) = factors.iter().copied().find(
             |factor| matches!(factor, Term::Fun(fun) if fun.get_ident() == Context::held_sum()),
         ) else {
-            rest = rest + term;
+            rest += term;
             continue;
         };
         let c = term / &Term::Fun(sum.clone());
@@ -269,7 +274,7 @@ fn held_sums_at_bounds(antiderivative: &Expr, x: Symbol, a: &Expr, b: &Expr) -> 
             };
             sums = sums + at(b)? - at(a)?;
         } else {
-            sums = sums + c * crate::sum::held_sum_between(args, x, a, b)?;
+            sums += c * crate::sum::held_sum_between(args, x, a, b)?;
         }
         found = true;
     }

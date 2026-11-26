@@ -109,7 +109,9 @@ fn held_sum_indices(f: &Complex, indices: &mut Vec<Symbol>) {
             {
                 indices.push(k.symbol);
             }
-            args.iter().for_each(|arg| held_sum_indices(arg, indices));
+            for arg in args {
+                held_sum_indices(arg, indices);
+            }
         }
     }
 }
@@ -264,9 +266,9 @@ pub(super) fn with_unit(f: &Complex, t: Symbol, analytic: bool) -> Option<Expr> 
     Some(match f {
         Term::Value(z) => gaussian(&z.value),
         Term::Symbol(s) => variable(s.symbol),
-        Term::Add(add) => add
-            .iter()
-            .try_fold(zero(), |res, term| Some(res + with_unit(term, t, analytic)?))?,
+        Term::Add(add) => add.iter().try_fold(zero(), |res, term| {
+            Some(res + with_unit(term, t, analytic)?)
+        })?,
         Term::Mul(mul) => mul
             .iter()
             .try_fold(gaussian(&mul.coefficient), |res, factor| {

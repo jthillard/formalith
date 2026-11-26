@@ -721,7 +721,11 @@ impl Derivable for C<R<Rational>> {
         self.zero()
     }
 
-    fn derivative_function(&self, fun: &dyn crate::term::Function<Self>, x: Symbol) -> Option<Term<Self>> {
+    fn derivative_function(
+        &self,
+        fun: &dyn crate::term::Function<Self>,
+        x: Symbol,
+    ) -> Option<Term<Self>> {
         // A whole series, term by term, in `{$RR$}` with the imaginary unit as a parameter
         if fun.get_ident() != Context::held_sum() {
             return None;

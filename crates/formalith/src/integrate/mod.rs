@@ -462,9 +462,9 @@ fn held_sum_product(f: &Expr, x: Symbol) -> Option<Expr> {
     let Term::Mul(mul) = f else {
         return None;
     };
-    let mut sums = mul.iter().filter(|factor| {
-        matches!(factor, Term::Fun(fun) if fun.get_ident() == Context::held_sum())
-    });
+    let mut sums = mul.iter().filter(
+        |factor| matches!(factor, Term::Fun(fun) if fun.get_ident() == Context::held_sum()),
+    );
     let (Some(Term::Fun(sum)), None) = (sums.next(), sums.next()) else {
         return None;
     };
@@ -473,7 +473,9 @@ fn held_sum_product(f: &Expr, x: Symbol) -> Option<Expr> {
     };
     let others = mul
         .iter()
-        .filter(|factor| !matches!(factor, Term::Fun(fun) if fun.get_ident() == Context::held_sum()))
+        .filter(
+            |factor| !matches!(factor, Term::Fun(fun) if fun.get_ident() == Context::held_sum()),
+        )
         .fold(value(mul.coefficient.clone()), |res, factor| res * factor);
     if !depends(&others, x) || depends(&others, index.symbol) {
         return None;
