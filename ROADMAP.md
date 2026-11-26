@@ -47,6 +47,18 @@ Ideas and known gaps, roughly by area. `AGENTS.md` describes what exists; this f
 - Trigonometric forms with several unrelated constant angles keep nested forms; `simplify` only linearizes products
   of at most 8 `sin` / `cos` factors.
 
+## Assumptions
+
+- Case splits of calculus builtins (`real/cases.rs`) only split a parameter at 0, not at other critical values:
+  `lim(1/(a - 1)^n, n, oo)` with `a > 1` stays unevaluated.
+- Definite integrals with symbolic bounds only assume the sign of the variable between them (`definite::between`),
+  not `a < x < b` as linear relations.
+- Integrality only rounds bounds of single symbols: relations between several integers are decided over ℚ, so
+  `assume(m integer, n integer, n < m, m < n + 1)` isn't a contradiction.
+- Nonlinear assumptions (`a b > 1`, `a^2 < 2`) and assumptions with builtin constants (`a > pi`) are rejected.
+- Fourier-Motzkin elimination gives up past 400 constraints, taking the system as feasible (sound, but nothing is
+  concluded).
+
 ## Approximation
 
 - `approx` underflows to `0.0` below about `1e-1385` (`approx(1/factorial(700))`): the fixed-point precision
