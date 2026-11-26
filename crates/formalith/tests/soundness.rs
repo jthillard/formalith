@@ -50,3 +50,19 @@ fn constants_indistinguishable_from_zero() {
     assert!(eval_r("sin(10^(-2000)) > 0").starts_with("error"));
     assert_eq!(eval_r("sin(pi) > 0"), "no solution");
 }
+
+#[test]
+fn close_roots_of_inequalities() {
+    // Roots within the relative accuracy of approximations aren't merged
+    let bound =
+        "10000000000000000000000000000000000000001/10000000000000000000000000000000000000000";
+    assert_eq!(
+        eval_r("(x-1)*(x-1-10^(-40)) < 0"),
+        format!("x ∈ (1, {bound})")
+    );
+    assert_eq!(
+        eval_r("(x-1)*(x-1-10^(-40)) <= 0"),
+        format!("x ∈ [1, {bound}]")
+    );
+    assert!(eval_r("(x-sqrt(2))*(x-sqrt(2)-10^(-50)) < 0").starts_with("error"));
+}

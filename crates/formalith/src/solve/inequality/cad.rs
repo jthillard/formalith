@@ -78,7 +78,40 @@ fn mul(a: Ordering, b: Ordering) -> Ordering {
 #[derive(Clone, Debug)]
 struct Root {
     value: Expr,
+    /// The value itself for a rational root.
     approximation: Rational,
+}
+
+impl Root {
+    /// Whether the approximation is the root itself.
+    const fn is_exact(&self) -> bool {
+        matches!(self.value, Term::Value(_))
+    }
+
+    /// Whether `self` and `other`, sorted by their approximations, are the same root. Rational roots are compared
+    /// exactly, and others with approximations close to each other by their difference: zero once expanded, or a
+    /// constant whose sign can't be found, being indistinguishable from zero at the maximum precision. Distinct roots
+    /// too close to be separated by the approximations are an error, since a sample between them would be wrong.
+    fn same(&self, other: &Self) -> Result<bool, SolveError> {
+        if self.is_exact() && other.is_exact() {
+            return Ok(self.approximation == other.approximation);
+        }
+        if !close(&self.approximation, &other.approximation) {
+            return Ok(false);
+        }
+        let difference = (self.value.clone() - other.value.clone()).normalize();
+        if difference.is_zero() || difference.expand().is_zero() {
+            return Ok(true);
+        }
+        match crate::field::real::expr::constant_sign(&difference) {
+            None | Some(Ordering::Equal) => Ok(true),
+            Some(_) => Err(SolveError::Inequality(format!(
+                "can't separate the roots `{}` and `{}`",
+                plain(&self.value),
+                plain(&other.value)
+            ))),
+        }
+    }
 }
 
 /// The values of the unknown in a solution of a single equation.
@@ -116,7 +149,14 @@ fn rational_value(c: &Expr) -> Option<Rational> {
     let margin = (&approximation).abs() / Rational::from(10u32).pow(35u64);
     let rational = simplest(&(&approximation - &margin), &(&approximation + margin));
     let bound = Natural::from(MAX_RECOGNIZED);
-    (*rational.numerator_ref() <= bound && *rational.denominator_ref() <= bound).then_some(rational)
+    if *rational.numerator_ref() > bound || *rational.denominator_ref() > bound {
+        return None;
+    }
+    // A constant close to the rational without being it, like `{$1 + 10^(-40) sqrt(2)$}`
+    let difference = (c.clone() - value(rational.clone())).normalize();
+    crate::field::real::expr::constant_sign(&difference)
+        .is_none_or(|sign| sign == Ordering::Equal)
+        .then_some(rational)
 }
 
 /// The polynomial `p` in `x` with its coefficients equal to rationals replaced by them, see [`rational_value`].
@@ -163,9 +203,12 @@ fn approximated(values: Vec<Expr>) -> Result<Vec<Root>, SolveError> {
     values
         .into_iter()
         .map(|value| {
-            let approximation = approximate(&value, DIGITS).ok_or_else(|| {
-                SolveError::Inequality(format!("can't approximate `{}`", plain(&value)))
-            })?;
+            let approximation = match &value {
+                Term::Value(v) => v.value.clone(),
+                _ => approximate(&value, DIGITS).ok_or_else(|| {
+                    SolveError::Inequality(format!("can't approximate `{}`", plain(&value)))
+                })?,
+            };
             Ok(Root {
                 value,
                 approximation,
@@ -207,11 +250,16 @@ fn simplest(lo: &Rational, hi: &Rational) -> Rational {
 /// The bounds are approximations of roots, maybe on the wrong side of them (`{$-4/3$}` is approximated by
 /// `{$-1.333...3 > -4/3$}`), so the interval is first shrunk by more than their error, else the root itself may be
 /// the simplest rational of the interval and a sector would be sampled at a section.
-fn simplest_between(lo: Option<&Rational>, hi: Option<&Rational>) -> Rational {
-    let margin =
-        |bound: &Rational| ((bound).abs() + Rational::ONE) / Rational::from(10u32).pow(35u64);
-    let lo = lo.map(|lo| lo + margin(lo));
-    let hi = hi.map(|hi| hi - margin(hi));
+fn simplest_between(lo: Option<(&Rational, bool)>, hi: Option<(&Rational, bool)>) -> Rational {
+    let margin = |(bound, exact): (&Rational, bool)| {
+        if exact {
+            Rational::ZERO
+        } else {
+            ((bound).abs() + Rational::ONE) / Rational::from(10u32).pow(35u64)
+        }
+    };
+    let lo = lo.map(|lo| lo.0 + margin(lo));
+    let hi = hi.map(|hi| hi.0 - margin(hi));
     let (lo, hi) = (lo.as_ref(), hi.as_ref());
     match (lo, hi) {
         (None, None) => Rational::ZERO,
@@ -685,9 +733,7 @@ impl<'a> Cad<'a> {
         let mut merged: Vec<(Root, Vec<usize>)> = vec![];
         for (root, ids) in roots {
             match merged.last_mut() {
-                Some((last, last_ids)) if close(&last.approximation, &root.approximation) => {
-                    last_ids.extend(ids);
-                }
+                Some((last, last_ids)) if last.same(&root)? => last_ids.extend(ids),
                 _ => merged.push((root, ids)),
             }
         }
@@ -708,8 +754,10 @@ impl<'a> Cad<'a> {
             let lower = i.checked_sub(1);
             let mut child = sample.clone();
             child.values.push(value(simplest_between(
-                lower.map(|j| &merged[j].0.approximation),
-                merged.get(i).map(|(root, _)| &root.approximation),
+                lower.map(|j| (&merged[j].0.approximation, merged[j].0.is_exact())),
+                merged
+                    .get(i)
+                    .map(|(root, _)| (&root.approximation, root.is_exact())),
             )));
             child.sections.push(false);
             cells.push(Cell {
@@ -779,7 +827,10 @@ impl<'a> Cad<'a> {
                             }
                             // The bounds of a sector may meet at the point, like `{$plus.minus sqrt(1 - x^2)$}`
                             // at `{$x = 1$}`
-                            value(simplest_between(lo.as_ref(), hi.as_ref()))
+                            value(simplest_between(
+                                lo.as_ref().map(|lo| (lo, false)),
+                                hi.as_ref().map(|hi| (hi, false)),
+                            ))
                         };
                         let mut point = point.to_vec();
                         point.push((self.unknowns[point.len()], inside));
@@ -952,7 +1003,13 @@ mod tests {
         assert_eq!(simplest(&r(-1, 1), &r(3, 1)), r(0, 1));
         assert_eq!(simplest(&r(1, 1), &r(3, 2)), r(4, 3));
         assert_eq!(simplest(&r(2, 1), &r(7, 2)), r(3, 1));
-        assert_eq!(simplest_between(Some(&r(5, 2)), None), Rational::from(3));
-        assert_eq!(simplest_between(None, Some(&r(-1, 2))), Rational::from(-1));
+        assert_eq!(
+            simplest_between(Some((&r(5, 2), false)), None),
+            Rational::from(3)
+        );
+        assert_eq!(
+            simplest_between(None, Some((&r(-1, 2), false))),
+            Rational::from(-1)
+        );
     }
 }
