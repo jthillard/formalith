@@ -234,14 +234,27 @@ impl Fixed {
         (sin, cos)
     }
 
-    /// `{$root(n, x)$}`, `x` being negative only for odd `n`.
+    /// `{$root(n, x)$}`, `x` being negative only for odd `n`, with a relative precision of about
+    /// `{$2^(-"bits")$}` for small `|x|`.
     fn root(self, x: &Rational, n: u64) -> Option<Rational> {
         if *x < 0 && n % 2 == 0 {
             return None;
         }
-        let shifted: Integer = (x.abs() << (n * self.bits)).floor();
+        if *x == 0 {
+            return Some(Rational::ZERO);
+        }
+        // `{$root(n, |x|) >= 2^(-k)$}` for `{$|x| >= 2^(-n k)$}`
+        let magnitude = x.abs();
+        let log = magnitude.floor_log_base_2();
+        let bits = self.bits
+            + if log < 0 {
+                log.unsigned_abs() / n + 1
+            } else {
+                0
+            };
+        let shifted: Integer = (magnitude << (n * bits)).floor();
         let root = Integer::from(shifted.unsigned_abs().floor_root(n));
-        let root = self.to_rational(root);
+        let root = Rational::from(root) >> bits;
         Some(if *x < 0 { -root } else { root })
     }
 
@@ -1147,6 +1160,8 @@ pub fn approximate(term: &Term<Real>, digits: u64) -> Option<Rational> {
         4 * needed + 4096
     };
     let mut bits = needed + GUARD_BITS;
+    // The last non-zero evaluation below the absolute precision
+    let mut previous: Option<Rational> = None;
     loop {
         let value = Fixed { bits }.evaluate(term)?;
         if value == 0 {
@@ -1162,6 +1177,16 @@ pub fn approximate(term: &Term<Real>, digits: u64) -> Option<Rational> {
         if significant >= i64::try_from(needed).ok()? {
             return Some(round_significant(&value, digits));
         }
+        // Values below the absolute precision may still have their relative precision, like exact ones or
+        // `{$e^(-x) = 1 / e^x$}`: two evaluations at different precisions agreeing to the needed bits are kept, while
+        // the rounding errors of a zero, like `{$sin(pi)$}`, shrink with the precision
+        if previous
+            .as_ref()
+            .is_some_and(|previous| ((&value - previous).abs() << needed) <= (&value).abs())
+        {
+            return Some(round_significant(&value, digits));
+        }
+        previous = Some(value);
         if bits >= max_bits {
             // Indistinguishable from zero at the maximum precision, like `{$sin(pi)$}`
             return Some(Rational::ZERO);
@@ -1263,22 +1288,68 @@ fn power_of_ten(exponant: i64) -> Rational {
     Pow::pow(Rational::from(10), exponant)
 }
 
+/// `{$10^k$}` as a natural number.
+fn natural_power_of_ten(k: u64) -> Natural {
+    Natural::from(10_u32).pow(k)
+}
+
+/// The exponent `e` of the first decimal digit of `{$n / d > 0$}`, `{$10^e <= n / d < 10^(e + 1)$}`. In integers
+/// only: the values of `approx` may have millions of digits, and `Rational` arithmetic reduces its results by gcds.
+fn decimal_exponent(n: &Natural, d: &Natural) -> i64 {
+    // `{$log_2(n / d) - 1 < floor(log_2 n) - floor(log_2 d) < log_2(n / d) + 1$}`, `{$log_10(2) approx 0.30103$}`,
+    // then fix the estimate
+    let log = i64::try_from(n.floor_log_base_2()).unwrap_or(i64::MAX)
+        - i64::try_from(d.floor_log_base_2()).unwrap_or(i64::MAX);
+    let mut exponant = log * 30_103 / 100_000;
+    // `{$10^|e|$}`
+    let mut power = natural_power_of_ten(exponant.unsigned_abs());
+    let at_most = |e: i64, power: &Natural| {
+        if e >= 0 {
+            power * d <= *n
+        } else {
+            *d <= n * power
+        }
+    };
+    let ten = Natural::from(10_u32);
+    while !at_most(exponant, &power) {
+        if exponant > 0 {
+            power /= &ten;
+        } else {
+            power *= &ten;
+        }
+        exponant -= 1;
+    }
+    loop {
+        let next = if exponant >= 0 {
+            &power * &ten
+        } else {
+            &power / &ten
+        };
+        if !at_most(exponant + 1, &next) {
+            return exponant;
+        }
+        exponant += 1;
+        power = next;
+    }
+}
+
 /// Round `|x|` to `digits` significant digits, returning the digits as an integer `m` and the exponent `e` of the
 /// first digit: `{$|x| approx m 10^(e - "digits" + 1)$}`. `x` must be non-zero.
 fn decimal_digits(x: &Rational, digits: u64) -> (Natural, i64) {
-    let x = x.abs();
-    // `{$log_10(2) approx 0.30103$}`, then fix the estimate
-    let mut exponant = x.floor_log_base_2() * 30_103 / 100_000;
-    while power_of_ten(exponant) > x {
-        exponant -= 1;
-    }
-    while power_of_ten(exponant + 1) <= x {
-        exponant += 1;
-    }
+    let (n, d) = x.numerator_and_denominator_ref();
+    let mut exponant = decimal_exponent(n, d);
     let digits = i64::try_from(digits).unwrap_or(i64::MAX);
-    let scaled = x * power_of_ten(digits - 1 - exponant) + Rational::from_signeds(1, 2);
-    let mut mantissa = scaled.floor().unsigned_abs();
-    if mantissa == Natural::from(10_u32).pow(u64::try_from(digits).unwrap_or(0)) {
+    // `{$floor(|x| 10^k + 1/2) = floor((2 n 10^k + d) / (2 d))$}`, or with `{$k < 0$}`
+    // `{$floor((2 n + d 10^(-k)) / (2 d 10^(-k)))$}`
+    let k = digits - 1 - exponant;
+    let power = natural_power_of_ten(k.unsigned_abs());
+    let (numerator, denominator) = if k >= 0 {
+        (n * power, d.clone())
+    } else {
+        (n.clone(), d * power)
+    };
+    let mut mantissa = ((numerator << 1_u64) + &denominator) / (denominator << 1_u64);
+    if mantissa == natural_power_of_ten(u64::try_from(digits).unwrap_or(0)) {
         // Rounded up to the next power of ten, like `{$9.99 approx 10.0$}`
         mantissa /= Natural::from(10_u32);
         exponant += 1;
@@ -1313,7 +1384,21 @@ fn significant_digits(x: &Rational) -> Option<u64> {
     if den != 1 || twos > MAX_DIGITS {
         return None;
     }
-    let integer = (x.abs() * power_of_ten(i64::try_from(twos.max(fives)).ok()?)).floor();
+    // `{$|x| 10^t$}`, an integer, in integers only (see `decimal_exponent`)
+    let mut integer =
+        x.numerator_ref() * natural_power_of_ten(twos.max(fives)) / x.denominator_ref();
+    if integer == 0 {
+        return Some(0);
+    }
+    // Printing a huge integer to count its trailing zeros is slow, divide them out first
+    let length = u64::try_from(decimal_exponent(&integer, &Natural::ONE)).ok()? + 1;
+    if length > MAX_DIGITS {
+        let power = natural_power_of_ten(length - MAX_DIGITS);
+        if !(&integer).divisible_by(&power) {
+            return None;
+        }
+        integer /= power;
+    }
     let integer = integer.to_string();
     let digits = integer.trim_end_matches('0').len();
     u64::try_from(digits)

@@ -61,11 +61,10 @@ Ideas and known gaps, roughly by area. `AGENTS.md` describes what exists; this f
 
 ## Approximation
 
-- `approx` underflows to `0.0` below about `1e-1385` (`approx(1/factorial(700))`): the fixed-point precision
-  should follow the magnitude of the result. `exp` of negative arguments and `W_-1` keep their relative precision,
-  but other tiny intermediate values (small powers, differences) still lose it.
-- `gamma` and `polygamma` of very large arguments are slow (`approx(gamma(10^6 + 1/3))` takes minutes in a
-  debug build).
+- `approx` keeps tiny values whose evaluation has their relative precision (exact ones, `exp` of negative
+  arguments, roots, `W_-1`, products and quotients of them), but values below about `2^-4360` coming from
+  absolute-precision operations (deep cancellations, `sin(10^-2000)`, `atan` of tiny arguments) are still `0.0`:
+  the fixed-point precision should follow the magnitude of each intermediate value.
 
 ## Limits
 

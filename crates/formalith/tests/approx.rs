@@ -189,6 +189,23 @@ fn approx_large_and_small_magnitudes() {
     assert_eq!(approx("approx(ln(10^-30))"), "-69.0775527898214");
     // Needs about 10 more digits of pi to reduce the argument
     assert_eq!(approx("approx(sin(10^10))"), "-0.487506025087511");
+    // Below the absolute precision, but exact or with their relative precision
+    assert_eq!(approx("approx(1/factorial(700))"), "4.12875075759988e-1690");
+    assert_eq!(approx("approx(exp(-5000))"), "3.36969414830892e-2172");
+    assert_eq!(
+        approx("approx(exp(-3000) - exp(-3001))"),
+        "8.26711931498293e-1304"
+    );
+    assert_eq!(approx("approx((10^(-6000))^(1/3))"), "1.0e-2000");
+    // Huge values are rounded and printed in integer arithmetic
+    assert_eq!(
+        approx("approx(gamma(10^5 + 1/3))"),
+        "1.31088971180922e456570"
+    );
+    assert_eq!(
+        approx("approx(1/gamma(10^5 + 1/3))"),
+        "7.62840680639607e-456571"
+    );
 }
 
 #[test]
