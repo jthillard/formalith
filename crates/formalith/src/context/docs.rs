@@ -669,13 +669,16 @@ pub static BUILTIN_DOCS: [BuiltinDoc; Context::BUILTIN_NAMES.len()] = [
         Context::ASSUME,
         Statements,
         "assume(r_1, ..., r_n)",
-        "Declares assumptions on symbols, like a > 0, b != 0, c <= 0 or n integer.",
-        "Each comparison compares a symbol with 0. Assumptions simplify expressions (sqrt(a^2) = a when a > 0), \
-         and are used by integrals, limits and solving. assume(a) shows the assumptions on a, :clear a removes \
-         them. Sessions start with k, m and n assumed integer: :assumptions lists every assumption, defaults \
-         included, and :clear restores the defaults.",
+        "Declares assumptions on symbols, like a > 0, b != 0, a > 1, a > b + 1 or n integer.",
+        "Each comparison is a linear relation between symbols with rational coefficients (=, <, <=, >, >=, !=). \
+         Bounds of integers are rounded (n > 1/2 is n >= 1). Assumptions simplify expressions (sqrt(a^2) = a when \
+         a > 0, abs(a - b) = a - b when a > b), and are used by integrals, limits and solving. assume(a) shows the \
+         assumptions on a, :clear a removes them with the relations involving a. Sessions start with k, m and n \
+         assumed integer: :assumptions lists every assumption, defaults included, and :clear restores the \
+         defaults.",
         &[
             ex("assume(a > 0)", "a > 0"),
+            ex("assume(a > 2*b + 1)", "a > 2 b + 1"),
             ex("assume(n integer)", "n in ZZ"),
         ],
     ),

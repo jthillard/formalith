@@ -128,7 +128,7 @@ impl Session {
              Define variables and functions with `a := x^2` or `f(x, y) := x*y`.\n\
              Solve systems with `x + y = 3, x*y = 2` (one solution per line), or `solve(a*x^2 = 1, x)` for chosen \
              unknowns.\n\
-             Declare assumptions with `assume(a > 0, b != 0, n integer)`, like `sqrt(a^2) = a`. `k`, `m` and `n` \
+             Declare assumptions with `assume(a > 0, b != 0, c > d + 1, n integer)`, like `sqrt(a^2) = a`. `k`, `m` and `n` \
              are integers by default (`:clear n` drops it).\n\
              commands:",
         );

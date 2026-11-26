@@ -13,14 +13,14 @@ use malachite::{
 
 use super::{
     R, cases,
-    sign::{SignMode, sign_set},
+    sign::{SignMode, linear_form, sign_set},
 };
 use crate::{
     context::{
         Context, Symbol,
-        assumptions::{Assumption, Assumptions, SignSet},
+        assumptions::{Assumptions, SignSet, linear::LinearForm},
     },
-    term::{Fun, Normalize, SymbolTerm, Term, relation::Relation},
+    term::{Expand, Fun, Normalize, SymbolTerm, Term, relation::Relation},
 };
 
 /// Largest `n` for which harmonic sums `{$H_n^((s))$}` are evaluated exactly.
@@ -186,10 +186,8 @@ impl R<Rational> {
             };
         for [condition, value] in args.as_chunks::<2>().0 {
             let value = &flatten(Some(condition), value, &before);
-            if let Some((s, signs)) = sign_condition(condition)
-                && before
-                    .assume(s, Assumption::sign(signs.complement()))
-                    .is_err()
+            if let Some((form, signs)) = sign_condition(condition)
+                && before.assume_relation(&form, signs.complement()).is_err()
             {
                 // The condition can't be false
                 before = Assumptions::current();
@@ -286,23 +284,22 @@ impl R<Rational> {
     }
 }
 
-/// Whether the condition `lhs op rhs` of a `piecewise` holds, `None` if it can't be decided.
-/// The symbol `s` and the signs of `s` for which `condition`, a comparison `s rel 0`, holds.
-fn sign_condition(condition: &Term<R<Rational>>) -> Option<(Symbol, SignSet)> {
+/// The linear form `f` in symbols and the signs of `f` for which `condition`, a comparison `lhs rel rhs` with
+/// `{$f = lhs - rhs$}`, holds.
+fn sign_condition(condition: &Term<R<Rational>>) -> Option<(LinearForm, SignSet)> {
     let Term::Fun(condition) = condition else {
         return None;
     };
     let relation = Relation::from_symbol(condition.get_ident())?;
-    match condition.get_args::<R<Rational>>()?.as_slice() {
-        [Term::Symbol(s), Term::Value(zero)] if zero.value == 0 => {
-            Some((s.symbol, relation.signs()))
-        }
-        _ => None,
-    }
+    let [lhs, rhs] = condition.get_args::<R<Rational>>()?.as_slice() else {
+        return None;
+    };
+    let form = linear_form(&(lhs - rhs).expand())?;
+    (!form.is_constant()).then_some((form, relation.signs()))
 }
 
 /// The `piecewise` `value` of the branch of `condition` (`None` for the default value) simplified with `assumptions`
-/// and the condition assumed, when it is a comparison of a symbol with 0, so that splits on the sign of a parameter
+/// and the condition assumed, when it is a linear comparison of symbols, so that splits on the sign of a parameter
 /// don't nest (see [`cases`]). `None` if nothing changes.
 fn assumed_piecewise(
     condition: Option<&Term<R<Rational>>>,
@@ -317,8 +314,8 @@ fn assumed_piecewise(
     }
     let mut assumptions = assumptions.clone();
     if let Some(condition) = condition {
-        let (s, signs) = sign_condition(condition)?;
-        assumptions.assume(s, Assumption::sign(signs)).ok()?;
+        let (form, signs) = sign_condition(condition)?;
+        assumptions.assume_relation(&form, signs).ok()?;
     }
     if assumptions == Assumptions::current() {
         return None;

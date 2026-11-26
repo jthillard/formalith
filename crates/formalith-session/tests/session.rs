@@ -70,11 +70,11 @@ fn default_assumptions() {
     run(&mut session, "assume(a > 0, n > 0)");
     assert_eq!(
         run(&mut session, ":assumptions").0,
-        "a > 0\nk integer (default)\nm integer (default)\nn > 0, n integer"
+        "a > 0\nk integer (default)\nm integer (default)\nn >= 1, n integer"
     );
     assert_eq!(
         run(&mut session, ":defs").0,
-        "assume(a > 0, n > 0, n integer)"
+        "assume(a > 0, n >= 1, n integer)"
     );
 
     assert_eq!(run(&mut session, ":clear n"), (String::new(), true));

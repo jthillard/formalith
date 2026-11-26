@@ -14,7 +14,7 @@
 //!    description are merged, so `{$x^2 + y^2 <= 1$}` gives the single cell
 //!    `{$x in [-1, 1], y in [-sqrt(1 - x^2), sqrt(1 - x^2)]$}`.
 
-use std::cmp::Ordering;
+use std::{cmp::Ordering, collections::BTreeSet};
 
 use malachite::{
     Natural, Rational,
@@ -27,13 +27,17 @@ use malachite::{
 use crate::{
     context::{
         Symbol,
-        assumptions::{Assumptions, SignSet, assumption},
+        assumptions::{
+            Assumptions, SignSet,
+            linear::{LinearForm, Var},
+        },
     },
     field::real::{
         R,
         approx::{approximate, approximate_fixed},
         expr::{Expr, depends, subs, value, variable, zero},
         rootof,
+        sign::linear_expr,
     },
     integrate::poly::Poly,
     solve::{
@@ -904,14 +908,27 @@ pub(super) fn solve(
     for inequality in inequalities {
         cad.add_constraint(&inequality.lhs, inequality.relation, &inequality.rhs)?;
     }
-    // The assumptions on the unknowns are other relations
+    // The assumptions on the unknowns are other relations, when they relate only unknowns
+    let assumptions = Assumptions::current();
+    let mut conditions = BTreeSet::new();
     for x in unknowns {
-        let assumed = assumption(*x).sign;
+        let assumed = assumptions.get(*x).sign;
+        if assumed != SignSet::ANY {
+            conditions.insert((LinearForm::variable(Var::Symbol(*x)), assumed));
+        }
+        conditions.extend(
+            assumptions
+                .conditions_on(*x)
+                .into_iter()
+                .filter(|(form, _)| form.symbols().all(|s| unknowns.contains(&s))),
+        );
+    }
+    for (form, signs) in conditions {
         if let Some(relation) = Relation::ALL
             .into_iter()
-            .find(|relation| relation.signs() == assumed && assumed != SignSet::ANY)
+            .find(|relation| relation.signs() == signs)
         {
-            cad.add_constraint(&variable(*x), relation, &zero())?;
+            cad.add_constraint(&linear_expr(&form, &[]), relation, &zero())?;
         }
     }
     // Roots contradicting the assumptions are needed too

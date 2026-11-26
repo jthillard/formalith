@@ -14,9 +14,9 @@ use std::{
 use crate::{
     context::{
         Context, Symbol,
-        assumptions::{Assumption, Assumptions, SignSet},
+        assumptions::{Assumption, Assumptions, SignSet, linear::LinearForm},
     },
-    field::{Set, SetParseExpression},
+    field::{Set, SetParseExpression, real::R, real::sign::linear_form},
     ode::{Condition, Dsolve, OdeSolution},
     optimize::{Extrema, Extremum, Optimize},
     solve::{
@@ -24,7 +24,7 @@ use crate::{
         inequality::{Inequality, Region, SolveInequality},
         is_integer_parameter, is_natural_parameter, plain,
     },
-    term::{Normalize, Term, relation::Relation},
+    term::{Expand, Normalize, Term, relation::Relation},
 };
 
 use super::{Parser, ParserError, lexer::TokenKind};
@@ -249,9 +249,9 @@ impl Environment {
             self.insert(*name, params.clone(), source.clone());
         }
         if let Statement::Assume(assumptions) = &statement {
-            for (symbol, assumption) in assumptions.iter() {
-                self.assume(symbol, assumption).map_err(ParserError::new)?;
-            }
+            self.assumptions
+                .merge(assumptions)
+                .map_err(ParserError::new)?;
         }
         Ok(statement)
     }
@@ -522,24 +522,9 @@ impl Parser<'_> {
         // `assume(`
         self.next_token();
         self.next_token();
-        let mut assumptions = Assumptions::new();
+        let mut items = vec![];
         loop {
-            let (symbol, assumption) = self.parse_assumption(set)?;
-            let previous = self
-                .env
-                .map_or(Assumption::NONE, |env| env.assumptions().get(symbol));
-            if assumptions.get(symbol) == Assumption::NONE {
-                assumptions
-                    .assume(symbol, previous)
-                    .map_err(ParserError::new)?;
-            }
-            assumptions
-                .assume(symbol, assumption)
-                .map_err(|err| ParserError::new(format!("`{}`: {err}", symbol.name())))?;
-            if previous == Assumption::NONE && assumptions.get(symbol) == Assumption::NONE {
-                // Listed, but without assumption
-                assumptions.remove(symbol);
-            }
+            items.push(self.parse_assumption(set)?);
             match self.token.kind {
                 TokenKind::Comma => self.next_token(),
                 TokenKind::CloseParen => break,
@@ -553,14 +538,35 @@ impl Parser<'_> {
         }
         self.next_token();
         self.expect_eof()?;
+        // The previous assumptions on the symbols mentioned, then the new ones
+        let symbols: BTreeSet<Symbol> = items
+            .iter()
+            .flat_map(|item| match item {
+                AssumeItem::Listed(s) | AssumeItem::Integer(s) => vec![*s],
+                AssumeItem::Relation(form, _) => form.symbols().collect(),
+            })
+            .collect();
+        let mut assumptions = self
+            .env
+            .map_or_else(Assumptions::new, |env| env.assumptions().restrict(&symbols));
+        for item in items {
+            match item {
+                AssumeItem::Listed(_) => Ok(()),
+                AssumeItem::Integer(s) => assumptions
+                    .assume_integer(s)
+                    .map_err(|err| format!("`{}`: {err}", s.name())),
+                AssumeItem::Relation(form, signs) => assumptions.assume_relation(&form, signs),
+            }
+            .map_err(ParserError::new)?;
+        }
         Ok(Statement::Assume(assumptions))
     }
 
-    /// Parse an argument of `assume`, returning the symbol and what is assumed.
+    /// Parse an argument of `assume`: a symbol, `symbol integer`, or a linear relation like `a > 2*b + 1`.
     fn parse_assumption<E: SetParseExpression>(
         &mut self,
         set: E,
-    ) -> Result<(Symbol, Assumption), ParserError> {
+    ) -> Result<AssumeItem, ParserError> {
         let symbol = |term: &Term<E>| {
             let Term::Symbol(symbol) = term else {
                 return Err(ParserError::new(format!(
@@ -580,33 +586,52 @@ impl Parser<'_> {
         let lhs_start = self.start_span;
         let lhs = self.parse_side(set)?;
         let lhs_source = self.input[lhs_start..self.start_span].trim().to_owned();
-        let relation = match self.token.kind {
+        let signs = match self.token.kind {
             TokenKind::Less => SignSet::NEGATIVE,
             TokenKind::LessEqual => SignSet::NONPOSITIVE,
             TokenKind::Greater => SignSet::POSITIVE,
             TokenKind::GreaterEqual => SignSet::NONNEGATIVE,
             TokenKind::NotEqual => SignSet::NONZERO,
+            TokenKind::Equal => SignSet::ZERO,
             TokenKind::Ident(ref name) if name == "integer" => {
                 self.next_token();
-                return Ok((symbol(&lhs)?, Assumption::INTEGER));
+                return Ok(AssumeItem::Integer(symbol(&lhs)?));
             }
-            _ => return Ok((symbol(&lhs)?, Assumption::NONE)),
+            _ => return Ok(AssumeItem::Listed(symbol(&lhs)?)),
         };
         self.next_token();
         let rhs_start = self.start_span;
-        let rhs = self.parse_side(set)?;
-        let rhs_source = self.input[rhs_start..self.start_span].trim();
-        // `0 < a` is `a > 0`
-        let (term, relation) = if lhs_source == "0" {
-            (rhs, relation.neg())
-        } else if rhs_source == "0" {
-            (lhs, relation)
-        } else {
-            return Err(ParserError::new(
-                "assumptions compare a symbol with 0, like `a > 0`",
-            ));
+        self.parse_side(set)?;
+        let rhs_source = self.input[rhs_start..self.start_span].trim().to_owned();
+        // Read again as real expressions, whatever the set
+        let parse = |source: &str| {
+            let parser = Parser::new(source);
+            let mut parser = match self.env {
+                Some(env) => parser.with_environment(env),
+                None => parser,
+            };
+            parser.parse(R)
         };
-        Ok((symbol(&term)?, Assumption::sign(relation)))
+        let difference = (parse(&lhs_source)? - parse(&rhs_source)?).expand();
+        if let Some(constant) = difference
+            .symbols()
+            .into_iter()
+            .find(|s| Context::is_builtin_constant(*s) || set.is_constant(s.name()))
+        {
+            return Err(ParserError::new(format!(
+                "`{}` is a constant",
+                constant.name()
+            )));
+        }
+        let form = linear_form(&difference).ok_or_else(|| {
+            ParserError::new(
+                "assumptions are linear relations with rational coefficients, like `a > 2*b + 1`",
+            )
+        })?;
+        if form.is_constant() {
+            return Err(ParserError::new("this assumption has no symbol"));
+        }
+        Ok(AssumeItem::Relation(form, signs))
     }
 
     /// Parse `solve(equations, unknowns)`, where the unknowns are symbols to solve for, other symbols being
@@ -1040,4 +1065,14 @@ impl Parser<'_> {
         }
         (self.token.kind == TokenKind::Define).then_some((name, params, self.end_span))
     }
+}
+
+/// An argument of `assume`, see [`Parser::parse_assumption`].
+enum AssumeItem {
+    /// A symbol, whose assumptions are shown.
+    Listed(Symbol),
+    /// `symbol integer`.
+    Integer(Symbol),
+    /// A linear form in symbols with the signs it has.
+    Relation(LinearForm, SignSet),
 }

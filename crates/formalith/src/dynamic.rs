@@ -538,31 +538,16 @@ pub fn definitions(env: &Environment) -> String {
     lines.join("\n")
 }
 
-/// Every assumption of `env`, one symbol per line sorted by name, like `a > 0` or `n integer (default)` for a
-/// default assumption, or `no assumptions`.
+/// Every assumption of `env`, one symbol per line sorted by name then one relation per line, like `a > 0` or
+/// `n integer (default)` for a default assumption, or `no assumptions`.
 #[must_use]
 pub fn assumptions(env: &Environment) -> String {
-    let mut symbols: Vec<_> = env.assumptions().iter().collect();
-    if symbols.is_empty() {
+    if env.assumptions().is_empty() {
         return "no assumptions".to_owned();
     }
-    symbols.sort_by_key(|(symbol, _)| symbol.name());
-    let defaults = env.default_assumptions();
-    let lines: Vec<String> = symbols
-        .into_iter()
-        .map(|(symbol, assumption)| {
-            let line = assumption.describe(symbol.name(), false).join(", ");
-            let is_default = defaults
-                .iter()
-                .any(|default| default == (symbol, assumption));
-            if is_default {
-                format!("{line} (default)")
-            } else {
-                line
-            }
-        })
-        .collect();
-    lines.join("\n")
+    env.assumptions()
+        .listing(env.default_assumptions())
+        .join("\n")
 }
 
 /// Remove the definition and assumptions of `name` from `env`, or every definition if `name` is empty, the

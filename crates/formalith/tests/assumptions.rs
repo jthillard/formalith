@@ -51,9 +51,20 @@ fn assume_errors() {
     let err = |statements: &[&str]| eval_statements(SetChoice::R, statements, false).unwrap_err();
     assert!(err(&["assume(a > 0, a < 0)"]).contains("contradicts"));
     assert!(err(&["assume(a > 0)", "assume(a <= 0)"]).contains("contradicts"));
-    assert!(err(&["assume(a > 1)"]).contains("compare a symbol with 0"));
-    assert!(err(&["assume(a + 1 > 0)"]).contains("not a symbol"));
+    assert!(err(&["assume(a*b > 1)"]).contains("linear relations"));
+    assert!(err(&["assume(a^2 > 1)"]).contains("linear relations"));
+    assert!(err(&["assume(1 > 0)"]).contains("no symbol"));
+    assert!(err(&["assume(a > b, b > a)"]).contains("contradicts a > b"));
+    assert!(err(&["assume(a > b, b > c, c > a)"]).contains("contradicts"));
+    assert!(err(&["assume(a > b + 1)", "assume(b > 0, a < 1)"]).contains("contradicts"));
+    assert!(err(&["assume(n integer, n > 1/3, n < 2/3)"]).contains("contradicts"));
     assert!(err(&["assume(pi > 0)"]).contains("constant"));
+    assert!(err(&["assume(a < pi)"]).contains("constant"));
+    assert!(
+        eval_statements(SetChoice::C, &["assume(i > 0)"], false)
+            .unwrap_err()
+            .contains("constant")
+    );
     // A rejected statement doesn't change the assumptions
     let mut env = Environment::new();
     env.eval("assume(a > 0)", R).unwrap();
@@ -205,5 +216,78 @@ fn typst_output() {
     assert_eq!(
         eval_statements(SetChoice::R, &["assume(a >= 0, n integer)"], true).unwrap(),
         "a >= 0, n in ZZ"
+    );
+}
+
+#[test]
+fn linear_assumptions() {
+    // Bounds and relations, printed so that they parse back
+    assert_eq!(eval(&["assume(1 < a)"]), "a > 1");
+    assert_eq!(eval(&["assume(a > 0, a < 1)"]), "a > 0, a < 1");
+    assert_eq!(eval(&["assume(n integer, n > 1/2)"]), "n >= 1, n integer");
+    assert_eq!(
+        eval(&["assume(n integer, n >= 0, n != 0)"]),
+        "n >= 1, n integer"
+    );
+    assert_eq!(eval(&["assume(2*a > 2*b + 2)"]), "a > b+1");
+    assert_eq!(eval(&["assume(a > b/2)"]), "2*a > b");
+    assert_eq!(eval(&["assume(a + b < 3)"]), "a+b < 3");
+    assert_eq!(eval(&["assume(a = 2*b)"]), "a = 2*b");
+    assert_eq!(eval(&["assume(a != b)"]), "a != b");
+    assert_eq!(eval(&["assume(a > b, c > 0)", "assume(b)"]), "a > b");
+    assert_eq!(eval(&["assume(a > b, c > 0)", "assume(c)"]), "c > 0");
+    // `:defs` gives a statement restoring them
+    let mut env = Environment::new();
+    env.eval("assume(a > b + 1, c <= 2*b, x >= -1/2, a != 3*c)", R)
+        .unwrap();
+    let defs = formalith::dynamic::definitions(&env);
+    let mut again = Environment::new();
+    again.eval(&defs, R).unwrap();
+    assert_eq!(again.assumptions(), env.assumptions());
+    // Removing a symbol removes its relations
+    assert!(env.remove_assumptions("b"));
+    assert_eq!(env.assumptions().to_string(), "x >= -1/2, a != 3*c");
+}
+
+#[test]
+fn linear_signs() {
+    assert_eq!(eval(&["assume(a > 1)", "abs(a - 1)"]), expr("a - 1"));
+    assert_eq!(eval(&["assume(a > 1)", "abs(ln(a))"]), expr("ln(a)"));
+    assert_eq!(
+        eval(&["assume(a > 0, a < 1)", "abs(ln(a))"]),
+        expr("-ln(a)")
+    );
+    assert_eq!(eval(&["assume(a > b)", "abs(a - b)"]), expr("a - b"));
+    assert_eq!(eval(&["assume(a > b, b > 0)", "sqrt(a^2)"]), "a");
+    assert_eq!(
+        eval(&["assume(a > b + 1)", "abs(b - a + exp(x))"]),
+        expr("abs(b - a + exp(x))")
+    );
+    assert_eq!(
+        eval(&["assume(a > b + 1)", "abs(a - b - 1 + exp(x))"]),
+        expr("a - b - 1 + exp(x)")
+    );
+    assert_eq!(eval(&["assume(a > 2)", "piecewise(a > 1, x, y)"]), "x");
+    assert_eq!(eval(&["assume(a > b)", "piecewise(b >= a, x, y)"]), "y");
+}
+
+#[test]
+fn linear_limits() {
+    assert_eq!(eval(&["assume(a > 1)", "lim(a^n, n, oo)"]), "oo");
+    assert_eq!(eval(&["assume(a > 0, a < 1)", "lim(a^n, n, oo)"]), "0");
+}
+
+#[test]
+fn linear_solving() {
+    assert_eq!(eval(&["assume(x > 1)", "solve(x^2 = 4)"]), "x = 2");
+    assert_eq!(eval(&["assume(x > 3)", "solve(x^2 = 4)"]), "no solution");
+    assert_eq!(
+        eval(&["assume(x > y)", "solve(x^2 = 1, y^2 = 1)"]),
+        "x = 1, y = -1"
+    );
+    assert_eq!(eval(&["assume(a > 1)", "solve(a^2 < 4)"]), "a ∈ (1, 2)");
+    assert_eq!(
+        eval(&["assume(x > y)", "solve(x^2 + y^2 < 1, x, y)"]),
+        eval(&["solve(x^2 + y^2 < 1, x > y, x, y)"])
     );
 }

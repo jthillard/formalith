@@ -1,7 +1,13 @@
 //! Signs of real expressions, from their structure, the assumptions on their symbols (see
 //! [`assumptions`](crate::context::assumptions)) and numerical approximations of constants.
 
-use malachite::base::num::arithmetic::traits::{Parity, Sign};
+use malachite::{
+    Rational,
+    base::num::{
+        arithmetic::traits::{Parity, Sign},
+        basic::traits::{One, Zero},
+    },
+};
 
 use super::{
     approx::approximate,
@@ -9,8 +15,12 @@ use super::{
 };
 use crate::{
     context::{
-        Context,
-        assumptions::{SignSet, assumption},
+        Context, Symbol,
+        assumptions::{
+            SignSet, assumption, is_relational,
+            linear::{Constraint, LinearForm, Var},
+            linear_signs,
+        },
     },
     term::Term,
 };
@@ -83,6 +93,20 @@ fn structural_sign(term: &Expr, mode: SignMode) -> SignSet {
             }
         },
         Term::Add(add) => {
+            let terms: Vec<&Expr> = add.iter().collect();
+            if has_relational_symbol(&terms) {
+                let signs: Vec<SignSet> = terms.iter().map(|t| structural_sign(t, mode)).collect();
+                let res = signs.iter().fold(SignSet::ZERO, |res, s| res + *s);
+                if res.strict().is_some() {
+                    return res;
+                }
+                let linear = linear_sign(&terms, &signs, Rational::ZERO).intersect(res);
+                return if linear == SignSet::EMPTY {
+                    res
+                } else {
+                    linear
+                };
+            }
             let mut res = SignSet::ZERO;
             for t in add {
                 res = res + structural_sign(t, mode);
@@ -177,17 +201,108 @@ fn structural_sign(term: &Expr, mode: SignMode) -> SignSet {
                 }
                 // `{$zeta(s) > 0$}` for `{$s > 1$}`
                 Context::ZETA if matches!(arg, Term::Value(s) if s.value > 1) => SignSet::POSITIVE,
-                // `{$ln u$}` has the sign of `{$u - 1$}` for `{$u > 0$}`, only checked on constants
-                Context::LN
-                    if mode.approximate
-                        && structural_sign(arg, mode).is_subset(SignSet::POSITIVE) =>
-                {
-                    structural_sign(&(arg - &super::expr::one()), mode)
+                // `{$ln u$}` has the sign of `{$u - 1$}` for `{$u > 0$}`, from the assumptions when `u` is linear in
+                // symbols with relations, otherwise only checked on constants
+                Context::LN if structural_sign(arg, mode).is_subset(SignSet::POSITIVE) => {
+                    let terms: Vec<&Expr> = match arg {
+                        Term::Add(add) => add.iter().collect(),
+                        arg => vec![arg],
+                    };
+                    if has_relational_symbol(&terms) {
+                        let signs: Vec<SignSet> =
+                            terms.iter().map(|t| structural_sign(t, mode)).collect();
+                        linear_sign(&terms, &signs, -Rational::ONE)
+                    } else if mode.approximate {
+                        structural_sign(&(arg - &super::expr::one()), mode)
+                    } else {
+                        SignSet::ANY
+                    }
                 }
                 _ => SignSet::ANY,
             }
         }
     }
+}
+
+/// `term` as `{$c s$}` for a symbol `s` (`None` for a value `c`), when it is one.
+fn linear_term(term: &Expr) -> Option<(Option<Symbol>, Rational)> {
+    let symbol = |t: &Expr| match t {
+        Term::Symbol(s) if !Context::is_builtin_constant(s.symbol) => Some(s.symbol),
+        _ => None,
+    };
+    match term {
+        Term::Value(value) => Some((None, value.value.clone())),
+        Term::Mul(mul) => match mul.iter().as_slice() {
+            [factor] => Some((Some(symbol(factor)?), mul.coefficient.clone())),
+            _ => None,
+        },
+        term => Some((Some(symbol(term)?), Rational::ONE)),
+    }
+}
+
+/// Whether a term is a multiple of a symbol with conditions other than on its sign.
+fn has_relational_symbol(terms: &[&Expr]) -> bool {
+    terms
+        .iter()
+        .any(|t| matches!(linear_term(t), Some((Some(s), _)) if is_relational(s)))
+}
+
+/// The possible signs of `{$sum t_i + c$}` under the current assumptions, `t_i` having signs in `signs`: multiples of
+/// symbols are variables of a linear form, other terms are variables with their sign.
+fn linear_sign(terms: &[&Expr], signs: &[SignSet], c: Rational) -> SignSet {
+    let mut form = LinearForm::constant(c);
+    let mut extra = vec![];
+    for (i, (t, sign)) in terms.iter().zip(signs).enumerate() {
+        match linear_term(t) {
+            Some((None, c)) => form.constant += c,
+            Some((Some(s), c)) => form.add_term(Var::Symbol(s), c),
+            None => {
+                let atom = Var::Atom(i);
+                form.add_term(atom, Rational::ONE);
+                let atom = LinearForm::variable(atom);
+                if sign.is_subset(SignSet::NONNEGATIVE) {
+                    extra.push(Constraint::new(atom.clone(), *sign == SignSet::POSITIVE));
+                }
+                if sign.is_subset(SignSet::NONPOSITIVE) {
+                    extra.push(Constraint::new(atom.neg(), *sign == SignSet::NEGATIVE));
+                }
+            }
+        }
+    }
+    linear_signs(&form, &extra)
+}
+
+/// `term` as a linear form in its symbols with rational coefficients, `None` when it isn't one or contains a builtin
+/// constant like `{$pi$}`.
+pub fn linear_form(term: &Expr) -> Option<LinearForm> {
+    let terms: Vec<&Expr> = match term {
+        Term::Add(add) => add.iter().collect(),
+        term => vec![term],
+    };
+    let mut res = LinearForm::default();
+    for t in terms {
+        match linear_term(t)? {
+            (None, c) => res.constant += c,
+            (Some(s), c) => res.add_term(Var::Symbol(s), c),
+        }
+    }
+    Some(res)
+}
+
+/// The expression `{$sum c_i x_i + c$}` of a linear form in symbols, with the values of `assignments` for their
+/// symbols.
+pub fn linear_expr(form: &LinearForm, assignments: &[(Symbol, Expr)]) -> Expr {
+    form.coefficients.iter().fold(
+        super::expr::value(form.constant.clone()),
+        |res, (var, c)| {
+            let Var::Symbol(s) = var else { return res };
+            let term = assignments
+                .iter()
+                .find(|(x, _)| x == s)
+                .map_or_else(|| super::expr::variable(*s), |(_, value)| value.clone());
+            res + super::expr::value(c.clone()) * term
+        },
+    )
 }
 
 /// Whether `term` is an integer: an integer value, a symbol assumed to be an integer, or a sum, product or

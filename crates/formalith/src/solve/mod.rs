@@ -359,11 +359,6 @@ impl<T: Ring> Solve for T {
             .filter(|den| den.symbols().iter().any(|s| unknowns.contains(s)))
             .collect();
         // Solutions contradicting the assumptions on the unknowns are dropped too
-        let contradicts = |assignments: &Assignments<Self>| {
-            assignments
-                .iter()
-                .any(|(symbol, value)| Self::contradicts(*symbol, value))
-        };
         let vanishes = |assignments: &Assignments<Self>| {
             denominators.iter().any(|den| {
                 assignments
@@ -382,7 +377,7 @@ impl<T: Ring> Solve for T {
         Ok(Solution::from_branches(
             branches
                 .into_iter()
-                .filter(|assignments| !vanishes(assignments) && !contradicts(assignments))
+                .filter(|assignments| !vanishes(assignments) && !Self::contradicts(assignments))
                 .collect(),
         ))
     }

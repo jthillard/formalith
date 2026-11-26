@@ -32,7 +32,7 @@ use malachite::{
 use crate::{
     context::{
         Context, Symbol,
-        assumptions::{SignSet, assumption},
+        assumptions::{Assumptions, SignSet},
     },
     field::{
         Monoid, Ring, Semiring, TryElementFrom, TryExprFrom,
@@ -43,7 +43,7 @@ use crate::{
             R,
             expr::{Expr, constant_sign},
             rootof,
-            sign::{SignMode, sign_set},
+            sign::{SignMode, linear_expr, sign_set},
         },
     },
     integrate::{poly::Poly, rational::rational_roots},
@@ -104,15 +104,16 @@ pub(super) fn solve<T: Ring>(
 /// Assumptions on the symbols of a set (see [`crate::context::assumptions`]), used to drop impossible branches and
 /// solutions. Implemented for every ring, where nothing is known by default.
 pub trait Assumed: Ring {
-    /// Whether `value` contradicts the assumptions on `symbol`, like a negative value for a positive symbol.
-    fn contradicts(symbol: Symbol, value: &Term<Self>) -> bool;
+    /// Whether `assignments` contradict the assumptions on their symbols, like a negative value for a positive
+    /// symbol, or `{$x = 0, y = 1$}` for `{$x > y$}`.
+    fn contradicts(assignments: &[(Symbol, Term<Self>)]) -> bool;
 
     /// Whether `term` is non-zero, from the assumptions on its symbols.
     fn is_nonzero(term: &Term<Self>) -> bool;
 }
 
 impl<T: Ring> Assumed for T {
-    default fn contradicts(_: Symbol, _: &Term<Self>) -> bool {
+    default fn contradicts(_: &[(Symbol, Term<Self>)]) -> bool {
         false
     }
 
@@ -122,11 +123,21 @@ impl<T: Ring> Assumed for T {
 }
 
 impl Assumed for R<Rational> {
-    fn contradicts(symbol: Symbol, value: &Term<Self>) -> bool {
-        let assumption = assumption(symbol);
-        sign_set(value, SignMode::APPROXIMATE).is_disjoint(assumption.sign)
-            || assumption.integer
-                && matches!(value, Term::Value(value) if value.value.denominator_ref() != &1u32)
+    fn contradicts(assignments: &[(Symbol, Term<Self>)]) -> bool {
+        let assumptions = Assumptions::current();
+        assignments.iter().any(|(symbol, value)| {
+            let assumption = assumptions.get(*symbol);
+            sign_set(value, SignMode::APPROXIMATE).is_disjoint(assumption.sign)
+                || assumption.integer
+                    && matches!(value, Term::Value(value) if value.value.denominator_ref() != &1u32)
+                || assumptions
+                    .conditions_on(*symbol)
+                    .iter()
+                    .any(|(form, signs)| {
+                        sign_set(&linear_expr(form, assignments), SignMode::APPROXIMATE)
+                            .is_disjoint(*signs)
+                    })
+        })
     }
 
     fn is_nonzero(term: &Term<Self>) -> bool {
