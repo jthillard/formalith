@@ -39,11 +39,15 @@ use malachite::{
 use crate::{
     context::{
         Context, Symbol,
-        assumptions::{Assumption, Assumptions, AssumptionsGuard, SignSet},
+        assumptions::{
+            Assumption, Assumptions, AssumptionsGuard, SignSet,
+            linear::{LinearForm, Var},
+        },
     },
     field::real::{
         approx::{approximate, approximate_fixed},
-        sign::{SignMode, sign_set},
+        cases,
+        sign::{SignMode, linear_form, sign_set},
     },
     limit::{Direction, LimitError},
     solve::polynomial::PolynomialRoots,
@@ -114,20 +118,38 @@ fn range_sign(h: &Expr) -> Option<Ordering> {
     constant_sign(&h.substitute(v, &value(interior_point(interval)?))?)
 }
 
-/// Assume that `x` has the sign it has strictly between `a` and `b` (in any order), when both have the same sign,
-/// until the guard is dropped.
+/// Assume that `x` is strictly between `a` and `b` (in any order) until the guard is dropped: its sign when both
+/// have the same sign, and `{$a < x < b$}` when they are linear in symbols with a known order.
 fn between(x: Symbol, a: &Expr, b: &Expr) -> Option<AssumptionsGuard> {
     let signs = [a, b].map(|bound| sign_set(bound, SignMode::APPROXIMATE));
     let sign = if signs.iter().all(|s| s.is_subset(SignSet::NONNEGATIVE)) {
-        SignSet::POSITIVE
+        Some(SignSet::POSITIVE)
     } else if signs.iter().all(|s| s.is_subset(SignSet::NONPOSITIVE)) {
-        SignSet::NEGATIVE
+        Some(SignSet::NEGATIVE)
     } else {
-        return None;
+        None
     };
     let mut assumptions = Assumptions::current();
-    assumptions.assume(x, Assumption::sign(sign)).ok()?;
-    Some(assumptions.enter())
+    let mut changed = false;
+    if let Some(sign) = sign {
+        changed |= assumptions.assume(x, Assumption::sign(sign)).is_ok();
+    }
+    if let (Some(a), Some(b)) = (linear_form(a), linear_form(b)) {
+        let (low, high) = match assumptions.signs(&b.add(&a.neg()), &[]) {
+            SignSet::POSITIVE => (a, b),
+            SignSet::NEGATIVE => (b, a),
+            _ => return changed.then(|| assumptions.enter()),
+        };
+        let x = LinearForm::variable(Var::Symbol(x));
+        for form in [x.add(&low.neg()), high.add(&x.neg())] {
+            let mut assumed = assumptions.clone();
+            if assumed.assume_relation(&form, SignSet::POSITIVE).is_ok() {
+                assumptions = assumed;
+                changed = true;
+            }
+        }
+    }
+    changed.then(|| assumptions.enter())
 }
 
 /// `f` with its unevaluated definite integrals depending on `x` evaluated again, knowing that `x` is between `a`
@@ -790,11 +812,13 @@ fn same_sign(term: &Expr, x: Symbol, interval: (f64, f64)) -> IntegrateResult<()
             (false, false) => (u - 0.5) / (u * (1.0 - u)),
         };
         let point = Rational::try_from(point).map_err(|_| IntegrateError::Unsupported)?;
-        let s = term
-            .substitute(x, &value(point))
-            .as_ref()
-            .and_then(range_sign)
-            .ok_or(IntegrateError::Unsupported)?;
+        // The sign at a sample point says nothing about where to split parameters
+        let s = cases::unrecorded(|| {
+            term.substitute(x, &value(point))
+                .as_ref()
+                .and_then(range_sign)
+        })
+        .ok_or(IntegrateError::Unsupported)?;
         match (sign, s) {
             (_, Ordering::Equal) => return Err(IntegrateError::Unsupported),
             (None, s) => sign = Some(s),

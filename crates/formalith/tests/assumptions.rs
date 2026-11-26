@@ -126,9 +126,14 @@ fn limits() {
     assert_eq!(eval(&["assume(a > 0)", "lim(a*x, x, oo)"]), "oo");
     assert_eq!(eval(&["assume(a < 0)", "lim(a*x, x, oo)"]), "-oo");
     assert_eq!(eval(&["lim(a*x, x, oo)"]), expr("sign(a)*oo"));
+    // Split at `{$a = -1$}`, where the sign of `{$ln(-a)$}` changes
     assert_eq!(
         eval(&["assume(a < 0)", "lim(a^x, x, oo)"]),
-        "lim(a^x, x, oo)"
+        "piecewise(a <= -1, undefined, 0)"
+    );
+    assert_eq!(
+        eval(&["assume(a > 1)", "lim(1/(a - 1)^n, n, oo)"]),
+        "piecewise(a < 2, oo, a = 2, 1, 0)"
     );
 }
 

@@ -1,7 +1,7 @@
 //! The real field `{$RR$}`.
 
 pub(crate) mod approx;
-mod cases;
+pub(crate) mod cases;
 pub(crate) mod expr;
 pub mod numeric;
 pub(crate) mod radicals;

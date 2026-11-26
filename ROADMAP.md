@@ -49,10 +49,10 @@ Ideas and known gaps, roughly by area. `AGENTS.md` describes what exists; this f
 
 ## Assumptions
 
-- Case splits of calculus builtins (`real/cases.rs`) only split a parameter at 0, not at other critical values:
-  `lim(1/(a - 1)^n, n, oo)` with `a > 1` stays unevaluated.
-- Definite integrals with symbolic bounds only assume the sign of the variable between them (`definite::between`),
-  not `a < x < b` as linear relations.
+- Case splits of calculus builtins (`real/cases.rs`) only split at rational points of a single parameter, not at
+  points depending on other parameters (`a = b`). Inner integrals are normalized, and split on the outer variable,
+  before the outer integral assumes its range.
+- Definite integrals with symbolic bounds assume `a < x < b` only for bounds linear in symbols.
 - Integrality only rounds bounds of single symbols: relations between several integers are decided over ℚ, so
   `assume(m integer, n integer, n < m, m < n + 1)` isn't a contradiction.
 - Nonlinear assumptions (`a b > 1`, `a^2 < 2`) and assumptions with builtin constants (`a > pi`) are rejected.

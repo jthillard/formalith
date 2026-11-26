@@ -83,7 +83,7 @@ fn structural_sign(term: &Expr, mode: SignMode) -> SignSet {
             symbol => {
                 let sign = assumption(symbol).sign;
                 if sign.strict().is_none() {
-                    super::cases::record(symbol);
+                    super::cases::record(symbol, Rational::ZERO);
                 }
                 if mode.generic_nonzero && !sign.is_subset(SignSet::ZERO) {
                     sign.intersect(SignSet::NONZERO)
@@ -93,6 +93,9 @@ fn structural_sign(term: &Expr, mode: SignMode) -> SignSet {
             }
         },
         Term::Add(add) => {
+            if let Some(res) = linear_form(term).and_then(|form| single_symbol_sign(&form)) {
+                return res;
+            }
             let terms: Vec<&Expr> = add.iter().collect();
             if has_relational_symbol(&terms) {
                 let signs: Vec<SignSet> = terms.iter().map(|t| structural_sign(t, mode)).collect();
@@ -204,6 +207,11 @@ fn structural_sign(term: &Expr, mode: SignMode) -> SignSet {
                 // `{$ln u$}` has the sign of `{$u - 1$}` for `{$u > 0$}`, from the assumptions when `u` is linear in
                 // symbols with relations, otherwise only checked on constants
                 Context::LN if structural_sign(arg, mode).is_subset(SignSet::POSITIVE) => {
+                    if let Some(res) = linear_form(arg).and_then(|form| {
+                        single_symbol_sign(&form.add(&LinearForm::constant(-Rational::ONE)))
+                    }) {
+                        return res;
+                    }
                     let terms: Vec<&Expr> = match arg {
                         Term::Add(add) => add.iter().collect(),
                         arg => vec![arg],
@@ -238,6 +246,25 @@ fn linear_term(term: &Expr) -> Option<(Option<Symbol>, Rational)> {
         },
         term => Some((Some(symbol(term)?), Rational::ONE)),
     }
+}
+
+/// The possible signs of a form `{$k s + c$}` in a single symbol `s` under the current assumptions, recording the
+/// point `{$-c/k$}` for case splits when it isn't a single sign (see [`super::cases`]). `None` for other forms.
+fn single_symbol_sign(form: &LinearForm) -> Option<SignSet> {
+    let mut coefficients = form.coefficients.iter();
+    let (Some((Var::Symbol(s), k)), None) = (coefficients.next(), coefficients.next()) else {
+        return None;
+    };
+    let assumed = assumption(*s);
+    let res = if assumed.sign == SignSet::ANY && !assumed.integer && !is_relational(*s) {
+        SignSet::ANY
+    } else {
+        linear_signs(form, &[])
+    };
+    if res.strict().is_none() {
+        super::cases::record(*s, -(&form.constant / k));
+    }
+    Some(res)
 }
 
 /// Whether a term is a multiple of a symbol with conditions other than on its sign.

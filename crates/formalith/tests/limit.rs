@@ -154,16 +154,16 @@ fn limits_of_powers_of_negative_constants() {
 
 #[test]
 fn limits_of_powers_of_constants_of_unknown_sign() {
-    // `{$c^g = exp(g ln c)$}` only for `{$c > 0$}`: with `{$a < 0$}`, `{$a + 1$}` may be negative or zero
+    // `{$c^g = exp(g ln c)$}` only for `{$c > 0$}`: split where `{$a + 1$}` and `{$ln|a + 1|$}` change sign
     assert_eq!(
         lim("lim(1/(a+1)^n, n, oo)"),
-        "piecewise(a < 0, lim((a+1)^(-n), n, oo), a = 0, 1, 0)"
+        "piecewise(a < -2, 0, a < -1, undefined, a = -1, lim(0^(-n), n, oo), a < 0, oo, a = 0, 1, 0)"
     );
     let mut env = Environment::new();
     env.eval("assume(a < 0)", R).unwrap();
     assert_eq!(
         line(&parse!("lim(1/(a+1)^n, n, oo)", R, &env)),
-        "lim((a+1)^(-n), n, oo)"
+        "piecewise(a < -2, 0, a < -1, undefined, a = -1, lim(0^(-n), n, oo), oo)"
     );
     env.eval("assume(b > 0)", R).unwrap();
     assert_eq!(line(&parse!("lim(1/(b+1)^n, n, oo)", R, &env)), "0");

@@ -753,6 +753,11 @@ fn case_splits() {
         integrate("lim(x^a, x, 0, 1)"),
         integrate("piecewise(a < 0, oo, a = 0, 1, 0)")
     );
+    // At other points than 0: the sign of `{$a + 1$}`
+    assert_eq!(
+        integrate("integrate(x^a, x, 0, 1)"),
+        integrate("piecewise(a <= -1, oo, 1/(a + 1))")
+    );
     // Inside other expressions
     assert_eq!(
         integrate("2*integrate(exp(a*x), x, 0, oo) + 1"),
