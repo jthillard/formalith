@@ -927,4 +927,14 @@ fn non_real_integrands() {
         integrate("integrate(integrate(x/y, y, x, 2*x), x, 1, 2)"),
         integrate("-5/2*ln(2) + 2*ln(4)")
     );
+    // The variable is a dummy, also when a bound contains it
+    assert_eq!(
+        integrate("integrate(x, x, 1, x)"),
+        integrate("integrate(t, t, 1, x)")
+    );
+    assert_eq!(integrate("integrate(x^2, x, 0, 2*x)"), integrate("8/3*x^3"));
+    assert_eq!(
+        integrate("integrate(exp(x), x, 0, x)"),
+        integrate("exp(x) - 1")
+    );
 }

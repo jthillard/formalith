@@ -63,7 +63,7 @@ use super::{
     abs::{abs_arguments, without_abs},
     factors, linear,
     poly::{Poly, rational_function},
-    risch,
+    replace_symbol, risch,
 };
 
 /// Bits of the numerical check of values computed by substitution.
@@ -198,7 +198,9 @@ fn inner_integrals(
 
 pub(super) fn integrate(f: &Expr, x: Symbol, a: &Expr, b: &Expr) -> IntegrateResult<Expr> {
     if depends(a, x) || depends(b, x) {
-        return Err(IntegrateError::Unsupported);
+        // The variable is a dummy: `{$integral_1^x x dif x = integral_1^x t dif t$}`
+        let t = Symbol::new("@t");
+        return integrate(&replace_symbol(f, x, &variable(t)), t, a, b);
     }
     if a == b {
         return Ok(zero());
