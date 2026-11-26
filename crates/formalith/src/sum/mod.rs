@@ -11,6 +11,9 @@
 //!   functions `{$psi^((m))(k - r)$}`,
 //! - sums term by term.
 //!
+//! Definite sums `{$sum_(k = a)^(s n + c) F(n, k)$}` of hypergeometric terms without antidifference, like
+//! `{$sum_(k = 0)^n binom(n, k) = 2^n$}`, are found with Zeilberger's algorithm (module `zeilberger`).
+//!
 //! Infinite bounds are limits of the antidifference, with [`Term::limit`], so divergent sums give
 //! [`SumError::Divergent`]. A few classic series without antidifference are also known: `{$zeta(s)$}` and
 //! `{$e^x$}`. Products use an antiquotient `G`, `{$G(k + 1) / G(k) = f(k)$}`, made of powers and `{$Gamma$}`
@@ -30,6 +33,7 @@ mod gosper;
 mod polynomial;
 mod product;
 mod taylor;
+mod zeilberger;
 
 pub(crate) use taylor::{
     derive_held_sum, has_held_sum, held_sum_at, held_sum_between, integrate_held_sum,
@@ -44,12 +48,13 @@ use crate::{
         Context, Symbol,
         assumptions::{Assumption, Assumptions, AssumptionsGuard},
     },
+    field::real::R,
     field::real::expr::{
         Expr, Real, constant_sign, depends, fun, has_special_constant, infinity_sign, map_tree,
         one, size, subs, value, variable, zero,
     },
     limit::{Direction, LimitError},
-    term::{Expand, Term},
+    term::{Expand, Fun, Normalize, Term},
 };
 
 /// Maximum number of terms of a sum or product computed term by term.
@@ -135,6 +140,9 @@ impl Term<Real> {
             (Err(SumError::Unsupported), Some(count)) if count <= MAX_TERMS => {
                 Ok(direct(self, k, a, count, zero(), |res, t| res + t))
             }
+            (Err(SumError::Unsupported), None) => zeilberger::definite(self, k, a, b)
+                .map(|res| tidy(&res))
+                .ok_or(SumError::Unsupported),
             (res, _) => res.map(|res| tidy(&res)),
         }
     }
@@ -323,11 +331,40 @@ fn difference(antidifference: &Expr, k: Symbol, a: &Expr, b: &Expr) -> SumResult
 
 /// The value of `f` at `{$k = a$}`, or its limit when it is a removable singularity, like `{$k / k$}` at 0.
 pub(super) fn at(f: &Expr, k: Symbol, a: &Expr) -> SumResult<Expr> {
-    let res = subs(f, k, a);
+    let res = shifted_binomials(&subs(f, k, a));
     if has_special_constant(&res) {
         return limit(f, k, a);
     }
     Ok(res)
+}
+
+/// `{$binom(u, v)$}` with `{$u - v = d$}` an integer value written `{$binom(u, d)$}`, or 0 for `{$d < 0$}` (`{$1 / Gamma$}`
+/// vanishing at non-positive integers): the terms at symbolic bounds, like `{$binom(n, n) = 1$}`.
+fn shifted_binomials(term: &Expr) -> Expr {
+    map_tree(term, &|t| {
+        let Term::Fun(f) = t else { return None };
+        let (Context::BINOMIAL, Some([u, v])) =
+            (f.get_ident(), f.get_args::<Real>().map(Vec::as_slice))
+        else {
+            return None;
+        };
+        let Term::Value(d) = (u - v).expand() else {
+            return None;
+        };
+        if d.value.denominator_ref() != &1u32 || matches!(v, Term::Value(_)) {
+            return None;
+        }
+        Some(if d.value < 0u32 {
+            zero()
+        } else {
+            Term::Fun(Box::new(Fun::new(
+                Context::BINOMIAL,
+                vec![u.clone(), Term::Value(d)],
+                R,
+            )))
+            .normalize()
+        })
+    })
 }
 
 /// The limit of `f` when the integer `k` tends to `point`, an infinite point or a removable singularity.

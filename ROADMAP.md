@@ -88,10 +88,11 @@ Ideas and known gaps, roughly by area. `AGENTS.md` describes what exists; this f
 
 ## Sums
 
-- **Zeilberger's algorithm** (creative telescoping) for definite hypergeometric sums, which Gosper's algorithm
-  can't do: `sum(binomial(n, k), k, 0, n)`, `sum(k binomial(n, k), k, 0, n)` and `sum(binomial(n, k)^2, k, 0, n)`
-  stay unevaluated. Its recurrences could be solved by `holonomic/hyper.rs`, and the parts exist: `gosper.rs`, the
-  parameter fractions `QQ(t)` and `solve_linear`.
+- **Zeilberger's algorithm** beyond order 2 (evaluating the certificate over `QQ(n)` blows up), inhomogeneous
+  recurrences of order 2, *Hyper* with parameters, lower bounds depending on `n` and infinite upper bounds, and
+  boundary terms like `binomial(n, 2n)` (zero only for `n >= 1`), so `sum(binomial(n, 2k), k, 0, n)` stays
+  unevaluated. Gosper's antidifferences with symbolic bounds give generic values
+  (`sum((-1)^k (k + 2) binomial(n, k), k, 0, n) = 0`, wrong at `n = 1`), without the cases Zeilberger's results get.
 - `simplify` may not terminate on non-rational results (`sum::tidy` avoids it).
 
 ## Differential equations

@@ -163,3 +163,79 @@ fn printing() {
         "product_(k = 1)^(n) (k^2+1)"
     );
 }
+
+/// Check that `sum(f, k, a, b)`, `f` and `b` depending on `n`, has a closed form, equal to the sum computed term
+/// by term for a few `n`.
+fn check_definite(f: &str, a: i64, b: &str, from: i64) -> String {
+    let closed = eval(&format!("sum({f}, k, {a}, {b})"));
+    assert!(
+        !closed.contains("sum"),
+        "sum({f}, k, {a}, {b}) not evaluated: {closed}"
+    );
+    for n in from..from + 6 {
+        let difference = eval_statements(
+            SetChoice::R,
+            &[
+                &format!("c(n) := {closed}"),
+                &format!("simplify(c({n}) - subs(sum({f}, k, {a}, {b}), n, {n}))"),
+            ],
+            false,
+        );
+        assert_eq!(
+            difference,
+            Ok("0".to_string()),
+            "sum({f}, k, {a}, {b}) = {closed} at n = {n}"
+        );
+    }
+    closed
+}
+
+#[test]
+fn zeilberger() {
+    assert_eq!(eval("sum(binomial(n, k), k, 0, n)"), eval("2^n"));
+    assert_eq!(eval("sum(k*binomial(n, k), k, 0, n)"), eval("n*2^n/2"));
+    assert_eq!(
+        eval("sum(binomial(n, k)^2, k, 0, n)"),
+        eval("binomial(2*n, n)")
+    );
+    assert_eq!(eval("sum(binomial(n, k)*x^k, k, 0, n)"), eval("(x+1)^n"));
+    assert_eq!(eval("sum((-1)^k*binomial(n, k), k, 0, n)"), "0");
+    assert_eq!(eval("sum(binomial(n, k), k, 0, n-1)"), eval("2^n - 1"));
+    assert_eq!(eval("sum(binomial(2*n, k), k, 0, 2*n)"), eval("4^n"));
+    // Vandermonde's identity, with a parameter
+    assert_eq!(
+        eval("sum(binomial(n, k)*binomial(m, n - k), k, 0, n)"),
+        eval("binomial(m + n, n)")
+    );
+    // The closed form from `{$n = 1$}`, the certificate having a pole at 0
+    assert_eq!(
+        eval("sum(binomial(2*n, 2*k), k, 0, n)"),
+        eval("piecewise(n = 0, 1, 4^n/2)")
+    );
+    assert_eq!(
+        eval("sum(binomial(n, k)/((k + 2)*(k + 3)), k, 0, n)"),
+        eval("(4*n*2^n - 4*2^n + n + 5)/((n + 1)*(n + 2)*(n + 3))")
+    );
+    // No hypergeometric closed form: Franel numbers, central Delannoy numbers
+    assert!(eval("sum(binomial(n, k)^3, k, 0, n)").starts_with("sum("));
+    assert!(eval("sum(binomial(n, k)*binomial(n + k, k), k, 0, n)").starts_with("sum("));
+    for (f, a, b, from) in [
+        ("binomial(n, k)", 0, "n", 0),
+        ("k*binomial(n, k)", 0, "n", 0),
+        ("k^2*binomial(n, k)", 0, "n", 0),
+        ("binomial(n, k)^2", 0, "n", 0),
+        ("binomial(n, k)/(k + 1)", 0, "n", 0),
+        ("binomial(n, k)*binomial(n, n - k)", 0, "n", 0),
+        ("binomial(n, k)*2^k", 0, "n", 0),
+        ("binomial(n, k)", 1, "n", 1),
+        ("binomial(n, k)", 0, "n - 1", 1),
+        ("binomial(2*n, k)", 0, "2*n", 0),
+        ("binomial(n, k)*binomial(2*k, k)*(-1/4)^k", 0, "n", 0),
+        ("binomial(n, k)*binomial(n, k + 1)", 0, "n", 0),
+        ("binomial(n + k, k)/2^k", 0, "n", 0),
+        ("binomial(2*n, 2*k)", 0, "n", 0),
+        ("binomial(n, k)/((k + 2)*(k + 3))", 0, "n", 0),
+    ] {
+        check_definite(f, a, b, from);
+    }
+}

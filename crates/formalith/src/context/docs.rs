@@ -739,10 +739,12 @@ pub static BUILTIN_DOCS: [BuiltinDoc; Context::BUILTIN_NAMES.len()] = [
         "sum(f, k, a, b)",
         "Sum of f for the integers k from a to b.",
         "Bounds may be oo or -oo. Closed forms come from Faulhaber's formula, geometric sums, Gosper's algorithm, \
-         digamma functions for rational functions and known series.",
+         digamma functions for rational functions and known series, and definite sums of hypergeometric terms up to \
+         a bound depending on n (like binomial(n, k) from 0 to n) from Zeilberger's algorithm.",
         &[
             ex("sum(k, k, 1, n)", "n (n + 1)/2"),
             ex("sum(1/k^2, k, 1, oo)", "pi^2/6"),
+            ex("sum(binomial(n, k), k, 0, n)", "2^n"),
         ],
     ),
     doc(

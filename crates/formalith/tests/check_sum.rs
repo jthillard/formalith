@@ -206,6 +206,107 @@ fn infinite_sums() {
     );
 }
 
+/// `expr` with the identifier `n` replaced by `(value)`.
+fn substitute_n(expr: &str, value: i64) -> String {
+    let chars: Vec<char> = expr.chars().collect();
+    let identifier = |c: Option<&char>| c.is_some_and(|c| c.is_alphanumeric() || *c == '_');
+    let mut res = String::new();
+    for (i, c) in chars.iter().enumerate() {
+        let before = i.checked_sub(1).and_then(|j| chars.get(j));
+        if *c == 'n' && !identifier(before) && !identifier(chars.get(i + 1)) {
+            res.push_str(&format!("({value})"));
+        } else {
+            res.push(*c);
+        }
+    }
+    res
+}
+
+/// Check a definite sum `sum(f, k, a, b)`, `f` and `b` depending on `n` (Zeilberger's algorithm), against the sums
+/// term by term at `n = from, ..., from + 5`. `input` is `f; a; b; from`.
+fn definite_sum(input: &str) -> Verdict {
+    let parts: Vec<&str> = input.split(';').map(str::trim).collect();
+    let [f, a, b, from] = parts.as_slice() else {
+        panic!("`{input}` isn't `f; a; b; from`");
+    };
+    let from: i64 = from.parse().unwrap();
+    let mut env = env_with(&[]);
+    let closed = match eval(&mut env, &format!("sum({f}, k, {a}, {b})")) {
+        Ok(res) if !res.contains("sum") => res,
+        Ok(res) => return Verdict::Skip(format!("unevaluated: {res}")),
+        Err(e) => return Verdict::Skip(e),
+    };
+    let Ok(s) = Function::new(&env, &closed, &["n"]) else {
+        return Verdict::Skip(format!("can't define `{closed}`"));
+    };
+    let mut valid = 0;
+    for n in from..from + 6 {
+        let direct = format!(
+            "sum({}, k, {a}, {})",
+            substitute_n(f, n),
+            substitute_n(b, n)
+        );
+        let (Some(direct), Some(value)) = (number(&env, &direct), s.at(&[n.to_string()])) else {
+            continue;
+        };
+        if !close(direct, value, 1e-9) {
+            return Verdict::Wrong(format!("S(n) = {closed}: S({n}) = {value} but {direct}"));
+        }
+        valid += 1;
+    }
+    if valid >= 4 {
+        Verdict::Pass
+    } else {
+        Verdict::Skip(format!("only {valid} valid points for S(n) = {closed}"))
+    }
+}
+
+#[test]
+fn definite_sums() {
+    check_all(
+        "definite sums",
+        &[
+            "binomial(n, k); 0; n; 0",
+            "k*binomial(n, k); 0; n; 0",
+            "k^2*binomial(n, k); 0; n; 0",
+            "binomial(n, k)^2; 0; n; 0",
+            "k*binomial(n, k)^2; 0; n; 1",
+            "(-1)^k*binomial(n, k); 0; n; 1",
+            "binomial(n, k)*3^k; 0; n; 0",
+            "binomial(n, k)/(k + 1); 0; n; 0",
+            "binomial(n, k); 0; n - 1; 1",
+            "binomial(n, k); 1; n; 1",
+            "binomial(2*n, k); 0; 2*n; 0",
+            "binomial(2*n, 2*k); 0; n; 1",
+            "binomial(n, k)*binomial(4, n - k); 0; n; 0",
+            "binomial(n + k, k)/2^k; 0; n; 0",
+            "binomial(n, k)*binomial(2*k, k)*(-1/4)^k; 0; n; 0",
+        ],
+        definite_sum,
+    );
+}
+
+/// A random hypergeometric summand in `n` and `k`, with the upper bound and the first `n` checked: 2, since Gosper's
+/// antidifferences give generic values, like `{$sum_(k = 0)^n (-1)^k (k + 2) binom(n, k) = 0$}`, wrong for `{$n = 1$}`.
+fn definite_summand(rng: &mut Rng) -> String {
+    let atom = |rng: &mut Rng| match rng.below(6) {
+        0 => "binomial(n, k)".to_owned(),
+        1 => format!("binomial(n, k + {})", rng.range(1, 2)),
+        2 => format!("{}^k", rng.pick(&["2", "3", "(-1)", "1/2", "(-2)"])),
+        3 => format!("(k + {})", rng.range(0, 3)),
+        4 => format!("1/(k + {})", rng.range(1, 3)),
+        _ => format!("binomial({}*k, k)", rng.range(1, 2)),
+    };
+    let factors: Vec<String> = (0..rng.range(1, 3)).map(|_| atom(rng)).collect();
+    format!("binomial(n, k)*{}; 0; n; 2", factors.join("*"))
+}
+
+#[test]
+#[ignore = "fuzz: random definite hypergeometric sums, run with --ignored"]
+fn fuzz_definite_sums() {
+    fuzz("fuzz definite sums", 40, definite_summand, definite_sum);
+}
+
 /// A random summand in `k`.
 fn summand(rng: &mut Rng) -> String {
     let atom = |rng: &mut Rng| match rng.below(8) {

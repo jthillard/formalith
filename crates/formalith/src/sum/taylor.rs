@@ -1630,6 +1630,29 @@ fn hyper_series(found: &Coefficients, proven: &Proven, k: Symbol) -> Option<Expr
             res + c * &w_power(w, &exponent(&value(Rational::from(j))))
         });
     let n = variable(k);
+    let general = hypergeometric_combination(&solutions, &alpha, &n, n0)?;
+    let term = general * w_power(w, &exponent(&n));
+    let start = value(Rational::from(n0));
+    if e0.denominator_ref() == &1u32 {
+        // Indexed by the exponent of `w`
+        let shifted = subs(&tidy_term(&term, k), k, &(&n - &value(e0.clone())));
+        res += held_sum(tidy(&shifted), k, &start + &value(e0.clone()));
+    } else {
+        res += held_sum(tidy_term(&term, k), k, start);
+    }
+    Some(res)
+}
+
+/// `{$sum_i alpha_i h_i(n)$}` for hypergeometric solutions `{$h_i(n) = Z^n C(n) product_(m = n_0)^(n - 1) A(m) / B(m)$}`,
+/// complex ones written as real parts, conjugate pairs once: `{$2 |Z|^n (Re D(n) cos(n theta) - Im D(n) sin(n theta))$}`
+/// with `{$D = alpha C$}`.
+pub(super) fn hypergeometric_combination(
+    solutions: &[holonomic::hyper::Solution],
+    alpha: &[holonomic::hyper::Gaussian],
+    n: &Expr,
+    n0: usize,
+) -> Option<Expr> {
+    use holonomic::hyper::Gaussian;
     let l = Symbol::new("@j");
     let poly = |p: &Poly<Rational>, v: &Expr| {
         p.coefficients()
@@ -1641,14 +1664,14 @@ fn hyper_series(found: &Coefficients, proven: &Proven, k: Symbol) -> Option<Expr
     };
     let conjugate = |z: &Gaussian| [z[0].clone(), -z[1].clone()];
     let mut general = zero();
-    for (i, (solution, a)) in solutions.iter().zip(&alpha).enumerate() {
+    for (i, (solution, a)) in solutions.iter().zip(alpha).enumerate() {
         if a.is_zero() {
             continue;
         }
         // Conjugate pairs once, the one with a positive imaginary part
         let paired = solutions
             .iter()
-            .zip(&alpha)
+            .zip(alpha)
             .enumerate()
             .any(|(j, (other, b))| {
                 j != i
@@ -1667,16 +1690,16 @@ fn hyper_series(found: &Coefficients, proven: &Proven, k: Symbol) -> Option<Expr
         };
         let d = solution.c.scale(a);
         let (re, im) = (
-            poly(&d.map(|c| c[0].clone()), &n),
-            poly(&d.map(|c| c[1].clone()), &n),
+            poly(&d.map(|c| c[0].clone()), n),
+            poly(&d.map(|c| c[1].clone()), n),
         );
         let (u, v) = (value(solution.z[0].clone()), value(solution.z[1].clone()));
         let part = if solution.z[1] == 0u32 {
-            u.pow(&n) * re
+            u.pow(n) * re
         } else {
             let theta = arg(&u, &v)?;
-            let modulus = (&u * &u + &v * &v).pow(&(&n / &value(Rational::from(2))));
-            let angle = &n * &theta;
+            let modulus = (&u * &u + &v * &v).pow(&(n / &value(Rational::from(2))));
+            let angle = n * &theta;
             modulus * (re * fun(Context::COS, angle.clone()) - im * fun(Context::SIN, angle))
         };
         let ratio = poly(&solution.a, &variable(l)) / poly(&solution.b, &variable(l));
@@ -1684,21 +1707,12 @@ fn hyper_series(found: &Coefficients, proven: &Proven, k: Symbol) -> Option<Expr
             one()
         } else {
             ratio
-                .product(l, &value(Rational::from(n0)), &(&n - &one()))
+                .product(l, &value(Rational::from(n0)), &(n - &one()))
                 .ok()?
         };
         general += value(scale) * part * product;
     }
-    let term = general * w_power(w, &exponent(&n));
-    let start = value(Rational::from(n0));
-    if e0.denominator_ref() == &1u32 {
-        // Indexed by the exponent of `w`
-        let shifted = subs(&tidy_term(&term, k), k, &(&n - &value(e0.clone())));
-        res += held_sum(tidy(&shifted), k, &start + &value(e0.clone()));
-    } else {
-        res += held_sum(tidy_term(&term, k), k, start);
-    }
-    Some(res)
+    Some(general)
 }
 
 /// `{$w^e$}`, as `{$(plus.minus 1)^e x^(-e)$}` for `{$w = plus.minus 1/x$}`.
@@ -2098,7 +2112,7 @@ fn consistent_at_sample(rows: &[Vec<Elem>], unknowns: usize) -> bool {
 
 /// The general term tidied: powers of values split ([`split_powers`]), factorials merged, also with the
 /// duplication formula, and denominators of linear factors cleared ([`clear_denominators`]).
-fn tidy_term(term: &Expr, k: Symbol) -> Expr {
+pub(super) fn tidy_term(term: &Expr, k: Symbol) -> Expr {
     let term = combine_factorials(&split_powers(term, k));
     let term = combine_factorials(&split_powers(&half_gammas(&duplicate_gammas(&term)), k));
     factor_denominators(&tidy(&merge_powers(

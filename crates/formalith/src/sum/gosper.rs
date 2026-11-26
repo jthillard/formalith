@@ -40,7 +40,7 @@ pub(super) fn antidifference(t: &Expr, k: Symbol) -> Option<Expr> {
 
 /// The product of the factors of `t` which aren't handled by [`special_ratio`], a rational function of `k` when
 /// `t` is hypergeometric, and the product of the other factors.
-fn split_rational(t: &Expr, k: Symbol, params: &mut Params) -> (Expr, Expr) {
+pub(super) fn split_rational(t: &Expr, k: Symbol, params: &mut Params) -> (Expr, Expr) {
     let (factors, coefficient): (Vec<Expr>, Expr) = match t {
         Term::Mul(mul) => (
             mul.iter().cloned().collect(),
@@ -51,7 +51,7 @@ fn split_rational(t: &Expr, k: Symbol, params: &mut Params) -> (Expr, Expr) {
     factors.iter().fold(
         (Term::one(crate::field::real::R), coefficient),
         |(rational, rest), factor| {
-            if depends(factor, k) && special_factor(factor, k, params).is_none() {
+            if depends(factor, k) && special_factor(factor, k, k, params).is_none() {
                 (rational * factor, rest)
             } else {
                 (rational, rest * factor)
@@ -60,17 +60,24 @@ fn split_rational(t: &Expr, k: Symbol, params: &mut Params) -> (Expr, Expr) {
     )
 }
 
-/// The ratio of a factor `{$u^e$}` of a hypergeometric term, `u` being handled by [`special_ratio`] and `e` an
-/// integer.
-fn special_factor(factor: &Expr, k: Symbol, params: &mut Params) -> Option<(EPoly, EPoly)> {
+/// The ratio of a factor `{$u^e$}` of a hypergeometric term when `shift` is incremented, as polynomials in `k`, `u`
+/// being handled by [`special_ratio`] and `e` an integer.
+fn special_factor(
+    factor: &Expr,
+    shift: Symbol,
+    k: Symbol,
+    params: &mut Params,
+) -> Option<(EPoly, EPoly)> {
     let (base, exponent) = match factor {
-        Term::Pow(pow) if !depends(&pow.exponant, k) => match &**pow.exponant {
-            Term::Value(e) => ((*pow.base).clone(), i64::try_from(&e.value).ok()?),
-            _ => return None,
-        },
+        Term::Pow(pow) if !depends(&pow.exponant, shift) && !depends(&pow.exponant, k) => {
+            match &**pow.exponant {
+                Term::Value(e) => ((*pow.base).clone(), i64::try_from(&e.value).ok()?),
+                _ => return None,
+            }
+        }
         _ => (factor.clone(), 1),
     };
-    let (n, d) = special_ratio(&base, k, params)?;
+    let (n, d) = special_ratio(&base, shift, k, params)?;
     let (n, d) = if exponent < 0 { (d, n) } else { (n, d) };
     let e = usize::try_from(exponent.unsigned_abs()).ok()?;
     Some((n.pow(e), d.pow(e)))
@@ -80,6 +87,17 @@ fn special_factor(factor: &Expr, k: Symbol, params: &mut Params) -> Option<(EPol
 /// integer powers of rational functions of `k`, powers `{$c^(alpha k + beta)$}`, exponentials, and factorials,
 /// `{$Gamma$}` and binomial coefficients of linear arguments with integer slopes.
 pub(super) fn ratio(t: &Expr, k: Symbol, params: &mut Params) -> Option<(EPoly, EPoly)> {
+    ratio_in(t, k, k, params)
+}
+
+/// The ratio `{$t(n + 1) / t(n)$}` for the variable `{$n = $}` `shift`, as a reduced fraction of polynomials in `k`
+/// (whose coefficients may contain `n`), if `t` is hypergeometric in `n` (see [`ratio`]).
+pub(super) fn ratio_in(
+    t: &Expr,
+    shift: Symbol,
+    k: Symbol,
+    params: &mut Params,
+) -> Option<(EPoly, EPoly)> {
     let mut num = EPoly::one();
     let mut den = EPoly::one();
     let mut rational = Term::one(crate::field::real::R);
@@ -87,8 +105,8 @@ pub(super) fn ratio(t: &Expr, k: Symbol, params: &mut Params) -> Option<(EPoly, 
         Term::Mul(mul) => mul.iter().cloned().collect(),
         _ => vec![t.clone()],
     };
-    for factor in factors.iter().filter(|factor| depends(factor, k)) {
-        match special_factor(factor, k, params) {
+    for factor in factors.iter().filter(|factor| depends(factor, shift)) {
+        match special_factor(factor, shift, k, params) {
             Some((n, d)) => {
                 num = num.mul(&n);
                 den = den.mul(&d);
@@ -98,9 +116,19 @@ pub(super) fn ratio(t: &Expr, k: Symbol, params: &mut Params) -> Option<(EPoly, 
     }
     // The rational part `{$p(k + 1) q(k) / (p(k) q(k + 1))$}`
     let (p, q) = params.rational(&rational, k)?;
-    let one = Elem::one();
-    num = num.mul(&p.shift(&one)).mul(&q);
-    den = den.mul(&p).mul(&q.shift(&one));
+    let (p1, q1) = if shift == k {
+        let one = Elem::one();
+        (p.shift(&one), q.shift(&one))
+    } else {
+        let shifted = subs(
+            &rational,
+            shift,
+            &(variable(shift) + value(Rational::from(1))),
+        );
+        params.rational(&shifted, k)?
+    };
+    num = num.mul(&p1).mul(&q);
+    den = den.mul(&p).mul(&q1);
     if num.is_zero() || den.is_zero() {
         return None;
     }
@@ -108,18 +136,26 @@ pub(super) fn ratio(t: &Expr, k: Symbol, params: &mut Params) -> Option<(EPoly, 
 }
 
 /// `{$alpha$}` with `{$g(k + 1) - g(k) = alpha$}`, if it is free of `k`.
-fn step(g: &Expr, k: Symbol) -> Option<Expr> {
+pub(super) fn step(g: &Expr, k: Symbol) -> Option<Expr> {
     let alpha = (subs(g, k, &(variable(k) + value(Rational::from(1)))) - g).expand();
     (!depends(&alpha, k)).then_some(alpha)
 }
 
-/// The ratio of a factor which isn't a rational function: `{$c^g$}`, `{$exp(g)$}`, `{$g!$}`, `{$Gamma(g)$}` and
-/// `{$binom(u, v)$}` with `g`, `u`, `v` linear in `k`. `None` for other factors.
-fn special_ratio(u: &Expr, k: Symbol, params: &mut Params) -> Option<(EPoly, EPoly)> {
+/// The ratio of a factor which isn't a rational function when `shift` is incremented, as polynomials in `k`:
+/// `{$c^g$}`, `{$exp(g)$}`, `{$g!$}`, `{$Gamma(g)$}` and `{$binom(u, v)$}` with `g`, `u`, `v` linear in `shift`
+/// (and polynomials in `k`). `None` for other factors.
+fn special_ratio(
+    u: &Expr,
+    shift: Symbol,
+    k: Symbol,
+    params: &mut Params,
+) -> Option<(EPoly, EPoly)> {
+    // The step of `g` in `shift`, free of `k`
+    let step_of = |g: &Expr| step(g, shift).filter(|alpha| !depends(alpha, k));
     match u {
-        Term::Pow(pow) if !depends(&pow.base, k) => {
+        Term::Pow(pow) if !depends(&pow.base, shift) && !depends(&pow.base, k) => {
             // `{$c^(alpha k + beta)$}`
-            let alpha = step(&pow.exponant, k)?;
+            let alpha = step_of(&pow.exponant)?;
             let r = params.elem(&pow.base.pow(&alpha))?;
             Some((EPoly::constant(r), EPoly::one()))
         }
@@ -127,17 +163,17 @@ fn special_ratio(u: &Expr, k: Symbol, params: &mut Params) -> Option<(EPoly, EPo
             let args = fun.get_args::<crate::field::real::expr::Real>()?;
             match (fun.get_ident(), args.as_slice()) {
                 (Context::EXP, [g]) => {
-                    let alpha = step(g, k)?;
+                    let alpha = step_of(g)?;
                     let r = params.elem(&crate::field::real::expr::fun(Context::EXP, alpha))?;
                     Some((EPoly::constant(r), EPoly::one()))
                 }
-                (Context::FACTORIAL, [g]) => factorial_ratio(g, 1, k, params),
-                (Context::GAMMA, [g]) => factorial_ratio(g, 0, k, params),
+                (Context::FACTORIAL, [g]) => factorial_ratio(g, 1, shift, k, params),
+                (Context::GAMMA, [g]) => factorial_ratio(g, 0, shift, k, params),
                 (Context::BINOMIAL, [n, m]) => {
                     // `{$binom(n, m) = n! / (m! (n - m)!)$}`
-                    let (n1, d1) = factorial_ratio(n, 1, k, params)?;
-                    let (n2, d2) = factorial_ratio(m, 1, k, params)?;
-                    let (n3, d3) = factorial_ratio(&(n - m), 1, k, params)?;
+                    let (n1, d1) = factorial_ratio(n, 1, shift, k, params)?;
+                    let (n2, d2) = factorial_ratio(m, 1, shift, k, params)?;
+                    let (n3, d3) = factorial_ratio(&(n - m), 1, shift, k, params)?;
                     Some((n1.mul(&d2).mul(&d3), d1.mul(&n2).mul(&n3)))
                 }
                 _ => None,
@@ -147,13 +183,19 @@ fn special_ratio(u: &Expr, k: Symbol, params: &mut Params) -> Option<(EPoly, EPo
     }
 }
 
-/// The ratio of `{$(g + s - 1)!$}`, `s` being 1 for factorials and 0 for `{$Gamma$}`, `g` linear in `k` with an
-/// integer slope.
-fn factorial_ratio(g: &Expr, s: i64, k: Symbol, params: &mut Params) -> Option<(EPoly, EPoly)> {
-    if !depends(g, k) {
+/// The ratio of `{$(g + s - 1)!$}` when `shift` is incremented, as polynomials in `k`, `s` being 1 for factorials
+/// and 0 for `{$Gamma$}`, `g` linear in `shift` with an integer slope and polynomial in `k`.
+fn factorial_ratio(
+    g: &Expr,
+    s: i64,
+    shift: Symbol,
+    k: Symbol,
+    params: &mut Params,
+) -> Option<(EPoly, EPoly)> {
+    if !depends(g, shift) {
         return Some((EPoly::one(), EPoly::one()));
     }
-    let alpha = match step(g, k)? {
+    let alpha = match step(g, shift)? {
         Term::Value(v) => i64::try_from(&v.value).ok()?,
         _ => return None,
     };
@@ -172,7 +214,7 @@ fn factorial_ratio(g: &Expr, s: i64, k: Symbol, params: &mut Params) -> Option<(
 }
 
 /// The Gosper form `(a, b, c)` of the ratio `{$num / den$}`.
-fn gosper_form(num: &EPoly, den: &EPoly, k: Symbol) -> Option<(EPoly, EPoly, EPoly)> {
+pub(super) fn gosper_form(num: &EPoly, den: &EPoly, k: Symbol) -> Option<(EPoly, EPoly, EPoly)> {
     let (mut a, mut b) = (num.clone(), den.clone());
     let mut c = EPoly::one();
     for j in shifts(&a, &b, k)? {
@@ -226,7 +268,7 @@ fn shifts(a: &EPoly, b: &EPoly, k: Symbol) -> Option<Vec<i64>> {
 
 /// A polynomial `x` with `{$a(k) x(k + 1) - b(k) x(k) = c(k)$}`, if there is one.
 pub(super) fn solve_key_equation(a: &EPoly, b: &EPoly, c: &EPoly) -> Option<EPoly> {
-    let degree = degree_bound(a, b, c)?;
+    let degree = degree_bound(a, b, c.degree())?;
     if degree > MAX_DEGREE {
         return None;
     }
@@ -257,13 +299,12 @@ pub(super) fn solve_key_equation(a: &EPoly, b: &EPoly, c: &EPoly) -> Option<EPol
     Some(EPoly::new(x))
 }
 
-/// An upper bound of the degree of a polynomial solution of `{$a(k) x(k + 1) - b(k) x(k) = c(k)$}`, `None` if
-/// there is none. Written `{$(a - b) (x(k + 1) + x(k)) / 2 + (a + b) (x(k + 1) - x(k)) / 2 = c$}`, the leading
+/// An upper bound of the degree of a polynomial solution of `{$a(k) x(k + 1) - b(k) x(k) = c(k)$}`, `c` being of
+/// degree `c_degree`, `None` if there is none. Written `{$(a - b) (x(k + 1) + x(k)) / 2 + (a + b) (x(k + 1) - x(k)) / 2 = c$}`, the leading
 /// terms of the left side cancel only for one degree.
-fn degree_bound(a: &EPoly, b: &EPoly, c: &EPoly) -> Option<usize> {
+pub(super) fn degree_bound(a: &EPoly, b: &EPoly, c_degree: usize) -> Option<usize> {
     let difference = a.sub(b);
     let sum = a.add(b);
-    let c_degree = c.degree();
     if !difference.is_zero() && (sum.is_zero() || difference.degree() >= sum.degree()) {
         return c_degree.checked_sub(difference.degree());
     }
