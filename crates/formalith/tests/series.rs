@@ -377,6 +377,18 @@ fn whole_series_of_rational_functions_with_multiple_or_irrational_poles() {
 }
 
 #[test]
+fn whole_series_with_related_radicals() {
+    // Bases with common factors share their radicals
+    assert_eq!(whole("sqrt(2 + 2*x)/sqrt(1 + x), x, 0"), "2^(1/2)");
+    assert_eq!(whole("sqrt(x^2 + 2*x + 1), x, 0"), "x+1");
+    assert_eq!(whole("sqrt(1 + x)*sqrt(1 - x) - sqrt(1 - x^2), x, 0"), "0");
+    assert_eq!(
+        whole("sqrt(2 + 2*x) - sqrt(2)*sqrt(1 + x) + exp(x), x, 0"),
+        "sum((x^k)*(k!^-1), k, 0, oo)"
+    );
+}
+
+#[test]
 fn whole_series_with_bernoulli_and_euler_numbers() {
     assert_eq!(
         whole("tan(x), x, 0"),

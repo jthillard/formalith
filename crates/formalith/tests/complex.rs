@@ -245,7 +245,10 @@ fn whole_series() {
         eval("series(exp(x) + i*x, x, 0, oo)"),
         eval("i*x + sum(x^k/k!, k, 0, oo)")
     );
-    assert!(eval("series(sqrt(1 + i*x), x, 0, oo)").starts_with("series("));
+    assert_eq!(
+        eval("approx(subs(series(sqrt(1 + i*x), x, 0, oo), x, 1/2))"),
+        eval("approx(sqrt(1 + i/2))")
+    );
     // Held sums in `C` are evaluated, differentiated and approximated
     assert_eq!(
         eval("approx(subs(series(x*exp(i*x), x, 0, oo), x, 2))"),

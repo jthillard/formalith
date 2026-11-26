@@ -139,11 +139,40 @@ fn whole_series(
     if let Some(res) = known_series(f, x, point, direction, k) {
         return Ok(res);
     }
+    if let Some(res) = algebraic_polynomial(f, x, point, direction) {
+        return Ok(res);
+    }
     let res = split_series(f, x, point, direction, k, split);
     if res.is_err() && split && is_rational_function(f) && f.symbols().len() == 1 {
         return rational_series(f, x, point, direction, k).or(res);
     }
     res
+}
+
+/// An algebraic function `f` with radicals which is a polynomial of degree below [`MAX_DEGREE`] + 1, like
+/// `{$sqrt(2 + 2x) / sqrt(1 + x) = sqrt(2)$}`: a derivative of `f` is zero in the tower of its radicals, so `f` is its
+/// Taylor polynomial at the point (finite points only).
+fn algebraic_polynomial(f: &Expr, x: Symbol, point: &Expr, direction: Direction) -> Option<Expr> {
+    let radical = |t: &Expr| {
+        matches!(t, Term::Pow(pow) if matches!(&**pow.exponant, Term::Value(e) if e.value.denominator_ref() != &1u32) && depends(&pow.base, x))
+    };
+    let found = std::cell::Cell::new(false);
+    map_tree(f, &|t| {
+        found.set(found.get() || radical(t));
+        None
+    });
+    if !found.get() || infinity_sign(point).is_some() {
+        return None;
+    }
+    let mut derivative = f.clone();
+    for degree in 0..=MAX_DEGREE {
+        derivative = derivative.derivative(x);
+        if holonomic::algebraic::is_zero(&derivative, x) {
+            let order = Rational::from(degree + 1);
+            return f.series(x, point, &order, direction).ok();
+        }
+    }
+    None
 }
 
 /// The series of `f` from the partial fractions over the roots of its denominator, which must be simple: a real
@@ -1723,6 +1752,9 @@ fn tidy_held_sum(body: &Expr, k: Symbol, a: &Expr, x: Symbol) -> Expr {
 
 /// `{$sum_(k = a)^oo f$}`, not evaluated.
 fn held_sum(f: Expr, k: Symbol, a: Expr) -> Expr {
+    if f.is_zero() {
+        return zero();
+    }
     let oo = variable(Context::OO);
     Term::Fun(Box::new(Fun::new(
         Context::held_sum(),

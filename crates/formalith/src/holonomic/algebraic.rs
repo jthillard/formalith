@@ -7,11 +7,11 @@
 //! a differential equation of `f`, and an element which is zero in `A` is identically zero (a non-zero one may
 //! still be zero, when the bases have relations of their own).
 
-use malachite::Rational;
+use malachite::{Integer, Rational};
 
 use crate::{
     context::Symbol,
-    field::real::expr::{Expr, depends},
+    field::real::expr::{Expr, depends, map_tree, subs, value, zero},
     polynom::{dense::Coefficient, fraction::solve_linear_unique},
     sum::field::Params,
     term::Term,
@@ -24,7 +24,7 @@ use super::{
 };
 
 /// Largest dimension of the tower over `{$K(w)$}`.
-const MAX_DIMENSION: usize = 16;
+const MAX_DIMENSION: usize = 64;
 
 /// Largest absolute value of an integer exponent.
 const MAX_EXPONENT: i64 = 64;
@@ -54,6 +54,7 @@ impl Tower {
     /// `w` (functions or symbolic exponents depending on `w`), if it has no such radical, or if the tower is too
     /// big.
     fn new(f: &Expr, w: Symbol, params: &mut Params) -> Option<Self> {
+        let f = &split_bases(f, w);
         let mut radicals = vec![];
         let mut orders = vec![];
         collect(f, w, &mut radicals, &mut orders)?;
@@ -80,7 +81,7 @@ impl Tower {
         };
         for (k, base) in radicals.iter().enumerate() {
             // The base only has radicals of the previous levels, whose deltas are known
-            let b = tower.element(base, params)?;
+            let b = tower.element_split(base, params)?;
             let db = tower.derive(&b);
             let q = RatFun::from_rational(Rational::from(tower.orders[k]));
             let delta = scale(&tower.times(&db, &tower.inverse(&b)?), &q.inverse());
@@ -211,17 +212,22 @@ impl Tower {
 
     /// `f` as an element of the tower, `None` if it divides by a zero divisor.
     fn element(&self, f: &Expr, params: &mut Params) -> Option<Element> {
+        self.element_split(&split_bases(f, self.w), params)
+    }
+
+    /// [`Tower::element`] for `f` whose bases are split by [`split_bases`].
+    fn element_split(&self, f: &Expr, params: &mut Params) -> Option<Element> {
         if !has_radical(f, self.w) {
             let (num, den) = params.rational(f, self.w)?;
             return Some(self.constant(RatFun { num, den }));
         }
         match f {
             Term::Add(add) => add.iter().try_fold(self.zero(), |res, t| {
-                Some(plus(&res, &self.element(t, params)?))
+                Some(plus(&res, &self.element_split(t, params)?))
             }),
             Term::Mul(mul) => mul.iter().try_fold(
                 self.constant(RatFun::from_rational(mul.coefficient.clone())),
-                |res, t| Some(self.times(&res, &self.element(t, params)?)),
+                |res, t| Some(self.times(&res, &self.element_split(t, params)?)),
             ),
             Term::Pow(pow) => {
                 let Term::Value(e) = &**pow.exponant else {
@@ -229,7 +235,7 @@ impl Tower {
                 };
                 if let Ok(n) = i64::try_from(&e.value) {
                     let n = Some(n).filter(|n| n.abs() <= MAX_EXPONENT)?;
-                    return self.pow(&self.element(&pow.base, params)?, n);
+                    return self.pow(&self.element_split(&pow.base, params)?, n);
                 }
                 // `{$b^(p/r) = y^(p q/r)$}`
                 let k = self.radicals.iter().position(|b| b == &*pow.base)?;
@@ -253,7 +259,8 @@ fn scale(a: &Element, c: &RatFun) -> Element {
     a.iter().map(|x| x.times(c)).collect()
 }
 
-/// Whether `f` has a rational power with a non-integer exponent of a base depending on `w`.
+/// Whether `f` has a rational power with a non-integer exponent of a base depending on `w` or of a positive
+/// rational.
 fn has_radical(f: &Expr, w: Symbol) -> bool {
     match f {
         Term::Add(add) => add.iter().any(|t| has_radical(t, w)),
@@ -261,16 +268,93 @@ fn has_radical(f: &Expr, w: Symbol) -> bool {
         Term::Pow(pow) => {
             has_radical(&pow.base, w)
                 || (matches!(&**pow.exponant, Term::Value(e) if e.value.denominator_ref() != &1u32)
-                    && depends(&pow.base, w))
+                    && (depends(&pow.base, w) || is_positive_value(&pow.base)))
         }
         Term::Value(_) | Term::Symbol(_) | Term::Fun(_) => false,
     }
 }
 
+/// Whether `b` is a positive rational, whose roots are generators of the tower (normalization writes constant
+/// radicals with independent bases, so `{$sqrt(2)^2 = 2$}` is known there).
+fn is_positive_value(b: &Expr) -> bool {
+    matches!(b, Term::Value(c) if c.value > 0u32)
+}
+
+/// `f` with the bases of its radicals depending on `w` split into their factors over `{$QQ$}`, so that related bases
+/// share their generators: `{$b = c product g_i^(e_i)$}` with `{$g_i(0) > 0$}` gives `{$b^r = c^r product g_i^(e_i r)$}`,
+/// which holds near `{$w = 0^+$}` (`{$sqrt(2 + 2w) = sqrt(2) sqrt(1 + w)$}`, `{$sqrt(w^2 + 2w + 1) = 1 + w$}`). Bases
+/// with radicals, vanishing at 0 or with a negative constant under an even root are kept.
+fn split_bases(f: &Expr, w: Symbol) -> Expr {
+    map_tree(f, &|t| {
+        let Term::Pow(pow) = t else { return None };
+        let Term::Value(e) = &**pow.exponant else {
+            return None;
+        };
+        if e.value.denominator_ref() == &1u32 || !depends(&pow.base, w) || has_radical(&pow.base, w) {
+            return None;
+        }
+        split_base(&pow.base, &e.value, w)
+    })
+}
+
+/// `{$b^e$}` with the factors of `b` split, see [`split_bases`].
+fn split_base(b: &Expr, e: &Rational, w: Symbol) -> Option<Expr> {
+    let factored = b.factor();
+    let factors: Vec<&Expr> = match &factored {
+        Term::Mul(mul) => mul.iter().collect(),
+        _ => vec![&factored],
+    };
+    let mut c = match &factored {
+        Term::Mul(mul) => mul.coefficient.clone(),
+        Term::Value(v) => v.value.clone(),
+        _ => Rational::from(1),
+    };
+    let mut res = vec![];
+    for factor in factors {
+        let (g, m) = match factor {
+            Term::Pow(pow) => match &**pow.exponant {
+                Term::Value(m) => ((*pow.base).clone(), m.value.clone()),
+                _ => return None,
+            },
+            Term::Value(_) => continue,
+            _ => (factor.clone(), Rational::from(1)),
+        };
+        if !depends(&g, w) {
+            return None;
+        }
+        let Term::Value(at_zero) = subs(&g, w, &zero()) else {
+            return None;
+        };
+        if at_zero.value == 0u32 {
+            return None;
+        }
+        let g = if at_zero.value < 0u32 {
+            if m.denominator_ref() != &1u32 {
+                return None;
+            }
+            if Integer::try_from(&m).ok()? % Integer::from(2) != 0 {
+                c = -c;
+            }
+            -g
+        } else {
+            g
+        };
+        res.push((g, m));
+    }
+    if c < 0u32 {
+        return None;
+    }
+    let mut out = value(c).pow(&value(e.clone()));
+    for (g, m) in res {
+        out = out * g.pow(&value(m * e));
+    }
+    (out != *b).then_some(out)
+}
+
 /// Collects the bases of the radicals of `f` depending on `w`, inner ones first, with the lcm of the
 /// denominators of their exponents. `None` if `f` isn't algebraic in `w`.
 fn collect(f: &Expr, w: Symbol, radicals: &mut Vec<Expr>, orders: &mut Vec<usize>) -> Option<()> {
-    if !depends(f, w) {
+    if !depends(f, w) && !has_radical(f, w) {
         return Some(());
     }
     match f {
@@ -280,6 +364,9 @@ fn collect(f: &Expr, w: Symbol, radicals: &mut Vec<Expr>, orders: &mut Vec<usize
             let Term::Value(e) = &**pow.exponant else {
                 return None;
             };
+            if !depends(&pow.base, w) && !is_positive_value(&pow.base) {
+                return Some(());
+            }
             collect(&pow.base, w, radicals, orders)?;
             let q = usize::try_from(e.value.denominator_ref()).ok()?;
             if q != 1 {
@@ -326,6 +413,14 @@ pub fn annihilator(f: &Expr, w: Symbol, params: &mut Params) -> Option<Operator>
 /// when it isn't algebraic or isn't zero in the tower.
 pub fn is_zero(e: &Expr, t: Symbol) -> bool {
     let mut params = Params::default();
+    let split = split_bases(e, t);
+    if !has_radical(&split, t) {
+        // Its radicals were powers of factors of their bases
+        return params
+            .rational(&split, t)
+            .is_some_and(|(num, den)| RatFun { num, den }.is_zero());
+    }
+    let e = &split;
     Tower::new(e, t, &mut params)
         .and_then(|tower| tower.element(e, &mut params))
         .is_some_and(|a| a.iter().all(RatFun::is_zero))
@@ -369,5 +464,20 @@ mod tests {
         assert!(!is_zero(&(f.derivative(t) - &derivative * &f), t));
         assert!(!is_zero(&(e + parse!("sqrt(1 + t) - 1", R)), t));
         assert!(!is_zero(&parse!("exp(t)*sqrt(1 + t)", R), t));
+    }
+
+    #[test]
+    fn related_bases() {
+        let t = symbol!("t");
+        // Bases split into their factors share their generators, constant radicals are generators too
+        assert!(is_zero(&parse!("sqrt(2 + 2*t) - sqrt(2)*sqrt(1 + t)", R), t));
+        assert!(is_zero(&parse!("sqrt(t^2 + 2*t + 1) - t - 1", R), t));
+        assert!(is_zero(&parse!("sqrt(1 - t)*sqrt(1 + t) - sqrt(1 - t^2)", R), t));
+        assert!(is_zero(&parse!("(8 + 8*t)^(1/3) - 2*(1 + t)^(1/3)", R), t));
+        assert!(is_zero(&parse!("sqrt(2)*sqrt(2 + 2*t) - 2*sqrt(1 + t)", R), t));
+        // `{$sqrt((t - 1)^2) = 1 - t$}` near 0
+        assert!(is_zero(&parse!("sqrt(t^2 - 2*t + 1) + t - 1", R), t));
+        assert!(!is_zero(&parse!("sqrt(2 + 2*t) - sqrt(1 + t)", R), t));
+        assert!(!is_zero(&parse!("sqrt(t^2 - 2*t + 1) - t + 1", R), t));
     }
 }

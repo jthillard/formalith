@@ -4,9 +4,9 @@ Ideas and known gaps, roughly by area. `AGENTS.md` describes what exists; this f
 
 ## Series
 
-- **Relations between radical bases.** The tower of `holonomic/algebraic.rs` has one independent generator per
-  base, so proportional or otherwise related bases (`sqrt(2 + 2x)` next to `sqrt(1 + x)`, `sqrt(x^2 + 2x + 1)`)
-  only make its zero test inconclusive, and towers above dimension 16 are rejected.
+- **Relations between radical bases** that aren't common factors over ℚ: nested radicals with related bases
+  (`sqrt(1 + sqrt(1 + x))` next to `sqrt(2 + 2 sqrt(1 + x))`), bases vanishing at the point, and towers above
+  dimension 64.
 - **Petkovšek's *Hyper*** for recurrences without a two-term form, with exact arithmetic over algebraic numbers.
   Today only rational functions with simple poles, real or roots of quadratic factors, are handled, by partial
   fractions.
