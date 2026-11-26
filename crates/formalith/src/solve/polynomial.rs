@@ -51,6 +51,9 @@ const MAX_DEPTH: usize = 64;
 /// Maximum modulus of `{$ZZ\/n ZZ$}` for which roots are found by trying every residue.
 const MAX_RESIDUES: u64 = 1 << 16;
 
+/// Maximum degree of the polynomials modulo a large prime proven to have no root, see [`modular::has_no_root`].
+const MAX_ROOTLESS_DEGREE: usize = 256;
+
 /// Maximum square root of the constant coefficient of a polynomial over `{$ZZ$}`, whose divisors are tried as roots.
 const MAX_DIVISORS: Natural = Natural::const_from(1 << 20);
 
@@ -593,13 +596,16 @@ impl PolynomialRoots for Zn {
         set.factor(term)
     }
 
-    /// Roots are searched among every residue when the modulus is small. Otherwise, irreducible polynomials have
-    /// no root, when the modulus is prime.
+    /// Roots are searched among every residue when the modulus is small. Otherwise, when the modulus `p` is prime,
+    /// polynomials of degree at most [`MAX_ROOTLESS_DEGREE`] coprime with `{$x^p - x$}` have no root.
     fn roots(coefficients: &[Term<Self>]) -> Option<Vec<Term<Self>>> {
         let set = coefficients[0].get_set();
         let coefficients = values(coefficients)?;
         if set.modulus() > MAX_RESIDUES {
-            return set.is_field().then(Vec::new);
+            return (set.is_field()
+                && coefficients.len() <= MAX_ROOTLESS_DEGREE + 1
+                && modular::has_no_root(set, &coefficients))
+            .then(Vec::new);
         }
         let evaluate = |x: u64| {
             coefficients
@@ -613,6 +619,82 @@ impl PolynomialRoots for Zn {
                 .map(|x| Term::constant(x, set))
                 .collect(),
         )
+    }
+}
+
+mod modular {
+    //! Dense polynomials over `{$ZZ/p$}`, lowest degree first.
+    use crate::field::{Group, Monoid, Ring, Semiring, modular::Zn};
+
+    /// `a` without its leading zeros.
+    fn trim(mut a: Vec<u64>) -> Vec<u64> {
+        while a.last() == Some(&0) {
+            a.pop();
+        }
+        a
+    }
+
+    /// The remainder of `a` by `b`, which isn't zero.
+    fn rem(set: Zn, mut a: Vec<u64>, b: &[u64]) -> Vec<u64> {
+        let inverse = set
+            .try_inv(b.last().expect("A non-zero divisor"))
+            .expect("A prime modulus");
+        while a.len() >= b.len() {
+            let factor = set.mul(a.last().expect("A longer dividend"), &inverse);
+            let shift = a.len() - b.len();
+            for (i, c) in b.iter().enumerate() {
+                a[shift + i] = set.add(&a[shift + i], &set.neg(&set.mul(&factor, c)));
+            }
+            a = trim(a);
+        }
+        a
+    }
+
+    /// The product of `a` and `b` modulo `f`.
+    fn mul_mod(set: Zn, a: &[u64], b: &[u64], f: &[u64]) -> Vec<u64> {
+        if a.is_empty() || b.is_empty() {
+            return vec![];
+        }
+        let mut res = vec![0; a.len() + b.len() - 1];
+        for (i, x) in a.iter().enumerate() {
+            for (j, y) in b.iter().enumerate() {
+                res[i + j] = set.add(&res[i + j], &set.mul(x, y));
+            }
+        }
+        rem(set, trim(res), f)
+    }
+
+    /// Whether the polynomial `f` of degree at least 1 has no root modulo the prime `p`: it is coprime with
+    /// `{$x^p - x$}`, the product of the `{$x - a$}`.
+    pub(super) fn has_no_root(set: Zn, f: &[u64]) -> bool {
+        let f = trim(f.to_vec());
+        if f.len() < 2 {
+            return false;
+        }
+        // `{$x^p mod f$}` by squaring
+        let (mut power, mut square) = (vec![1], rem(set, vec![0, 1], &f));
+        let mut exponant = set.modulus();
+        while exponant > 0 {
+            if exponant & 1 == 1 {
+                power = mul_mod(set, &power, &square, &f);
+            }
+            square = mul_mod(set, &square, &square, &f);
+            exponant >>= 1;
+        }
+        // `{$gcd(x^p - x, f)$}`
+        let mut a = f;
+        let mut b = power;
+        if b.len() < 2 {
+            b.resize(2, 0);
+        }
+        b[1] = set.add(&b[1], &set.neg(&1));
+        b = trim(b);
+        while !b.is_empty() {
+            let r = rem(set, a, &b);
+            a = b;
+            b = r;
+        }
+        a.len() == 1
     }
 }
 

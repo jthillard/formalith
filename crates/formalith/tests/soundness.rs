@@ -110,3 +110,11 @@ fn vanishing_symbolic_pivots() {
     assert_eq!(eval_in("M", &[&format!("kernel({m})")]), "[[-x+1],[1]]");
     assert!(!eval_in("M", &[&format!("{m}^(-1)")]).contains("0^-1"));
 }
+
+#[test]
+fn roots_modulo_large_primes() {
+    // The degree is above the limit of the factorization, which didn't run: 1 is a root
+    assert!(eval_in("Z/65537", &["x^70000 - 1 = 0"]).starts_with("error"));
+    // `{$-1$}` isn't a square modulo `{$p = 3 mod 4$}`
+    assert_eq!(eval_in("Z/1000003", &["x^2 + 1 = 0"]), "no solution");
+}
