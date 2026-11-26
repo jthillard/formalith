@@ -134,8 +134,36 @@ impl Emitter<'_> {
                 self.function(*fun, &args)
             }
             Numeric::Sum { body, index, start } => self.sum(body, *index, *start),
+            Numeric::FiniteSum {
+                body,
+                index,
+                from,
+                to,
+            } => self.finite_sum(body, *index, from, to),
             Numeric::Unsupported(_) => "nf_nan()".to_owned(),
         }
+    }
+
+    /// The finite sum of `body` for the variable `index` from `from` to `to`, NaN for non-integer bounds or more than
+    /// [`MAX_SUM_TERMS`] terms.
+    fn finite_sum(&mut self, body: &Numeric, index: usize, from: &Numeric, to: &Numeric) -> String {
+        let (from, to) = (self.emit(from), self.emit(to));
+        let (total, i) = (self.fresh("s"), self.fresh("i"));
+        self.line(&format!(
+            "var {total} = select(nf_nan(), 0.0, fract({from}) == 0.0 && fract({to}) == 0.0 && {to} - {from} < {MAX_SUM_TERMS}.0);"
+        ));
+        self.line(&format!(
+            "for (var {i} = 0; {i} < {MAX_SUM_TERMS} && f32({i}) <= {to} - {from}; {i}++) {{"
+        ));
+        self.depth += 1;
+        let k = self.bind(&format!("{from} + f32({i})"));
+        self.indices.push((index, k));
+        let term = self.emit(body);
+        self.indices.pop();
+        self.line(&format!("{total} += {term};"));
+        self.depth -= 1;
+        self.line("}");
+        total
     }
 
     /// The product of `factors` with their mantissas and exponents multiplied separately (`frexp` / `ldexp`), since
@@ -405,7 +433,7 @@ pub(crate) mod tests {
     }
 
     /// Expressions using every kind of node and function.
-    pub const EXPRESSIONS: [&str; 17] = [
+    pub const EXPRESSIONS: [&str; 18] = [
         "x^2 + 3*x*y - 1/2",
         "sqrt(x) + x^(1/3) + x^(-2/5) + x^y + 2^x + x^123456789012",
         "exp(x) + ln(x) + sin(x) + cos(x) + tan(x)",
@@ -423,6 +451,7 @@ pub(crate) mod tests {
         "x",
         "series(exp(x*y), x, 0, oo) + series(tan(x), x, 0, oo) + series(1/cos(y), y, 0, oo)",
         "series(exp(x), x, 0, oo) * series(1/(1 - y + 2*y^2), y, 0, oo)",
+        "series(tan(x)/(1 + x), x, 0, oo) + sum(x^k, k, 1, floor(y))",
     ];
 
     /// Check that `source` is valid WGSL.

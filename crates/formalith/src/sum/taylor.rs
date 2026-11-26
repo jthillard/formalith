@@ -343,9 +343,21 @@ fn merge_sums(parts: &[Expr], x: Symbol) -> Expr {
         };
         match sums
             .iter_mut()
-            .find(|[other, j, b]| j == k && b == a && !depends(&(body / other).simplify(), x))
+            .find(|[other, j, b]| j == k && !depends(&(body / &*other).simplify(), x) && start_gap(a, b).is_some())
         {
-            Some([other, _, _]) => *other = &*other + body,
+            Some([other, j, b]) => {
+                // The leading terms of the sum starting first, explicit
+                let Term::Symbol(index) = &*j else { unreachable!() };
+                let _guard = integer_index(index.symbol);
+                let gap = start_gap(a, b).unwrap_or(0);
+                let (early, late) = if gap > 0 { (other.clone(), body.clone()) } else { (body.clone(), other.clone()) };
+                let first = if gap > 0 { b.clone() } else { a.clone() };
+                for i in 0..gap.abs() {
+                    res += subs(&early, index.symbol, &(&first + &value(Rational::from(i))));
+                }
+                *b = &first + &value(Rational::from(gap.abs()));
+                *other = early + late;
+            }
             None => sums.push([body.clone(), k.clone(), a.clone()]),
         }
     }
@@ -353,6 +365,17 @@ fn merge_sums(parts: &[Expr], x: Symbol) -> Expr {
         let Term::Symbol(k) = k else { unreachable!() };
         res + held_sum(tidy_term(&body, k.symbol), k.symbol, a)
     })
+}
+
+/// `{$a - b$}` for integer starts of held sums at most [`MAX_START_GAP`] apart.
+fn start_gap(a: &Expr, b: &Expr) -> Option<i64> {
+    /// The largest difference between the starts of merged sums.
+    const MAX_START_GAP: i64 = 4;
+    let (Term::Value(a), Term::Value(b)) = (a, b) else {
+        return None;
+    };
+    let gap = i64::try_from(&(&a.value - &b.value)).ok()?;
+    (gap.abs() <= MAX_START_GAP).then_some(gap)
 }
 
 /// The first coefficients of a series in `w`: `{$c_j$}` is the coefficient of `{$w^(e_0 + j/q)$}`.
@@ -598,13 +621,21 @@ fn known_series(
             kernel_factors.push(factor);
         }
     }
-    let (kernel, t, scale) = kernel(&kernel_factors)?;
-    let alpha = (&t / &wv).normalize();
-    if depends(&alpha, w) || alpha.is_zero() {
-        return None;
-    }
-    let c = c * scale;
     let back = w_of_x(point, direction, x);
+    let Some((kernel, t, scale)) = kernel(&kernel_factors) else {
+        let factor = c * w_power(&back, &value(Rational::from(m)));
+        let res = match kernel_factors[..] {
+            [power] => kernel_power(power, w, x, point, direction, k)?,
+            _ => product_series(&kernel_factors, w, &back, x, point, direction, k)?,
+        };
+        return Some(scale_held_sums(&res, &factor, x));
+    };
+    let alpha = (&t / &wv).normalize();
+    let c = c * scale;
+    if depends(&alpha, w) || alpha.is_zero() {
+        return shifted_kernel(kernel, &t, w, k)
+            .map(|res| scale_held_sums(&substitute_w(&res, w, &back, k), &(c * w_power(&back, &value(Rational::from(m)))), x));
+    }
     let _guard = integer_index(k);
     let (explicit, general, exponent, start) = kernel.series(k);
     let mut res = zero();
@@ -618,6 +649,409 @@ fn known_series(
         * alpha.pow(&exponent)
         * w_power(&back, &(&exponent + &value(Rational::from(m))));
     Some(res + held_sum(tidy_term(&term, k), k, value(Rational::from(start))))
+}
+
+/// The series in `w` of the kernel `{$K(t)$}` at a regular point `{$t = beta + alpha w$}`, `{$beta != 0$}`, for `{$tan$}`,
+/// `{$cot$}`, `{$1 / cos$}` and `{$1 / sin$}`, by their partial fractions (Mittag-Leffler): `{$cot z = sum_m 1/(z - m pi)$}`
+/// gives `{$cot(beta + u) = sum_(n >= 0) c_n u^n$}` with `{$c_n = -D_n(beta / pi) / (n! pi^(n + 1))$}`, `{$D_n(q) =
+/// psi^((n))(q) + (-1)^(n + 1) psi^((n))(1 - q)$}`, and likewise for the others. Written with the variable `w`, its
+/// general term in `k` from `{$k = 1$}`; `None` at a pole or when `beta` isn't a constant.
+fn shifted_kernel(kernel: Kernel, t: &Expr, w: Symbol, k: Symbol) -> Option<Expr> {
+    let wv = variable(w);
+    let beta = subs(t, w, &zero());
+    let alpha = ((t - &beta) / wv.clone()).normalize();
+    if beta.is_zero() || depends(&alpha, w) || alpha.is_zero() || depends(&beta, w) {
+        return None;
+    }
+    let (sin, cos) = (fun(Context::SIN, beta.clone()), fun(Context::COS, beta.clone()));
+    let regular = |f: &Expr| matches!(constant_sign(f), Some(Ordering::Less | Ordering::Greater));
+    let n = variable(k);
+    let pi = variable(Context::PI);
+    let int = |i: i64| value(Rational::from(i));
+    let polygamma = |q: Expr| {
+        Term::Fun(Box::new(Fun::new(Context::POLYGAMMA, vec![n.clone(), q], R))).normalize()
+    };
+    let d = |q: Expr| polygamma(q.clone()) + int(-1).pow(&(&n + &int(1))) * polygamma(one() - q);
+    let factorial = fun(Context::FACTORIAL, n.clone());
+    let n1 = &n + &int(1);
+    let q = &beta / &pi;
+    let half = value(Rational::from_signeds(1, 2));
+    // `{$1/sin z = sum_m (-1)^m/(z - m pi)$}`, the even and odd `m` giving the poles of `{$cot(z/2)$}`
+    let csc = |q: Expr| {
+        -(d(&q / &int(2)) - d((&q - &int(1)) / int(2))) / (factorial.clone() * (&int(2) * &pi).pow(&n1))
+    };
+    let (first, general) = match kernel {
+        Kernel::Tan if regular(&cos) => (
+            &sin / &cos,
+            d(&q + &half) / (factorial.clone() * pi.pow(&n1)),
+        ),
+        Kernel::Cot if regular(&sin) => (&cos / &sin, -d(q) / (factorial.clone() * pi.pow(&n1))),
+        Kernel::Csc if regular(&sin) => (one() / sin, csc(q)),
+        // `{$1/cos z = 1/sin(z + pi/2)$}`
+        Kernel::Sec if regular(&cos) => (one() / cos, csc(&q + &half)),
+        _ => return None,
+    };
+    let _guard = integer_index(k);
+    Some(first + held_sum(general * alpha.pow(&n) * wv.pow(&n), k, one()))
+}
+
+/// `res` in `w` (with held sums) with `w` replaced by `back`, its expression in `x`, each held sum tidied.
+fn substitute_w(res: &Expr, w: Symbol, back: &Expr, k: Symbol) -> Expr {
+    let terms: Vec<Expr> = match res {
+        Term::Add(add) => add.iter().cloned().collect(),
+        _ => vec![res.clone()],
+    };
+    let _guard = integer_index(k);
+    terms.iter().fold(zero(), |res, term| {
+        let term = match term {
+            Term::Fun(fun) if fun.get_ident() == Context::held_sum() => {
+                let Some([body, j, a, b]) = fun.get_args::<Real>().map(Vec::as_slice) else {
+                    return res + term;
+                };
+                let body = replace_w(body, w, back);
+                Term::Fun(Box::new(Fun::new(
+                    Context::held_sum(),
+                    vec![tidy_term(&body, k), j.clone(), a.clone(), b.clone()],
+                    R,
+                )))
+                .normalize()
+            }
+            _ => replace_w(term, w, back),
+        };
+        res + term
+    })
+}
+
+/// `term` with the powers `{$w^e$}` replaced by [`w_power`] of `back`.
+fn replace_w(term: &Expr, w: Symbol, back: &Expr) -> Expr {
+    map_tree(term, &|t| match t {
+        Term::Symbol(s) if s.symbol == w => Some(back.clone()),
+        Term::Pow(pow) if *pow.base == variable(w) => Some(w_power(back, &pow.exponant)),
+        _ => None,
+    })
+}
+
+/// `res` times `factor` free of the index, the factor moved into the terms of its held sums (with constants), whose
+/// sums are then merged (see [`merge_sums`]) and leading terms cancelled by the other terms dropped.
+fn scale_held_sums(res: &Expr, factor: &Expr, x: Symbol) -> Expr {
+    let terms = linear_terms(res);
+    let parts: Vec<Expr> = terms
+        .iter()
+        .map(|term| {
+            let factors: Vec<&Expr> = match term {
+                Term::Mul(mul) => mul.iter().collect(),
+                _ => vec![term],
+            };
+            let sum = factors.iter().copied().find(
+                |f| matches!(f, Term::Fun(fun) if fun.get_ident() == Context::held_sum()),
+            );
+            let Some(Term::Fun(sum)) = sum else {
+                return term * factor;
+            };
+            let constant = term / &Term::Fun(sum.clone());
+            let Some([body, Term::Symbol(j), a, b]) = sum.get_args::<Real>().map(Vec::as_slice)
+            else {
+                return term * factor;
+            };
+            if *b != variable(Context::OO) {
+                return term * factor;
+            }
+            tidy_held_sum(&(constant * factor * body), j.symbol, a, x)
+        })
+        .collect();
+    cancel_leading_terms(&merge_sums(&parts, x))
+}
+
+/// The terms of the sum `res`, constant factors of sums distributed: `{$-(a + b) = -a - b$}`.
+fn linear_terms(res: &Expr) -> Vec<Expr> {
+    match res {
+        Term::Add(add) => add.iter().flat_map(linear_terms).collect(),
+        Term::Mul(mul) => {
+            let factors: Vec<&Expr> = mul.iter().collect();
+            match factors.iter().position(|f| matches!(f, Term::Add(_))) {
+                Some(i) if factors.iter().enumerate().all(|(j, f)| j == i || f.symbols().is_empty()) => {
+                    let constant = factors
+                        .iter()
+                        .enumerate()
+                        .filter(|(j, _)| *j != i)
+                        .fold(value(mul.coefficient.clone()), |res, (_, f)| res * *f);
+                    linear_terms(factors[i])
+                        .into_iter()
+                        .map(|t| &constant * &t)
+                        .collect()
+                }
+                _ => vec![res.clone()],
+            }
+        }
+        _ => vec![res.clone()],
+    }
+}
+
+/// Leading terms of the held sums of `res` cancelled by its other terms dropped, like `{$-1 + sum_(k >= 1) c_k x^(2k - 2)$}`
+/// with `{$c_1 = 1$}`.
+fn cancel_leading_terms(res: &Expr) -> Expr {
+    /// Most leading terms dropped per sum.
+    const MAX_DROPPED: usize = 4;
+    let terms: Vec<Expr> = match res {
+        Term::Add(add) => add.iter().cloned().collect(),
+        _ => vec![res.clone()],
+    };
+    let (sums, others): (Vec<Expr>, Vec<Expr>) = terms.into_iter().partition(
+        |t| matches!(t, Term::Fun(fun) if fun.get_ident() == Context::held_sum()),
+    );
+    let mut rest = others.into_iter().fold(zero(), |res, t| res + t);
+    let mut out = zero();
+    for sum in sums {
+        let Term::Fun(fun) = &sum else { unreachable!() };
+        let Some([body, Term::Symbol(j), Term::Value(a), b]) =
+            fun.get_args::<Real>().map(Vec::as_slice)
+        else {
+            out += sum;
+            continue;
+        };
+        let _guard = integer_index(j.symbol);
+        let mut start = a.value.clone();
+        for _ in 0..MAX_DROPPED {
+            if rest.is_zero() {
+                break;
+            }
+            let first = subs(body, j.symbol, &value(start.clone()));
+            let left = (&rest + &first).expand();
+            if !left.is_zero() && size(&left) >= size(&rest) {
+                break;
+            }
+            rest = left;
+            start += Rational::from(1);
+        }
+        out += Term::Fun(Box::new(Fun::new(
+            Context::held_sum(),
+            vec![body.clone(), variable(j.symbol), value(start), b.clone()],
+            R,
+        )))
+        .normalize();
+    }
+    out + rest
+}
+
+/// The series of the product of `factors` (in `w`), one of them having a known series (see [`known_series`]) and the
+/// others a whole series, as their Cauchy product (see [`multiply_series`]): `{$tan(x) / (1 + x)$}`.
+fn product_series(
+    factors: &[&Expr],
+    w: Symbol,
+    back: &Expr,
+    x: Symbol,
+    point: &Expr,
+    direction: Direction,
+    k: Symbol,
+) -> Option<Expr> {
+    for (i, factor) in factors.iter().enumerate() {
+        let Some(known) = known_series(&replace_w(factor, w, back), x, point, direction, k) else {
+            continue;
+        };
+        let others = factors
+            .iter()
+            .enumerate()
+            .filter(|(j, _)| *j != i)
+            .fold(one(), |res, (_, f)| res * *f);
+        // Polynomials in `w` are their own series, written in powers of `w`
+        let expanded = others.expand();
+        let series = if linear_terms(&expanded).iter().all(|t| is_power_of(t, w)) {
+            linear_terms(&expanded)
+                .iter()
+                .map(|t| replace_w(t, w, back))
+                .collect()
+        } else {
+            linear_terms(&whole_series(&replace_w(&others, w, back), x, point, direction, k, true).ok()?)
+        };
+        return multiply_series(&linear_terms(&known), &series, x, k);
+    }
+    None
+}
+
+/// Whether `t` is a constant times a natural power of `w`.
+fn is_power_of(t: &Expr, w: Symbol) -> bool {
+    let factors: Vec<&Expr> = match t {
+        Term::Mul(mul) => mul.iter().collect(),
+        _ => vec![t],
+    };
+    factors.iter().all(|f| match f {
+        Term::Symbol(s) if s.symbol == w => true,
+        Term::Pow(pow) => {
+            *pow.base == variable(w)
+                && matches!(&**pow.exponant, Term::Value(e) if e.value > 0u32 && e.value.denominator_ref() == &1u32)
+        }
+        _ => !depends(f, w),
+    })
+}
+
+/// The product of two whole series of `x` given by their terms, explicit terms and held sums: explicit terms move into the sums (one per
+/// term), and two sums `{$sum_(k >= a) A(k) w^(alpha k + beta)$}` and `{$sum_(k >= b) B(k) w^(k + delta)$}` (`w` being
+/// the same power base, `{$alpha$}` 1 or 2) give `{$sum_(N >= alpha a + b) w^(N + beta + delta) sum_(j = a)^(floor((N -
+/// b)/alpha)) A(j) B(N - alpha j)$}`. `None` for other sums.
+fn multiply_series(a: &[Expr], b: &[Expr], x: Symbol, k: Symbol) -> Option<Expr> {
+    let split = |e: &[Expr]| -> (Vec<Expr>, Vec<Expr>) {
+        e.iter().cloned().partition(
+            |t| matches!(t, Term::Fun(fun) if fun.get_ident() == Context::held_sum()),
+        )
+    };
+    let ((sums_a, explicit_a), (sums_b, explicit_b)) = (split(a), split(b));
+    let mut parts = vec![];
+    for t in &explicit_a {
+        for u in &explicit_b {
+            parts.push(t * u);
+        }
+    }
+    for (sums, explicit) in [(&sums_a, &explicit_b), (&sums_b, &explicit_a)] {
+        for sum in sums {
+            for t in explicit {
+                parts.extend(linear_terms(&scale_held_sums(sum, t, x)));
+            }
+        }
+    }
+    for sa in &sums_a {
+        for sb in &sums_b {
+            parts.push(convolve(sa, sb, x, k)?);
+        }
+    }
+    Some(cancel_leading_terms(&merge_sums(&parts, x)))
+}
+
+/// The Cauchy product of two held sums, see [`multiply_series`].
+fn convolve(a: &Expr, b: &Expr, x: Symbol, k: Symbol) -> Option<Expr> {
+    let parts = |sum: &Expr| {
+        let Term::Fun(fun) = sum else { return None };
+        let [body, Term::Symbol(j), Term::Value(start), _] = fun.get_args::<Real>()?.as_slice()
+        else {
+            return None;
+        };
+        let _guard = integer_index(j.symbol);
+        let body = subs(body, j.symbol, &variable(k));
+        let (c, base, e) = power_of(&body, x)?;
+        let (alpha, beta) = affine(&e, k)?;
+        Some((c, base, alpha, beta, start.value.clone()))
+    };
+    let (mut a, mut b) = (parts(a)?, parts(b)?);
+    if b.2 != 1u32 {
+        std::mem::swap(&mut a, &mut b);
+    }
+    let (ca, base, alpha, beta, a0) = a;
+    let (cb, base_b, gamma, delta, b0) = b;
+    if base != base_b || gamma != 1u32 || !(alpha == 1u32 || alpha == 2u32) {
+        return None;
+    }
+    let j = Symbol::new(if [k, x].contains(&Symbol::new("j")) { "i" } else { "j" });
+    let _guard = integer_index(k);
+    let _inner = integer_index(j);
+    let (n, jv) = (variable(k), variable(j));
+    let alpha_v = value(alpha.clone());
+    let term = subs(&ca, k, &jv) * subs(&cb, k, &(&n - &(&alpha_v * &jv)));
+    let upper = if alpha == 1u32 {
+        &n - &value(b0.clone())
+    } else {
+        fun(Context::FLOOR, (&n - &value(b0.clone())) / alpha_v.clone())
+    };
+    let inner = Term::Fun(Box::new(Fun::new(
+        Context::SUM,
+        vec![tidy_term(&term, j), jv, value(a0.clone()), upper],
+        R,
+    )))
+    .normalize();
+    let general = inner * base.pow(&(&n + &value(beta + delta)));
+    Some(held_sum(general, k, value(alpha * a0 + b0)))
+}
+
+/// The series of `{$K^n$}`, `K` being `{$tan t$}`, `{$tanh t$}`, `{$cot t$}` or `{$coth t$}` with `{$t = alpha w$}` (or even
+/// powers of `{$1/cos t$}`, `{$1/sin t$}` and their hyperbolic versions, written with them), from the Riccati equation
+/// `{$K' = p + q K^2$}`: `{$K^n = ((K^(n - 1))' / (n - 1) - p K^(n - 2)) / q$}`, the series of `K` being differentiated
+/// term by term. Only at finite points from the right, `{$x = a + w$}`, and for `{$2 <= n <= 6$}`.
+fn kernel_power(
+    factor: &Expr,
+    w: Symbol,
+    x: Symbol,
+    point: &Expr,
+    direction: Direction,
+    k: Symbol,
+) -> Option<Expr> {
+    /// Largest power.
+    const MAX_POWER: i64 = 6;
+    const MIN_POWER: i64 = -MAX_POWER;
+    if infinity_sign(point).is_some() || direction == Direction::Left {
+        return None;
+    }
+    let Term::Pow(pow) = factor else {
+        return None;
+    };
+    let Term::Value(e) = &**pow.exponant else {
+        return None;
+    };
+    let e = i64::try_from(&e.value).ok()?;
+    let (ident, t) = unary(&pow.base)?;
+    let alpha = (t / &variable(w)).normalize();
+    if depends(&alpha, w) || alpha.is_zero() {
+        return None;
+    }
+    // The kernel, its Riccati coefficients `{$(p, q)$}`, and the polynomial in it of `factor`
+    let (kernel, (p, q), polynomial): (Kernel, (i64, i64), Vec<i64>) = match (ident, e) {
+        (Context::TAN, 2..=MAX_POWER) => (Kernel::Tan, (1, 1), monomial(e)),
+        (Context::TANH, 2..=MAX_POWER) => (Kernel::Tanh, (1, -1), monomial(e)),
+        (Context::TAN, MIN_POWER..=-2) => (Kernel::Cot, (-1, -1), monomial(-e)),
+        (Context::TANH, MIN_POWER..=-2) => (Kernel::Coth, (1, -1), monomial(-e)),
+        // `{$1/cos^2 = 1 + tan^2$}`, `{$1/cosh^2 = 1 - tanh^2$}`, `{$1/sin^2 = 1 + cot^2$}`, `{$1/sinh^2 = coth^2 - 1$}`
+        (Context::COS, MIN_POWER..=-2) if e % 2 == 0 => (Kernel::Tan, (1, 1), binomial_power(1, 1, -e / 2)),
+        (Context::COSH, MIN_POWER..=-2) if e % 2 == 0 => {
+            (Kernel::Tanh, (1, -1), binomial_power(1, -1, -e / 2))
+        }
+        (Context::SIN, MIN_POWER..=-2) if e % 2 == 0 => (Kernel::Cot, (-1, -1), binomial_power(1, 1, -e / 2)),
+        (Context::SINH, MIN_POWER..=-2) if e % 2 == 0 => {
+            (Kernel::Coth, (1, -1), binomial_power(-1, 1, -e / 2))
+        }
+        _ => return None,
+    };
+    let t_x = &alpha * &(variable(x) - point.clone());
+    let base = match kernel {
+        Kernel::Tan => fun(Context::TAN, t_x),
+        Kernel::Tanh => fun(Context::TANH, t_x),
+        Kernel::Cot => one() / fun(Context::TAN, t_x),
+        _ => one() / fun(Context::TANH, t_x),
+    };
+    let first = known_series(&base, x, point, direction, k)?;
+    let (p, q) = (value(Rational::from(p)), value(Rational::from(q)));
+    let mut powers = vec![one(), first];
+    for j in 2..polynomial.len() {
+        let previous = &powers[j - 1];
+        let derivative = previous.derivative(x) / (&alpha * &value(Rational::from(j - 1)));
+        powers.push((derivative - &p * &powers[j - 2]) / q.clone());
+    }
+    Some(
+        polynomial
+            .iter()
+            .zip(&powers)
+            .fold(zero(), |res, (c, power)| res + value(Rational::from(*c)) * power),
+    )
+}
+
+/// The coefficients of `{$K^n$}` as a polynomial in `K`.
+fn monomial(n: i64) -> Vec<i64> {
+    let mut res = vec![0; usize::try_from(n).unwrap_or(0) + 1];
+    if let Some(last) = res.last_mut() {
+        *last = 1;
+    }
+    res
+}
+
+/// The coefficients of `{$(a + b K^2)^m$}` as a polynomial in `K`.
+fn binomial_power(a: i64, b: i64, m: i64) -> Vec<i64> {
+    let m = usize::try_from(m).unwrap_or(0);
+    let mut res = vec![0; 2 * m + 1];
+    for (i, c) in (0..=m).map(|i| (i, binomial_coefficient(m, i))) {
+        res[2 * i] = c * a.pow(u32::try_from(m - i).unwrap_or(0)) * b.pow(u32::try_from(i).unwrap_or(0));
+    }
+    res
+}
+
+/// `{$binom(m, i)$}`.
+fn binomial_coefficient(m: usize, i: usize) -> i64 {
+    (0..i).fold(1, |res, j| res * i64::try_from(m - j).unwrap_or(0) / i64::try_from(j + 1).unwrap_or(1))
 }
 
 /// `x` in terms of `w`: `{$a + w$}`, `{$a - w$}` from the left, `{$s / w$}` at `{$s oo$}`.

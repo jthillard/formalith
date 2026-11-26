@@ -132,7 +132,10 @@ fn approx(input: &str) -> Verdict {
 fn perturb(numeric: &Numeric) -> Numeric {
     let node = match numeric {
         // The terms of sums are functions of an integer index
-        Numeric::Const(_) | Numeric::Unsupported(_) | Numeric::Sum { .. } => {
+        Numeric::Const(_)
+        | Numeric::Unsupported(_)
+        | Numeric::Sum { .. }
+        | Numeric::FiniteSum { .. } => {
             return numeric.clone();
         }
         Numeric::Var(_) => numeric.clone(),

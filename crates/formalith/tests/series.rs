@@ -371,6 +371,26 @@ fn whole_series_with_bernoulli_and_euler_numbers() {
     assert!(whole("cot(x), x, 0").contains("bernoulli"));
     assert!(whole("1/(1 - exp(-x)), x, 0").contains("bernoulli"));
     assert!(whole("tanh(2*x) + sin(x), x, 0").contains("bernoulli"));
+    // Powers, through the Riccati equations: `{$tan^2 = tan' - 1$}`
+    assert_eq!(
+        whole("tan(x)^2, x, 0"),
+        "sum((4^k-1)*(2*k-1)*(x^(2*k-2))*((2*k)!^-1)*bernoulli(2*k)*((-1)^(k+1))*(4^k), k, 2, oo)"
+    );
+    assert!(whole("1/cos(x)^2, x, 0").starts_with("sum("));
+    assert!(whole("1/sinh(x)^4, x, 0").contains("bernoulli"));
+    // At regular points, by the partial fractions of `{$tan$}`
+    let shifted = whole("tan(x), x, 1");
+    assert!(shifted.contains("polygamma") && shifted.contains("sin(1)"), "{shifted}");
+    assert!(whole("1/sin(x), x, 1").contains("polygamma"));
+    // Poles stay unevaluated
+    assert!(whole("tan(x), x, pi/2").starts_with("series("));
+    // Products with other series, by Cauchy products
+    let product = whole("tan(x)/(1 + x), x, 0");
+    assert!(product.contains("floor") && product.contains("bernoulli"), "{product}");
+    assert_eq!(
+        line(&parse!("approx(subs(series(exp(x)*tan(x), x, 0, oo), x, 1/2))", R)),
+        line(&parse!("approx(exp(1/2)*tan(1/2))", R))
+    );
 }
 
 #[test]

@@ -60,6 +60,26 @@ fn split_sums(output: &str) -> Option<(String, Vec<HeldSum>)> {
     Some((res, sums))
 }
 
+/// The indices of every sum of `output`, nested ones included (like the convolutions of products of series).
+fn sum_indices(output: &str) -> Vec<String> {
+    output
+        .match_indices("sum(")
+        .filter_map(|(start, _)| {
+            let after = &output[start + 4..];
+            let mut depth = 1;
+            let end = after.char_indices().find_map(|(i, c)| {
+                match c {
+                    '(' => depth += 1,
+                    ')' => depth -= 1,
+                    _ => {}
+                }
+                (depth == 0).then_some(i)
+            })?;
+            split_top(&after[..end], ',').get(1).cloned()
+        })
+        .collect()
+}
+
 /// The partial sums of `sum` with [`LENGTHS`] terms at the point of `env`, `None` if a term can't be evaluated.
 fn partial_sums(env: &Environment, sum: &HeldSum) -> Option<Vec<f64>> {
     let start = number(env, &sum.start)?.round() as i64;
@@ -107,8 +127,9 @@ fn verify(input: &str, output: &str) -> Verdict {
     let mut rng = case_rng(input);
     // Parameters get random values
     let mut env = Environment::new();
+    let indices = sum_indices(output);
     for p in symbols(&format!("{f} + {output}")) {
-        let index = sums.iter().any(|sum| sum.k == p);
+        let index = indices.contains(&p);
         if p != "x" && !index {
             let v = Domain::Range(0.3, 2.5).sample(&mut rng);
             if eval(&mut env, &format!("{p} := {v}")).is_err() {
@@ -224,6 +245,33 @@ fn whole_series_examples() {
             "1/(1 - x + 2*x^2); 0",
             "1/((1 - 2*x)*(1 + x + 2*x^2)); 0",
             "(x + 3)/(x^2 + x + 3); oo",
+            "tan(x)^2; 0",
+            "tan(x)^3; 0",
+            "tanh(2*x)^2; 0",
+            "1/cos(x)^2; 0",
+            "1/sin(x)^2; 0",
+            "1/sinh(x)^4; 0",
+            "x*tan(x)^2; 0",
+            "tan(x)/(1 + x); 0",
+            "exp(x)*tan(x); 0",
+            "(1 + x^2)*tan(x); 0",
+            "tan(x)/(1 - 2*x); 0",
+        ],
+        whole_series,
+    );
+}
+
+#[test]
+fn whole_series_of_kernels_at_regular_points() {
+    // Slow to check: the terms have several polygammas which cancel
+    check_all(
+        "kernels at regular points",
+        &[
+            "tan(x); 1",
+            "1/tan(x); 1",
+            // Through the partial fractions of `{$1/sin$}`
+            "1/cos(x); 2",
+            "x*tan(2*x); 1/2",
         ],
         whole_series,
     );

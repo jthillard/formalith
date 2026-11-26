@@ -25,7 +25,7 @@ use crate::{
 #[must_use]
 pub fn free_symbols(term: &Term<Real>) -> BTreeSet<Symbol> {
     match term {
-        Term::Fun(fun) if fun.get_ident() == Context::held_sum() => {
+        Term::Fun(fun) if fun.get_ident() == Context::held_sum() || fun.get_ident() == Context::SUM => {
             let Some([body, Term::Symbol(k), bounds @ ..]) =
                 fun.get_args::<Real>().map(Vec::as_slice)
             else {
@@ -78,6 +78,18 @@ pub enum Numeric {
         index: usize,
         /// The first index.
         start: i64,
+    },
+    /// A finite sum `{$sum_(k = "from")^"to" "body"$}`, the index `k` being the variable at `index`, like the
+    /// convolutions in the general terms of products of series (`NaN` for more than 2000 terms).
+    FiniteSum {
+        /// The general term.
+        body: Box<Self>,
+        /// The variable of the index.
+        index: usize,
+        /// The first index.
+        from: Box<Self>,
+        /// The last index.
+        to: Box<Self>,
     },
     /// A part which can't be evaluated numerically, like an unevaluated integral, with its name.
     Unsupported(String),
@@ -379,6 +391,21 @@ impl Numeric {
                     start,
                 }
             }
+            // An unevaluated finite sum, term by term
+            Term::Fun(fun) if fun.get_ident() == Context::SUM => {
+                let Some([body, Term::Symbol(k), from, to]) = fun.get_args::<Real>().map(Vec::as_slice)
+                else {
+                    return Self::Unsupported(fun.get_ident_as_str().to_owned());
+                };
+                let mut with_index = vars.to_vec();
+                with_index.push(k.symbol);
+                Self::FiniteSum {
+                    body: Box::new(Self::compile(body, &with_index)),
+                    index: vars.len(),
+                    from: Box::new(Self::compile(from, vars)),
+                    to: Box::new(Self::compile(to, vars)),
+                }
+            }
             Term::Fun(fun) => {
                 let name = || Self::Unsupported(fun.get_ident_as_str().to_owned());
                 let Some(args) = fun.get_args::<Real>() else {
@@ -400,6 +427,10 @@ impl Numeric {
             }
             Self::Pow(base, exponent) => base.unsupported().or_else(|| exponent.unsupported()),
             Self::RationalPow(base, ..) | Self::Sum { body: base, .. } => base.unsupported(),
+            Self::FiniteSum { body, from, to, .. } => body
+                .unsupported()
+                .or_else(|| from.unsupported())
+                .or_else(|| to.unsupported()),
             Self::Unsupported(name) => Some(name),
         }
     }
@@ -419,6 +450,12 @@ impl Numeric {
                 fun.apply(&args)
             }
             Self::Sum { body, index, start } => sum(body, *index, *start, vars),
+            Self::FiniteSum {
+                body,
+                index,
+                from,
+                to,
+            } => finite_sum(body, *index, from.eval(vars), to.eval(vars), vars),
             Self::Unsupported(_) => f64::NAN,
         }
     }
@@ -468,6 +505,24 @@ fn sum(body: &Numeric, index: usize, start: i64, vars: &[f64]) -> f64 {
         }
     }
     f64::NAN
+}
+
+/// The finite sum of `body` for the variable `index` from `from` to `to`, `NaN` for non-integer bounds or more than
+/// [`MAX_SUM_TERMS`] terms.
+fn finite_sum(body: &Numeric, index: usize, from: f64, to: f64, vars: &[f64]) -> f64 {
+    #![allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
+    if from.fract() != 0. || to.fract() != 0. || !(to - from < MAX_SUM_TERMS as f64) {
+        return f64::NAN;
+    }
+    let mut vars = vars.to_vec();
+    vars.resize(index + 1, f64::NAN);
+    let (from, to) = (from as i64, to as i64);
+    (from..=to)
+        .map(|k| {
+            vars[index] = k as f64;
+            body.eval(&vars)
+        })
+        .sum()
 }
 
 /// The Euler-Mascheroni constant.

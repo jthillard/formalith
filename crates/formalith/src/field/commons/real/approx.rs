@@ -920,6 +920,23 @@ impl Fixed {
         None
     }
 
+    /// `{$sum_(k = a)^b f$}` for integer bounds, at most [`MAX_SUM_TERMS`] terms.
+    fn finite_sum(self, f: &Term<Real>, k: Symbol, a: &Term<Real>, b: &Term<Real>) -> Option<Rational> {
+        let (a, b) = (self.evaluate(a)?, self.evaluate(b)?);
+        let (a, b) = (Integer::try_from(&a).ok()?, Integer::try_from(&b).ok()?);
+        if &b - &a >= Integer::from(MAX_SUM_TERMS) {
+            return None;
+        }
+        let mut sum = Integer::ZERO;
+        let mut index = a;
+        while index <= b {
+            let value = Term::Value(Value::new(Rational::from(&index), super::R));
+            sum += self.from_rational(&self.evaluate(&bind(f, k, &value))?);
+            index += Integer::from(1);
+        }
+        Some(self.to_rational(sum))
+    }
+
     /// Evaluate a term without symbols, other than builtin constants.
     fn evaluate(self, term: &Term<Real>) -> Option<Rational> {
         match term {
@@ -1030,6 +1047,8 @@ impl Fixed {
                     (ident, [f, Term::Symbol(k), a, _]) if ident == Context::held_sum() => {
                         self.infinite_sum(f, k.symbol, a)
                     }
+                    // The finite sums in the general terms of products of series
+                    (Context::SUM, [f, Term::Symbol(k), a, b]) => self.finite_sum(f, k.symbol, a, b),
                     (
                         ident @ (Context::ASIN
                         | Context::ACOS

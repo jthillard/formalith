@@ -12,8 +12,8 @@ Ideas and known gaps, roughly by area. `AGENTS.md` describes what exists; this f
   fractions.
 - **More poles of rational functions**: multiple irrational poles, complex roots of irreducible factors of degree 3
   or more (`1/(1 + x + x^3)`).
-- **Known non-holonomic series** beyond a kernel with Bernoulli or Euler numbers times a power of `x`:
-  `tan(x)^2`, `tan(x) / (1 + x)`, `tan(x)` at 1.
+- **Known non-holonomic series**: hyperbolic kernels and `1/(e^t - 1)` at regular points other than 0 (their poles
+  are complex), products of two kernels (`tan(x) / cos(x)`), powers of kernels with other factors.
 - **Held sums**:
   - definite integrals on the boundary of the disk of convergence (`integrate(series(1/(1 + x), x, 0, oo), x, 0, 1)`,
     Abel's theorem) and on infinite intervals;
