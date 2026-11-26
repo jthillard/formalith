@@ -441,6 +441,12 @@ fn arithmetic_with_infinity() {
     assert_eq!(eval_r("oo*oo"), "+oo");
     assert_eq!(eval_r("-2*pi*oo"), "-oo");
     assert_eq!(eval_r("oo^-1"), "0");
+    // Indeterminate powers
+    assert_eq!(eval_r("oo^0"), "undefined");
+    assert_eq!(eval_r("1^oo"), "undefined");
+    assert_eq!(eval_r("1^(-oo)"), "undefined");
+    assert_eq!(eval_r("1^undefined"), "undefined");
+    assert_eq!(eval_r("undefined^0"), "undefined");
     // Symbols aren't assumed finite
     assert_eq!(eval_r("x+oo"), "oo+x");
 }

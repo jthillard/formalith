@@ -48,4 +48,5 @@ mod polynomial_ring;
 mod printer;
 mod series;
 mod solve;
+mod soundness;
 mod sum;

@@ -623,13 +623,38 @@ impl Semiring for R<Rational> {
                         }
                         return terms;
                     }
-                } else if let Term::Mul(mul) = &**base
-                    // `{$(-x)^(1/2)$}` isn't `{$(-1)^(1/2) x^(1/2)$}` in `{$RR$}`
-                    && (mul.coefficient > 0
-                        || matches!(&***exponant, Term::Value(value)
-                            if value.value.denominator_ref() == &1))
-                {
-                    return Term::distribute_pow(mul, exponant);
+                } else if let Term::Mul(mul) = &**base {
+                    // Real odd roots are multiplicative, other powers only distribute over non-negative factors:
+                    // `{$(-x)^(1/2)$}` isn't `{$(-1)^(1/2) x^(1/2)$}` and `{$(x y)^(1/2)$}` isn't
+                    // `{$x^(1/2) y^(1/2)$}` for `{$x = y = -1$}`
+                    if matches!(&***exponant, Term::Value(value) if value.value.denominator_ref() % Natural::from(2u32) == 1)
+                    {
+                        return Term::distribute_pow(mul, exponant);
+                    }
+                    if mul.coefficient > 0 {
+                        let (positive, rest): (Vec<_>, Vec<_>) =
+                            mul.iter().cloned().partition(|factor| {
+                                !sign::sign_set(factor, SignMode::STRUCTURAL)
+                                    .contains(Ordering::Less)
+                            });
+                        if !positive.is_empty() {
+                            let rest = rest
+                                .into_iter()
+                                .fold(Term::one(*self), |res, factor| res * factor);
+                            let distributed =
+                                term::Mul::new(mul.coefficient.clone(), positive, *self);
+                            return Term::distribute_pow(&distributed, exponant)
+                                * rest.pow(exponant);
+                        }
+                        if mul.coefficient != 1 {
+                            let rest = mul
+                                .iter()
+                                .fold(Term::one(*self), |res, factor| res * factor);
+                            return Term::Value(Value::new(mul.coefficient.clone(), *self))
+                                .pow(exponant)
+                                * rest.pow(exponant);
+                        }
+                    }
                 }
                 a
             }

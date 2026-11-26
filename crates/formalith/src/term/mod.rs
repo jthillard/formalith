@@ -441,6 +441,10 @@ impl<T: Monoid> Term<T> {
             _ => false,
         }
     }
+    /// Whether the term is the constant `undefined`.
+    pub(crate) fn is_undefined(&self) -> bool {
+        matches!(self, Self::Symbol(symbol) if symbol.symbol == Context::UNDEFINED)
+    }
     /// Whether the term is a power of zero surviving normalization, `{$1/0$}`, or a product with such a factor.
     pub(crate) fn is_division_by_zero(&self) -> bool {
         match self {
@@ -1369,6 +1373,15 @@ impl<T: Semiring> Term<T> {
             Self::Pow(pow) => {
                 let base = (*pow.base).normalize();
                 let exponant = (**pow.exponant).normalize();
+                // `{$oo^0$}`, `{$1^oo$}` and powers of `undefined` are indeterminate
+                if (exponant.is_zero() && (base.is_infinity_factor() || base.is_undefined()))
+                    || (base.is_one() && (exponant.is_infinity_factor() || exponant.is_undefined()))
+                {
+                    return Self::Symbol(symbol::SymbolTerm::new(
+                        Context::UNDEFINED,
+                        self.get_set(),
+                    ));
+                }
                 if exponant.is_zero() {
                     // `{$a^0$}` has the shape of `a`, like the identity matrix
                     return match &base {
