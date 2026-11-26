@@ -27,7 +27,9 @@ use malachite::{
 
 use crate::{
     context::{Context, Symbol},
-    field::real::expr::{Expr, depends, exp_of_ln, fun, map_tree, size, sqrt, value, variable},
+    field::real::expr::{
+        Expr, depends, exp_of_ln, fun, map_tree, size, smallest, sqrt, value, variable,
+    },
     term::{Expand, Term},
 };
 
@@ -125,15 +127,8 @@ fn substitute(
 
 /// The smallest of `res`, its simplification and its expansion.
 fn tidy(res: Expr) -> Expr {
-    [res.simplify(), res.expand()]
-        .into_iter()
-        .fold(res, |best, other| {
-            if size(&other) < size(&best) {
-                other
-            } else {
-                best
-            }
-        })
+    let candidates = [res.simplify(), res.expand()];
+    smallest(res, candidates)
 }
 
 /// `{$integral f$}` for a rational function of `x` and of powers of a single Möbius function `y`, with

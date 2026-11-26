@@ -14,7 +14,7 @@ use malachite::{Integer, Rational};
 use crate::{
     context::{Context, Symbol},
     field::real::{
-        expr::{Expr, constant_sign, depends, fun, map_tree, subs, unary, value, variable},
+        expr::{Expr, constant_sign, depends, fun, int, map_tree, subs, unary, value, variable},
         numeric::Numeric,
     },
     term::{Expand, Normalize, Term},
@@ -72,7 +72,7 @@ impl Inverter {
                 .map(|(kernel, s)| &kernel.factor * &variable(*s))
         })
         .expand();
-        let zero = value(Rational::from(0));
+        let zero = int(0);
         let constant = symbols
             .iter()
             .fold(replaced.clone(), |res, s| subs(&res, *s, &zero));

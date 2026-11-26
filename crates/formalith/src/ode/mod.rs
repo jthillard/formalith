@@ -33,7 +33,7 @@ use crate::{
         real::{
             R,
             expr::{
-                Expr, Real, depends, fun, map_tree, size, subs, try_map_operands, variable, zero,
+                Expr, Real, depends, fun, has_function, map_tree, smallest, subs, variable, zero,
             },
         },
     },
@@ -313,19 +313,7 @@ fn derivative_order(term: &Expr, function: Symbol, x: Symbol) -> Option<usize> {
 
 /// Whether the function `function` (possibly a builtin) appears in `term`.
 fn mentions(term: &Expr, function: Symbol) -> bool {
-    if let Term::Fun(f) = term
-        && f.get_ident() == function
-    {
-        return true;
-    }
-    try_map_operands(term, |operand| {
-        if mentions(operand, function) {
-            Err(())
-        } else {
-            Ok(operand.clone())
-        }
-    })
-    .is_err()
+    has_function(term, &[function])
 }
 
 /// The initial conditions of the first-order equation `{$e(x, y, y') = 0$}` with each condition
@@ -487,13 +475,7 @@ fn tidy(res: &Expr) -> Expr {
         candidates.push(res.simplify());
     }
     candidates.push(expanded);
-    candidates.into_iter().fold(res.clone(), |best, candidate| {
-        if size(&candidate) < size(&best) {
-            candidate
-        } else {
-            best
-        }
-    })
+    smallest(res.clone(), candidates)
 }
 
 /// The builtin `simplify` of the expanded term, using `{$sin^2 + cos^2 = 1$}`, if it contains `sin` or `cos`

@@ -1238,7 +1238,7 @@ impl R<Rational> {
                 let prime = Natural::try_from(&x.value).is_ok_and(|n| primes::is_prime(&n));
                 Some(value(Rational::from(u8::from(prime))))
             }
-            (Context::LOG, [x]) => Some(self.eval_log(x, &value(Rational::from(10)))),
+            (Context::LOG, [x]) => Some(self.eval_log(x, &expr::int(10))),
             (Context::LOG, [x, base]) => Some(self.eval_log(x, base)),
             // Approximations stay unevaluated, the singular values being exact
             (
@@ -1584,7 +1584,7 @@ impl R<Rational> {
             Context::TANH | Context::ERF | Context::ZETA => Some(value(Rational::ONE)),
             Context::CI => Some(value(Rational::ZERO)),
             Context::ATAN | Context::SI => {
-                Some(Term::Symbol(SymbolTerm::new(Context::PI, self)) / value(Rational::from(2)))
+                Some(Term::Symbol(SymbolTerm::new(Context::PI, self)) / expr::int(2))
             }
             _ => None,
         }

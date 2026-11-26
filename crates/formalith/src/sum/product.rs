@@ -11,7 +11,7 @@ use crate::{
     field::real::{
         R,
         expr::{
-            Expr, depends, fun, gamma_pole, has_special_constant, infinity_sign, one, subs,
+            Expr, depends, fun, gamma_pole, has_special_constant, infinity_sign, int, one, subs,
             try_map_operands, unary, value, variable,
         },
     },
@@ -323,7 +323,7 @@ pub(super) fn duplicate_gammas(term: &Expr) -> Expr {
         }) else {
             continue;
         };
-        let two_z = (&value(Rational::from(2)) * z).expand();
+        let two_z = (&int(2) * z).expand();
         let constant = match &two_z {
             Term::Add(add) => add.iter().find_map(|t| match t {
                 Term::Value(v) => Some(v.value.clone()),
@@ -338,7 +338,7 @@ pub(super) fn duplicate_gammas(term: &Expr) -> Expr {
         } else {
             fun(Context::GAMMA, two_z.clone())
         };
-        let merged = value(Rational::from(2)).pow(&((one() - two_z) * e).expand())
+        let merged = int(2).pow(&((one() - two_z) * e).expand())
             * variable(Context::PI).pow(&(value(Rational::from_signeds(1, 2)) * e))
             * gamma.pow(e);
         let res = factors

@@ -51,7 +51,7 @@ use crate::{
     field::real::R,
     field::real::expr::{
         Expr, Real, constant_sign, depends, fun, has_special_constant, infinity_sign, map_tree,
-        one, size, subs, value, variable, zero,
+        one, smallest, subs, value, variable, zero,
     },
     limit::{Direction, LimitError},
     term::{Expand, Fun, Normalize, Term},
@@ -408,13 +408,7 @@ fn tidy(res: &Expr) -> Expr {
         candidates.push(expanded.factor());
     }
     candidates.push(expanded);
-    candidates.into_iter().fold(res.clone(), |best, candidate| {
-        if size(&candidate) < size(&best) {
-            candidate
-        } else {
-            best
-        }
-    })
+    smallest(res.clone(), candidates)
 }
 
 /// Whether the term is a rational function of its symbols with rational coefficients.

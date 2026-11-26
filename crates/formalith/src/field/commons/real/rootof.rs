@@ -10,7 +10,7 @@ use malachite::{Integer, Rational, base::num::arithmetic::traits::UnsignedAbs};
 
 use super::{
     R,
-    expr::{Expr, half, value},
+    expr::{Expr, half, int, value},
 };
 use crate::{
     context::{Context, Symbol},
@@ -35,9 +35,8 @@ impl Root {
             1 => -c(0) / c(1),
             2 => {
                 // `{$-b/(2a) minus.plus sqrt(b^2 - 4 a c) / (2 a)$}`, `a` being positive
-                let two_a = value(Rational::from(2)) * c(2);
-                let root =
-                    (c(1) * c(1) - value(Rational::from(4)) * c(2) * c(0)).pow(&half()) / &two_a;
+                let two_a = int(2) * c(2);
+                let root = (c(1) * c(1) - int(4) * c(2) * c(0)).pow(&half()) / &two_a;
                 let root = if self.index == 0 { -root } else { root };
                 root - c(1) / two_a
             }

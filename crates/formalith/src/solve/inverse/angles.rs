@@ -2,11 +2,9 @@
 //! `{$sin x = cos x^2$}`, solved by the sum-to-product formulas (`{$cos v = sin(v + pi/2)$}`):
 //! `{$sin u + sin v = 2 sin((u + v)/2) cos((u - v)/2)$}` and `{$sin u - sin v = 2 cos((u + v)/2) sin((u - v)/2)$}`.
 
-use malachite::Rational;
-
 use crate::{
     context::Context,
-    field::real::expr::{Expr, depends, fun, unary, value, variable},
+    field::real::expr::{Expr, depends, fun, int, unary, variable},
     term::{Normalize, Term},
 };
 
@@ -28,7 +26,7 @@ impl Inverter {
         };
         let (a, u) = self.sine(t1)?;
         let (b, v) = self.sine(t2)?;
-        let half = |w: Expr| w / value(Rational::from(2));
+        let half = |w: Expr| w / int(2);
         let (sum, difference) = (half(&u + &v), half(u - v));
         let factors = match (a / b).normalize() {
             Term::Value(ratio) if ratio.value == 1 => {
@@ -64,7 +62,7 @@ impl Inverter {
         };
         let angle = match unary(kernel)? {
             (Context::SIN, w) => w.clone(),
-            (Context::COS, w) => w + &(variable(Context::PI) / value(Rational::from(2))),
+            (Context::COS, w) => w + &(variable(Context::PI) / int(2)),
             _ => return None,
         };
         Some(((t / kernel).normalize(), angle))

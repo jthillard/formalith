@@ -178,7 +178,7 @@ mod tests {
         field::real::{
             R,
             approx::approximate_fixed,
-            expr::{subs, value},
+            expr::{int, subs, value},
         },
         parse, symbol,
     };
@@ -226,7 +226,7 @@ mod tests {
             let op = annihilator(&f, w, &mut params).unwrap_or_else(|| panic!("{f}"));
             let res = apply(&op, &f, w, &params);
             // At sample points, `a` being 2
-            let res = subs(&res, symbol!("a"), &value(Rational::from(2)));
+            let res = subs(&res, symbol!("a"), &int(2));
             for (p, q) in [(1, 3), (2, 7)] {
                 let at = subs(&res, w, &value(Rational::from_signeds(p, q)));
                 let v = approximate_fixed(&at, 128).unwrap_or_else(|| panic!("{f}: {at}"));

@@ -8,7 +8,7 @@
 //! `{$p(r) ln|x - r|$}`, and a pair of conjugate roots `{$u plus.minus i v$}` with `{$p(u + i v) = alpha + i beta$}`
 //! gives `{$alpha ln((x - u)^2 + v^2) - 2 beta arctan((x - u) / v)$}`.
 
-use crate::field::real::expr::{Expr, constant_sign, fun, value, variable, zero};
+use crate::field::real::expr::{Expr, constant_sign, fun, int, value, variable, zero};
 use std::cmp::Ordering;
 
 use malachite::{
@@ -132,10 +132,9 @@ fn log_part(q: &Poly, p: &Poly, x: Symbol) -> Option<Expr> {
                 if split_complex(root).is_none() {
                     modulus = fun(Context::SIMPLIFY, modulus);
                 }
-                let norm = (variable(x) * (variable(x) - value(Rational::from(2)) * &u) + modulus)
-                    .expand();
+                let norm = (variable(x) * (variable(x) - int(2) * &u) + modulus).expand();
                 res += alpha * fun(Context::LN, norm)
-                    - value(Rational::from(2)) * beta * fun(Context::ATAN, shifted / v);
+                    - int(2) * beta * fun(Context::ATAN, shifted / v);
             }
         }
     }

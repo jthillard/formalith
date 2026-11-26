@@ -38,7 +38,7 @@ use crate::{
     field::real::{
         R, approx,
         expr::{
-            Expr, Real, arg, constant_sign, depends, fun, has_special_constant, infinity_sign,
+            Expr, Real, arg, constant_sign, depends, fun, has_special_constant, infinity_sign, int,
             map_tree, one, size, subs, try_map_operands, unary, value, variable, zero,
         },
     },
@@ -272,11 +272,11 @@ fn simple_poles(den: &Poly, rest: &Poly, w: Symbol, n: &Expr) -> LimitResult<Exp
         let discriminant = Rational::from(4) * &s - &p * &p;
         let theta = arg(
             &value(&p / Rational::from(2)),
-            &(root(discriminant.clone()) / value(Rational::from(2))),
+            &(root(discriminant.clone()) / int(2)),
         )
         .ok_or(LimitError::Unsupported)?;
         let angle = n * &theta;
-        general += value(s).pow(&(n / &value(Rational::from(2))))
+        general += value(s).pow(&(n / &int(2)))
             * (value(a.clone()) * fun(Context::COS, angle.clone())
                 + value(a * p + Rational::from(2) * b) / root(discriminant)
                     * fun(Context::SIN, angle));
@@ -357,8 +357,8 @@ fn general_poles(rest: &Poly, den: &Poly, n: &Expr) -> LimitResult<Expr> {
                         let theta = arg(&u, &v).ok_or(LimitError::Unsupported)?;
                         let modulus = (&u * &u + &v * &v).expand();
                         let angle = n * &theta;
-                        part += value(Rational::from(2))
-                            * modulus.pow(&(n / &value(Rational::from(2))))
+                        part += int(2)
+                            * modulus.pow(&(n / &int(2)))
                             * (alpha * fun(Context::COS, angle.clone())
                                 - beta * fun(Context::SIN, angle));
                     }
@@ -408,7 +408,7 @@ fn root_parts(q: &Poly) -> Option<Vec<(Expr, Expr)>> {
     let product = real
         .iter()
         .fold(value(sign * q.coefficient(0)), |res, r| res / r.clone());
-    let u = (sum / value(Rational::from(2))).expand();
+    let u = (sum / int(2)).expand();
     let v = (product - &u * &u)
         .expand()
         .pow(&value(Rational::from_signeds(1, 2)));
@@ -420,18 +420,7 @@ fn root_parts(q: &Poly) -> Option<Vec<(Expr, Expr)>> {
 
 /// Whether `term` contains the function `ident`.
 fn has_function(term: &Expr, ident: Symbol) -> bool {
-    match term {
-        Term::Value(_) | Term::Symbol(_) => false,
-        Term::Add(add) => add.iter().any(|t| has_function(t, ident)),
-        Term::Mul(mul) => mul.iter().any(|t| has_function(t, ident)),
-        Term::Pow(pow) => has_function(&pow.base, ident) || has_function(&pow.exponant, ident),
-        Term::Fun(fun) => {
-            fun.get_ident() == ident
-                || fun
-                    .get_args::<R<Rational>>()
-                    .is_some_and(|args| args.iter().any(|t| has_function(t, ident)))
-        }
-    }
+    crate::field::real::expr::has_function(term, &[ident])
 }
 
 /// The power sums `{$p_m = sum rho^m$}` of the roots of the monic `q`, for `{$m < "count"$}`, by Newton's identities.
@@ -703,7 +692,6 @@ impl Kernel {
     /// `{$(c_k, e_k, s)$}`.
     fn series(self, k: Symbol) -> (Vec<(Expr, i64)>, Expr, Expr, i64) {
         let n = variable(k);
-        let int = |i: i64| value(Rational::from(i));
         let two_n = &int(2) * &n;
         let four_n = int(4).pow(&n);
         let sign = |shift: i64| int(-1).pow(&(&n + &int(shift)));
@@ -744,7 +732,7 @@ impl Kernel {
 /// `{$cos t (sin t)^(-1)$}`, `{$(b e^t - b)^(-1)$}`...
 fn kernel(factors: &[&Expr]) -> Option<(Kernel, Expr, Expr)> {
     let inverse = |t: &Expr| match t {
-        Term::Pow(pow) if **pow.exponant == value(Rational::from(-1)) => Some((*pow.base).clone()),
+        Term::Pow(pow) if **pow.exponant == int(-1) => Some((*pow.base).clone()),
         _ => None,
     };
     match factors {
@@ -899,7 +887,6 @@ fn shifted_kernel(kernel: Kernel, t: &Expr, w: Symbol, k: Symbol) -> Option<Expr
     let regular = |f: &Expr| matches!(constant_sign(f), Some(Ordering::Less | Ordering::Greater));
     let n = variable(k);
     let pi = variable(Context::PI);
-    let int = |i: i64| value(Rational::from(i));
     let polygamma = |q: Expr| {
         Term::Fun(Box::new(Fun::new(
             Context::POLYGAMMA,
@@ -1544,7 +1531,7 @@ fn series_from(
             let n = variable(k);
             let c = &coefficients[i]
                 * &ratio
-                    .product(l, &i_term, &(&n - &value(Rational::from(1))))
+                    .product(l, &i_term, &(&n - &int(1)))
                     .map_err(|_| LimitError::Unsupported)?;
             let term = c * w_power(w, &exponent(&n));
             if q == 1u32 && e0.denominator_ref() == &1u32 {
@@ -1560,7 +1547,7 @@ fn series_from(
             let shifted = subs(&ratio, l, &(&m_term * &variable(l) + &i_term));
             let c = &coefficients[i]
                 * &shifted
-                    .product(l, &zero(), &(variable(k) - value(Rational::from(1))))
+                    .product(l, &zero(), &(variable(k) - int(1)))
                     .map_err(|_| LimitError::Unsupported)?;
             let n = &m_term * &variable(k) + &i_term;
             held_sum(tidy_term(&(c * w_power(w, &exponent(&n))), k), k, zero())
@@ -1753,7 +1740,7 @@ pub(super) fn hypergeometric_combination(
             u.pow(n) * re
         } else {
             let theta = arg(&u, &v)?;
-            let modulus = (&u * &u + &v * &v).pow(&(n / &value(Rational::from(2))));
+            let modulus = (&u * &u + &v * &v).pow(&(n / &int(2)));
             let angle = n * &theta;
             modulus * (re * fun(Context::COS, angle.clone()) - im * fun(Context::SIN, angle))
         };
@@ -1773,12 +1760,10 @@ pub(super) fn hypergeometric_combination(
 /// `{$w^e$}`, as `{$(plus.minus 1)^e x^(-e)$}` for `{$w = plus.minus 1/x$}`.
 fn w_power(w: &Expr, e: &Expr) -> Expr {
     match w {
-        Term::Pow(pow) if **pow.exponant == value(Rational::from(-1)) => pow.base.pow(&-e),
+        Term::Pow(pow) if **pow.exponant == int(-1) => pow.base.pow(&-e),
         Term::Mul(mul) if mul.coefficient == -1 => {
             match mul.iter().collect::<Vec<_>>().as_slice() {
-                [Term::Pow(pow)] if **pow.exponant == value(Rational::from(-1)) => {
-                    value(Rational::from(-1)).pow(e) * pow.base.pow(&-e)
-                }
+                [Term::Pow(pow)] if **pow.exponant == int(-1) => int(-1).pow(e) * pow.base.pow(&-e),
                 _ => w.pow(e),
             }
         }
@@ -2250,7 +2235,7 @@ fn binomials(term: &Expr, k: Symbol) -> Expr {
     };
     let factors: Vec<&Expr> = mul.iter().collect();
     let inverse = |t: &Expr| match t {
-        Term::Pow(pow) if **pow.exponant == value(Rational::from(-1)) => Some((*pow.base).clone()),
+        Term::Pow(pow) if **pow.exponant == int(-1) => Some((*pow.base).clone()),
         _ => None,
     };
     let find = |f: &dyn Fn(&Expr) -> bool| factors.iter().position(|t| f(t));
@@ -2283,7 +2268,7 @@ fn binomials(term: &Expr, k: Symbol) -> Expr {
         .enumerate()
         .filter(|(index, _)| ![i, j, l].contains(index))
         .fold(value(mul.coefficient.clone()), |res, (_, t)| res * *t)
-        * value(Rational::from(-1)).pow(&variable(k))
+        * int(-1).pow(&variable(k))
         * binomial
 }
 
@@ -2311,11 +2296,11 @@ fn half_gammas(term: &Expr) -> Expr {
         };
         let factors = (0..r).fold(one(), |res, i| res * (u + &value(Rational::from(i))));
         let z = (&z + &value(Rational::from(r))).expand();
-        let two_z = (&value(Rational::from(2)) * &z).expand();
+        let two_z = (&int(2) * &z).expand();
         Some(
             fun(Context::FACTORIAL, two_z)
                 * variable(Context::PI).pow(&value(Rational::from_signeds(1, 2)))
-                / (value(Rational::from(4)).pow(&z) * fun(Context::FACTORIAL, z) * factors),
+                / (int(4).pow(&z) * fun(Context::FACTORIAL, z) * factors),
         )
     })
 }
@@ -2377,7 +2362,7 @@ fn split_powers(term: &Expr, k: Symbol) -> Expr {
         }
         let exponent = split_powers(exponent, k);
         let sign = if base.value < 0 {
-            value(Rational::from(-1)).pow(&exponent)
+            int(-1).pow(&exponent)
         } else {
             one()
         };
@@ -2493,7 +2478,7 @@ mod tests {
                 let [body, k, a, _] = fun.get_args::<Real>()?.as_slice() else {
                     return None;
                 };
-                let b = a + &value(Rational::from(24));
+                let b = a + &int(24);
                 let args = vec![body.clone(), k.clone(), a.clone(), b];
                 Some(Term::Fun(Box::new(Fun::new(Context::SUM, args, R))).normalize())
             }

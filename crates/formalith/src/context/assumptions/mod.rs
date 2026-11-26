@@ -828,12 +828,11 @@ pub fn linear_signs(form: &LinearForm, extra: &[Constraint]) -> SignSet {
 
 /// Printing of conditions as real expressions, so that they parse back.
 mod print {
-    use malachite::Rational;
 
     use super::{LinearForm, SignSet, Var};
     use crate::{
         context::Symbol,
-        field::commons::real::expr::{Expr, value, variable},
+        field::commons::real::expr::{Expr, int, value, variable},
         printer::{Print, PrintOptions},
     };
 
@@ -854,7 +853,7 @@ mod print {
     /// `{$f in S$}` as a relation with the symbols of positive coefficients on the left, like `a + 2 b > c + 1`, or
     /// those of negative coefficients when there are none, like `a + b < 3`.
     pub(super) fn relation(form: &LinearForm, signs: SignSet, typst: bool) -> String {
-        let (mut left, mut right) = (value(Rational::from(0)), value(-&form.constant));
+        let (mut left, mut right) = (int(0), value(-&form.constant));
         for (x, c) in &form.coefficients {
             let Var::Symbol(s) = x else { continue };
             if *c > 0 {

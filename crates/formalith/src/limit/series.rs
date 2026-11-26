@@ -7,8 +7,8 @@
 
 use crate::field::real::{
     expr::{
-        Expr, depends, fun, gamma_pole, half, one, polygamma, polygamma_args, ratio, subs, unary,
-        value, variable, zero,
+        Expr, depends, fun, gamma_pole, half, int, one, polygamma, polygamma_args, ratio, subs,
+        unary, value, variable, zero,
     },
     special::bernoulli,
 };
@@ -603,7 +603,7 @@ impl Expander<'_> {
         let (a0, u) = self.split_constant(series)?;
         let imaginary = ident == Context::ERFI;
         let square = &a0 * &a0;
-        let scale = value(Rational::from(2))
+        let scale = int(2)
             * variable(Context::PI).pow(&ratio(-1, 2))
             * fun(Context::EXP, if imaginary { square } else { -square });
         Self::compose(

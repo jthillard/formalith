@@ -52,8 +52,8 @@ use crate::{
         R,
         approx::approximate,
         expr::{
-            DIGITS, Expr, Real, constant_sign, depends, fun, gamma_pole, half,
-            has_special_constant, hyperbolic_as_exp, infinity, infinity_sign, one, polygamma,
+            DIGITS, Expr, Real, any_subterm, constant_sign, depends, fun, gamma_pole, half,
+            has_special_constant, hyperbolic_as_exp, infinity, infinity_sign, int, one, polygamma,
             polygamma_args, sqrt, try_map_operands, unary, value, variable, zero,
         },
         sign::{SignMode, sign},
@@ -215,18 +215,10 @@ impl From<LimitError> for Step {
 
 /// Whether `f` contains `floor` or `ceil` of an argument depending on `x`.
 fn has_step(f: &Expr, x: Symbol) -> bool {
-    match f {
-        Term::Value(_) | Term::Symbol(_) => false,
-        Term::Add(add) => add.iter().any(|t| has_step(t, x)),
-        Term::Mul(mul) => mul.iter().any(|t| has_step(t, x)),
-        Term::Pow(pow) => has_step(&pow.base, x) || has_step(&pow.exponant, x),
-        Term::Fun(function) => {
-            matches!(unary(f), Some((Context::FLOOR | Context::CEIL, g)) if depends(g, x))
-                || function
-                    .get_args::<Real>()
-                    .is_some_and(|args| args.iter().any(|arg| has_step(arg, x)))
-        }
-    }
+    any_subterm(
+        f,
+        &|t| matches!(unary(t), Some((Context::FLOOR | Context::CEIL, g)) if depends(g, x)),
+    )
 }
 
 /// Replace `{$floor g$}` and `{$ceil g$}` in `f` by their constant value when `x` tends to `point`: the integer
@@ -443,8 +435,7 @@ fn exp_log_form(term: &Expr, x: Symbol, infinite: bool) -> LimitResult<Expr> {
                 }
                 (ident @ (Context::ASIN | Context::ACOS), [u]) => {
                     // `{$asin u = 2 atan(u/(1 + sqrt(1 - u^2)))$}`, `{$acos u = pi/2 - asin u$}`
-                    let asin = value(Rational::from(2))
-                        * fun(Context::ATAN, u / &(one() + sqrt(&(one() - u * u))));
+                    let asin = int(2) * fun(Context::ATAN, u / &(one() + sqrt(&(one() - u * u))));
                     if ident == Context::ASIN {
                         asin
                     } else {

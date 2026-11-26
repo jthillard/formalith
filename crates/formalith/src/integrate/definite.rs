@@ -19,8 +19,9 @@
 
 use crate::field::real::expr::sqrt;
 use crate::field::real::expr::{
-    DIGITS, Expr, Real, constant_sign, depends, fun, half, has_special_constant, infinity_sign,
-    is_infinite, map_tree, one, subs, unary, value, variable, zero,
+    DIGITS, Expr, Real, any_subterm, constant_sign, depends, fun, half, has_function,
+    has_special_constant, infinity_sign, int, is_infinite, map_tree, one, subs, unary, value,
+    variable, zero,
 };
 use std::{
     cell::{Cell, RefCell},
@@ -320,18 +321,7 @@ fn is_negative(term: &Expr) -> bool {
 
 /// Whether `term` contains a division by zero, like `{$1/0 - 1$}`.
 fn has_division_by_zero(term: &Expr) -> bool {
-    term.is_division_by_zero()
-        || match term {
-            Term::Value(_) | Term::Symbol(_) => false,
-            Term::Add(add) => add.iter().any(has_division_by_zero),
-            Term::Mul(mul) => mul.iter().any(has_division_by_zero),
-            Term::Pow(pow) => {
-                has_division_by_zero(&pow.base) || has_division_by_zero(&pow.exponant)
-            }
-            Term::Fun(fun) => fun
-                .get_args::<Real>()
-                .is_some_and(|args| args.iter().any(has_division_by_zero)),
-        }
+    any_subterm(term, &Term::is_division_by_zero)
 }
 
 /// `{$S(b) - S(a)$}` for the terms `S` of the antiderivative `{$F = S + R$}` with a held sum, as `(S(b) - S(a), R)`,
@@ -478,9 +468,9 @@ fn mellin(f: &Expr, x: Symbol) -> Option<Expr> {
             if sign.value == -1 && positive(&(&s - &one())) {
                 gamma * zeta() / c.pow(&s)
             } else if sign.value == 1 && s.is_one() {
-                fun(Context::LN, value(Rational::from(2))) / c
+                fun(Context::LN, int(2)) / c
             } else if sign.value == 1 {
-                let eta = one() - value(Rational::from(2)).pow(&(one() - s.clone()));
+                let eta = one() - int(2).pow(&(one() - s.clone()));
                 eta * gamma * zeta() / c.pow(&s)
             } else {
                 return None;
@@ -1021,22 +1011,7 @@ pub(super) fn sample_between(p: (f64, &Expr), q: (f64, &Expr)) -> Option<Expr> {
 
 /// Whether `term` contains `asin`, `acos` or `atan`.
 fn has_inverse_trig(term: &Expr) -> bool {
-    match term {
-        Term::Value(_) | Term::Symbol(_) => false,
-        Term::Add(add) => add.iter().any(has_inverse_trig),
-        Term::Mul(mul) => mul.iter().any(has_inverse_trig),
-        Term::Pow(pow) => has_inverse_trig(&pow.base) || has_inverse_trig(&pow.exponant),
-        Term::Fun(fun) => {
-            matches!(
-                fun.get_ident(),
-                Context::ASIN | Context::ACOS | Context::ATAN
-            ) || fun
-                .get_args::<Real>()
-                .into_iter()
-                .flatten()
-                .any(has_inverse_trig)
-        }
-    }
+    has_function(term, &[Context::ASIN, Context::ACOS, Context::ATAN])
 }
 
 /// `f` with its sums and functions of inverse trigonometric functions which are constant on the open interval
@@ -1056,9 +1031,9 @@ fn constant_parts(f: &Expr, x: Symbol, interval: (f64, f64)) -> Expr {
         one(),
         half(),
         sqrt(3),
-        sqrt(3) / value(Rational::from(3)),
-        sqrt(2) / value(Rational::from(2)),
-        sqrt(3) / value(Rational::from(2)),
+        sqrt(3) / int(3),
+        sqrt(2) / int(2),
+        sqrt(3) / int(2),
     ] {
         candidates.insert(candidates.len() - 1, -&p);
         candidates.insert(candidates.len() - 1, p);

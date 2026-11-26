@@ -16,7 +16,7 @@ use crate::{
     field::real::{
         Real,
         approx::approximate,
-        expr::{DIGITS, Expr, constant_sign, depends, subs, unary, value, variable},
+        expr::{DIGITS, Expr, constant_sign, depends, int, subs, unary, value, variable},
     },
     term::{Expand, Normalize, Term},
 };
@@ -238,7 +238,7 @@ fn collect_conditions(term: &Expr, k: Symbol, conditions: &mut Vec<Condition>) {
             match unary(term) {
                 Some((Context::LN, u)) => push(u, true),
                 Some((Context::ASIN | Context::ACOS, u)) => {
-                    let one = value(Rational::from(1));
+                    let one = int(1);
                     push(&(&one - u).normalize(), false);
                     push(&(&one + u).normalize(), false);
                 }

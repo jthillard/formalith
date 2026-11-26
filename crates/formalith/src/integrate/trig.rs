@@ -1,7 +1,7 @@
 //! Integrals of trigonometric and hyperbolic expressions.
 
 use crate::field::real::expr::{
-    Expr, depends, fun, one, ratio, size, sqrt, unary, value, variable, zero,
+    Expr, depends, fun, int, one, ratio, size, sqrt, unary, value, variable, zero,
 };
 use malachite::{Rational, base::num::arithmetic::traits::Abs};
 
@@ -45,7 +45,6 @@ pub(super) fn integrate_powers(integrator: &mut Integrator, f: &Expr, x: Symbol)
     let (u, m, n) = sin_cos_powers(f, x)?;
     let a = linear(&u, x)?;
     let one = one();
-    let int = |k: i64| value(Rational::from(k));
     let t_symbol = integrator.fresh_symbol();
     let t = variable(t_symbol);
     let (g, back) = if m.rem_euclid(2) == 1 {
@@ -191,7 +190,7 @@ fn product_to_sum_once(f: &Expr, linearize: bool) -> Option<Expr> {
         if n < 2 {
             continue;
         }
-        let cos_2u = cos(value(Rational::from(2)) * u);
+        let cos_2u = cos(int(2) * u);
         let reduced = if ident == Context::SIN {
             &half * &(one() - cos_2u)
         } else {
@@ -242,7 +241,7 @@ fn weierstrass(integrator: &Integrator, f: &Expr, x: Symbol) -> Option<Expr> {
     let t_symbol = integrator.fresh_symbol();
     let t = variable(t_symbol);
     let one = one();
-    let two = value(Rational::from(2));
+    let two = int(2);
     let t2 = &t * &t;
     let g = map_tree(f, &|term| match unary(term) {
         Some((Context::SIN, v)) if *v == u => Some(&two * &t / (&one + &t2)),
@@ -378,7 +377,7 @@ pub(super) fn substitute(integrator: &mut Integrator, f: &Expr, x: Symbol) -> Op
             Some(res)
         })
         .collect();
-    let half_t = &t / &value(Rational::from(2));
+    let half_t = &t / &int(2);
     let res = map_tree(&res, &|term| {
         let (ident, v) = unary(term)?;
         if ident == Context::TAN && *v == half_t {

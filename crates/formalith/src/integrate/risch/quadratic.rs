@@ -15,7 +15,7 @@ use malachite::Rational;
 
 use crate::{
     context::{Context, Symbol},
-    field::real::expr::{Expr, fun, sqrt, value, zero},
+    field::real::expr::{Expr, fun, int, sqrt, value, zero},
 };
 
 use super::{super::ln_abs, EPoly, Elem, tower::Tower};
@@ -182,7 +182,7 @@ impl Quadratic {
         }
         let discriminant = self.discriminant();
         if discriminant > 0 {
-            let root = sqrt(&value(discriminant)) / value(Rational::from(2));
+            let root = sqrt(&value(discriminant)) / int(2);
             return [1, -1].into_iter().fold(zero(), |res, sign| {
                 let alpha = value(u.clone()) + value(Rational::from(sign)) * &root;
                 res + alpha.clone() * ln_abs(&(term(s0) + alpha * term(s1)), x)
@@ -201,7 +201,7 @@ impl Quadratic {
 /// `{$i ln((A + i B) / (A - i B))$}` up to a constant, for `{$B = v tilde(B)$}` with `{$v^2 = w$}`, as a sum of
 /// `{$2 atan$}` of elements of `{$K(t)$}` without poles where `{$A^2 + B^2$}` doesn't vanish (Rioboo).
 fn log_to_atan(tower: &Tower, a: &EPoly, b: &EPoly, w: &Rational, v: &Expr, level: usize) -> Expr {
-    let two = value(Rational::from(2));
+    let two = int(2);
     let atan = |num: &EPoly, den: &EPoly| {
         two.clone()
             * fun(

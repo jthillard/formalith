@@ -38,6 +38,11 @@ pub fn zero() -> Expr {
     Term::zero(R)
 }
 
+/// The integer `n`.
+pub fn int(n: i64) -> Expr {
+    value(Rational::from(n))
+}
+
 /// The constant 1.
 pub const fn one() -> Expr {
     value(Rational::ONE)
@@ -212,7 +217,7 @@ pub fn hyperbolic_as_exp(ident: Symbol, u: &Expr) -> Option<Expr> {
         }
         Context::TANH => {
             // `{$tanh u = (e^(2 u) - 1)/(e^(2 u) + 1)$}`
-            let exp = fun(Context::EXP, value(Rational::from(2)) * u.clone());
+            let exp = fun(Context::EXP, int(2) * u.clone());
             Some((&exp - &one()) / (exp + one()))
         }
         _ => None,
@@ -266,6 +271,41 @@ pub fn map_tree(term: &Expr, rewrite: &impl Fn(&Expr) -> Option<Expr>) -> Expr {
     }
     let Ok(res) = try_map_operands::<Infallible>(term, |operand| Ok(map_tree(operand, rewrite)));
     res
+}
+
+/// The smallest of `term` and `candidates` by [`size`], the first one among those of the same size.
+pub fn smallest(term: Expr, candidates: impl IntoIterator<Item = Expr>) -> Expr {
+    candidates.into_iter().fold(term, |best, candidate| {
+        if size(&candidate) < size(&best) {
+            candidate
+        } else {
+            best
+        }
+    })
+}
+
+/// Whether `term` or one of its subterms satisfies `predicate`.
+pub fn any_subterm(term: &Expr, predicate: &impl Fn(&Expr) -> bool) -> bool {
+    predicate(term)
+        || match term {
+            Term::Value(_) | Term::Symbol(_) => false,
+            Term::Add(add) => add.iter().any(|t| any_subterm(t, predicate)),
+            Term::Mul(mul) => mul.iter().any(|t| any_subterm(t, predicate)),
+            Term::Pow(pow) => {
+                any_subterm(&pow.base, predicate) || any_subterm(&pow.exponant, predicate)
+            }
+            Term::Fun(fun) => fun
+                .get_args::<Real>()
+                .is_some_and(|args| args.iter().any(|t| any_subterm(t, predicate))),
+        }
+}
+
+/// Whether `term` contains a function among `idents`.
+pub fn has_function(term: &Expr, idents: &[Symbol]) -> bool {
+    any_subterm(
+        term,
+        &|t| matches!(t, Term::Fun(f) if idents.contains(&f.get_ident())),
+    )
 }
 
 /// The number of nodes of a term.

@@ -5,7 +5,7 @@
 //! exponential, sine and cosine integrals.
 
 use crate::field::real::expr::{
-    Expr, constant_sign, depends, fun, map_tree, one, ratio, unary, value, variable, zero,
+    Expr, constant_sign, depends, fun, int, map_tree, one, ratio, unary, value, variable, zero,
 };
 use crate::field::real::expr::{half, sqrt};
 use std::cmp::Ordering;
@@ -21,19 +21,19 @@ use super::{Integrator, ci_abs, factors, linear, ln_abs, poly::Poly};
 
 pub(super) fn integrate(_: &mut Integrator, f: &Expr, x: Symbol) -> Option<Expr> {
     match f {
-        Term::Symbol(_) => Some(ratio(1, 2) * variable(x).pow(&value(Rational::from(2)))),
+        Term::Symbol(_) => Some(ratio(1, 2) * variable(x).pow(&int(2))),
         Term::Pow(pow) => {
             let (base, exponant) = (&*pow.base, &**pow.exponant);
             if !depends(exponant, x) {
                 if let Some(a) = linear(base, x) {
                     // `{$integral u^n = u^(n+1) / (n+1)$}`, `{$integral 1/u = ln|u|$}`
-                    if *exponant == value(Rational::from(-1)) {
+                    if *exponant == int(-1) {
                         return Some(ln_abs(base, x) / a);
                     }
                     let n = exponant + &one();
                     return Some(base.pow(&n) / (n * a));
                 }
-                if *exponant == value(Rational::from(-1))
+                if *exponant == int(-1)
                     && let Some(res) = symbolic_atan(base, x)
                 {
                     return Some(res);
@@ -129,9 +129,7 @@ fn exp_trig(f: &Expr, x: Symbol) -> Option<Expr> {
 fn exponential_integral(f: &Expr, x: Symbol) -> Option<Expr> {
     let [first, second] = factors(f).try_into().ok()?;
     let ((ident, u), t) = match (&first, &second) {
-        (Term::Pow(pow), g) | (g, Term::Pow(pow))
-            if **pow.exponant == value(Rational::from(-1)) =>
-        {
+        (Term::Pow(pow), g) | (g, Term::Pow(pow)) if **pow.exponant == int(-1) => {
             (unary(g)?, &*pow.base)
         }
         _ => return None,
@@ -230,7 +228,7 @@ fn polynomial_gaussian(f: &Expr, x: Symbol) -> Option<Expr> {
 /// must not have roots left (like `{$sqrt(2/a)$}`, which may be the root of a negative number).
 fn symbolic_atan(q: &Expr, x: Symbol) -> Option<Expr> {
     let Term::Add(add) = q else { return None };
-    let square = variable(x).pow(&value(Rational::from(2)));
+    let square = variable(x).pow(&int(2));
     let (mut a, mut b) = (zero(), zero());
     for term in add {
         if depends(term, x) {

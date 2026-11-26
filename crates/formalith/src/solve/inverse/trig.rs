@@ -14,7 +14,8 @@ use crate::{
     field::real::{
         R,
         expr::{
-            Expr, arg, constant_sign, depends, fun, map_tree, sqrt, subs, unary, value, variable,
+            Expr, arg, constant_sign, depends, fun, int, map_tree, sqrt, subs, unary, value,
+            variable,
         },
     },
     term::{Expand, Fun, Normalize, Term},
@@ -77,7 +78,7 @@ impl Inverter {
         let (s, c) = (Symbol::new("@S"), Symbol::new("@C"));
         let (sv, cv) = (variable(s), variable(c));
         // `{$sin(N v)$}` and `{$cos(N v)$}` for `{$0 <= N <= "MAX_MULTIPLE"$}`
-        let mut multiple = vec![(value(Rational::from(0)), value(Rational::from(1)))];
+        let mut multiple = vec![(int(0), int(1))];
         for _ in 0..MAX_MULTIPLE {
             let (sn, cn) = multiple.last().expect("There is a first multiple");
             let next = (
@@ -128,7 +129,7 @@ impl Inverter {
         let denominator = denominators
             .into_inner()
             .into_iter()
-            .fold(value(Rational::from(1)), |res, d| res * d);
+            .fold(int(1), |res, d| res * d);
         if depends(&numerator, x) {
             return None;
         }
@@ -211,7 +212,7 @@ fn monomials(p: &Expr, s: Symbol, c: Symbol) -> Option<Vec<Monomial>> {
             };
             let mut coefficient = match term {
                 Term::Mul(mul) => value(mul.coefficient.clone()),
-                _ => value(Rational::from(1)),
+                _ => int(1),
             };
             let (mut i, mut j) = (0, 0);
             for factor in factors {
@@ -234,23 +235,20 @@ fn monomials(p: &Expr, s: Symbol, c: Symbol) -> Option<Vec<Monomial>> {
 
 /// `{$sum a S^i C^j$}` with `S` and `C` replaced by `sin` and `cos`, for the monomials `{$a S^i C^j$}`.
 fn evaluate(monomials: &[Monomial], sin: &Expr, cos: &Expr) -> Expr {
-    monomials
-        .iter()
-        .fold(value(Rational::from(0)), |res, monomial| {
-            res + monomial.coefficient.clone()
-                * sin.pow(&value(Rational::from(monomial.s)))
-                * cos.pow(&value(Rational::from(monomial.c)))
-        })
+    monomials.iter().fold(int(0), |res, monomial| {
+        res + monomial.coefficient.clone()
+            * sin.pow(&value(Rational::from(monomial.s)))
+            * cos.pow(&value(Rational::from(monomial.c)))
+    })
 }
 
 /// The equations in `sin`, `cos` or `tan` of the common angle equivalent to `{$P(S, C) = 0$}`, `P` being given by
 /// its monomials, `t` being a free symbol for the polynomials in one function. `None` when the roots of a
 /// polynomial can't be found.
 fn branches(monomials: &[Monomial], t: Symbol) -> Option<Vec<Branch>> {
-    let zero = value(Rational::from(0));
-    let one = value(Rational::from(1));
+    let zero = int(0);
+    let one = int(1);
     let tv = variable(t);
-    let int = |n: i64| value(Rational::from(n));
     let pow = |base: &Expr, n: u32| base.pow(&value(Rational::from(n)));
     // The points of the angles where `{$sin v = s$}` or `{$cos v = c$}`
     let sin_branch = |s: Expr| {

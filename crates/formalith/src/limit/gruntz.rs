@@ -8,8 +8,8 @@
 
 use crate::field::real::expr::try_map_operands;
 use crate::field::real::expr::{
-    DIGITS, Expr, depends, fun, half, infinity, is_infinite, one, polygamma, polygamma_args, size,
-    unary, value, variable, zero,
+    DIGITS, Expr, depends, fun, half, infinity, int, is_infinite, one, polygamma, polygamma_args,
+    size, unary, value, variable, zero,
 };
 use std::cmp::Ordering;
 
@@ -507,7 +507,7 @@ impl Gruntz {
                         return Err(LimitError::Unsupported);
                     }
                     if limit == infinity() {
-                        let two_pi = value(Rational::from(2)) * variable(Context::PI);
+                        let two_pi = int(2) * variable(Context::PI);
                         let exponant = (&arg - &half()) * fun(Context::LN, arg.clone())
                             - arg.clone()
                             + fun(Context::LN, two_pi) * half()

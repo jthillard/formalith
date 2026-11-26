@@ -17,7 +17,7 @@ use crate::{
         Group, Semiring, TryExprFrom,
         real::{
             R,
-            expr::{self, Expr, Real, fun, half, one, size, value, variable, zero},
+            expr::{self, Expr, Real, fun, half, int, one, size, value, variable, zero},
             radicals,
             sign::{SignMode, sign},
         },
@@ -502,7 +502,7 @@ fn is_complex_ln(u: &Expr, v: &Expr) -> bool {
 fn split_ln(u: &Expr, v: &Expr, numeric: bool) -> Option<(Expr, Expr)> {
     let arg = match expr::arg(u, v) {
         Some(arg) => arg,
-        None if numeric => value(Rational::from(2)) * fun(Context::ATAN, v / &(modulus(u, v) + u)),
+        None if numeric => int(2) * fun(Context::ATAN, v / &(modulus(u, v) + u)),
         None => return None,
     };
     if v.is_zero() {

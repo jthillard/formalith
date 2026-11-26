@@ -34,7 +34,7 @@ use crate::{
         modular::Zn,
         real::{
             R,
-            expr::{Expr, constant_sign},
+            expr::{Expr, constant_sign, int},
             rootof,
             sign::{SignMode, linear_expr, sign_set},
         },
@@ -293,7 +293,7 @@ fn quartic_roots<T: Ring>(
             .find(|m| sign(m) == Some(Ordering::Greater))?,
     };
     let half = value(Rational::from_signeds(1, 2));
-    let s = (value(Rational::from(2)) * &m).pow(&half);
+    let s = (int(2) * &m).pow(&half);
     let constant = &value(p) * &half + &m;
     let correction = value(q) * &half / &s;
     let mut res = vec![];
@@ -375,13 +375,7 @@ fn trig_radical(ident: Symbol, q: &Rational) -> Option<Term<R<Rational>>> {
 
 /// Whether `term` contains a function.
 fn has_function(term: &Term<R<Rational>>) -> bool {
-    match term {
-        Term::Value(_) | Term::Symbol(_) => false,
-        Term::Add(add) => add.iter().any(has_function),
-        Term::Mul(mul) => mul.iter().any(has_function),
-        Term::Pow(pow) => has_function(&pow.base) || has_function(&pow.exponant),
-        Term::Fun(_) => true,
-    }
+    crate::field::real::expr::any_subterm(term, &|t| matches!(t, Term::Fun(_)))
 }
 
 /// The roots of the cyclotomic polynomial `{$Phi_n$}`, `{$cos((2 pi j) / n) + i sin((2 pi j) / n)$}` for
@@ -481,9 +475,8 @@ fn cubic_roots(coefficients: &[Rational]) -> Option<Vec<Term<R<Rational>>>> {
                 R,
             )))
             .normalize()
-                / value(Rational::from(3));
-            let amplitude =
-                value(Rational::from(2)) * value(-&p / Rational::from(3)).pow(&value(ratio(1, 2)));
+                / int(3);
+            let amplitude = int(2) * value(-&p / Rational::from(3)).pow(&value(ratio(1, 2)));
             (0..3)
                 .map(|k| {
                     let cos = Term::Fun(Box::new(Fun::new(

@@ -34,8 +34,9 @@ use crate::{
         R, Real,
         approx::approximate,
         expr::{
-            DIGITS, Expr, constant_sign, depends, fun, half, has_special_constant, infinity,
-            infinity_sign, is_infinite, one, subs, try_map_operands, value, variable, zero,
+            DIGITS, Expr, constant_sign, depends, fun, half, has_function, has_special_constant,
+            infinity, infinity_sign, int, is_infinite, one, subs, try_map_operands, value,
+            variable, zero,
         },
         sign::is_integer,
     },
@@ -612,20 +613,7 @@ fn without_steps(term: &Expr, x: Symbol, sample: &Expr) -> Result<Expr, SolveErr
 
 /// Whether `term` contains `floor`, `ceil` or `piecewise`, whose jumps aren't found.
 pub fn has_step(term: &Expr) -> bool {
-    match term {
-        Term::Value(_) | Term::Symbol(_) => false,
-        Term::Add(add) => add.iter().any(has_step),
-        Term::Mul(mul) => mul.iter().any(has_step),
-        Term::Pow(pow) => has_step(&pow.base) || has_step(&pow.exponant),
-        Term::Fun(function) => {
-            matches!(
-                function.get_ident(),
-                Context::FLOOR | Context::CEIL | Context::PIECEWISE
-            ) || function
-                .get_args::<Real>()
-                .is_some_and(|args| args.iter().any(has_step))
-        }
-    }
+    has_function(term, &[Context::FLOOR, Context::CEIL, Context::PIECEWISE])
 }
 
 /// The arguments depending on `x` of `abs` and `sign` in `term`, where it may not be differentiable.
@@ -715,7 +703,7 @@ pub fn collect_conditions(
             let [u] = args.as_slice() else {
                 return;
             };
-            let square = || (one() - u.pow(&value(Rational::from(2)))).normalize();
+            let square = || (one() - u.pow(&int(2))).normalize();
             match function.get_ident() {
                 Context::LN => res.push((u.clone(), Condition::Positive)),
                 Context::TAN => res.push((fun(Context::COS, u.clone()), Condition::NonZero)),

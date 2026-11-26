@@ -38,8 +38,8 @@ use crate::{
         real::{
             R,
             expr::{
-                Expr, constant_sign, depends, fun, hyperbolic_as_exp, map_tree, subs, unary, value,
-                variable,
+                Expr, constant_sign, depends, fun, hyperbolic_as_exp, int, map_tree, one, subs,
+                unary, value, variable,
             },
         },
     },
@@ -303,7 +303,6 @@ impl Inverter {
         depth: usize,
     ) -> Result<Vec<(Expr, Expr)>, SolveError> {
         let pi = variable(Context::PI);
-        let int = |n: i64| value(Rational::from(n));
         let k = || self.parameter(depth);
         // The sign of `c - a`
         let cmp = |a: i64| constant_sign(&(c - &int(a)));
@@ -472,7 +471,7 @@ impl Inverter {
         });
         // `{$p s + r$}`, linear in `s`
         let p = replaced.derivative(s);
-        let r = subs(&replaced, s, &value(Rational::from(0)));
+        let r = subs(&replaced, s, &int(0));
         if depends(&p, s) {
             return None;
         }
@@ -497,7 +496,7 @@ impl Inverter {
             }
             let c = -(r / b);
             if c.is_zero() {
-                return Some(vec![from_u(value(Rational::from(1)))]);
+                return Some(vec![from_u(int(1))]);
             }
             return Some(lambert_branches(&c, |w| from_u(&c / &w)));
         }
@@ -555,8 +554,8 @@ impl Inverter {
                 .collect(),
             _ => vec![ratio.clone()],
         };
-        let mut constant = value(Rational::from(1));
-        let mut logarithm = value(Rational::from(0));
+        let mut constant = int(1);
+        let mut logarithm = int(0);
         for factor in factors {
             if !depends(&factor, x) {
                 constant *= factor;
@@ -586,7 +585,6 @@ impl Inverter {
 /// The conditions `{$u >= 0$}` (`{$u > 0$}` when strict) for `c` to be in the range of the function `g`, like
 /// `{$c >= 0$}` for `{$g = sqrt u$}`.
 fn range_conditions(g: &Expr, c: &Expr) -> Vec<(Expr, bool)> {
-    let int = |n: i64| value(Rational::from(n));
     let half_pi = variable(Context::PI) / int(2);
     // `{$a <= c <= b$}`, or `{$a < c < b$}` when strict
     let between = |a: Expr, b: Expr, strict: bool| vec![(c - &a, strict), (b - c, strict)];
@@ -625,10 +623,10 @@ fn range_conditions(g: &Expr, c: &Expr) -> Vec<(Expr, bool)> {
 /// `{$a < -1/e$}`, `{$W = -1$}` for `{$a = -1/e$}`, both branches `{$W_0(a)$}` and `{$W_(-1)(a)$}` for
 /// `{$-1/e < a < 0$}`, and only `{$W_0(a)$}` otherwise (or when the sign of `a` is unknown).
 fn lambert_branches(argument: &Expr, solution: impl Fn(Expr) -> Expr) -> Vec<Expr> {
-    let branch_point = constant_sign(&(argument + &fun(Context::EXP, value(Rational::from(-1)))));
+    let branch_point = constant_sign(&(argument + &fun(Context::EXP, int(-1))));
     match branch_point {
         Some(Ordering::Less) => vec![],
-        Some(Ordering::Equal) => vec![solution(value(Rational::from(-1)))],
+        Some(Ordering::Equal) => vec![solution(int(-1))],
         _ => {
             let mut res = vec![solution(fun(Context::LAMBERTW, argument.clone()))];
             if branch_point.is_some() && constant_sign(argument) == Some(Ordering::Less) {
@@ -645,7 +643,7 @@ fn linear(u: &Expr, x: Symbol) -> Option<(Expr, Expr)> {
     if depends(&slope, x) {
         return None;
     }
-    Some((slope, subs(u, x, &value(Rational::from(0)))))
+    Some((slope, subs(u, x, &int(0))))
 }
 
 /// `expression` with its hyperbolic functions written with exponentials, when they are mixed with other kernels
@@ -754,20 +752,11 @@ fn split_constant(u: &Expr, x: Symbol) -> (Expr, Expr) {
     match u {
         Term::Add(add) => {
             let (constant, rest): (Vec<_>, Vec<_>) = add.iter().partition(|t| !depends(t, x));
-            let sum = |terms: Vec<&Expr>| {
-                terms
-                    .into_iter()
-                    .fold(value(Rational::from(0)), |a, t| a + t)
-            };
+            let sum = |terms: Vec<&Expr>| terms.into_iter().fold(int(0), |a, t| a + t);
             (sum(constant), sum(rest))
         }
-        _ => (value(Rational::from(0)), u.clone()),
+        _ => (int(0), u.clone()),
     }
-}
-
-/// The constant 1.
-fn one() -> Expr {
-    value(Rational::from(1))
 }
 
 /// `u` as `{$n v$}` with `n` its rational coefficient.
@@ -783,7 +772,7 @@ fn split_coefficient(u: &Expr) -> (Rational, Expr) {
 /// The roots of the polynomial `p` in `x`, `None` if they can't be found or every value is a root.
 fn roots(p: &Expr, x: Symbol) -> Option<Vec<Expr>> {
     let solution = R
-        .solve_for(&[Equation::new(p.clone(), value(Rational::from(0)))], &[x])
+        .solve_for(&[Equation::new(p.clone(), int(0))], &[x])
         .ok()?;
     match solution {
         Solution::NoSolution => Some(vec![]),

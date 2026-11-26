@@ -9,7 +9,7 @@ use malachite::Rational;
 
 use crate::{
     context::{Context, Symbol},
-    field::real::expr::{Expr, depends, subs, value, variable},
+    field::real::expr::{Expr, depends, int, subs, value, variable},
     integrate::rational::rational_roots,
     polynom::{
         dense::{Coefficient, Poly},
@@ -120,11 +120,7 @@ pub(super) fn ratio_in(
         let one = Elem::one();
         (p.shift(&one), q.shift(&one))
     } else {
-        let shifted = subs(
-            &rational,
-            shift,
-            &(variable(shift) + value(Rational::from(1))),
-        );
+        let shifted = subs(&rational, shift, &(variable(shift) + int(1)));
         params.rational(&shifted, k)?
     };
     num = num.mul(&p1).mul(&q);
@@ -137,7 +133,7 @@ pub(super) fn ratio_in(
 
 /// `{$alpha$}` with `{$g(k + 1) - g(k) = alpha$}`, if it is free of `k`.
 pub(super) fn step(g: &Expr, k: Symbol) -> Option<Expr> {
-    let alpha = (subs(g, k, &(variable(k) + value(Rational::from(1)))) - g).expand();
+    let alpha = (subs(g, k, &(variable(k) + int(1))) - g).expand();
     (!depends(&alpha, k)).then_some(alpha)
 }
 
