@@ -356,7 +356,7 @@ fn only_symbols(term: &Expr, allowed: &[Symbol]) -> bool {
 
 /// Rewrite powers with an exponent depending on `x` as `{$b^g = exp(g ln b)$}` (`{$|b|^g cos(pi g)$}` for a
 /// negative constant `b` at an infinite point, its value at integers `g`, unsupported at a finite point where
-/// it isn't continuous), `{$tan u$}` as
+/// it isn't continuous, and for a constant `b` not known to be positive), `{$tan u$}` as
 /// `{$sin u / cos u$}`, `{$sign u$}` as `{$u / |u|$}`, `min` and `max` with `abs`, hyperbolic functions and their
 /// inverses with `exp` and `ln`, and `asin` and `acos` with `atan`.
 fn exp_log_form(term: &Expr, x: Symbol, infinite: bool) -> LimitResult<Expr> {
@@ -377,6 +377,11 @@ fn exp_log_form(term: &Expr, x: Symbol, infinite: bool) -> LimitResult<Expr> {
                 fun(Context::EXP, &exponant * &fun(Context::LN, -base))
                     * fun(Context::COS, variable(Context::PI) * exponant)
             } else if depends(&exponant, x) {
+                // `{$exp(g ln b)$}` is `{$b^g$}` only for `{$b > 0$}`, a constant base of unknown sign may be
+                // negative or zero
+                if !depends(&base, x) && constant_sign(&base) != Some(Ordering::Greater) {
+                    return Err(LimitError::Unsupported);
+                }
                 fun(Context::EXP, exponant * fun(Context::LN, base))
             } else {
                 base.pow(&exponant)

@@ -145,7 +145,8 @@ fn split(
     let signs = Assumptions::current().get(s).sign;
 
     let mut any = false;
-    let mut branch = |sign: SignSet| -> Option<Expr> {
+    // The value of each branch, and whether it was evaluated
+    let mut branch = |sign: SignSet| -> Option<(Expr, bool)> {
         if !signs.contains(sign.strict()?) {
             return None;
         }
@@ -159,11 +160,15 @@ fn split(
             split(ident, args, bound, eval, budget - 1).ok_or_else(|| args.to_vec())
         };
         any |= res.is_ok();
+        let evaluated = res.is_ok();
         // Its arguments are normalized, normalizing the held call would evaluate it again
-        Some(res.unwrap_or_else(|args| normalized_call(ident, args)))
+        Some((
+            res.unwrap_or_else(|args| normalized_call(ident, args)),
+            evaluated,
+        ))
     };
     let negative = branch(SignSet::NEGATIVE);
-    let zero_value = branch(SignSet::ZERO);
+    let zero_value = branch(SignSet::ZERO).map(|(value, _)| value);
     let positive = branch(SignSet::POSITIVE);
     if !any {
         return None;
@@ -188,24 +193,28 @@ fn condition(s: Symbol, relation: Relation) -> Expr {
     normalized_call(relation.symbol(), vec![super::expr::variable(s), zero()])
 }
 
-/// The `piecewise` of the values on the negative, zero and positive sides of `s`, merged when they agree.
+/// The `piecewise` of the values on the negative, zero and positive sides of `s` (with whether they were
+/// evaluated), merged when they agree. The zero value isn't merged into a held call, which substituting `s`
+/// would evaluate.
 fn join(
     s: Symbol,
-    negative: Option<Expr>,
+    negative: Option<(Expr, bool)>,
     zero_value: Option<Expr>,
-    positive: Option<Expr>,
+    positive: Option<(Expr, bool)>,
 ) -> Expr {
     let at_zero = |value: &Expr| subs(value, s, &zero());
-    // The zero value merged into a side
-    let (negative, zero_value, positive, zero_side) = match (negative, zero_value, positive) {
-        (n, Some(z), p) if p.as_ref().is_some_and(|p| equal(&at_zero(p), &z)) => {
-            (n, None, p, Some(Relation::GreaterEqual))
-        }
-        (n, Some(z), p) if n.as_ref().is_some_and(|n| equal(&at_zero(n), &z)) => {
-            (n, None, p, Some(Relation::LessEqual))
-        }
-        (n, z, p) => (n, z, p, None),
+    let mergeable = |side: &Option<(Expr, bool)>, z: &Expr| {
+        side.as_ref()
+            .is_some_and(|(value, evaluated)| *evaluated && equal(&at_zero(value), z))
     };
+    // The zero value merged into a side
+    let zero_side = match &zero_value {
+        Some(z) if mergeable(&positive, z) => Some(Relation::GreaterEqual),
+        Some(z) if mergeable(&negative, z) => Some(Relation::LessEqual),
+        _ => None,
+    };
+    let zero_value = zero_value.filter(|_| zero_side.is_none());
+    let (negative, positive) = (negative.map(|(v, _)| v), positive.map(|(v, _)| v));
     let mut args = vec![];
     match (negative, zero_value, positive) {
         (Some(n), None, Some(p)) if equal(&n, &p) => return n,

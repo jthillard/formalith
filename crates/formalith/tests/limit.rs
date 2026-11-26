@@ -153,6 +153,25 @@ fn limits_of_powers_of_negative_constants() {
 }
 
 #[test]
+fn limits_of_powers_of_constants_of_unknown_sign() {
+    // `{$c^g = exp(g ln c)$}` only for `{$c > 0$}`: with `{$a < 0$}`, `{$a + 1$}` may be negative or zero
+    assert_eq!(
+        lim("lim(1/(a+1)^n, n, oo)"),
+        "piecewise(a < 0, lim((a+1)^(-n), n, oo), a = 0, 1, 0)"
+    );
+    let mut env = Environment::new();
+    env.eval("assume(a < 0)", R).unwrap();
+    assert_eq!(
+        line(&parse!("lim(1/(a+1)^n, n, oo)", R, &env)),
+        "lim((a+1)^(-n), n, oo)"
+    );
+    env.eval("assume(b > 0)", R).unwrap();
+    assert_eq!(line(&parse!("lim(1/(b+1)^n, n, oo)", R, &env)), "0");
+    assert_eq!(lim("lim(2^x, x, oo)"), "oo");
+    assert_eq!(lim("lim((1/2)^x, x, oo)"), "0");
+}
+
+#[test]
 fn limits_left_unevaluated() {
     // Tends to `oo` on its domain, between poles where it isn't defined, or several independent oscillations
     assert_eq!(lim("lim(x/sin(x)^2, x, oo)"), "lim(x*(sin(x)^-2), x, oo)");

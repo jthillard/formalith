@@ -177,8 +177,11 @@ fn structural_sign(term: &Expr, mode: SignMode) -> SignSet {
                 }
                 // `{$zeta(s) > 0$}` for `{$s > 1$}`
                 Context::ZETA if matches!(arg, Term::Value(s) if s.value > 1) => SignSet::POSITIVE,
-                // `{$ln u$}` has the sign of `{$u - 1$}`, only checked on constants
-                Context::LN if mode.approximate => {
+                // `{$ln u$}` has the sign of `{$u - 1$}` for `{$u > 0$}`, only checked on constants
+                Context::LN
+                    if mode.approximate
+                        && structural_sign(arg, mode).is_subset(SignSet::POSITIVE) =>
+                {
                     structural_sign(&(arg - &super::expr::one()), mode)
                 }
                 _ => SignSet::ANY,
