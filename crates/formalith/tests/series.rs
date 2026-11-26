@@ -355,6 +355,28 @@ fn whole_series() {
 }
 
 #[test]
+fn whole_series_of_rational_functions_with_multiple_or_irrational_poles() {
+    // Multiple irrational poles: `{$n$}` times Binet's terms
+    let fibonacci_squared = whole("1/(1 - x - x^2)^2, x, 0");
+    assert!(fibonacci_squared.contains("5^(1/2)") && fibonacci_squared.contains("k*"));
+    // Complex roots of a cubic: its real root as `rootof`, the pair from Vieta's formulas
+    // (checked here rather than by `check_whole_series`, whose evaluation of each term is slow with `rootof`)
+    let cubic = whole("1/(1 + x + x^3), x, 0");
+    assert!(cubic.contains("cos(") && cubic.contains("rootof"), "{cubic}");
+    for point in ["1/3", "-1/4"] {
+        assert_eq!(
+            line(&parse!(&format!("approx(subs(series(1/(1 + x + x^3), x, 0, oo), x, {point}))"), R)),
+            line(&parse!(&format!("approx(1/(1 + ({point}) + ({point})^3))"), R)),
+            "{point}"
+        );
+    }
+    assert_eq!(
+        line(&parse!("approx(subs(series(1/(1 - x + 2*x^2)^2, x, 0, oo), x, 1/5))", R)),
+        line(&parse!("approx(1/(1 - 1/5 + 2/25)^2)", R))
+    );
+}
+
+#[test]
 fn whole_series_with_bernoulli_and_euler_numbers() {
     assert_eq!(
         whole("tan(x), x, 0"),

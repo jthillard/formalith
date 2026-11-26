@@ -60,6 +60,35 @@ fn split_sums(output: &str) -> Option<(String, Vec<HeldSum>)> {
     Some((res, sums))
 }
 
+/// `output` with each `rootof(p, k)` written `rootof(p, chk_r, k)`, `p` being in `chk_r` instead of `x`.
+fn rename_rootof_variable(output: &str) -> String {
+    let mut res = String::new();
+    let mut rest = output;
+    while let Some(start) = rest.find("rootof(") {
+        res.push_str(&rest[..start]);
+        let after = &rest[start + 7..];
+        let mut depth = 1;
+        let Some(end) = after.char_indices().find_map(|(i, c)| {
+            match c {
+                '(' => depth += 1,
+                ')' => depth -= 1,
+                _ => {}
+            }
+            (depth == 0).then_some(i)
+        }) else {
+            return output.to_owned();
+        };
+        let args = split_top(&after[..end], ',');
+        match args.as_slice() {
+            [p, k] => res.push_str(&format!("rootof({}, chk_r, {k})", p.replace('x', "chk_r"))),
+            _ => res.push_str(&format!("rootof({})", args.join(", "))),
+        }
+        rest = &after[end + 1..];
+    }
+    res.push_str(rest);
+    res
+}
+
 /// The indices of every sum of `output`, nested ones included (like the convolutions of products of series).
 fn sum_indices(output: &str) -> Vec<String> {
     output
@@ -121,6 +150,8 @@ fn verify(input: &str, output: &str) -> Verdict {
     if !output.contains("sum(") {
         return Verdict::Skip(format!("no sum: {output}"));
     }
+    // `rootof(p, k)` is printed with `p` in `x`, which gets values here
+    let output = &rename_rootof_variable(output);
     let Some((rest, sums)) = split_sums(output) else {
         return Verdict::Wrong(format!("can't read the sums of `{output}`"));
     };
@@ -129,7 +160,7 @@ fn verify(input: &str, output: &str) -> Verdict {
     let mut env = Environment::new();
     let indices = sum_indices(output);
     for p in symbols(&format!("{f} + {output}")) {
-        let index = indices.contains(&p);
+        let index = indices.contains(&p) || p == "chk_r";
         if p != "x" && !index {
             let v = Domain::Range(0.3, 2.5).sample(&mut rng);
             if eval(&mut env, &format!("{p} := {v}")).is_err() {
@@ -256,6 +287,11 @@ fn whole_series_examples() {
             "exp(x)*tan(x); 0",
             "(1 + x^2)*tan(x); 0",
             "tan(x)/(1 - 2*x); 0",
+            "1/(1 - x - x^2)^2; 0",
+            "1/(1 - 2*x^2)^2; 0",
+            "1/((1 - x)^2*(1 + x^2)); 0",
+            "1/(1 - x + 2*x^2)^2; 0",
+            "(1 + x)/(1 - 3*x^2)^3; 0",
         ],
         whole_series,
     );

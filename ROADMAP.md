@@ -10,10 +10,11 @@ Ideas and known gaps, roughly by area. `AGENTS.md` describes what exists; this f
 - **Petkovšek's *Hyper*** for recurrences without a two-term form, with exact arithmetic over algebraic numbers.
   Today only rational functions with simple poles, real or roots of quadratic factors, are handled, by partial
   fractions.
-- **More poles of rational functions**: multiple irrational poles, complex roots of irreducible factors of degree 3
-  or more (`1/(1 + x + x^3)`).
+- **More poles of rational functions**: irreducible factors of degree 4 or more with several pairs of complex roots
+  that `C` doesn't find (`1/(1 + x + x^5)` has two pairs), and rational functions with symbolic or irrational
+  coefficients.
 - **Known non-holonomic series**: hyperbolic kernels and `1/(e^t - 1)` at regular points other than 0 (their poles
-  are complex), products of two kernels (`tan(x) / cos(x)`), powers of kernels with other factors.
+  are complex), products of two kernels (`tan(x) / cos(x)`).
 - **Held sums**:
   - definite integrals on the boundary of the disk of convergence (`integrate(series(1/(1 + x), x, 0, oo), x, 0, 1)`,
     Abel's theorem) and on infinite intervals;

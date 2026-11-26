@@ -28,6 +28,8 @@ use malachite::{
 
 use std::{cmp::Ordering, convert::Infallible};
 
+use crate::{field::complex::C, solve::polynomial::PolynomialRoots};
+
 use crate::{
     context::{
         Context, Symbol,
@@ -175,10 +177,45 @@ fn rational_series(
         rational(&num).ok_or(LimitError::Unsupported)?,
         rational(&den).ok_or(LimitError::Unsupported)?,
     );
-    if den.coefficient(0) == 0u32 || den.gcd(&den.derivative()).degree() > 0 {
+    if den.coefficient(0) == 0u32 {
         return Err(LimitError::Unsupported);
     }
     let (quotient, rest) = num.div_rem(&den);
+    let n = variable(k);
+    let simple = den.gcd(&den.derivative()).degree() == 0;
+    let general = simple
+        .then(|| simple_poles(&den, &rest, w, &n).ok())
+        .flatten()
+        .map_or_else(|| general_poles(&rest, &den, &n), Ok)?;
+    let back = w_of_x(point, direction, x);
+    // The first coefficients, with the polynomial part, by dividing the power series, then the general term
+    let first = quotient.coefficients().len();
+    let res = power_series(&num, &den, first)
+        .into_iter()
+        .enumerate()
+        .fold(zero(), |res, (i, c)| {
+            res + value(c) * w_power(&back, &value(Rational::from(i)))
+        });
+    let _guard = integer_index(k);
+    let general = tidy(&(general * w_power(&back, &n)));
+    Ok(res + held_sum(general, k, value(Rational::from(first))))
+}
+
+/// The first `count` coefficients of the power series of `{$N / D$}`, `{$D(0) != 0$}`.
+fn power_series(num: &Poly, den: &Poly, count: usize) -> Vec<Rational> {
+    let mut coefficients: Vec<Rational> = vec![];
+    for i in 0..count {
+        let c = (1..=i).fold(num.coefficient(i), |c, j| {
+            c - den.coefficient(j) * &coefficients[i - j]
+        }) / den.coefficient(0);
+        coefficients.push(c);
+    }
+    coefficients
+}
+
+/// The coefficient of `{$w^n$}` of the proper fraction `{$R / D$}` for a square-free `D`, over its real roots and
+/// the pairs of complex roots of its irreducible quadratic factors, see [`rational_series`].
+fn simple_poles(den: &Poly, rest: &Poly, w: Symbol, n: &Expr) -> LimitResult<Expr> {
     let wv = variable(w);
     let term = |p: &Poly| {
         p.coefficients()
@@ -188,16 +225,15 @@ fn rational_series(
                 res + value(c.clone()) * wv.pow(&value(Rational::from(i)))
             })
     };
-    let (rest_term, derivative) = (term(&rest), term(&den.derivative()));
-    let n = variable(k);
+    let (rest_term, derivative) = (term(rest), term(&den.derivative()));
     let mut general = zero();
-    for q in rational::factor(&den, w) {
+    for q in rational::factor(den, w) {
         let [q0, q1, q2] = q.coefficients() else {
-            general += real_poles(&q, &rest_term, &derivative, w, &n)?;
+            general += real_poles(&q, &rest_term, &derivative, w, n)?;
             continue;
         };
         if q1 * q1 - Rational::from(4) * q0 * q2 >= 0u32 {
-            general += real_poles(&q, &rest_term, &derivative, w, &n)?;
+            general += real_poles(&q, &rest_term, &derivative, w, n)?;
             continue;
         }
         // `{$q = q_0 (1 - p w + s w^2)$}`, and the part `{$P / q$}` of the partial fractions, `{$P = a + b w$}`
@@ -212,31 +248,158 @@ fn rational_series(
             &(root(discriminant.clone()) / value(Rational::from(2))),
         )
         .ok_or(LimitError::Unsupported)?;
-        let angle = &n * &theta;
-        general += value(s).pow(&(&n / &value(Rational::from(2))))
+        let angle = n * &theta;
+        general += value(s).pow(&(n / &value(Rational::from(2))))
             * (value(a.clone()) * fun(Context::COS, angle.clone())
                 + value(a * p + Rational::from(2) * b) / root(discriminant)
                     * fun(Context::SIN, angle));
     }
-    let back = w_of_x(point, direction, x);
-    // The first coefficients, with the polynomial part, by dividing the power series, then the general term
-    let first = quotient.coefficients().len();
-    let mut coefficients: Vec<Rational> = vec![];
-    for i in 0..first {
-        let c = (1..=i).fold(num.coefficient(i), |c, j| {
-            c - den.coefficient(j) * &coefficients[i - j]
-        }) / den.coefficient(0);
-        coefficients.push(c);
+    Ok(general)
+}
+
+/// The coefficient of `{$w^n$}` of the proper fraction `{$R / D$}` for any `D` with `{$D(0) != 0$}`: for each
+/// irreducible factor `q` of `D` with multiplicity `e`, `{$sum_(l < e) n^l sum_rho A_l(rho) rho^n$}` over the roots
+/// `{$rho$}` of the reversed `q`, `{$A_l in QQ[t]$}` of degree below that of `q`. Sums over conjugate roots are
+/// power sums of the reversed `q`, rational, so the coefficients of the `{$A_l$}` solve a linear system over `{$QQ$}`
+/// on the first coefficients of the series. The roots are written with radicals in `{$CC$}`, a pair `{$u plus.minus i v$}`
+/// giving `{$2 |rho|^n (Re A_l(rho) cos(n theta) - Im A_l(rho) sin(n theta))$}`, `{$theta = arg(u + i v)$}`.
+fn general_poles(rest: &Poly, den: &Poly, n: &Expr) -> LimitResult<Expr> {
+    /// Equations checking the solution, beyond the unknowns.
+    const CHECKS: usize = 8;
+    let w = Symbol::new("@hw");
+    let mut factors = vec![];
+    for (i, part) in den.square_free().iter().enumerate() {
+        if part.degree() > 0 {
+            factors.extend(rational::factor(part, w).into_iter().map(|q| (q, i + 1)));
+        }
     }
-    let res = coefficients
-        .into_iter()
-        .enumerate()
-        .fold(zero(), |res, (i, c)| {
-            res + value(c) * w_power(&back, &value(Rational::from(i)))
-        });
-    let _guard = integer_index(k);
-    let general = tidy(&(general * w_power(&back, &n)));
-    Ok(res + held_sum(general, k, value(Rational::from(first))))
+    // `{$q(w) = q_0 product (1 - rho w)$}`, the `{$rho$}` being the roots of the reversed `q`
+    let reversed: Vec<(Poly, usize)> = factors
+        .iter()
+        .map(|(q, e)| {
+            let mut coefficients = q.coefficients().to_vec();
+            coefficients.reverse();
+            (Poly::new(coefficients).monic(), *e)
+        })
+        .collect();
+    let unknowns: usize = reversed.iter().map(|(q, e)| q.degree() * e).sum();
+    let rows = unknowns + CHECKS;
+    let degree = reversed.iter().map(|(q, _)| q.degree()).max().unwrap_or(0);
+    let sums: Vec<Vec<Rational>> = reversed
+        .iter()
+        .map(|(q, _)| power_sums(q, rows + degree))
+        .collect();
+    let coefficients = power_series(rest, den, rows);
+    let equations = (0..rows)
+        .map(|row| {
+            let mut equation = vec![];
+            for ((q, e), sums) in reversed.iter().zip(&sums) {
+                for l in 0..*e {
+                    let scale = Rational::from(row).pow(u64::try_from(l).unwrap_or(0));
+                    for t in 0..q.degree() {
+                        equation.push(&scale * &sums[row + t]);
+                    }
+                }
+            }
+            equation.push(coefficients[row].clone());
+            equation
+        })
+        .collect();
+    let solution = solve_linear_unique(equations, unknowns).ok_or(LimitError::Unsupported)?;
+    let mut general = zero();
+    let mut offset = 0;
+    for (q, e) in &reversed {
+        let roots = root_parts(q).ok_or(LimitError::Unsupported)?;
+        for l in 0..*e {
+            let a = &solution[offset..offset + q.degree()];
+            offset += q.degree();
+            let mut part = zero();
+            for (u, v) in &roots {
+                // `{$A(u + i v)$}` by Horner's rule on the parts
+                let (alpha, beta) = a.iter().rev().fold((zero(), zero()), |(re, im), c| {
+                    (
+                        (&re * u - &im * v + value(c.clone())).expand(),
+                        (&re * v + &im * u).expand(),
+                    )
+                });
+                let (u, v) = (u.clone(), v.clone());
+                match constant_sign(&v).ok_or(LimitError::Unsupported)? {
+                    Ordering::Less => {}
+                    Ordering::Equal => part += alpha * u.pow(n),
+                    Ordering::Greater => {
+                        let theta = arg(&u, &v).ok_or(LimitError::Unsupported)?;
+                        let modulus = (&u * &u + &v * &v).expand();
+                        let angle = n * &theta;
+                        part += value(Rational::from(2))
+                            * modulus.pow(&(n / &value(Rational::from(2))))
+                            * (alpha * fun(Context::COS, angle.clone())
+                                - beta * fun(Context::SIN, angle));
+                    }
+                }
+            }
+            general += n.pow(&value(Rational::from(l))) * part;
+        }
+    }
+    Ok(general)
+}
+
+/// The roots of the polynomial `q` with rational coefficients as their parts `{$(u, v)$}`, with radicals: from the roots
+/// in `{$CC$}`, or else the real roots (as `rootof`) and a single pair of complex roots from Vieta's formulas
+/// (`{$u = s / 2$}`, `{$v = sqrt(p - u^2)$}` for their sum `s` and product `p`). `None` when they aren't found.
+fn root_parts(q: &Poly) -> Option<Vec<(Expr, Expr)>> {
+    let complex = |c: &Rational| Term::constant([c.clone(), Rational::ZERO], C);
+    let coefficients: Vec<_> = q.coefficients().iter().map(complex).collect();
+    if let Some(roots) = <C<R<Rational>> as PolynomialRoots>::roots(&coefficients)
+        && roots.len() == q.degree()
+        && let Some(parts) = roots.iter().map(rational::split).collect::<Option<Vec<_>>>()
+    {
+        return Some(parts);
+    }
+    // As `rootof`, whose powers reduce canonically and which approximate quickly (radicals from Cardano's formula
+    // are slow in the general terms)
+    let real: Vec<Expr> = crate::field::real::rootof::real_roots(q);
+    if real.len() + 2 != q.degree() {
+        return None;
+    }
+    // `{$q$}` is monic: the sum of its roots is `{$-q_(d - 1)$}`, their product `{$(-1)^d q_0$}`
+    let d = q.degree();
+    let sum = real
+        .iter()
+        .fold(-value(q.coefficient(d - 1)), |res, r| res - r);
+    let sign = if d % 2 == 0 { Rational::from(1) } else { Rational::from(-1) };
+    let product = real
+        .iter()
+        .fold(value(sign * q.coefficient(0)), |res, r| res / r.clone());
+    let u = (sum / value(Rational::from(2))).expand();
+    let v = (product - &u * &u).expand().pow(&value(Rational::from_signeds(1, 2)));
+    let mut parts: Vec<(Expr, Expr)> = real.into_iter().map(|r| (r, zero())).collect();
+    parts.push((u.clone(), v.clone()));
+    parts.push((u, -v));
+    Some(parts)
+}
+
+/// The power sums `{$p_m = sum rho^m$}` of the roots of the monic `q`, for `{$m < "count"$}`, by Newton's identities.
+fn power_sums(q: &Poly, count: usize) -> Vec<Rational> {
+    let d = q.degree();
+    let c = |i: usize| q.coefficient(i);
+    let mut sums: Vec<Rational> = vec![];
+    for m in 0..count {
+        if m == 0 {
+            sums.push(Rational::from(d));
+            continue;
+        }
+        let mut p = Rational::ZERO;
+        for i in 1..=m.min(d) {
+            if i < m {
+                p -= c(d - i) * &sums[m - i];
+            }
+        }
+        if m <= d {
+            p -= Rational::from(m) * c(d - m);
+        }
+        sums.push(p);
+    }
+    sums
 }
 
 /// The coefficient of `{$w^n$}` of the partial fractions of `{$N / D$}` over the roots of its factor `q`, which must
