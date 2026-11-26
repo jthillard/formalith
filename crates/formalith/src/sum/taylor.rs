@@ -1619,21 +1619,7 @@ fn hyper_series(found: &Coefficients, proven: &Proven, k: Symbol) -> Option<Expr
     for root in holonomic::ratfun::natural_roots(&leading.num)? {
         n0 = n0.max(usize::try_from(root).ok()? + 1);
     }
-    for solution in &solutions {
-        for p in [&solution.a, &solution.b] {
-            let (roots, _) = rational::rational_roots(p, Symbol::new("@hn"));
-            for root in roots {
-                if root >= 0u32 {
-                    let above = usize::try_from(
-                        &malachite::Integer::rounding_from(&root, RoundingMode::Floor).0,
-                    )
-                    .ok()?
-                        + 1;
-                    n0 = n0.max(above);
-                }
-            }
-        }
-    }
+    let n0 = holonomic::hyper::past_roots(&solutions, n0)?;
     let rows = solutions.len().max(order) + CHECKS;
     if n0 + rows > values.len() {
         return None;

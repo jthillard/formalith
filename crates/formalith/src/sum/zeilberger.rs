@@ -16,13 +16,7 @@
 
 use std::convert::Infallible;
 
-use malachite::{
-    Integer, Rational,
-    base::{
-        num::{arithmetic::traits::Abs, conversion::traits::RoundingFrom},
-        rounding_modes::RoundingMode,
-    },
-};
+use malachite::{Rational, base::num::arithmetic::traits::Abs};
 
 use crate::{
     context::{Context, Symbol},
@@ -39,7 +33,6 @@ use crate::{
         ratfun::{RatFun, natural_roots},
         recurrence::Recurrence,
     },
-    integrate::rational,
     polynom::{
         dense::Coefficient,
         fraction::{EPoly, Elem, sample_points, solve_linear},
@@ -590,17 +583,7 @@ fn higher_order(
     if solutions.is_empty() {
         return None;
     }
-    // Past the roots of `A` and `B`
-    let mut n0 = n0;
-    for solution in &solutions {
-        for p in [&solution.a, &solution.b] {
-            let (roots, _) = rational::rational_roots(p, Symbol::new("@hn"));
-            for root in roots.iter().filter(|r| **r >= 0u32) {
-                let floor = Integer::rounding_from(root, RoundingMode::Floor).0;
-                n0 = n0.max(usize::try_from(&floor).ok()? + 1);
-            }
-        }
-    }
+    let n0 = holonomic::hyper::past_roots(&solutions, n0)?;
     if n0 > MAX_START {
         return None;
     }

@@ -42,6 +42,23 @@ pub struct Solution {
     pub b: Poly<Rational>,
 }
 
+/// The least index from `start` past the non-negative roots of `A` and `B` of every solution, where the products
+/// of the solutions are defined and don't vanish. `None` when it doesn't fit.
+pub fn past_roots(solutions: &[Solution], start: usize) -> Option<usize> {
+    let mut n0 = start;
+    for solution in solutions {
+        for p in [&solution.a, &solution.b] {
+            let (roots, _) =
+                crate::integrate::rational::rational_roots(p, crate::context::Symbol::new("@hn"));
+            for root in roots.iter().filter(|r| **r >= 0u32) {
+                let floor = malachite::base::num::arithmetic::traits::Floor::floor(root.clone());
+                n0 = n0.max(usize::try_from(&floor).ok()? + 1);
+            }
+        }
+    }
+    Some(n0)
+}
+
 impl Solution {
     /// `{$h(n) / h(n_0)$}` times `{$Z^(n_0) C(n_0)$}`: `{$Z^n C(n) product_(m = n_0)^(n - 1) A(m) / B(m)$}`, for
     /// `{$n >= n_0$}`, `None` when `B` vanishes on the way.
