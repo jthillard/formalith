@@ -93,29 +93,16 @@ fn structural_sign(term: &Expr, mode: SignMode) -> SignSet {
             }
         },
         Term::Add(add) => {
-            if let Some(res) = linear_form(term).and_then(|form| single_symbol_sign(&form)) {
+            let form = linear_form(term);
+            if let Some(res) = form.as_ref().and_then(single_symbol_sign) {
                 return res;
             }
-            let terms: Vec<&Expr> = add.iter().collect();
-            if has_relational_symbol(&terms) {
-                let signs: Vec<SignSet> = terms.iter().map(|t| structural_sign(t, mode)).collect();
-                let res = signs.iter().fold(SignSet::ZERO, |res, s| res + *s);
-                if res.strict().is_some() {
-                    return res;
-                }
-                let linear = linear_sign(&terms, &signs, Rational::ZERO).intersect(res);
-                return if linear == SignSet::EMPTY {
-                    res
-                } else {
-                    linear
-                };
-            }
-            let mut res = SignSet::ZERO;
-            for t in add {
-                res = res + structural_sign(t, mode);
-                if res == SignSet::ANY {
-                    break;
-                }
+            let res = sum_sign(add, mode);
+            // A relation between several symbols, like `{$x - r_1$}`, for case splits
+            if res.strict().is_none()
+                && let Some(form) = form
+            {
+                super::cases::record_form(&form);
             }
             res
         }
@@ -265,6 +252,32 @@ fn single_symbol_sign(form: &LinearForm) -> Option<SignSet> {
         super::cases::record(*s, -(&form.constant / k));
     }
     Some(res)
+}
+
+/// The possible signs of a sum from those of its terms, see [`structural_sign`].
+fn sum_sign(add: &crate::term::Add<super::Real>, mode: SignMode) -> SignSet {
+    let terms: Vec<&Expr> = add.iter().collect();
+    if has_relational_symbol(&terms) {
+        let signs: Vec<SignSet> = terms.iter().map(|t| structural_sign(t, mode)).collect();
+        let res = signs.iter().fold(SignSet::ZERO, |res, s| res + *s);
+        if res.strict().is_some() {
+            return res;
+        }
+        let linear = linear_sign(&terms, &signs, Rational::ZERO).intersect(res);
+        return if linear == SignSet::EMPTY {
+            res
+        } else {
+            linear
+        };
+    }
+    let mut res = SignSet::ZERO;
+    for t in add {
+        res = res + structural_sign(t, mode);
+        if res == SignSet::ANY {
+            break;
+        }
+    }
+    res
 }
 
 /// Whether a term is a multiple of a symbol with conditions other than on its sign.

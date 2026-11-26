@@ -919,6 +919,13 @@ fn non_real_integrands() {
         integrate("integrate(sqrt(x/t - 1), t, 1, x)"),
         "piecewise(x < 1, undefined, -((x-1)^(1/2)-x*atan((x-1)^(1/2))))"
     );
+    // Split on the relation between the parameters `x` and `a`, the base being negative near `t = a` for `x < a`
+    let mut env = Environment::new();
+    env.eval("assume(a > 0, x > 0)", R).unwrap();
+    assert_eq!(
+        line(&parse!("integrate(sqrt(x/t - 1), t, a, x)", R, &env)),
+        integrate("piecewise(x < a, undefined, x*atan(sqrt(x/a - 1)) - a*sqrt(x/a - 1))")
+    );
     // `ln t` isn't real on `(x, 0)` for `x < 0`
     let res = integrate("integrate(exp(-t^2)*ln(t), t, 1, x)");
     assert!(res.starts_with("piecewise(x < 0, undefined, "), "{res}");
