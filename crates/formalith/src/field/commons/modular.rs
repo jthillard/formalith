@@ -12,9 +12,7 @@ use malachite::{
 
 use super::parse_integer_literal;
 
-use crate::term::fun::{
-    eval_algebra_builtin, eval_degree, eval_matrix_builtin, eval_rewrite_builtin,
-};
+use crate::term::fun::eval_ring_builtin;
 use crate::{
     context::{Context, Symbol},
     field::{
@@ -247,33 +245,16 @@ impl Semiring for Zn {
                     return Term::constant(res, *self);
                 }
             }
-            Term::Fun(fun) => match fun.get_ident() {
-                Context::EXPAND | Context::SIMPLIFY => {
-                    if let Some(res) = eval_rewrite_builtin(&**fun) {
-                        return res;
-                    }
+            Term::Fun(fun) => {
+                let res = if fun.get_ident() == Context::FACTOR {
+                    fun.get_arg::<Self>().and_then(|arg| self.factor(arg))
+                } else {
+                    eval_ring_builtin(&**fun)
+                };
+                if let Some(res) = res {
+                    return res;
                 }
-                Context::FACTOR => {
-                    if let Some(res) = fun.get_arg::<Self>().and_then(|arg| self.factor(arg)) {
-                        return res;
-                    }
-                }
-                Context::DET | Context::TRACE | Context::RANK | Context::CHARPOLY => {
-                    if let Some(res) = eval_matrix_builtin(&**fun) {
-                        return res;
-                    }
-                }
-                Context::DEGREE => {
-                    if let Some(res) = eval_degree(&**fun) {
-                        return res;
-                    }
-                }
-                _ => {
-                    if let Some(res) = eval_algebra_builtin(&**fun) {
-                        return res;
-                    }
-                }
-            },
+            }
             _ => {}
         }
         a
@@ -281,14 +262,11 @@ impl Semiring for Zn {
 
     fn expand(&self, a: Term<Self>) -> Term<Self> {
         if let Term::Pow(term::Pow { base, exponant, .. }) = &a
-            && let (Term::Add(add), Term::Value(exponant)) = (&**base, &***exponant)
-            && let Ok(n) = usize::try_from(&exponant.value)
-            && n > 1
+            && let Term::Add(add) = &**base
+            && let Some(res) = Term::expand_integer_power(add, exponant, |n| self.reduce(&n))
         {
             // Its terms may be powers of products, `{$(3 x)^2$}`
-            return Term::expand_sum_power(add, n, |n| self.reduce(&n))
-                .normalize()
-                .expand();
+            return res.normalize().expand();
         }
         // `{$(c x)^n = c^n x^n$}`, exponants being integers
         if let Term::Pow(term::Pow { base, exponant, .. }) = &a

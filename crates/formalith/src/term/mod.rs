@@ -1163,6 +1163,28 @@ impl<T: Ring<ProductCoefficientSet = T>> Term<T> {
 }
 
 impl<T: Ring> Term<T> {
+    /// Expand `{$"add"^n$}` for an integer exponent `{$n != plus.minus 1$}` with the multinomial formula, as
+    /// `{$1/("add"^(-n))$}` for a negative `n` (see [`Term::expand_sum_power`]); `None` for other exponents.
+    pub(crate) fn expand_integer_power(
+        add: &Add<T>,
+        exponant: &Term<T::ExponantSet>,
+        from_integer: impl Fn(Integer) -> T::Element,
+    ) -> Option<Self> {
+        let Term::Value(e) = exponant else {
+            return None;
+        };
+        let n = e.set.to_i64(&e.value)?;
+        if n.abs() <= 1 {
+            return None;
+        }
+        let terms =
+            Self::expand_sum_power(add, usize::try_from(n.unsigned_abs()).ok()?, from_integer);
+        Some(if n < 0 {
+            Pow::new(terms, Term::nth(-1, add.set.get_exponant_set()), add.set).into()
+        } else {
+            terms
+        })
+    }
     /// Expand `add^n` with the multinomial formula. `from_integer` converts the multinomial coefficients to elements of `T`.
     pub(crate) fn expand_sum_power(
         add: &Add<T>,

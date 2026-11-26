@@ -8,15 +8,12 @@ use std::{cmp::Ordering, sync::LazyLock};
 use malachite::{
     Integer, Natural, Rational,
     base::num::{
-        arithmetic::traits::{Abs, Lcm, Sign, UnsignedAbs},
+        arithmetic::traits::{Abs, Lcm, Sign},
         basic::traits::{One, Zero},
     },
 };
 
-use crate::term::fun::{
-    eval_algebra_builtin, eval_calculus_builtin, eval_degree, eval_matrix_builtin,
-    eval_rewrite_builtin,
-};
+use crate::term::fun::{eval_calculus_builtin, eval_ring_builtin};
 use crate::{
     context::{Context, Symbol},
     field::{
@@ -650,11 +647,6 @@ impl Semiring for C<R<Rational>> {
                         return res;
                     }
                 }
-                Context::EXPAND | Context::SIMPLIFY => {
-                    if let Some(res) = eval_rewrite_builtin(&**fun) {
-                        return res;
-                    }
-                }
                 Context::FACTOR => {
                     if let Some(arg) = fun.get_arg::<Self>() {
                         return arg.factor();
@@ -674,16 +666,6 @@ impl Semiring for C<R<Rational>> {
                         return res;
                     }
                 }
-                Context::DET | Context::TRACE | Context::RANK | Context::CHARPOLY => {
-                    if let Some(res) = eval_matrix_builtin(&**fun) {
-                        return res;
-                    }
-                }
-                Context::DEGREE => {
-                    if let Some(res) = eval_degree(&**fun) {
-                        return res;
-                    }
-                }
                 Context::INTEGRATE | Context::LIM | Context::SERIES => {
                     if let Some(res) = fun
                         .get_args::<Self>()
@@ -693,7 +675,7 @@ impl Semiring for C<R<Rational>> {
                     }
                 }
                 _ => {
-                    if let Some(res) = eval_algebra_builtin(&**fun) {
+                    if let Some(res) = eval_ring_builtin(&**fun) {
                         return res;
                     }
                 }
@@ -714,23 +696,11 @@ impl Semiring for C<R<Rational>> {
 
     fn expand(&self, a: Term<Self>) -> Term<Self> {
         if let Term::Pow(term::Pow { base, exponant, .. }) = &a
-            && let Term::Value(exponant) = &***exponant
-            && let Some(n) = Self::as_integer(&exponant.value)
+            && let Term::Add(add) = &**base
+            && let Some(res) =
+                Term::expand_integer_power(add, exponant, |c| [Rational::from(c), Rational::ZERO])
         {
-            match &**base {
-                Term::Add(add) if n != 1 && n != -1 => {
-                    if let Ok(k) = usize::try_from(&(&n).unsigned_abs()) {
-                        let terms =
-                            Term::expand_sum_power(add, k, |c| [Rational::from(c), Rational::ZERO]);
-                        return if n < 0 {
-                            term::Pow::new(terms, Term::nth(-1, *self), *self).into()
-                        } else {
-                            terms
-                        };
-                    }
-                }
-                _ => {}
-            }
+            return res;
         }
         // Constant radical sums with nested roots are expanded through their parts, which have a canonical form
         if let Term::Add(_) = &a

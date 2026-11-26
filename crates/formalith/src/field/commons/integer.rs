@@ -22,10 +22,7 @@ use crate::{
     },
     parser::Parser,
     printer::PrettyPrinter,
-    term::{
-        self, Fun, Term, TermSet, Value,
-        fun::{eval_algebra_builtin, eval_degree, eval_matrix_builtin},
-    },
+    term::{self, Fun, Term, TermSet, Value, fun::eval_ring_builtin},
 };
 
 /// The integer ring `{$ZZ$}`
@@ -104,6 +101,24 @@ impl Semiring for Z<Integer> {
         Integer::ONE
     }
 
+    fn expand(&self, a: Term<Self>) -> Term<Self> {
+        if let Term::Pow(term::Pow { base, exponant, .. }) = &a {
+            match &**base {
+                Term::Add(add) => {
+                    if let Some(res) = Term::expand_integer_power(add, exponant, |n| n) {
+                        return res;
+                    }
+                }
+                // `{$(c x)^n = c^n x^n$}` for an integer `n`
+                Term::Mul(mul) if matches!(&***exponant, Term::Value(_)) => {
+                    return Term::distribute_pow(mul, exponant);
+                }
+                _ => {}
+            }
+        }
+        a
+    }
+
     fn mul(&self, a: &Self::Element, b: &Self::Element) -> Self::Element {
         a * b
     }
@@ -144,14 +159,7 @@ impl Semiring for Z<Integer> {
                 }
             }
             Term::Fun(fun) => {
-                if matches!(
-                    fun.get_ident(),
-                    Context::DET | Context::TRACE | Context::RANK | Context::CHARPOLY
-                ) && let Some(res) = eval_matrix_builtin(&**fun)
-                {
-                    return res;
-                }
-                if let Some(res) = eval_degree(&**fun).or_else(|| eval_algebra_builtin(&**fun)) {
+                if let Some(res) = eval_ring_builtin(&**fun) {
                     return res;
                 }
                 if fun.get_ident() == Context::ABS

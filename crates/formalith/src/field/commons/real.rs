@@ -27,9 +27,7 @@ use malachite::{
 use super::{parse_rational_literal, primes};
 use sign::SignMode;
 
-use crate::term::fun::{
-    degree_args, degree_exponents, eval_algebra_builtin, eval_calculus_builtin, eval_matrix_builtin,
-};
+use crate::term::fun::{degree_args, degree_exponents, eval_calculus_builtin, eval_ring_builtin};
 use crate::{
     context::{
         Context, Symbol,
@@ -505,11 +503,6 @@ impl Semiring for R<Rational> {
                         return res;
                     }
                 }
-                Context::DET | Context::TRACE | Context::RANK | Context::CHARPOLY => {
-                    if let Some(res) = eval_matrix_builtin(&**fun) {
-                        return res;
-                    }
-                }
                 Context::DEGREE => {
                     if let Some(res) = self.eval_degree(&**fun) {
                         return res;
@@ -522,8 +515,15 @@ impl Semiring for R<Rational> {
                         return expr::subs(f, x.symbol, a);
                     }
                 }
-                Context::NUMER | Context::DENOM | Context::RESULTANT | Context::DISCRIMINANT => {
-                    if let Some(res) = eval_algebra_builtin(&**fun) {
+                Context::NUMER
+                | Context::DENOM
+                | Context::RESULTANT
+                | Context::DISCRIMINANT
+                | Context::DET
+                | Context::TRACE
+                | Context::RANK
+                | Context::CHARPOLY => {
+                    if let Some(res) = eval_ring_builtin(&**fun) {
                         return res;
                     }
                 }
@@ -607,21 +607,9 @@ impl Semiring for R<Rational> {
     fn expand(&self, a: Term<Self>) -> Term<Self> {
         match &a {
             Term::Pow(term::Pow { base, exponant, .. }) => {
-                if let (Term::Add(add), Term::Value(value)) = (&**base, &***exponant) {
-                    if value.value.denominator_ref() == &Natural::ONE
-                        && value.value.numerator_ref() != &Natural::ONE
-                        && let Ok(num) = usize::try_from(value.value.numerator_ref())
-                    {
-                        let terms = Term::expand_sum_power(add, num, Rational::from);
-                        if value.value.sign() == Ordering::Less {
-                            return term::Pow::new(
-                                terms,
-                                Term::Value(Value::new(Rational::NEGATIVE_ONE, *self)),
-                                *self,
-                            )
-                            .into();
-                        }
-                        return terms;
+                if let Term::Add(add) = &**base {
+                    if let Some(res) = Term::expand_integer_power(add, exponant, Rational::from) {
+                        return res;
                     }
                 } else if let Term::Mul(mul) = &**base {
                     // Real odd roots are multiplicative, other powers only distribute over non-negative factors:

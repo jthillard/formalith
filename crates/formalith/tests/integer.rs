@@ -95,3 +95,9 @@ fn factor() {
         parse!("(2*x + 3)*(y + 1)", Z)
     );
 }
+
+#[test]
+fn expand() {
+    assert_eq!(line(&parse!("expand((x+1)^2)", Z)), "2*x+x^2+1");
+    assert_eq!(line(&parse!("expand((2*x*y)^3)", Z)), "8*(x^3)*(y^3)");
+}

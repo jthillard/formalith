@@ -564,6 +564,23 @@ impl<From: Set, T: Set> Fun<From, T> {
     }
 }
 
+/// Evaluate the builtins shared by the rings with scalar elements: `expand` and `simplify`
+/// ([`eval_rewrite_builtin`]), the scalars of matrices ([`eval_matrix_builtin`]), `degree` ([`eval_degree`]) and
+/// the algebraic ones ([`eval_algebra_builtin`]). Sets evaluating some of them their own way do it before.
+pub(crate) fn eval_ring_builtin<T>(fun: &dyn Function<T>) -> Option<Term<T>>
+where
+    T: Ring<ExponantSet: Ring, ProductCoefficientSet = T>,
+{
+    match fun.get_ident() {
+        Context::EXPAND | Context::SIMPLIFY => eval_rewrite_builtin(fun),
+        Context::DET | Context::TRACE | Context::RANK | Context::CHARPOLY => {
+            eval_matrix_builtin(fun)
+        }
+        Context::DEGREE => eval_degree(fun),
+        _ => eval_algebra_builtin(fun),
+    }
+}
+
 /// Evaluate the builtins `expand(u)` and `simplify(u)`, which rewrite their argument in any ring. Returns `None`
 /// for other functions.
 pub(crate) fn eval_rewrite_builtin<T: Ring>(fun: &dyn Function<T>) -> Option<Term<T>> {
