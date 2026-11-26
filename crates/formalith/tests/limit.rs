@@ -157,16 +157,22 @@ fn limits_of_powers_of_constants_of_unknown_sign() {
     // `{$c^g = exp(g ln c)$}` only for `{$c > 0$}`: split where `{$a + 1$}` and `{$ln|a + 1|$}` change sign
     assert_eq!(
         lim("lim(1/(a+1)^n, n, oo)"),
-        "piecewise(a < -2, 0, a < -1, undefined, a = -1, lim(0^(-n), n, oo), a < 0, oo, a = 0, 1, 0)"
+        "piecewise(a < -2, 0, a <= -1, undefined, a < 0, oo, a = 0, 1, 0)"
     );
     let mut env = Environment::new();
     env.eval("assume(a < 0)", R).unwrap();
     assert_eq!(
         line(&parse!("lim(1/(a+1)^n, n, oo)", R, &env)),
-        "piecewise(a < -2, 0, a < -1, undefined, a = -1, lim(0^(-n), n, oo), oo)"
+        "piecewise(a < -2, 0, a <= -1, undefined, oo)"
     );
     env.eval("assume(b > 0)", R).unwrap();
     assert_eq!(line(&parse!("lim(1/(b+1)^n, n, oo)", R, &env)), "0");
+    // `{$0^g$}` is 0 when `{$lim g > 0$}`, a division by zero near the point when `{$lim g < 0$}`
+    assert_eq!(lim("lim(0^n, n, oo)"), "0");
+    assert_eq!(lim("lim(0^(x^2 + 1), x, oo)"), "0");
+    assert_eq!(lim("lim(x + 0^(1 + x), x, 0)"), "0");
+    assert_eq!(lim("lim(0^(-n), n, oo)"), "undefined");
+    assert_eq!(lim("lim(0^x, x, 0)"), "lim(0^x, x, 0)");
     assert_eq!(lim("lim(2^x, x, oo)"), "oo");
     assert_eq!(lim("lim((1/2)^x, x, oo)"), "0");
 }

@@ -51,7 +51,7 @@ use crate::{
         expr::{
             DIGITS, Expr, Real, constant_sign, depends, fun, gamma_pole, half,
             has_special_constant, hyperbolic_as_exp, infinity, infinity_sign, one, polygamma,
-            polygamma_args, sqrt, try_map_operands, unary, value, variable,
+            polygamma_args, sqrt, try_map_operands, unary, value, variable, zero,
         },
         sign::{SignMode, sign},
     },
@@ -147,6 +147,10 @@ impl Term<Real> {
                 ),
                 Err(Step::Limit(error)) => Err(error),
             };
+        }
+        let without_zero_powers = remove_zero_powers(self, x, point, direction)?;
+        if without_zero_powers != *self {
+            return without_zero_powers.limit(x, point, direction);
         }
         let (f, infinite) = prepare(self, x, point, direction)?;
         let at_infinity = |f: &Self| Gruntz::new(x).limit(f);
@@ -277,6 +281,27 @@ fn remove_steps(f: &Expr, x: Symbol, point: &Expr, direction: Direction) -> Resu
         _ => return Err(LimitError::Unknown.into()),
     };
     Ok(value(n))
+}
+
+/// Replace `{$0^g$}` in `f`, `g` depending on `x`, by 0 when `{$L = lim g$}` is positive (`g` is then positive near
+/// the point), which [`exp_log_form`] can't write as `{$exp(g ln 0)$}`. The limit is undefined for a negative `L`
+/// (`{$0^g$}` is a division by zero near the point), and unknown otherwise.
+fn remove_zero_powers(
+    f: &Expr,
+    x: Symbol,
+    point: &Expr,
+    direction: Direction,
+) -> LimitResult<Expr> {
+    match f {
+        Term::Pow(pow) if pow.base.is_zero() && depends(&pow.exponant, x) => {
+            match const_sign(&pow.exponant.limit(x, point, direction)?)? {
+                Ordering::Greater => Ok(zero()),
+                Ordering::Less => Err(LimitError::Undefined),
+                Ordering::Equal => Err(LimitError::Unknown),
+            }
+        }
+        _ => try_map_operands(f, |t| remove_zero_powers(t, x, point, direction)),
+    }
 }
 
 /// Checks and rewrites shared by limits and series of `f` when `x` tends to `point`: `f` in the form of
