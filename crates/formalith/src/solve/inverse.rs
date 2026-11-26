@@ -147,10 +147,7 @@ struct Kernel {
 impl Inverter {
     /// The integer parameter of the solutions of periodic functions nested `depth` times.
     fn parameter(&self, depth: usize) -> Expr {
-        let symbol = std::iter::once("k".to_owned())
-            .chain((1..).map(|i| format!("k_{i}")))
-            .map(Symbol::new)
-            .filter(|symbol| !self.used.contains(symbol))
+        let symbol = Symbol::fresh(&["k"], "k", |symbol| self.used.contains(&symbol))
             .nth(depth)
             .expect("There are infinitely many names");
         variable(symbol)

@@ -160,9 +160,7 @@ fn smith(
         Some(n) => value.mod_op(n),
         None => value,
     };
-    let mut parameters = (1..)
-        .map(|i| Symbol::new(format!("t_{i}")))
-        .filter(|t| !symbols.contains(t) && !unknowns.contains(t));
+    let mut parameters = Symbol::fresh(&[], "t", |t| symbols.contains(&t) || unknowns.contains(&t));
     // The possible values of each `y_i`, as `(values, parameter)`: `y_i = value + parameter`
     let mut choices: Vec<(Vec<Integer>, Option<Symbol>)> = vec![];
     for i in 0..matrix.height().max(count) {

@@ -55,6 +55,21 @@ impl Symbol {
     pub fn name(self) -> &'static str {
         &Context::get_symbol_data(&self).name
     }
+
+    /// The infinite sequence of the symbols named `first`, then `base_1`, `base_2`..., without those for which
+    /// `used` holds, for new parameters like `k`, `k_1`... or constants `c_1`, `c_2`...
+    pub(crate) fn fresh<'a>(
+        first: &'a [&str],
+        base: &'a str,
+        used: impl Fn(Self) -> bool + 'a,
+    ) -> impl Iterator<Item = Self> + 'a {
+        first
+            .iter()
+            .map(|name| (*name).to_owned())
+            .chain((1..).map(move |i| format!("{base}_{i}")))
+            .map(Self::new)
+            .filter(move |symbol| !used(*symbol))
+    }
 }
 
 impl Print for Symbol {

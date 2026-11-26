@@ -114,17 +114,12 @@ impl Term<Real> {
 }
 
 /// The index of the sums: `k`, or the first of `n`, `k_1`, `k_2`... not in the expression or the point.
-// Some name of the infinite sequence is unused
-#[allow(clippy::maybe_infinite_iter)]
 pub fn index(f: &Expr, point: &Expr) -> Symbol {
     let mut used = f.symbols();
     used.extend(point.symbols());
-    ["k".to_string(), "n".to_string()]
-        .into_iter()
-        .chain((1..).map(|i| format!("k_{i}")))
-        .map(Symbol::new)
-        .find(|s| !used.contains(s))
-        .unwrap_or_else(|| unreachable!())
+    Symbol::fresh(&["k", "n"], "k", |s| used.contains(&s))
+        .next()
+        .expect("There are infinitely many names")
 }
 
 /// The series of `f`, guessed as a whole, then from its partial fractions or its terms when `split` is set.

@@ -227,9 +227,7 @@ impl Dsolve for Real {
             )));
         }
         let used = e.symbols();
-        let constants: Vec<_> = (1..)
-            .map(|i| Symbol::new(format!("c_{i}")))
-            .filter(|c| !used.contains(c))
+        let constants: Vec<_> = Symbol::fresh(&[], "c", |c| used.contains(&c))
             .take(order)
             .collect();
         let branches = if order == 1 {

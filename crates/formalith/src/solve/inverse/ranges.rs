@@ -149,14 +149,10 @@ fn restrict_parameter(candidate: Candidate, k: Symbol, used: &BTreeSet<Symbol>) 
         }
     }
     let int = |n: Integer| value(Rational::from(n));
-    // There are infinitely many names, one of them is free
-    #[allow(clippy::maybe_infinite_iter)]
     let natural = || {
         let taken = candidate.term.symbols();
-        std::iter::once("n".to_owned())
-            .chain((1..).map(|i| format!("n_{i}")))
-            .map(Symbol::new)
-            .find(|s| !used.contains(s) && !taken.contains(s))
+        Symbol::fresh(&["n"], "n", |s| used.contains(&s) || taken.contains(&s))
+            .next()
             .map(variable)
             .expect("There are infinitely many names")
     };
