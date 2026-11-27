@@ -37,13 +37,32 @@ function print(text, className = 'info') {
   return line;
 }
 
-function echo(text) {
+// Copies `text` when `element` is clicked, unless text is being selected
+function copyOnClick(element, text) {
+  element.classList.add('copyable');
+  element.title = 'Click to copy';
+  element.addEventListener('click', () => {
+    if (!getSelection().isCollapsed) {
+      return;
+    }
+    navigator.clipboard?.writeText(text).then(() => {
+      element.classList.add('copied');
+      setTimeout(() => element.classList.remove('copied'), 1000);
+    });
+  });
+}
+
+// Echoes an input line, copied when clicked unless it is `interrupted` (a line cancelled with Ctrl+C)
+function echo(text, interrupted = false) {
   const line = document.createElement('p');
   line.className = 'line';
   const prompt = document.createElement('span');
   prompt.className = 'prompt';
   prompt.textContent = `${set}>`;
-  line.append(prompt, text);
+  line.append(prompt, interrupted ? `${text}^C` : text);
+  if (!interrupted && text) {
+    copyOnClick(line, text);
+  }
   log.append(line);
 }
 
@@ -135,15 +154,11 @@ function renderMath(source) {
   });
 }
 
-function printResult(text, rendered) {
+// Shows a result, typeset if `rendered` (`text` is then Typst source), copied in Formalith syntax (`plain`) when
+// clicked
+function printResult(text, plain, rendered) {
   const result = print(text, 'result');
-  result.title = 'Click to copy';
-  result.addEventListener('click', () => {
-    navigator.clipboard?.writeText(text).then(() => {
-      result.classList.add('copied');
-      setTimeout(() => result.classList.remove('copied'), 1000);
-    });
-  });
+  copyOnClick(result, plain);
   if (rendered && initTypst()) {
     renderMath(text).then(
       svg => {
@@ -187,7 +202,7 @@ function startWorker() {
       set = data.set;
       label.textContent = `${set}>`;
       if (data.kind === 'result' || data.kind === 'typst') {
-        printResult(data.text, data.kind === 'typst');
+        printResult(data.text, data.plain, data.kind === 'typst');
       } else if (data.kind === 'message') {
         print(data.text);
         if (line === 'help' || line === ':help') {
@@ -294,7 +309,7 @@ input.addEventListener('keydown', event => {
       print('interrupted', 'error');
       restartWorker();
     } else {
-      echo(`${input.value}^C`);
+      echo(input.value, true);
       input.value = '';
     }
     scrollToPrompt();

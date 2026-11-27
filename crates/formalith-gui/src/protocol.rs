@@ -68,6 +68,9 @@ pub struct LineResult {
     /// The result printed as Typst math, for results, typeset by the interface.
     #[serde(default)]
     pub typst: Option<String>,
+    /// The result printed in Formalith syntax, so that it parses back, copied when clicked.
+    #[serde(default)]
+    pub plain: Option<String>,
 }
 
 impl LineResult {
@@ -79,6 +82,7 @@ impl LineResult {
             text: message.into(),
             graph: None,
             typst: None,
+            plain: None,
         }
     }
 }
@@ -262,12 +266,15 @@ fn evaluate_line(session: &mut Session, text: &str, skip: &[String]) -> (LineRes
         Output::Message(_) => ResultKind::Message,
         Output::Error(_) => ResultKind::Error,
     };
-    let typst = (kind == ResultKind::Result).then(|| response.output.print(PrintOptions::typst()));
+    let is_result = kind == ResultKind::Result;
+    let typst = is_result.then(|| response.output.print(PrintOptions::typst()));
+    let plain = is_result.then(|| response.output.print(PrintOptions::plain()));
     let result = LineResult {
         kind,
         text: response.output.print(PRINT_OPTIONS),
         graph,
         typst,
+        plain,
     };
     (result, response.replay)
 }
@@ -310,6 +317,11 @@ mod tests {
             &request(1, &["f(x) := x^2", "f(3)", "y = f(x)", "1 +"]),
         );
         assert_eq!(replies.len(), 5);
+        // Copied in Formalith syntax rather than pretty printed
+        let Reply::Line { result, .. } = &replies[0] else {
+            panic!("not a line");
+        };
+        assert_eq!(result.plain.as_deref(), Some("f(x) := x^2"));
         let Reply::Line { result, .. } = &replies[1] else {
             panic!("not a line");
         };
@@ -324,6 +336,7 @@ mod tests {
         };
         assert_eq!(result.kind, ResultKind::Error);
         assert!(result.typst.is_none());
+        assert!(result.plain.is_none());
         assert_eq!(replies[4], Reply::Done { generation: 1 });
 
         // Cached lines replay definitions, so a changed later line sees them

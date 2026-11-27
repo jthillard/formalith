@@ -2,7 +2,7 @@
 
 use std::cell::RefCell;
 
-use formalith_session::{Output, Session};
+use formalith_session::{Output, Session, formalith::printer::PrintOptions};
 use wasm_bindgen::prelude::*;
 
 thread_local! {
@@ -21,6 +21,7 @@ pub fn start() {
 pub struct Answer {
     kind: &'static str,
     text: String,
+    plain: String,
     replay: bool,
     set: String,
 }
@@ -39,6 +40,14 @@ impl Answer {
     #[must_use]
     pub fn text(&self) -> String {
         self.text.clone()
+    }
+
+    /// The result printed in Formalith syntax, so that it parses back, copied when clicked; empty for other
+    /// answers.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn plain(&self) -> String {
+        self.plain.clone()
     }
 
     /// Whether the line changed the state of the session, so it is run again in a new worker after a panic.
@@ -71,9 +80,14 @@ pub fn run(line: &str) -> Answer {
             Output::Message(_) => "message",
             Output::Error(_) => "error",
         };
+        let plain = match &response.output {
+            Output::Result { .. } => response.output.print(PrintOptions::plain()),
+            _ => String::new(),
+        };
         Answer {
             kind,
             text: response.output.to_string(),
+            plain,
             replay: response.replay,
             set: session.set().name(),
         }

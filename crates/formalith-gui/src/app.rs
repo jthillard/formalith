@@ -605,17 +605,29 @@ fn result_label(
                 if pending {
                     ui.spinner();
                 }
-                if let Some((uri, bytes)) = image {
+                let sense = if result.plain.is_some() {
+                    egui::Sense::click()
+                } else {
+                    egui::Sense::hover()
+                };
+                let response = if let Some((uri, bytes)) = image {
                     // White glyphs, tinted like strong text (the plain text color is a dim gray in the dark theme)
                     let image = egui::Image::from_bytes(uri, bytes)
                         .fit_to_original_size(1.)
-                        .tint(ui.visuals().strong_text_color());
-                    ui.add_enabled(!pending, image);
+                        .tint(ui.visuals().strong_text_color())
+                        .sense(sense);
+                    ui.add_enabled(!pending, image)
                 } else {
                     ui.add_enabled(
                         !pending,
-                        egui::Label::new(text).wrap_mode(egui::TextWrapMode::Extend),
-                    );
+                        egui::Label::new(text)
+                            .wrap_mode(egui::TextWrapMode::Extend)
+                            .selectable(false)
+                            .sense(sense),
+                    )
+                };
+                if let Some(plain) = &result.plain {
+                    copy_on_click(ui, id, &response, plain);
                 }
             });
         });
@@ -624,6 +636,31 @@ fn result_label(
             ui.visuals().warn_fg_color,
             format!("cannot plot: `{name}` has no numerical value"),
         );
+    }
+}
+
+/// Copy `plain` (a result in Formalith syntax) when `response` is clicked, showing "copied" next to it for a
+/// second.
+fn copy_on_click(ui: &mut egui::Ui, id: u64, response: &egui::Response, plain: &str) {
+    const SHOWN: f64 = 1.;
+    let response = response
+        .clone()
+        .on_hover_cursor(egui::CursorIcon::Copy)
+        .on_hover_text("Click to copy");
+    let key = egui::Id::unique(("copied", id));
+    let now = ui.input(|input| input.time);
+    if response.clicked() {
+        ui.ctx().copy_text(plain.to_owned());
+        ui.data_mut(|data| data.insert_temp(key, now));
+    }
+    if let Some(copied) = ui.data(|data| data.get_temp::<f64>(key)) {
+        if now - copied < SHOWN {
+            ui.weak("copied");
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_secs_f64(SHOWN - (now - copied)));
+        } else {
+            ui.data_mut(|data| data.remove::<f64>(key));
+        }
     }
 }
 
