@@ -1,8 +1,9 @@
 // Terminal-like interface to the Formalith wasm build. Lines are run by the session in the worker, like in the
 // command line interface (`formalith-cli`): `:set <name>` changes the set, `:typst` toggles between rendered math
 // and plain text output. Lines changing the session, like definitions `f(x) := x^2`, are replayed in a new worker
-// after a panic. The transcript and these lines are kept in the local storage, so a reload shows the transcript
-// again and restores the session; `clear` (or Ctrl+L) clears the transcript. With Typst output, an input line is
+// after a panic. The transcript and the lines typed are kept in the local storage, so a reload shows the transcript
+// again and restores the session (`:clear` resets it, keeping the set); lines of a `?run=` link only last for the
+// page. `clear` (or Ctrl+L) clears the transcript. With Typst output, an input line is
 // typeset once evaluated, as it was typed (the session prints it without evaluating it). Tab completes builtins,
 // definitions, commands and sets, listing the candidates when there are several.
 
@@ -253,8 +254,31 @@ let pending = null;
 // The completion asked to the worker, `{ id, line, pos }`, until it answers
 let completing = null;
 let nextId = 0;
-// Lines which changed the session, replayed in a new worker (also after a reload)
-let replayLog = load(REPLAY_KEY);
+// Appends `line`, which changed the session, to `log`, compacting it: `:clear` keeps only the set and the Typst
+// output (it doesn't change them), consecutive `:set` keep the last one and consecutive `:typst` cancel. Definitions
+// are kept even when redefined, later ones may use them.
+function record(log, line) {
+  const last = log.at(-1);
+  if (line === ':clear') {
+    const set = log.findLast(entry => entry.startsWith(':set '));
+    const typst = log.filter(entry => entry === ':typst').length % 2 === 1;
+    log.splice(0, log.length, ...(set ? [set] : []), ...(typst ? [':typst'] : []));
+  } else if (line.startsWith(':set ') && last?.startsWith(':set ')) {
+    log[log.length - 1] = line;
+  } else if (line === ':typst' && last === ':typst') {
+    log.pop();
+  } else {
+    log.push(line);
+  }
+  return log;
+}
+
+// Lines typed which changed the session, kept in the local storage to restore it after a reload (compacted again in
+// case it was saved by a version which didn't)
+const storedLog = load(REPLAY_KEY).reduce(record, []);
+store(REPLAY_KEY, storedLog);
+// Every line which changed the session on this page, also those of a `?run=` link, replayed in a new worker
+const replayLog = [...storedLog];
 
 function startWorker() {
   worker = new Worker('worker.js', { type: 'module' });
@@ -278,7 +302,7 @@ function startWorker() {
     if (!pending || data.id !== pending.id) {
       return;
     }
-    const { line, element, entry } = pending;
+    const { line, element, entry, persist } = pending;
     finish();
     if (data.panic !== undefined) {
       // The wasm instance aborted on a panic and can't be reused
@@ -286,8 +310,11 @@ function startWorker() {
       restartWorker();
     } else {
       if (data.replay) {
-        replayLog.push(line);
-        store(REPLAY_KEY, replayLog);
+        record(replayLog, line);
+        if (persist) {
+          record(storedLog, line);
+          store(REPLAY_KEY, storedLog);
+        }
       }
       set = data.set;
       label.textContent = `${set}>`;
@@ -377,10 +404,11 @@ function finish() {
   busy.hidden = true;
 }
 
-// Sends `line` to the worker, remembered in `pending` with its echoed element until it answers
-function run(line) {
+// Sends `line` to the worker, remembered in `pending` with its echoed element until it answers. Unless `persist`,
+// its changes to the session aren't kept after a reload.
+function run(line, persist = true) {
   const { element, entry } = echo(line);
-  pending = { id: nextId++, line, element, entry };
+  pending = { id: nextId++, line, element, entry, persist };
   busy.hidden = false;
   worker.postMessage({ id: pending.id, line });
 }
@@ -397,7 +425,7 @@ if (queued.length) {
 
 function runQueued() {
   if (!pending && queued.length) {
-    run(queued.shift());
+    run(queued.shift(), false);
   }
 }
 
