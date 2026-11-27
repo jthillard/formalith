@@ -141,6 +141,42 @@ impl State {
         );
         id
     }
+
+    /// Move the line at `from` so that it ends up at `to`.
+    fn move_line(&mut self, from: usize, to: usize) {
+        let line = self.lines.remove(from);
+        self.lines.insert(to, line);
+    }
+}
+
+/// A line being dragged by its handle.
+#[derive(Clone, Copy)]
+struct LineDrag {
+    id: u64,
+    /// The distance from the top of its frame to the point where it was grabbed.
+    grab: f32,
+    /// The height of its frame.
+    height: f32,
+    /// Its index among the other lines once dropped, where they leave a gap.
+    to: usize,
+}
+
+/// The time the lines take to slide out of the way of a dragged line, in seconds.
+const SLIDE_TIME: f32 = 0.1;
+
+/// The identifier of the drag handle of the line `id`.
+fn handle_id(id: u64) -> egui::Id {
+    egui::Id::unique(("drag", id))
+}
+
+/// The height of the gap left for the dragged line `drag`.
+fn gap_height_of(drag: Option<LineDrag>, spacing: f32) -> f32 {
+    drag.map_or(0., |drag| drag.height + spacing)
+}
+
+/// The identifier of the animated gap left before the line `id`, or after the last line.
+fn gap_id(id: Option<u64>) -> egui::Id {
+    egui::Id::unique(("gap", id))
 }
 
 /// The result of a line, with the generation of the request it answers.
@@ -166,6 +202,8 @@ pub struct App {
     selected: Option<u64>,
     /// The line to give the keyboard focus.
     focus: Option<u64>,
+    /// The line being dragged.
+    drag: Option<LineDrag>,
     #[cfg(feature = "profile")]
     profiler: crate::profiler::ProfilerWindow,
 }
@@ -191,6 +229,7 @@ impl App {
             space: Space::new(gpu),
             selected: None,
             focus: None,
+            drag: None,
             #[cfg(feature = "profile")]
             profiler: crate::profiler::ProfilerWindow::default(),
         }
@@ -390,7 +429,36 @@ impl App {
         let typst = self.state.typst;
         let mut remove = None;
         let mut insert = None;
-        for index in 0..self.state.lines.len() {
+        // The line to move, and its new index
+        let mut moved = None;
+        let ctx = ui.ctx().clone();
+        // Drop the dragged line
+        if let Some(drag) = self.drag
+            && !ctx.is_being_dragged(handle_id(drag.id))
+        {
+            self.drag = None;
+            if let Some(from) = self.state.lines.iter().position(|line| line.id == drag.id)
+                && from != drag.to
+            {
+                self.state.move_line(from, drag.to);
+                self.edit();
+            }
+        }
+        let drag = self.drag;
+        let slide = |id: egui::Id, gap: bool, height: f32| {
+            let time = if drag.is_some() { SLIDE_TIME } else { 0. };
+            ctx.animate_value_with_time(id, if gap { height } else { 0. }, time)
+        };
+        let spacing = ui.spacing().item_spacing.y;
+        let gap_height = gap_height_of(drag, spacing);
+        let (left, width) = (ui.cursor().left(), ui.available_width());
+        // The tops the other lines would have without the dragged one and the gap, and where the gap would start
+        // before each of them, then after the last one
+        let mut tops = vec![];
+        let mut top = ui.cursor().top();
+        let mut started = None;
+        let count = self.state.lines.len();
+        for index in 0..count {
             let id = self.state.lines[index].id;
             let pending = self.is_pending(id);
             let evaluated = self.results.get(&id);
@@ -402,13 +470,49 @@ impl App {
                 && graph.is_some_and(|graph| matches!(graph.kind, GraphKind::Surface { .. }));
             let line = &mut self.state.lines[index];
             let selected = self.selected == Some(id);
-            let frame = egui::Frame::group(ui.style()).fill(if selected {
+            let dragged = drag.is_some_and(|drag| drag.id == id);
+            let mut frame = egui::Frame::group(ui.style()).fill(if dragged {
+                ui.visuals().panel_fill
+            } else if selected {
                 ui.visuals().faint_bg_color
             } else {
                 Color32::TRANSPARENT
             });
-            frame.show(ui, |ui| {
+            if dragged {
+                frame = frame.shadow(ui.visuals().popup_shadow);
+            }
+            // A dragged line is drawn out of the list, on a layer of its own above the others, under the pointer;
+            // the others leave a gap where it would go
+            let mut floating = None;
+            if let Some(drag) = drag {
+                if dragged {
+                    let pointer = ctx.pointer_interact_pos().map_or(top, |pointer| pointer.y);
+                    floating = Some(
+                        ui.new_child(
+                            egui::UiBuilder::new()
+                                .layer_id(egui::LayerId::new(
+                                    egui::Order::Foreground,
+                                    handle_id(id),
+                                ))
+                                .max_rect(egui::Rect::from_min_size(
+                                    egui::pos2(left, pointer - drag.grab),
+                                    egui::vec2(width, f32::INFINITY),
+                                )),
+                        ),
+                    );
+                } else {
+                    let gap = slide(gap_id(Some(id)), drag.to == tops.len(), gap_height);
+                    if gap > 0. {
+                        ui.add_space(gap);
+                    }
+                    tops.push(top);
+                }
+            }
+            let row = frame.show(floating.as_mut().unwrap_or(ui), |ui| {
                 ui.horizontal(|ui| {
+                    if drag_handle(ui, handle_id(id)).drag_started() {
+                        started = Some(index);
+                    }
                     ui.color_edit_button_srgb(&mut line.color);
                     if has_graph {
                         ui.checkbox(&mut line.visible, "")
@@ -446,6 +550,19 @@ impl App {
                         if response.gained_focus() || response.clicked() {
                             self.selected = Some(id);
                         }
+                        if response.has_focus() {
+                            ui.input_mut(|input| {
+                                if index > 0
+                                    && input.consume_key(egui::Modifiers::ALT, egui::Key::ArrowUp)
+                                {
+                                    moved = Some((index, index - 1));
+                                } else if index + 1 < count
+                                    && input.consume_key(egui::Modifiers::ALT, egui::Key::ArrowDown)
+                                {
+                                    moved = Some((index, index + 1));
+                                }
+                            });
+                        }
                         if response.lost_focus()
                             && ui.input(|input| input.key_pressed(egui::Key::Enter))
                         {
@@ -471,6 +588,45 @@ impl App {
                     });
                 }
             });
+            if !dragged {
+                top += row.response.rect.height() + spacing;
+            }
+            if started == Some(index) {
+                let rect = row.response.rect;
+                let origin = ctx.input(|input| input.pointer.press_origin());
+                self.drag = Some(LineDrag {
+                    id,
+                    grab: origin.map_or(0., |origin| origin.y - rect.top()),
+                    height: rect.height(),
+                    to: index,
+                });
+            }
+        }
+        if let Some(drag) = drag {
+            let gap = slide(gap_id(None), drag.to == tops.len(), gap_height);
+            ui.add_space(gap);
+            tops.push(top);
+            // The gap goes where the top of the dragged line is closest to
+            if let Some(pointer) = ctx.pointer_interact_pos()
+                && let Some(drag) = &mut self.drag
+            {
+                let y = pointer.y - drag.grab;
+                drag.to = (0..tops.len())
+                    .min_by(|&i, &j| (tops[i] - y).abs().total_cmp(&(tops[j] - y).abs()))
+                    .unwrap_or(drag.to);
+            }
+        }
+        // The gap opens at once where the line was taken from
+        if let Some(index) = started {
+            let next = self.state.lines.get(index + 1).map(|line| line.id);
+            ctx.animate_value_with_time(gap_id(next), gap_height_of(self.drag, spacing), 0.);
+        }
+        if let Some((from, to)) = moved
+            && remove.is_none()
+            && insert.is_none()
+        {
+            self.state.move_line(from, to);
+            self.edit();
         }
         if let Some(index) = remove {
             let line = self.state.lines.remove(index);
@@ -567,6 +723,27 @@ impl App {
             })
             .collect()
     }
+}
+
+/// The handle by which a line is dragged: two columns of three dots, painted rather than a glyph missing from the
+/// default fonts.
+fn drag_handle(ui: &mut egui::Ui, id: egui::Id) -> egui::Response {
+    let (_, rect) = ui.allocate_space(egui::vec2(10., ui.spacing().interact_size.y));
+    let response = ui
+        .interact(rect, id, egui::Sense::drag())
+        .on_hover_cursor(egui::CursorIcon::Grab)
+        .on_hover_text("Drag to move the line (or Alt+↑ / Alt+↓ while editing it)");
+    if response.dragged() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+    }
+    let color = ui.visuals().weak_text_color();
+    for column in [-2., 2.] {
+        for row in [-4., 0., 4.] {
+            ui.painter()
+                .circle_filled(rect.center() + egui::vec2(column, row), 1.2, color);
+        }
+    }
+    response
 }
 
 /// Check if `graph` is a surface, when the `previous` graph of its line wasn't.
