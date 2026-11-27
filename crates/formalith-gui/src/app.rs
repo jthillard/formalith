@@ -13,7 +13,7 @@ use crate::{
     plot::{ComplexView, Drawable, Plotter},
     protocol::{LineResult, Reply, Request, RequestLine, ResultKind, initial_state, line_key},
     space::{Space, is_surface},
-    typeset::Typesetter,
+    typeset::{Image, Typesetter},
 };
 
 /// Colors given to new lines, in turn.
@@ -613,7 +613,9 @@ impl App {
                         .typst
                         .as_deref()
                         .filter(|_| typst)
-                        .and_then(|source| self.typesetter.get(ui.ctx(), source));
+                        .and_then(|source| self.typesetter.get(ui.ctx(), source))
+                        // Rasterized as one texture, which has a maximum size: big results stay text
+                        .filter(|image| image.fits(ui.ctx()));
                     result_label(ui, id, result, image, pending);
                     if only_in_space {
                         ui.weak("drawn in the 3D view");
@@ -796,7 +798,7 @@ fn result_label(
     ui: &mut egui::Ui,
     id: u64,
     result: &LineResult,
-    image: Option<(String, egui::load::Bytes)>,
+    image: Option<Image>,
     pending: bool,
 ) {
     let mut text = RichText::new(&result.text).monospace();
@@ -821,9 +823,9 @@ fn result_label(
                 } else {
                     egui::Sense::hover()
                 };
-                let response = if let Some((uri, bytes)) = image {
+                let response = if let Some(image) = image {
                     // White glyphs, tinted like strong text (the plain text color is a dim gray in the dark theme)
-                    let image = egui::Image::from_bytes(uri, bytes)
+                    let image = egui::Image::from_bytes(image.uri, image.bytes)
                         .fit_to_original_size(1.)
                         .tint(ui.visuals().strong_text_color())
                         .sense(sense);
