@@ -1,7 +1,8 @@
 // Terminal-like interface to the Formalith wasm build. Lines are run by the session in the worker, like in the
 // command line interface (`formalith-cli`): `:set <name>` changes the set, `:typst` toggles between rendered math
 // and plain text output. Lines changing the session, like definitions `f(x) := x^2`, are replayed in a new worker
-// after a panic.
+// after a panic. The transcript and these lines are kept in the local storage, so a reload shows the transcript
+// again and restores the session; `clear` (or Ctrl+L) clears the transcript.
 
 const log = document.getElementById('log');
 const form = document.getElementById('prompt');
@@ -11,6 +12,9 @@ const busy = document.getElementById('busy');
 
 const HISTORY_KEY = 'formalith-history';
 const HISTORY_SIZE = 500;
+const TRANSCRIPT_KEY = 'formalith-transcript';
+const TRANSCRIPT_SIZE = 1000;
+const REPLAY_KEY = 'formalith-replay';
 // Text color used by Typst, replaced by `currentColor` in the SVG so results follow the page theme.
 const TYPST_FILL = '#010203';
 
@@ -29,12 +33,55 @@ function saveHistory() {
   } catch {}
 }
 
-function print(text, className = 'info') {
+function load(key) {
+  try {
+    return JSON.parse(localStorage.getItem(key)) ?? [];
+  } catch {
+    return [];
+  }
+}
+
+function store(key, value) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {}
+}
+
+// Entries of the transcript shown: `{ kind: 'line', set, text, interrupted }`, `{ kind: 'result', text, plain,
+// rendered }`, `{ kind: 'info' | 'error', text }`
+let transcript = load(TRANSCRIPT_KEY);
+// Whether the stored transcript is being shown again, so it isn't recorded twice
+let restoring = false;
+
+function record(entry) {
+  if (restoring) {
+    return;
+  }
+  transcript.push(entry);
+  if (transcript.length > TRANSCRIPT_SIZE) {
+    transcript = transcript.slice(-TRANSCRIPT_SIZE);
+  }
+  store(TRANSCRIPT_KEY, transcript);
+}
+
+function clearLog() {
+  log.replaceChildren();
+  transcript = [];
+  store(TRANSCRIPT_KEY, transcript);
+}
+
+// Shows a line of output without recording it
+function show(text, className) {
   const line = document.createElement('p');
   line.className = className;
   line.textContent = text;
   log.append(line);
   return line;
+}
+
+function print(text, className = 'info') {
+  record({ kind: className, text });
+  return show(text, className);
 }
 
 // Copies `text` when `element` is clicked, unless text is being selected
@@ -52,13 +99,15 @@ function copyOnClick(element, text) {
   });
 }
 
-// Echoes an input line, copied when clicked unless it is `interrupted` (a line cancelled with Ctrl+C)
-function echo(text, interrupted = false) {
+// Echoes an input line typed in `lineSet`, copied when clicked unless it is `interrupted` (a line cancelled with
+// Ctrl+C)
+function echo(text, interrupted = false, lineSet = set) {
+  record({ kind: 'line', set: lineSet, text, interrupted });
   const line = document.createElement('p');
   line.className = 'line';
   const prompt = document.createElement('span');
   prompt.className = 'prompt';
-  prompt.textContent = `${set}>`;
+  prompt.textContent = `${lineSet}>`;
   line.append(prompt, interrupted ? `${text}^C` : text);
   if (!interrupted && text) {
     copyOnClick(line, text);
@@ -157,7 +206,8 @@ function renderMath(source) {
 // Shows a result, typeset if `rendered` (`text` is then Typst source), copied in Formalith syntax (`plain`) when
 // clicked
 function printResult(text, plain, rendered) {
-  const result = print(text, 'result');
+  record({ kind: 'result', text, plain, rendered });
+  const result = show(text, 'result');
   copyOnClick(result, plain);
   if (rendered && initTypst()) {
     renderMath(text).then(
@@ -175,8 +225,8 @@ function printResult(text, plain, rendered) {
 let worker;
 let pending = null;
 let nextId = 0;
-// Lines which changed the session, replayed in a new worker
-let replayLog = [];
+// Lines which changed the session, replayed in a new worker (also after a reload)
+let replayLog = load(REPLAY_KEY);
 
 function startWorker() {
   worker = new Worker('worker.js', { type: 'module' });
@@ -185,6 +235,11 @@ function startWorker() {
       prefetchTypst();
       runQueued();
       return;
+    }
+    if (data.id === -1 && data.set) {
+      // A replayed line, which may have changed the set
+      set = data.set;
+      label.textContent = `${set}>`;
     }
     if (!pending || data.id !== pending.id) {
       return;
@@ -198,6 +253,7 @@ function startWorker() {
     } else {
       if (data.replay) {
         replayLog.push(line);
+        store(REPLAY_KEY, replayLog);
       }
       set = data.set;
       label.textContent = `${set}>`;
@@ -228,13 +284,18 @@ function startWorker() {
   };
 }
 
-function restartWorker() {
-  worker.terminate();
-  startWorker();
-  // Answers to these messages don't match a pending request and are ignored
+// Runs the lines which changed the session again in a new worker
+function replay() {
+  // Answers to these messages don't match a pending request, only their set is used
   for (const line of replayLog) {
     worker.postMessage({ id: -1, line });
   }
+}
+
+function restartWorker() {
+  worker.terminate();
+  startWorker();
+  replay();
 }
 
 function finish() {
@@ -275,7 +336,7 @@ form.addEventListener('submit', event => {
   input.value = '';
   draft = '';
   if (line === 'clear') {
-    log.replaceChildren();
+    clearLog();
   } else if (line) {
     if (history.at(-1) !== line) {
       history.push(line);
@@ -301,7 +362,7 @@ input.addEventListener('keydown', event => {
     input.setSelectionRange(input.value.length, input.value.length);
   } else if (event.ctrlKey && event.key === 'l') {
     event.preventDefault();
-    log.replaceChildren();
+    clearLog();
   } else if (event.ctrlKey && event.key === 'c' && input.selectionStart === input.selectionEnd) {
     event.preventDefault();
     if (pending) {
@@ -324,4 +385,21 @@ document.getElementById('terminal').addEventListener('click', () => {
 });
 
 startWorker();
-print('Formalith — type `help` for the list of commands.');
+replay();
+
+// The transcript of the previous visits
+restoring = true;
+for (const entry of transcript) {
+  if (entry.kind === 'line') {
+    echo(entry.text, entry.interrupted, entry.set);
+  } else if (entry.kind === 'result') {
+    printResult(entry.text, entry.plain, entry.rendered);
+  } else {
+    print(entry.text, entry.kind);
+  }
+}
+restoring = false;
+if (!transcript.length) {
+  show('Formalith — type `help` for the list of commands.', 'info');
+}
+scrollToPrompt();
