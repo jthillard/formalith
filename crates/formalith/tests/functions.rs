@@ -216,7 +216,9 @@ fn factorial_and_binomial() {
     assert_eq!(parse!("binomial(2, 5)", R), parse!("0", R));
     assert_eq!(parse!("binomial(5, -1)", R), parse!("0", R));
     assert!(matches!(parse!("factorial(x)", R), Term::Fun(_)));
-    assert!(matches!(parse!("factorial(-1)", R), Term::Fun(_)));
+    assert_eq!(parse!("factorial(-1)", R), parse!("undefined", R));
+    assert_eq!(parse!("(-3)!", R), parse!("undefined", R));
+    assert_eq!(parse!("binomial(-1, 2)", R), parse!("1", R));
     assert!(matches!(parse!("factorial(1/3)", R), Term::Fun(_)));
 }
 
@@ -260,8 +262,20 @@ fn trigonometric_values_at_classic_angles() {
 }
 
 #[test]
-fn tangent_at_its_poles_stays_unevaluated() {
-    assert!(matches!(parse!("tan(pi/2)", R), Term::Fun(_)));
+fn poles_are_undefined() {
+    for input in [
+        "tan(pi/2)",
+        "tan(3*pi/2)",
+        "cot(0)",
+        "sec(pi/2)",
+        "csc(pi)",
+        "atanh(1)",
+        "atanh(-1)",
+    ] {
+        assert_eq!(parse!(input, R), parse!("undefined", R), "{input}");
+    }
+    // Logarithmic singularities of the integrals stay infinite
+    assert_eq!(parse!("Ei(0)", R), parse!("-oo", R));
 }
 
 #[test]
@@ -333,8 +347,9 @@ fn exponentials_and_logarithms() {
     assert_eq!(parse!("e^(ln(2))", R), parse!("2", R));
     assert_eq!(parse!("log(1000)", R), parse!("3", R));
     assert_eq!(parse!("log(8, 2)", R), parse!("3", R));
-    // ln(x) is only defined for x > 0, so exp(ln(x)) = x, but ln(0) stays unevaluated
-    assert!(matches!(parse!("ln(0)", R), Term::Fun(_)));
+    // ln(x) is only defined for x > 0, so exp(ln(x)) = x, and ln(0) is undefined
+    assert_eq!(parse!("ln(0)", R), parse!("undefined", R));
+    assert_eq!(parse!("log(0)", R), parse!("undefined", R));
 }
 
 #[test]
@@ -445,7 +460,11 @@ fn gamma_function_family() {
     assert_eq!(parse!("gamma(5)", R), parse!("24", R));
     assert_eq!(parse!("gamma(1/2)", R), parse!("sqrt(pi)", R));
     assert_eq!(parse!("gamma(-1/2)", R), parse!("-2*sqrt(pi)", R));
-    assert!(matches!(parse!("gamma(0)", R), Term::Fun(_)));
+    assert_eq!(parse!("gamma(0)", R), parse!("undefined", R));
+    assert_eq!(parse!("gamma(-2)", R), parse!("undefined", R));
+    assert_eq!(parse!("digamma(0)", R), parse!("undefined", R));
+    assert_eq!(parse!("polygamma(2, -1)", R), parse!("undefined", R));
+    assert_eq!(parse!("zeta(1)", R), parse!("undefined", R));
     assert_eq!(parse!("beta(2, 3)", R), parse!("1/12", R));
     assert_eq!(
         parse!("beta(a, b)", R),
@@ -467,7 +486,6 @@ fn gamma_function_family() {
     assert_eq!(parse!("zeta(-1)", R), parse!("-1/12", R));
     assert_eq!(parse!("zeta(-2)", R), parse!("0", R));
     assert!(matches!(parse!("zeta(3)", R), Term::Fun(_)));
-    assert!(matches!(parse!("zeta(1)", R), Term::Fun(_)));
     assert_eq!(parse!("zeta(oo)", R), parse!("1", R));
     assert_eq!(parse!("sign(gamma(x^2 + 1))", R), parse!("1", R));
 }

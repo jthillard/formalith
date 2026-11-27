@@ -377,7 +377,8 @@ fn matrix_to_the_zero() {
 
 #[test]
 fn singular_matrices_are_not_inverted() {
-    assert_eq!(line(&parse!("[[1,2],[2,4]]^-1", M)), "[[1,2],[2,4]]^-1");
+    assert_eq!(line(&parse!("[[1,2],[2,4]]^-1", M)), "undefined");
+    assert_eq!(line(&parse!("[[1,0],[0,0]]^-2", M)), "undefined");
 }
 
 #[test]
@@ -386,12 +387,26 @@ fn determinant_is_multiplicative() {
 }
 
 #[test]
-fn invalid_operations_stay_unevaluated() {
-    assert_eq!(line(&parse!("[[1,2,3]]+[[1,2]]", M)), "[[1,2,3]]+[[1,2]]");
-    assert_eq!(
-        line(&parse!("det([[1,2,3],[4,5,6]])", M)),
-        "det([[1,2,3],[4,5,6]])"
-    );
+fn invalid_operations_are_undefined() {
+    for input in [
+        "[[1,2,3]]+[[1,2]]",
+        "[[1,2]]+[[1],[2]]",
+        "[[1,2]]+1",
+        "[[1,2]]*[[1,2]]",
+        "[[1,2],[3,4]]*[[1,2,3]]",
+        "[[1,2]]^2",
+        "[[1,2]]^0",
+        "det([[1,2,3],[4,5,6]])",
+        "charpoly([[1,2]])",
+        "eigenvalues([[1,2]])",
+        "undefined+[[1,2]]",
+    ] {
+        assert_eq!(line(&parse!(input, M)), "undefined", "{input}");
+    }
+    assert_eq!(parse!("det([[1,2]])", R), parse!("undefined", R));
+    // Compatible sizes, and a square matrix plus a scalar, which stays
+    assert_eq!(line(&parse!("[[1],[2]]*[[1,2]]", M)), "[[1,2],[2,4]]");
+    assert_eq!(line(&parse!("[[1,2],[3,4]]+1", M)), "[[1,2],[3,4]]+1");
     assert_eq!(
         line(&parse!("[[1,2,3],[4,5,6]]*[[1],[2],[3]]", M)),
         "[[14],[32]]"
@@ -561,11 +576,8 @@ fn matrix_builtins() {
     assert_eq!(parse!("trace([[1,2],[3,4]])", R), 5.into());
     assert_eq!(parse!("rank([[1,2],[3,4]])", R), 2.into());
     assert_eq!(parse!("trace([[x,1],[1,y]])", R), parse!("x+y", R));
-    // Unevaluated
-    assert_eq!(
-        line(&parse!("trace([[1,2,3],[4,5,6]])", M)),
-        "trace([[1,2,3],[4,5,6]])"
-    );
+    // Undefined for non-square matrices
+    assert_eq!(line(&parse!("trace([[1,2,3],[4,5,6]])", M)), "undefined");
 }
 
 #[test]

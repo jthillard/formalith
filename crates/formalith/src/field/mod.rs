@@ -236,11 +236,12 @@ pub trait Semiring: Monoid {
     fn is_one(&self, a: &Self::Element) -> bool {
         *a == self.one()
     }
-    /// The one of the same shape as `a`, like the identity matrix of its size: `{$a^0$}`.
+    /// The one of the same shape as `a`, like the identity matrix of its size: `{$a^0$}`. `None` when `{$a^0$}` is
+    /// undefined, like for a non-square matrix.
     ///
     /// Defaults to [`Semiring::one`].
-    fn one_like(&self, _a: &Self::Element) -> Self::Element {
-        self.one()
+    fn one_like(&self, _a: &Self::Element) -> Option<Self::Element> {
+        Some(self.one())
     }
     /// Multiply two elements of this semiring
     fn mul(&self, a: &Self::Element, b: &Self::Element) -> Self::Element;

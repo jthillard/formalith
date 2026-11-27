@@ -480,9 +480,16 @@ pub static BUILTIN_DOCS: [BuiltinDoc; Context::BUILTIN_NAMES.len()] = [
         Context::UNDEFINED,
         Constants,
         "undefined",
-        "The result of a limit that doesn't exist, or of an indeterminate form like oo - oo.",
-        "",
-        &[ex("lim(1/x, x, 0)", "\"undefined\"")],
+        "The value of an expression that has none: a limit that doesn't exist, an indeterminate form like oo - oo, \
+         a division by zero, a pole of a function, or an operation on matrices of incompatible sizes.",
+        "It absorbs sums, products, powers and functions of it (except the branches of piecewise). Poles: ln(0), \
+         tan at odd multiples of pi/2, factorial and gamma at negative integers, polygamma at non-positive \
+         integers, zeta(1), atanh(1) and atanh(-1).",
+        &[
+            ex("lim(1/x, x, 0)", "\"undefined\""),
+            ex("1/0", "\"undefined\""),
+            ex("ln(0) + 1", "\"undefined\""),
+        ],
     ),
     doc(
         Context::SERIES,

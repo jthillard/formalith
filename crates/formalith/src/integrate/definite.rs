@@ -19,9 +19,9 @@
 
 use crate::field::real::expr::sqrt;
 use crate::field::real::expr::{
-    DIGITS, Expr, Real, any_subterm, constant_sign, depends, fun, half, has_function,
-    has_special_constant, infinity_sign, int, is_infinite, is_numerically_zero, is_proven_zero,
-    map_tree, one, subs, unary, value, variable, zero,
+    DIGITS, Expr, Real, constant_sign, depends, fun, half, has_function, has_special_constant,
+    infinity_sign, int, is_infinite, is_numerically_zero, is_proven_zero, map_tree, one, subs,
+    unary, value, variable, zero,
 };
 use std::{
     cell::{Cell, RefCell},
@@ -310,7 +310,7 @@ fn not_real(f: &Expr, x: Symbol, a: &Expr, b: &Expr) -> bool {
             && points.iter().any(|p| {
                 let at = subs(u, x, p);
                 // `u` must be finite at the point, like `{$1/r - 1$}` isn't at 0
-                !has_special_constant(&at) && !has_division_by_zero(&at) && is_negative(&at)
+                !has_special_constant(&at) && is_negative(&at)
             })
     })
 }
@@ -323,11 +323,6 @@ fn is_negative(term: &Expr) -> bool {
         let (num, den) = term.as_fraction(true);
         sign(&num.expand()) * sign(&den.expand()) == SignSet::NEGATIVE
     }
-}
-
-/// Whether `term` contains a division by zero, like `{$1/0 - 1$}`.
-fn has_division_by_zero(term: &Expr) -> bool {
-    any_subterm(term, &Term::is_division_by_zero)
 }
 
 /// `{$S(b) - S(a)$}` for the terms `S` of the antiderivative `{$F = S + R$}` with a held sum, as `(S(b) - S(a), R)`,

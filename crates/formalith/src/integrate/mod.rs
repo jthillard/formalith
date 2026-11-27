@@ -200,6 +200,10 @@ type Strategy = fn(&mut Integrator, &Expr, Symbol) -> Option<Expr>;
 impl Integrator {
     /// An antiderivative of `f` with respect to `x`.
     fn integrate(&mut self, f: &Expr, x: Symbol) -> Option<Expr> {
+        // A strategy built an undefined integrand, like `{$f / u'$}` with `{$u' = 0$}`
+        if depends(f, Context::UNDEFINED) {
+            return None;
+        }
         if !depends(f, x) {
             return Some(f * &variable(x));
         }
@@ -211,7 +215,9 @@ impl Integrator {
             return None;
         }
         self.depth += 1;
-        let res = self.integrate_uncached(f, x);
+        let res = self
+            .integrate_uncached(f, x)
+            .filter(|res| !depends(res, Context::UNDEFINED));
         self.depth -= 1;
         self.cache.insert(key, res.clone());
         res

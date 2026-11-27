@@ -112,7 +112,7 @@ fn polygamma_factor(m: u64) -> Rational {
 
 impl R<Rational> {
     /// Evaluate the functions of the Gamma family, `None` when nothing applies:
-    /// - `{$Gamma(q) = (q - 1)!$}` for integers and half-integers,
+    /// - `{$Gamma(q) = (q - 1)!$}` for integers and half-integers (`undefined` at the poles, like `{$psi^((m))$}`),
     /// - `{$B(a, b) = (Gamma(a) Gamma(b)) / Gamma(a + b)$}` and `{$psi(u) = "polygamma"(0, u)$}`, always rewritten,
     /// - `{$psi^((m))(q)$}` for integers and half-integers, with `{$gamma$}`, `{$ln 2$}` and `{$zeta(m + 1)$}`,
     /// - `{$zeta(n)$}` for integers `n` except odd `{$n >= 3$}`, from the Bernoulli numbers.
@@ -225,8 +225,11 @@ impl R<Rational> {
         Term::Fun(Box::new(Fun::new(ident, args, self))).normalize()
     }
 
-    /// `{$psi^((m))(q)$}` for an integer or half-integer `q`, `None` at the poles `{$q <= 0$}` integer.
+    /// `{$psi^((m))(q)$}` for an integer or half-integer `q`, `undefined` at the poles `{$q <= 0$}` integer.
     fn eval_polygamma(self, m: u64, q: &Rational) -> Option<Term<Self>> {
+        if *q <= 0 && q.denominator_ref() == &Natural::ONE {
+            return Some(Term::Symbol(SymbolTerm::new(Context::UNDEFINED, self)));
+        }
         let gamma = Term::Symbol(SymbolTerm::new(Context::EULER_GAMMA, self));
         let zeta = || self.call(Context::ZETA, vec![self.value(Rational::from(m + 1))]);
         if let Ok(n) = u64::try_from(q) {
@@ -267,11 +270,15 @@ impl R<Rational> {
     }
 
     /// `{$zeta(n)$}` for an integer `n`: `{$zeta(2 k) = (-1)^(k + 1) B_(2 k) (2 pi)^(2 k) / (2 (2 k)!)$}`,
-    /// `{$zeta(-n) = (-1)^n B_(n + 1) / (n + 1)$}`, `None` for odd `{$n >= 1$}`.
+    /// `{$zeta(-n) = (-1)^n B_(n + 1) / (n + 1)$}`, `undefined` at the pole 1, `None` for odd `{$n >= 3$}`.
     fn eval_zeta(self, s: &Rational) -> Option<Term<Self>> {
         let n = i64::try_from(s)
             .ok()
             .filter(|n| n.unsigned_abs() <= MAX_ORDER)?;
+        // The pole of `{$zeta$}`
+        if n == 1 {
+            return Some(Term::Symbol(SymbolTerm::new(Context::UNDEFINED, self)));
+        }
         if n > 0 {
             if n % 2 == 1 {
                 return None;

@@ -580,6 +580,24 @@ impl Semiring for C<R<Rational>> {
                 }
                 _ => {}
             },
+            // Poles at real constants, like `{$ln 0$}` and `{$tan(pi/2)$}`, are those of `{$RR$}`
+            Term::Fun(fun)
+                if matches!(
+                    fun.get_ident(),
+                    Context::LN
+                        | Context::TAN
+                        | Context::FACTORIAL
+                        | Context::GAMMA
+                        | Context::POLYGAMMA
+                        | Context::ZETA
+                        | Context::ATANH
+                ) && fun
+                    .get_args::<Self>()
+                    .is_some_and(|args| args.iter().all(parts::is_constant))
+                    && to_real(&a).is_some_and(|real| real.normalize().is_undefined()) =>
+            {
+                return Term::Symbol(SymbolTerm::new(Context::UNDEFINED, *self));
+            }
             Term::Fun(fun) => match fun.get_ident() {
                 Context::ABS => {
                     if let Some(Term::Value(z)) = fun.get_arg::<Self>() {

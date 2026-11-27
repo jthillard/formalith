@@ -19,7 +19,7 @@ use crate::{
     term::{Expand, Normalize, TermSet},
 };
 
-use super::{Flags, Term, Value, relation::Relation};
+use super::{Flags, Term, Value, relation::Relation, symbol::SymbolTerm};
 use crate::solve::polynomial::{polynomial_form, sylvester_determinant};
 
 /// To allow function from any set to the set `T`, a dynamic dispatch is used with this trait, implementing needed methods.
@@ -67,7 +67,18 @@ impl<T: Set> dyn Function<T> {
 
 impl<From: Set, T: Set> Function<T> for Fun<From, T> {
     fn normalize(&self) -> Term<T> {
-        self.map_args(Normalize::normalize)
+        let args: Vec<_> = self.args.iter().map(Normalize::normalize).collect();
+        // A function of `undefined` is undefined, except the branches and conditions of `piecewise`, which may be
+        // `undefined` where the value doesn't exist
+        if self.ident != Context::PIECEWISE
+            && Relation::from_symbol(self.ident).is_none()
+            && args
+                .iter()
+                .any(|arg| matches!(arg, Term::Symbol(s) if s.symbol == Context::UNDEFINED))
+        {
+            return Term::Symbol(SymbolTerm::new(Context::UNDEFINED, self.set));
+        }
+        Term::Fun(Box::new(Self::new(self.ident, args, self.set)))
     }
     fn expand(&self) -> Term<T> {
         self.map_args(Expand::expand)
@@ -699,6 +710,15 @@ pub(crate) fn eval_matrix_builtin<T: Ring>(fun: &dyn Function<T>) -> Option<Term
     let VectorSpaceElement::Vector(matrix) = value else {
         return (fun.get_ident() == Context::DET).then(|| value.det().ok())?;
     };
+    // `det`, `trace` and `charpoly` of a non-square matrix
+    if matrix.width() != matrix.height()
+        && matches!(
+            fun.get_ident(),
+            Context::DET | Context::TRACE | Context::CHARPOLY
+        )
+    {
+        return Some(Term::Symbol(SymbolTerm::new(Context::UNDEFINED, set)));
+    }
     match fun.get_ident() {
         Context::DET => matrix.det().ok(),
         Context::TRACE => matrix.trace().ok(),

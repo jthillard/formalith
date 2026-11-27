@@ -22,6 +22,13 @@ fn symbols() {
 }
 
 #[test]
+fn singular_values_are_undefined() {
+    assert_eq!(line(&parse!("(-1)!", Z)), "undefined");
+    assert_eq!(line(&parse!("1/0", Z)), "undefined");
+    assert_eq!(line(&parse!("undefined+x", Z)), "undefined");
+}
+
+#[test]
 fn non_invertible_values_stay_symbolic() {
     assert_eq!(line(&parse!("1/2", Z)), "2^-1");
     assert_eq!(line(&parse!("x^-1", Z)), "x^-1");

@@ -756,13 +756,11 @@ impl R<Rational> {
     }
 
     /// Arithmetic with `{$oo$}`: `{$oo + c = oo$}` for a constant `c`, `{$oo - oo = "undefined"$}`, `{$c oo = oo$}` for a positive
-    /// constant `c`, `{$oo^n = oo$}` for `{$n > 0$}` and `{$oo^n = 0$}` for `{$n < 0$}`. `undefined` absorbs sums and
-    /// products. Returns `None` when nothing applies.
+    /// constant `c`, `{$oo^n = oo$}` for `{$n > 0$}` and `{$oo^n = 0$}` for `{$n < 0$}` (`undefined` absorbing sums
+    /// and products is generic). Returns `None` when nothing applies.
     fn eval_infinite(self, a: &Term<Self>) -> Option<Term<Self>> {
         let oo = || Term::Symbol(SymbolTerm::new(Context::OO, self));
         let undefined = || Term::Symbol(SymbolTerm::new(Context::UNDEFINED, self));
-        let is_undefined =
-            |t: &Term<Self>| matches!(t, Term::Symbol(s) if s.symbol == Context::UNDEFINED);
         match a {
             Term::Pow(pow) if matches!(&*pow.base, Term::Symbol(s) if s.symbol == Context::OO) => {
                 match &**pow.exponant {
@@ -772,9 +770,6 @@ impl R<Rational> {
                 }
             }
             Term::Add(add) => {
-                if add.iter().any(is_undefined) {
-                    return Some(undefined());
-                }
                 let (mut positive, mut negative) = (false, false);
                 for term in add {
                     if term.is_infinity_factor() {
@@ -799,9 +794,6 @@ impl R<Rational> {
                 }
             }
             Term::Mul(mul) => {
-                if mul.iter().any(is_undefined) {
-                    return Some(undefined());
-                }
                 let (infinite, rest): (Vec<_>, Vec<_>) =
                     mul.iter().partition(|factor| factor.is_infinity_factor());
                 // `{$-oo$}` is already normalized
@@ -1130,6 +1122,7 @@ impl R<Rational> {
 
     fn eval_builtin(self, ident: Symbol, args: &[Term<Self>]) -> Option<Term<Self>> {
         let value = |value| Term::Value(Value::new(value, self));
+        let undefined = || Term::Symbol(SymbolTerm::new(Context::UNDEFINED, self));
         if let [x] = args
             && let Some(res) = self
                 .eval_parity(ident, x)
@@ -1146,6 +1139,9 @@ impl R<Rational> {
                 self.eval_trig_at_pi_multiple(ident, &Self::pi_multiple(x)?)
             }
             (Context::LN, [x]) if x.is_one() => Some(value(Rational::ZERO)),
+            // Poles
+            (Context::LN, [x]) if x.is_zero() => Some(undefined()),
+            (Context::ATANH, [Term::Value(x)]) if (&x.value).abs() == 1 => Some(undefined()),
             // `{$ln q = -ln(1/q)$}` for `{$0 < q < 1$}`
             (Context::LN, [Term::Value(x)]) if x.value > 0 && x.value < 1 => {
                 Some(-self.fun(Context::LN, value((&x.value).reciprocal())))
@@ -1321,10 +1317,15 @@ impl R<Rational> {
         }
     }
 
-    /// Evaluate `{$n!$}` for a natural `n`, or a half-integer `n` with `{$Gamma(1/2) = sqrt(pi)$}`.
+    /// Evaluate `{$n!$}` for a natural `n`, or a half-integer `n` with `{$Gamma(1/2) = sqrt(pi)$}`; `undefined` for a
+    /// negative integer `n`, a pole.
     fn eval_factorial(self, n: &Rational) -> Option<Term<Self>> {
         if let Ok(n) = u64::try_from(n) {
             return (n <= MAX_FACTORIAL).then(|| self.value(Rational::from(Natural::factorial(n))));
+        }
+        // Poles at the negative integers
+        if *n < 0 && n.denominator_ref() == &Natural::ONE {
+            return Some(Term::Symbol(SymbolTerm::new(Context::UNDEFINED, self)));
         }
         let half = Rational::from_signeds(1, 2);
         // `{$n! = Gamma(x)$}` with `{$x = n + 1$}`, `{$x - 1/2$}` being an integer
@@ -1591,7 +1592,7 @@ impl R<Rational> {
     }
 
     /// Evaluate `sin`, `cos` or `tan` at `{$q pi$}` for the angles with values in radicals, `q` being a multiple of
-    /// `{$1/12$}`, `{$1/10$}` or `{$1/8$}`, like `{$cos(pi/3) = 1/2$}`. `tan` stays unevaluated at its poles.
+    /// `{$1/12$}`, `{$1/10$}` or `{$1/8$}`, like `{$cos(pi/3) = 1/2$}`. `tan` is `undefined` at its poles.
     fn eval_trig_at_pi_multiple(self, ident: Symbol, q: &Rational) -> Option<Term<Self>> {
         // `{$q pi = k pi / 120$}` with `{$0 <= k < 240$}`
         let parts = q * Rational::from(120);
@@ -1643,6 +1644,7 @@ impl R<Rational> {
                 48 => sqrt_sum(5, 2, 5),
                 50 => value(2, 1) + sqrt_of(3),
                 // A pole at `{$pi/2$}`
+                60 => return Some(Term::Symbol(SymbolTerm::new(Context::UNDEFINED, self))),
                 _ => return None,
             };
             Some(value(signum, 1) * res)

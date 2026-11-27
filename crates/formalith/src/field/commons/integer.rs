@@ -22,7 +22,7 @@ use crate::{
     },
     parser::Parser,
     printer::PrettyPrinter,
-    term::{self, Fun, Term, TermSet, Value, fun::eval_ring_builtin},
+    term::{self, Fun, SymbolTerm, Term, TermSet, Value, fun::eval_ring_builtin},
 };
 
 /// The integer ring `{$ZZ$}`
@@ -187,6 +187,10 @@ impl Semiring for Z<Integer> {
                     }
                     (Context::FACTOR, Some([arg])) => return arg.factor(),
                     (Context::FACTORIAL, Some([Term::Value(n)])) => {
+                        // Poles at the negative integers
+                        if n.value < 0 {
+                            return Term::Symbol(SymbolTerm::new(Context::UNDEFINED, *self));
+                        }
                         if let Ok(n) = u64::try_from(&n.value)
                             && n <= MAX_FACTORIAL
                         {

@@ -13,7 +13,7 @@ use crate::{
         EuclideanRing, Group, Monoid, PartiallyOrderedSet, Ring, Semiring, Set, SetParseExpression,
         complex::C, integer::Z, modular::Zn, primes, real::R,
     },
-    matrix::{EigenSet, Matrix, MatrixResult, eigen},
+    matrix::{EigenSet, Matrix, MatrixError, MatrixResult, eigen},
     parser::{Parser, ParserError, lexer::TokenKind},
     printer::{PrettyPrint, PrettyPrinter, Print, PrintOptions},
     solve::polynomial::polynomial_form,
@@ -863,12 +863,82 @@ impl MatrixEntries for TermSet<C<R<Rational>>> {
     }
 }
 
+impl<T: Ring> M<T> {
+    /// Whether `a` has no value because of the sizes of its matrix values: a sum or a product of matrices of
+    /// incompatible sizes (normalization merges compatible ones), a non-square matrix plus a scalar, a power of a
+    /// non-square matrix, a negative power of a singular one, or a builtin needing a square matrix (`det`, `trace`,
+    /// `charpoly`, `eigenvalues`, `eigenvectors`) of a non-square one.
+    fn is_undefined_operation(&self, a: &Term<Self>) -> bool {
+        const fn matrix<T: Set>(term: &Term<M<T>>) -> Option<&Matrix<T>> {
+            match term {
+                Term::Value(Value {
+                    value: VectorSpaceElement::Vector(matrix),
+                    ..
+                }) => Some(matrix),
+                _ => None,
+            }
+        }
+        let non_square = |term: &Term<Self>| matrix(term).is_some_and(|m| m.width() != m.height());
+        match a {
+            Term::Add(add) => {
+                let values: Vec<_> = add
+                    .iter()
+                    .filter(|term| matches!(term, Term::Value(_)))
+                    .collect();
+                values.iter().any(|term| non_square(term)) && values.len() > 1
+                    || values
+                        .iter()
+                        .filter_map(|term| matrix(term))
+                        .collect::<Vec<_>>()
+                        .windows(2)
+                        .any(|pair| {
+                            (pair[0].height(), pair[0].width())
+                                != (pair[1].height(), pair[1].width())
+                        })
+            }
+            // Values left in a product couldn't be multiplied with its coefficient, only judged without other
+            // factors, whose shapes are unknown
+            Term::Mul(mul) => {
+                matches!(mul.coefficient, VectorSpaceElement::Vector(_))
+                    && mul.iter().all(|factor| matches!(factor, Term::Value(_)))
+                    && mul.iter().any(|factor| matrix(factor).is_some())
+            }
+            Term::Pow(pow) => {
+                matches!(&**pow.exponant, Term::Value(_))
+                    && (non_square(&pow.base)
+                        || matrix(&pow.base).is_some_and(|m| {
+                            matches!(
+                                &**pow.exponant,
+                                Term::Value(Value { value: n, .. })
+                                    if self.get_exponant_set().is_strictly_negative(n)
+                            ) && matches!(m.inv(), Err(MatrixError::NotInvertible))
+                        }))
+            }
+            Term::Fun(fun) => {
+                matches!(
+                    fun.get_ident(),
+                    Context::DET
+                        | Context::TRACE
+                        | Context::CHARPOLY
+                        | Context::EIGENVALUES
+                        | Context::EIGENVECTORS
+                ) && fun
+                    .get_args::<Self>()
+                    .and_then(|args| args.first())
+                    .is_some_and(non_square)
+            }
+            _ => false,
+        }
+    }
+}
+
 impl<T: Ring> Semiring for M<T> {
     fn one(&self) -> Self::Element {
         VectorSpaceElement::Scalar(self.scalar_sub_set.one(), self.scalar_sub_set)
     }
 
-    fn one_like(&self, a: &Self::Element) -> Self::Element {
+    /// The identity of the size of a square matrix, `None` for a non-square one.
+    fn one_like(&self, a: &Self::Element) -> Option<Self::Element> {
         match a {
             VectorSpaceElement::Vector(matrix) if matrix.width() == matrix.height() => {
                 let mut identity =
@@ -876,9 +946,10 @@ impl<T: Ring> Semiring for M<T> {
                 for i in 0..matrix.height() {
                     identity[(i, i)] = self.scalar_sub_set.one();
                 }
-                VectorSpaceElement::Vector(identity)
+                Some(VectorSpaceElement::Vector(identity))
             }
-            _ => self.one(),
+            VectorSpaceElement::Vector(_) => None,
+            VectorSpaceElement::Scalar(..) => Some(self.one()),
         }
     }
 
@@ -932,6 +1003,9 @@ impl<T: Ring> Semiring for M<T> {
         } else {
             a
         };
+        if self.is_undefined_operation(&a) {
+            return Term::Symbol(SymbolTerm::new(Context::UNDEFINED, *self));
+        }
         if let Term::Fun(fun) = &a
             && let Some(res) = self.eval_builtin(&**fun)
         {

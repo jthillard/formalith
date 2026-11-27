@@ -459,21 +459,13 @@ impl<T: Monoid> Term<T> {
     pub(crate) fn is_undefined(&self) -> bool {
         matches!(self, Self::Symbol(symbol) if symbol.symbol == Context::UNDEFINED)
     }
-    /// Whether the term is a power of zero surviving normalization, `{$1/0$}`, or a product with such a factor.
-    pub(crate) fn is_division_by_zero(&self) -> bool {
-        match self {
-            Self::Pow(pow) => pow.base.is_zero(),
-            Self::Mul(mul) => mul.iter().any(Self::is_division_by_zero),
-            _ => false,
-        }
-    }
     /// [`MergeTerms::merge_terms`], the result being approximate if `self` or `other` is.
     pub(crate) fn try_merge_terms(&mut self, other: &Self) -> bool {
-        // `{$x/0 - x/0$}` isn't 0
+        // `{$"undefined" - "undefined"$}` isn't 0
         if self.is_infinity_factor()
             || other.is_infinity_factor()
-            || self.is_division_by_zero()
-            || other.is_division_by_zero()
+            || self.is_undefined()
+            || other.is_undefined()
         {
             return false;
         }
@@ -1314,6 +1306,9 @@ impl<T: Semiring> Term<T> {
                 let mut res = vec![];
                 for term in add {
                     let normalized = term.normalize();
+                    if normalized.is_undefined() {
+                        return normalized;
+                    }
                     if normalized.is_zero() {
                         continue;
                     }
@@ -1347,6 +1342,9 @@ impl<T: Semiring> Term<T> {
                 let mut approximate = mul.is_approximate();
                 for factor in mul {
                     let normalized = factor.normalize();
+                    if normalized.is_undefined() {
+                        return normalized;
+                    }
                     if normalized.is_zero() {
                         return Self::zero_times(self.get_set(), mul.iter());
                     }
@@ -1409,10 +1407,15 @@ impl<T: Semiring> Term<T> {
             Self::Pow(pow) => {
                 let base = (*pow.base).normalize();
                 let exponant = (**pow.exponant).normalize();
-                // `{$oo^0$}`, `{$1^oo$}` and powers of `undefined` are indeterminate
-                if (exponant.is_zero() && (base.is_infinity_factor() || base.is_undefined()))
-                    || (base.is_one() && (exponant.is_infinity_factor() || exponant.is_undefined()))
-                {
+                // `{$oo^0$}`, `{$1^oo$}`, powers of `undefined` and divisions by zero are undefined
+                let indeterminate = if exponant.is_zero() {
+                    base.is_infinity_factor()
+                } else if base.is_one() {
+                    exponant.is_infinity_factor()
+                } else {
+                    base.is_zero() && exponant.is_strictly_negative()
+                };
+                if indeterminate || base.is_undefined() || exponant.is_undefined() {
                     return Self::Symbol(symbol::SymbolTerm::new(
                         Context::UNDEFINED,
                         self.get_set(),
@@ -1421,9 +1424,10 @@ impl<T: Semiring> Term<T> {
                 if exponant.is_zero() {
                     // `{$a^0$}` has the shape of `a`, like the identity matrix
                     return match &base {
-                        Self::Value(value) => {
-                            Self::Value(Value::new(value.set.one_like(&value.value), value.set))
-                        }
+                        Self::Value(value) => value.set.one_like(&value.value).map_or_else(
+                            || Self::Symbol(symbol::SymbolTerm::new(Context::UNDEFINED, value.set)),
+                            |one| Self::Value(Value::new(one, value.set)),
+                        ),
                         _ => Self::one(self.get_set()),
                     };
                 }
@@ -1440,11 +1444,12 @@ impl<T: Semiring> Term<T> {
     }
 }
 impl<T: Semiring> Term<T> {
-    /// The product of zero with `factors`: zero, or `undefined` when a factor is infinite, `{$0 oo$}`.
+    /// The product of zero with `factors`: zero, or `undefined` when a factor is infinite (`{$0 oo$}`) or undefined
+    /// (`{$0/0$}`).
     fn zero_times<'a>(set: T, mut factors: impl Iterator<Item = &'a Self>) -> Self {
         if factors.any(|f| {
             let f = f.normalize();
-            f.is_infinity_factor() || f.is_division_by_zero()
+            f.is_infinity_factor() || f.is_undefined()
         }) {
             Self::Symbol(symbol::SymbolTerm::new(Context::UNDEFINED, set))
         } else {
@@ -1506,11 +1511,11 @@ impl<T: Ring<ExponantSet: Ring, ProductCoefficientSet = T>> Normalize for Term<T
                     true
                 }
             });
-            // `{$0/0$}` and `{$0 oo$}` are undefined: a power of zero surviving normalization is a division by zero
+            // `{$0/0$}` and `{$0 oo$}` are undefined
             if coefficient_set.is_zero(&new_coeff)
                 && mul.factors.iter().any(|f| {
                     let f = f.normalize();
-                    f.is_division_by_zero() || f.is_infinity_factor()
+                    f.is_undefined() || f.is_infinity_factor()
                 })
             {
                 return Self::Symbol(symbol::SymbolTerm::new(

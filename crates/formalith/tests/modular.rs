@@ -107,7 +107,7 @@ fn zero_divisors() {
     assert_eq!(eval("2*3", 6), "0");
     assert_eq!(eval("1/5", 6), "5");
     assert_eq!(eval("0^0", 7), "1");
-    assert_eq!(eval("1/0", 7), "0^-1");
+    assert_eq!(eval("1/0", 7), "undefined");
 }
 
 #[test]

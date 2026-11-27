@@ -51,6 +51,21 @@ fn arithmetic() {
 }
 
 #[test]
+fn singular_values_are_undefined() {
+    for input in [
+        "ln(0)",
+        "tan(pi/2)",
+        "gamma(0)",
+        "1/0",
+        "i*undefined",
+        "exp(i/0)",
+    ] {
+        assert_eq!(eval(input), "undefined", "{input}");
+    }
+    assert_eq!(eval("ln(-1)"), "i*pi");
+}
+
+#[test]
 fn roots() {
     assert_eq!(eval("(-4)^(1/2)"), "2*i");
     assert_eq!(eval("(-4)^(3/2)"), "-8*i");

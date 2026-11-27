@@ -158,7 +158,7 @@ fn approx_classic_functions() {
     assert_eq!(approx("approx(factorial(10))"), "3628800.0");
     // Outside of their domain
     assert_eq!(approx("approx(asin(2))"), "asin(2.0)");
-    assert_eq!(approx("approx(atanh(1))"), "atanh(1.0)");
+    assert_eq!(approx("approx(atanh(1))"), "undefined");
 }
 
 #[test]
@@ -265,10 +265,11 @@ fn approx_gamma_function_family() {
 
 #[test]
 fn approx_keeps_singular_values() {
-    assert_eq!(approx("approx(ln(0))"), "ln(0.0)");
-    assert_eq!(approx("approx(gamma(-1))"), "gamma(-1.0)");
-    assert_eq!(approx("approx(zeta(1))"), "zeta(1.0)");
-    assert_eq!(approx("approx(digamma(0))"), "polygamma(0, 0.0)");
+    // Poles are undefined before being approximated
+    assert_eq!(approx("approx(ln(0))"), "undefined");
+    assert_eq!(approx("approx(gamma(-1))"), "undefined");
+    assert_eq!(approx("approx(zeta(1))"), "undefined");
+    assert_eq!(approx("approx(digamma(0))"), "undefined");
     // Evaluated exactly before being approximated
     assert_eq!(approx("approx(binomial(1/2, 2))"), "-0.125");
 }

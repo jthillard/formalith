@@ -323,9 +323,11 @@ fn reciprocal_radicals_are_merged() {
 }
 
 #[test]
-fn division_by_zero_stays_unevaluated() {
-    assert_eq!(eval_r("1/0"), "0^-1");
-    assert_eq!(eval_r("x/0"), "x*(0^-1)");
+fn division_by_zero_is_undefined() {
+    assert_eq!(eval_r("1/0"), "undefined");
+    assert_eq!(eval_r("x/0"), "undefined");
+    assert_eq!(eval_r("0/0"), "undefined");
+    assert_eq!(eval_r("sin(1/0) + 1"), "undefined");
 }
 
 #[test]

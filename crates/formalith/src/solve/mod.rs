@@ -376,7 +376,10 @@ impl<T: Ring> Solve for T {
                     .try_fold(den.clone(), |den, (symbol, value)| {
                         den.substitute(*symbol, value)
                     })
-                    .is_some_and(|den| den.expand().is_zero())
+                    .is_some_and(|den| {
+                        let den = den.expand();
+                        den.is_zero() || den.is_undefined()
+                    })
             })
         };
         let branches = match solution {
