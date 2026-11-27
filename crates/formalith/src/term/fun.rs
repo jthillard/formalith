@@ -324,46 +324,11 @@ impl<From: Set, T: Set> Print for Fun<From, T> {
                 f.write_str(" dif ")?;
                 return x.print(options, f);
             }
-            match self.ident {
-                Context::CONJ => f.write_str("overline")?,
-                Context::RE => f.write_str("Re")?,
-                Context::IM => f.write_str("Im")?,
-                Context::ROOT => {
-                    // Typst takes the index first: `root(n, x)`
-                    args.reverse();
-                    f.write_str("root")?;
-                }
-                Context::BINOMIAL => f.write_str("binom")?,
-                Context::GAMMA => f.write_str("Gamma")?,
-                Context::LAMBERTW => f.write_str("W")?,
-                Context::BETA => f.write_str("Beta")?,
-                Context::ZETA => f.write_str("zeta")?,
-                Context::ASIN => f.write_str("arcsin")?,
-                Context::ACOS => f.write_str("arccos")?,
-                Context::ATAN => f.write_str("arctan")?,
-                Context::TRACE => f.write_str("tr")?,
-                Context::KERNEL => f.write_str("ker")?,
-                Context::ABS
-                | Context::ARG
-                | Context::DET
-                | Context::SQRT
-                | Context::FLOOR
-                | Context::CEIL
-                | Context::MIN
-                | Context::MAX
-                | Context::GCD
-                | Context::LCM
-                | Context::EXP
-                | Context::LN
-                | Context::SIN
-                | Context::COS
-                | Context::TAN
-                | Context::SINH
-                | Context::COSH
-                | Context::TANH => f.write_str(name)?,
-                _ if name.chars().count() == 1 => f.write_str(name)?,
-                _ => write!(f, "op(\"{name}\")")?,
+            if self.ident == Context::ROOT {
+                // Typst takes the index first: `root(n, x)`
+                args.reverse();
             }
+            f.write_str(&crate::printer::typst_function_name(self.ident, name))?;
         } else {
             Self::fg::<Cyan>(self.get_ident_as_str(), options, f)?;
         }

@@ -22,6 +22,7 @@ pub struct Answer {
     kind: &'static str,
     text: String,
     plain: String,
+    input: String,
     replay: bool,
     set: String,
 }
@@ -50,6 +51,14 @@ impl Answer {
         self.plain.clone()
     }
 
+    /// The input line as Typst math source, as it was typed, shown typeset in place of the line; empty for
+    /// commands, inputs which don't parse, or when results aren't printed as Typst.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn input(&self) -> String {
+        self.input.clone()
+    }
+
     /// Whether the line changed the state of the session, so it is run again in a new worker after a panic.
     #[wasm_bindgen(getter)]
     #[must_use]
@@ -72,6 +81,7 @@ impl Answer {
 #[must_use]
 pub fn run(line: &str) -> Answer {
     SESSION.with_borrow_mut(|session| {
+        let input = session.typeset_input(line).unwrap_or_default();
         let response = session.run(line);
         let kind = match &response.output {
             Output::None => "none",
@@ -88,6 +98,7 @@ pub fn run(line: &str) -> Answer {
             kind,
             text: response.output.to_string(),
             plain,
+            input,
             replay: response.replay,
             set: session.set().name(),
         }

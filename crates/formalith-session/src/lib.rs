@@ -45,6 +45,7 @@ use formalith::{
         docs::{self, Category},
     },
     dynamic::{self, Evaluated, StatementKind},
+    parser::syntax::input_typst,
     printer::PrintOptions,
 };
 use graph::Graph;
@@ -112,6 +113,22 @@ impl Session {
     /// Print results as Typst math source if `typst` is set.
     pub const fn set_typst(&mut self, typst: bool) {
         self.typst = typst;
+    }
+
+    /// The input `line` as Typst math source, as it was typed, to show it typeset before its result: `None` unless
+    /// results are printed as Typst and `line` is an input to evaluate (not a command) which parses, see
+    /// [`input_typst`]. Nothing is evaluated.
+    #[must_use]
+    pub fn typeset_input(&self, line: &str) -> Option<String> {
+        let line = line.trim();
+        if !self.typst
+            || line.is_empty()
+            || line.starts_with(':')
+            || command_argument(line, "help").is_some()
+        {
+            return None;
+        }
+        input_typst(line)
     }
 
     /// The definitions and assumptions of the session.

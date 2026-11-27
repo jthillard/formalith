@@ -2,6 +2,7 @@
 
 pub mod environment;
 pub mod lexer;
+pub mod syntax;
 
 use std::error::Error;
 use std::fmt::{Debug, Display};
@@ -117,6 +118,26 @@ impl<'a> Parser<'a> {
     }
 }
 
+/// Whether `token` after `prev` starts an implicit product, see [`Parser::implicit_product`].
+pub(crate) fn implicit_product(prev: &TokenKind, token: &TokenKind) -> bool {
+    let ends_operand = match prev {
+        TokenKind::Ident(name) => !matches!(
+            Context::builtin_arity(Symbol::new(name.as_str())),
+            Some((min, _)) if min > 0
+        ),
+        kind => matches!(
+            kind,
+            TokenKind::Literal {
+                kind: LiteralTokenKind::Int | LiteralTokenKind::Float,
+            } | TokenKind::CloseParen
+                | TokenKind::CloseBracket
+                | TokenKind::Bang
+                | TokenKind::Prime
+        ),
+    };
+    ends_operand && matches!(token, TokenKind::OpenParen | TokenKind::Ident(_))
+}
+
 /// Parse an expression living in the set `E`. Implemented for every set, but parsing fails at runtime
 /// for sets that don't implement [`SetParseExpression`].
 pub trait ParseExpression<E: Set> {
@@ -177,22 +198,7 @@ impl Parser<'_> {
     /// (`f (x)`), parsed before, and a number is never an implicit factor (`x 2` is an error, `xy` an identifier).
     /// A builtin function name isn't a factor either, so `sin x` is an error rather than `sin*x`.
     fn implicit_product(&self) -> bool {
-        let ends_operand = match &self.prev_token.kind {
-            TokenKind::Ident(name) => !matches!(
-                Context::builtin_arity(Symbol::new(name.as_str())),
-                Some((min, _)) if min > 0
-            ),
-            kind => matches!(
-                kind,
-                TokenKind::Literal {
-                    kind: LiteralTokenKind::Int | LiteralTokenKind::Float,
-                } | TokenKind::CloseParen
-                    | TokenKind::CloseBracket
-                    | TokenKind::Bang
-                    | TokenKind::Prime
-            ),
-        };
-        ends_operand && matches!(self.token.kind, TokenKind::OpenParen | TokenKind::Ident(_))
+        implicit_product(&self.prev_token.kind, &self.token.kind)
     }
     /// Return the next operator if it exists, juxtaposed operands being an implicit product (see
     /// [`Parser::implicit_product`])

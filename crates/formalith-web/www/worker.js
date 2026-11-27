@@ -7,12 +7,12 @@ const ready = init().then(() => {
   postMessage({ ready: true });
 });
 
-// Runs `line` in the session, answering its kind, text, text in Formalith syntax, whether to replay it and the current set.
+// Runs `line` in the session, answering its kind, text, text in Formalith syntax, the line as Typst, whether to replay it and the current set.
 onmessage = async ({ data: { id, line } }) => {
   await ready;
   try {
     const answer = run(line);
-    postMessage({ id, kind: answer.kind, text: answer.text, plain: answer.plain, replay: answer.replay, set: answer.set });
+    postMessage({ id, kind: answer.kind, text: answer.text, plain: answer.plain, input: answer.input, replay: answer.replay, set: answer.set });
     answer.free();
   } catch (err) {
     postMessage({ id, panic: String(err) });

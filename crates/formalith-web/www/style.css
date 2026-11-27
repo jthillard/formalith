@@ -85,6 +85,13 @@ body {
   max-width: none;
 }
 
+.line .math svg {
+  display: inline-block;
+  vertical-align: middle;
+  height: auto;
+  max-width: none;
+}
+
 .copied::after {
   content: "copied";
   color: var(--muted);

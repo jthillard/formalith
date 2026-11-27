@@ -212,3 +212,21 @@ fn errors_and_the_session_goes_on() {
     assert!(run(&mut session, ":set R").1);
     assert_eq!(run(&mut session, "a - 3").0, "-1");
 }
+
+#[test]
+fn typeset_input() {
+    let mut session = Session::new();
+    assert_eq!(session.typeset_input("x/2"), None);
+    session.set_typst(true);
+    assert_eq!(
+        session.typeset_input(" x/2 ").as_deref(),
+        Some("frac(x, 2)")
+    );
+    assert_eq!(
+        session.typeset_input("f(x) := x^2").as_deref(),
+        Some("f(x) := x^(2)")
+    );
+    for line in ["", ":set Z/7", ":typst", "help", "help sin", "x +"] {
+        assert_eq!(session.typeset_input(line), None, "{line}");
+    }
+}

@@ -2,7 +2,8 @@
 // command line interface (`formalith-cli`): `:set <name>` changes the set, `:typst` toggles between rendered math
 // and plain text output. Lines changing the session, like definitions `f(x) := x^2`, are replayed in a new worker
 // after a panic. The transcript and these lines are kept in the local storage, so a reload shows the transcript
-// again and restores the session; `clear` (or Ctrl+L) clears the transcript.
+// again and restores the session; `clear` (or Ctrl+L) clears the transcript. With Typst output, an input line is
+// typeset once evaluated, as it was typed (the session prints it without evaluating it).
 
 const log = document.getElementById('log');
 const form = document.getElementById('prompt');
@@ -47,7 +48,7 @@ function store(key, value) {
   } catch {}
 }
 
-// Entries of the transcript shown: `{ kind: 'line', set, text, interrupted }`, `{ kind: 'result', text, plain,
+// Entries of the transcript shown: `{ kind: 'line', set, text, interrupted, typst }` (`typst` the typeset input), `{ kind: 'result', text, plain,
 // rendered }`, `{ kind: 'info' | 'error', text }`
 let transcript = load(TRANSCRIPT_KEY);
 // Whether the stored transcript is being shown again, so it isn't recorded twice
@@ -100,9 +101,11 @@ function copyOnClick(element, text) {
 }
 
 // Echoes an input line typed in `lineSet`, copied when clicked unless it is `interrupted` (a line cancelled with
-// Ctrl+C)
-function echo(text, interrupted = false, lineSet = set) {
-  record({ kind: 'line', set: lineSet, text, interrupted });
+// Ctrl+C), typeset if `typst` is given. Returns the element and its transcript entry, so the line can be typeset once
+// evaluated.
+function echo(text, interrupted = false, lineSet = set, typst = undefined) {
+  const entry = { kind: 'line', set: lineSet, text, interrupted };
+  record(entry);
   const line = document.createElement('p');
   line.className = 'line';
   const prompt = document.createElement('span');
@@ -113,6 +116,11 @@ function echo(text, interrupted = false, lineSet = set) {
     copyOnClick(line, text);
   }
   log.append(line);
+  if (typst) {
+    entry.typst = typst;
+    renderInput(line, typst);
+  }
+  return { element: line, entry };
 }
 
 function scrollToPrompt() {
@@ -220,6 +228,23 @@ function printResult(text, plain, rendered) {
   }
 }
 
+// Replaces the text of the input line `element` by `typst` typeset, keeping the raw text if rendering fails
+function renderInput(element, typst) {
+  if (!initTypst()) {
+    return;
+  }
+  renderMath(typst).then(
+    svg => {
+      const math = document.createElement('span');
+      math.className = 'math';
+      math.innerHTML = svg;
+      element.lastChild.replaceWith(math);
+      scrollToPrompt();
+    },
+    err => console.error(err),
+  );
+}
+
 // Evaluation worker
 
 let worker;
@@ -244,7 +269,7 @@ function startWorker() {
     if (!pending || data.id !== pending.id) {
       return;
     }
-    const { line } = pending;
+    const { line, element, entry } = pending;
     finish();
     if (data.panic !== undefined) {
       // The wasm instance aborted on a panic and can't be reused
@@ -257,6 +282,12 @@ function startWorker() {
       }
       set = data.set;
       label.textContent = `${set}>`;
+      if (data.input) {
+        // Typeset before the result, renders being queued
+        entry.typst = data.input;
+        store(TRANSCRIPT_KEY, transcript);
+        renderInput(element, data.input);
+      }
       if (data.kind === 'result' || data.kind === 'typst') {
         printResult(data.text, data.plain, data.kind === 'typst');
       } else if (data.kind === 'message') {
@@ -303,12 +334,12 @@ function finish() {
   busy.hidden = true;
 }
 
-// Sends `line` to the worker, remembered in `pending` until it answers
+// Sends `line` to the worker, remembered in `pending` with its echoed element until it answers
 function run(line) {
-  echo(line);
-  pending = { id: nextId++, line };
+  const { element, entry } = echo(line);
+  pending = { id: nextId++, line, element, entry };
   busy.hidden = false;
-  worker.postMessage(pending);
+  worker.postMessage({ id: pending.id, line });
 }
 
 // Lines of the `run` query parameter (separated by newlines), like the examples of the documentation, run once
@@ -391,7 +422,7 @@ replay();
 restoring = true;
 for (const entry of transcript) {
   if (entry.kind === 'line') {
-    echo(entry.text, entry.interrupted, entry.set);
+    echo(entry.text, entry.interrupted, entry.set, entry.typst);
   } else if (entry.kind === 'result') {
     printResult(entry.text, entry.plain, entry.rendered);
   } else {

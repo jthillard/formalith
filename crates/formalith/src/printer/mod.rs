@@ -7,7 +7,11 @@ use owo_colors::{
     colors::{BrightBlack, Yellow},
 };
 
-use crate::{field::Set, term::Term};
+use crate::{
+    context::{Context, Symbol},
+    field::Set,
+    term::Term,
+};
 
 /// Rendering options are stored here. It can be created from some presets or completly custom.
 #[derive(Clone, Copy, Debug)]
@@ -343,6 +347,48 @@ pub fn typst_name(name: &str) -> std::borrow::Cow<'_, str> {
         }
     }
     std::borrow::Cow::Owned(res)
+}
+
+/// The name of the function `ident` (printed `name`) in Typst math, written before its arguments in parentheses:
+/// a Typst function or operator like `arctan`, `binom` or `root` (which takes the index first), the name itself for a
+/// single letter, `op("name")` otherwise.
+pub(crate) fn typst_function_name(ident: Symbol, name: &str) -> std::borrow::Cow<'_, str> {
+    std::borrow::Cow::Borrowed(match ident {
+        Context::CONJ => "overline",
+        Context::RE => "Re",
+        Context::IM => "Im",
+        Context::ROOT => "root",
+        Context::BINOMIAL => "binom",
+        Context::GAMMA => "Gamma",
+        Context::LAMBERTW => "W",
+        Context::BETA => "Beta",
+        Context::ZETA => "zeta",
+        Context::ASIN => "arcsin",
+        Context::ACOS => "arccos",
+        Context::ATAN => "arctan",
+        Context::TRACE => "tr",
+        Context::KERNEL => "ker",
+        Context::ABS
+        | Context::ARG
+        | Context::DET
+        | Context::SQRT
+        | Context::FLOOR
+        | Context::CEIL
+        | Context::MIN
+        | Context::MAX
+        | Context::GCD
+        | Context::LCM
+        | Context::EXP
+        | Context::LN
+        | Context::SIN
+        | Context::COS
+        | Context::TAN
+        | Context::SINH
+        | Context::COSH
+        | Context::TANH => name,
+        _ if name.chars().count() == 1 => name,
+        _ => return std::borrow::Cow::Owned(format!("op(\"{name}\")")),
+    })
 }
 
 impl PrettyPrinter {

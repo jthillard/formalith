@@ -50,3 +50,4 @@ mod series;
 mod solve;
 mod soundness;
 mod sum;
+mod syntax;
