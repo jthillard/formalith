@@ -149,7 +149,8 @@ impl<T: Semiring> std::ops::Mul for &Term<T> {
             vec![self.clone(), rhs.clone()],
             self.get_set(),
         ))
-        // TODO, normalize mul directly like add
+        // Unlike sums, products are normalized again rather than merged: sets hook rules into products (radicals
+        // and `exp` in `R`, values folded into the coefficient in rings), which a merge of the factors would skip
         .normalize()
     }
 }

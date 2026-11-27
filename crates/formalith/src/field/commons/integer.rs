@@ -36,7 +36,8 @@ impl<T: Clone> Copy for Z<T> {}
 impl Set for Z<Integer> {
     type Element = Integer;
 
-    type ExponantSet = Self; // TODO change type to N ?
+    // Not `N`: exponent sets must be groups, and polynomial roots and factorization need `ExponantSet = Self`
+    type ExponantSet = Self;
     type ProductCoefficientSet = Self;
 
     fn get_exponant_set(&self) -> Self::ExponantSet {

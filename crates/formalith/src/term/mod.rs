@@ -262,7 +262,11 @@ impl<T: Monoid> Term<T> {
     pub fn zero(set: T) -> Self {
         Self::Value(Value::new(set.zero(), set))
     }
-    /// Check if the term is zero
+    /// Check if the term is the value zero.
+    ///
+    /// This is a structural test: normalization turns the terms it recognizes as zero into the value zero, so any
+    /// other term gives `false`, even when it is zero mathematically (`{$(x + 1)^2 - x^2 - 2 x - 1$}`, zero once expanded). Decisions
+    /// needing such an equality prove it with `is_numerically_zero` (`field::commons::real::expr`) instead.
     /// ```
     /// use formalith::{field::real::R, parse, symbol};
     ///
@@ -271,7 +275,7 @@ impl<T: Monoid> Term<T> {
     pub fn is_zero(&self) -> bool {
         match self {
             Self::Value(value) => value.set.is_zero(&value.value),
-            Self::Symbol(_) | Self::Add(_) | Self::Mul(_) | Self::Pow(_) | Self::Fun(_) => false, // TODO how can we check if it's really not zero ?
+            Self::Symbol(_) | Self::Add(_) | Self::Mul(_) | Self::Pow(_) | Self::Fun(_) => false,
         }
     }
 }

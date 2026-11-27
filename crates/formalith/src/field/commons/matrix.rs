@@ -220,7 +220,7 @@ impl<T: Ring> M<T> {
                     Term::Value(Value { value, .. }) => {
                         VectorSpaceElement::Scalar(value, self.scalar_sub_set)
                     }
-                    _ => unimplemented!("{}", not_a_value()),
+                    _ => panic!("{}", not_a_value()),
                 }
             }
         };
