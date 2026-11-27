@@ -10,16 +10,17 @@ pub(crate) mod rootof;
 pub(crate) mod sign;
 pub(crate) mod special;
 
-use std::{cmp::Ordering, marker::PhantomData};
+use std::{cmp::Ordering, marker::PhantomData, sync::OnceLock};
 
 use malachite::{
     Integer, Natural, Rational,
     base::num::{
         arithmetic::traits::{
-            Abs, BinomialCoefficient, Ceiling, CheckedRoot, CheckedSqrt, Factorial, Floor, Gcd,
-            Lcm, Parity, Pow, Reciprocal, Sign,
+            Abs, BinomialCoefficient, Ceiling, CheckedRoot, CheckedSqrt, DivisibleBy, Factorial,
+            Floor, Gcd, Lcm, Parity, Pow, Reciprocal, Sign,
         },
         basic::traits::{NegativeOne, One, Zero},
+        factorization::traits::Primes,
     },
 };
 
@@ -828,19 +829,40 @@ impl R<Rational> {
     /// on large numbers.
     fn extract_power(n: &Natural, q: u64) -> (Natural, Natural) {
         const BOUND: u64 = 1 << 16;
+        /// The primes below `BOUND`, in batches whose products fit in a `u64`, with their products.
+        static BATCHES: OnceLock<Vec<(u64, Vec<u64>)>> = OnceLock::new();
+        let batches = BATCHES.get_or_init(|| {
+            let mut batches: Vec<(u64, Vec<u64>)> = vec![];
+            for p in u64::primes_less_than(&BOUND) {
+                match batches.last_mut() {
+                    Some((product, primes)) if product.checked_mul(p).is_some() => {
+                        *product *= p;
+                        primes.push(p);
+                    }
+                    _ => batches.push((p, vec![p])),
+                }
+            }
+            batches
+        });
         let mut s = Natural::ONE;
         let mut r = n.clone();
-        let mut p = 2;
-        while p < BOUND {
-            let power = Pow::pow(Natural::from(p), q);
-            if power > r {
+        for (product, primes) in batches {
+            if Pow::pow(Natural::from(primes[0]), q) > r {
                 break;
             }
-            while (&r % &power) == 0 {
-                r /= &power;
-                s *= Natural::from(p);
+            // A single division of `r` per batch, its primes being tested on the remainder
+            let residue =
+                u64::try_from(&(&r % Natural::from(*product))).expect("Below the product");
+            for &p in primes {
+                if residue % p != 0 {
+                    continue;
+                }
+                let power = Pow::pow(Natural::from(p), q);
+                while (&r).divisible_by(&power) {
+                    r /= &power;
+                    s *= Natural::from(p);
+                }
             }
-            p += if p == 2 { 1 } else { 2 };
         }
         (s, r)
     }

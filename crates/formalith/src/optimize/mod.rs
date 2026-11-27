@@ -321,7 +321,8 @@ impl Optimize for Real {
 
 /// The value of `f` at `point`, its integer parameters `k`, `k_1`... being assumed integers and its natural
 /// parameters `n`, `n_1`... non-negative integers: the smaller of the
-/// substituted term and its expansion.
+/// substituted term and its expansion, not expanded when its roots are nested 3 deep (roots of quartics by Ferrari's
+/// method), whose expansion may not finish.
 fn value_at(f: &Expr, point: &Assignments<Real>) -> Result<Expr, SolveError> {
     let used = f.symbols();
     let mut assumptions = Assumptions::current();
@@ -345,12 +346,31 @@ fn value_at(f: &Expr, point: &Assignments<Real>) -> Result<Expr, SolveError> {
         .iter()
         .fold(f.clone(), |res, (symbol, value)| subs(&res, *symbol, value))
         .normalize();
+    if root_depth(&res) >= 3 {
+        return Ok(res);
+    }
     let expanded = res.expand();
     Ok(if size(&expanded) < size(&res) {
         expanded
     } else {
         res
     })
+}
+
+/// The nesting depth of the roots of `term`: 1 for a root of a value, 2 for a root of a sum of such roots...
+fn root_depth(term: &Expr) -> usize {
+    match term {
+        Term::Value(_) | Term::Symbol(_) | Term::Fun(_) => 0,
+        Term::Add(add) => add.iter().map(root_depth).max().unwrap_or(0),
+        Term::Mul(mul) => mul.iter().map(root_depth).max().unwrap_or(0),
+        Term::Pow(pow) => {
+            let inner = root_depth(&pow.base).max(root_depth(&pow.exponant));
+            match &**pow.exponant {
+                Term::Value(e) if e.value.denominator_ref() != &1u32 => inner + 1,
+                _ => inner,
+            }
+        }
+    }
 }
 
 /// An error with `reason`.

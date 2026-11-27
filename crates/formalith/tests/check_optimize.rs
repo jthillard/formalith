@@ -556,6 +556,12 @@ fn bug_critical_points_of_polynomial_times_exponential() {
 }
 
 #[test]
+fn bug_local_extrema_at_roots_of_a_quartic() {
+    // `f` at the roots of `f'`, found by Ferrari's method with roots nested 3 deep, was expanded, which didn't finish
+    regression("localextrema((5*x^4 + x^3 + 2*x^2 - 1)/(2*x - 3), x, -oo, 5)");
+}
+
+#[test]
 fn bug_degenerate_section_of_the_minimum() {
     // `{$f < m$}` lifted `{$256 y^4 + 1280 y^2 + c$}` over a root of the projection where `{$c = 1600$}` was written
     // with nested radicals, on which `solve_for` didn't finish
