@@ -222,10 +222,13 @@ fn leading_minors(hessian: &[Vec<Expr>]) -> Result<Vec<Expr>, SolveError> {
 /// Classify a critical point by the signs of the leading principal minors `minors` of the Hessian matrix there.
 ///
 /// The minors are substituted without expansion, which doesn't finish at points with nested radicals (roots of
-/// quartics), and their signs are approximated: a minor is zero when its approximation at the maximum precision is.
+/// quartics), and their signs are approximated: a minor which isn't zero but indistinguishable from it at the
+/// maximum precision makes the point degenerate, decided by the global extrema, since a tiny non-zero minor would
+/// change the kind.
 fn classify(minors: &[Expr], point: &Assignments<Real>) -> Result<Kind, SolveError> {
     let n = minors.len();
     let mut signs = vec![];
+    let mut undecided = false;
     for minor in minors {
         let minor = point
             .iter()
@@ -236,8 +239,11 @@ fn classify(minors: &[Expr], point: &Assignments<Real>) -> Result<Kind, SolveErr
         let sign = match &minor {
             Term::Value(value) => Some(value.value.sign()),
             _ => approximate(&minor, DIGITS).map(|approximation| approximation.sign()),
+        };
+        if sign == Some(Ordering::Equal) && !minor.is_zero() {
+            undecided = true;
         }
-        .ok_or_else(|| {
+        let sign = sign.ok_or_else(|| {
             error(format!(
                 "can't find the sign of `{}`, a minor of the Hessian matrix at {}",
                 plain(&minor),
@@ -246,7 +252,7 @@ fn classify(minors: &[Expr], point: &Assignments<Real>) -> Result<Kind, SolveErr
         })?;
         signs.push(sign);
     }
-    Ok(if signs[n - 1] == Ordering::Equal {
+    Ok(if undecided || signs[n - 1] == Ordering::Equal {
         Kind::Degenerate
     } else if signs.iter().all(|sign| *sign == Ordering::Greater) {
         Kind::Minimum
