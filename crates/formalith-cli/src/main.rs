@@ -3,12 +3,44 @@
 //! Expressions given as arguments are evaluated and printed, otherwise expressions are read line by line,
 //! with line editing and history. The set is chosen with `--set <name>` on the command line, or `:set <name>`
 //! in the interactive mode. Typst math output is enabled with `--typst`, or toggled with `:typst`. The other
-//! commands are those of [`Session::run`], listed by `help`.
+//! commands are those of [`Session::run`], listed by `help`. Tab completes builtins, definitions, commands and
+//! sets (see [`Session::complete`]).
 
 use std::process::ExitCode;
 
 use formalith_session::{Output, Session, formalith::printer::PrintOptions, sets_help};
-use rustyline::{DefaultEditor, error::ReadlineError};
+use rustyline::{
+    CompletionType, Config, Context, Editor, Helper, completion::Completer, error::ReadlineError,
+    highlight::Highlighter, hint::Hinter, history::DefaultHistory, validate::Validator,
+};
+
+/// The line editor helper of the interactive mode, owning its session to complete lines with it.
+struct Repl {
+    session: Session,
+}
+
+impl Completer for Repl {
+    type Candidate = String;
+
+    fn complete(
+        &self,
+        line: &str,
+        pos: usize,
+        _: &Context<'_>,
+    ) -> rustyline::Result<(usize, Vec<String>)> {
+        Ok(self.session.complete(line, pos))
+    }
+}
+
+impl Hinter for Repl {
+    type Hint = String;
+}
+
+impl Highlighter for Repl {}
+
+impl Validator for Repl {}
+
+impl Helper for Repl {}
 
 /// Run a line in `session` and print the answer, results being cut at the width of the terminal (when stdout is
 /// one) rather than wrapped by it, which would mix the rows of their 2D layout.
@@ -59,9 +91,17 @@ fn main() -> Result<ExitCode, ReadlineError> {
         return Ok(ExitCode::SUCCESS);
     }
 
-    let mut editor = DefaultEditor::new()?;
+    let config = Config::builder()
+        .completion_type(CompletionType::List)
+        .build();
+    let mut editor: Editor<Repl, DefaultHistory> = Editor::with_config(config)?;
+    editor.set_helper(Some(Repl { session }));
     loop {
-        let line = match editor.readline(&format!("{}> ", session.set())) {
+        let prompt = editor
+            .helper()
+            .map(|repl| format!("{}> ", repl.session.set()))
+            .unwrap_or_default();
+        let line = match editor.readline(&prompt) {
             Ok(line) => line,
             Err(ReadlineError::Eof | ReadlineError::Interrupted) => break,
             Err(err) => return Err(err),
@@ -71,9 +111,11 @@ fn main() -> Result<ExitCode, ReadlineError> {
             "exit" | "quit" => break,
             input => {
                 editor.add_history_entry(input)?;
-                run(&mut session, input);
+                if let Some(repl) = editor.helper_mut() {
+                    run(&mut repl.session, input);
+                }
                 if matches!(input, "help" | ":help") {
-                    println!("exit or quit (also Ctrl+D) leaves");
+                    println!("Tab completes names, exit or quit (also Ctrl+D) leaves");
                 }
             }
         }

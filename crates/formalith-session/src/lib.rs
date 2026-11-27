@@ -41,8 +41,9 @@ pub use formalith::dynamic::{Coefficients, SetChoice, sets_help};
 pub use formalith::parser::environment::Environment;
 use formalith::{
     context::{
+        Context,
         assumptions::Assumptions,
-        docs::{self, Category},
+        docs::{self, BUILTIN_DOCS, Category},
     },
     dynamic::{self, Evaluated, StatementKind},
     parser::syntax::input_typst,
@@ -135,6 +136,111 @@ impl Session {
     #[must_use]
     pub const fn environment(&self) -> &Environment {
         &self.env
+    }
+
+    /// The completions of the word ending at byte `pos` of `line`, for Tab completion: the byte where the word
+    /// starts and the candidates replacing it, sorted. Words of expressions complete to builtins and definitions
+    /// (functions with an opening parenthesis, unless one follows), the first word to commands, and the argument
+    /// of `:set`, `help` or `:clear` to sets, builtins or definitions.
+    ///
+    /// ```
+    /// use formalith_session::Session;
+    ///
+    /// let session = Session::new();
+    /// assert_eq!(session.complete("1 + integ", 9), (4, vec!["integrate(".to_owned()]));
+    /// assert_eq!(session.complete(":se", 3), (0, vec![":set".to_owned()]));
+    /// ```
+    #[must_use]
+    pub fn complete(&self, line: &str, pos: usize) -> (usize, Vec<String>) {
+        let mut pos = pos.min(line.len());
+        while !line.is_char_boundary(pos) {
+            pos -= 1;
+        }
+        let before = &line[..pos];
+        let indent = before.len() - before.trim_start().len();
+        let typed = &before[indent..];
+        let mut candidates: Vec<String> = if let Some((command, argument)) = typed
+            .split_once(char::is_whitespace)
+            .filter(|(command, _)| command.starts_with(':') || *command == "help")
+        {
+            let names: Vec<String> = match command {
+                ":set" => dynamic::sets().into_iter().map(|(name, _)| name).collect(),
+                "help" | ":help" => BUILTIN_DOCS
+                    .iter()
+                    .map(|doc| doc.name().to_owned())
+                    .chain(["builtins".to_owned()])
+                    .collect(),
+                ":clear" => self
+                    .env
+                    .definitions()
+                    .map(|definition| definition.name().name().to_owned())
+                    .collect(),
+                _ => Vec::new(),
+            };
+            let argument = argument.trim_start();
+            let start = pos - argument.len();
+            let mut candidates: Vec<String> = names
+                .into_iter()
+                .filter(|name| {
+                    name.get(..argument.len())
+                        .is_some_and(|prefix| prefix.eq_ignore_ascii_case(argument))
+                })
+                .collect();
+            candidates.sort();
+            candidates.dedup();
+            return (start, candidates);
+        } else if typed.starts_with(':') || (!typed.is_empty() && "help".starts_with(typed)) {
+            return (
+                indent,
+                COMMANDS
+                    .iter()
+                    .filter_map(|(command, _)| command.split_whitespace().next())
+                    .filter(|command| command.starts_with(typed))
+                    .fold(Vec::new(), |mut commands, command| {
+                        if !commands.iter().any(|known| known == command) {
+                            commands.push(command.to_owned());
+                        }
+                        commands
+                    }),
+            );
+        } else {
+            Vec::new()
+        };
+        let start = before
+            .rfind(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+            .map_or(0, |i| i + 1);
+        let word = &before[start..];
+        if !word.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_') {
+            return (start, Vec::new());
+        }
+        let paren = if line[pos..].starts_with('(') {
+            ""
+        } else {
+            "("
+        };
+        let builtins = BUILTIN_DOCS.iter().map(|doc| {
+            let function = !Context::is_builtin_constant(doc.symbol);
+            (doc.name(), function)
+        });
+        let definitions = self
+            .env
+            .definitions()
+            .map(|definition| (definition.name().name(), !definition.params().is_empty()));
+        candidates.extend(
+            builtins
+                .chain(definitions)
+                .filter(|(name, _)| name.starts_with(word))
+                .map(|(name, function)| {
+                    if function {
+                        format!("{name}{paren}")
+                    } else {
+                        name.to_owned()
+                    }
+                }),
+        );
+        candidates.sort();
+        candidates.dedup();
+        (start, candidates)
     }
 
     /// The help of a session: inputs and commands.
@@ -423,5 +529,60 @@ mod tests {
         assert!(matches!(output, Output::Error(_)));
         assert!(!changes_state);
         assert!(extra.is_none());
+    }
+
+    fn completions(session: &Session, line: &str) -> (usize, Vec<String>) {
+        session.complete(line, line.len())
+    }
+
+    #[test]
+    fn completes_builtins_and_definitions() {
+        let mut session = Session::new();
+        assert_eq!(
+            completions(&session, "inte"),
+            (0, vec!["integrate(".to_owned()])
+        );
+        let (start, candidates) = completions(&session, "sin(co");
+        assert_eq!(start, 4);
+        assert!(candidates.contains(&"cos(".to_owned()));
+        let (_, candidates) = completions(&session, "p");
+        assert!(candidates.contains(&"pi".to_owned()));
+        assert!(candidates.contains(&"piecewise(".to_owned()));
+        assert_eq!(completions(&session, "2x"), (0, Vec::new()));
+        assert_eq!(completions(&session, "1 + "), (4, Vec::new()));
+        assert_eq!(
+            session.complete("integ(x)", 5),
+            (0, vec!["integrate".to_owned()])
+        );
+        session.run("f(x) := x^2");
+        session.run("a := 3");
+        let (_, candidates) = completions(&session, "f");
+        assert!(candidates.contains(&"f(".to_owned()));
+        assert!(candidates.contains(&"factor(".to_owned()));
+        let (_, candidates) = completions(&session, "a");
+        assert!(candidates.contains(&"a".to_owned()));
+        assert_eq!(
+            completions(&session, ":clear "),
+            (7, vec!["a".to_owned(), "f".to_owned()])
+        );
+    }
+
+    #[test]
+    fn completes_commands() {
+        let session = Session::new();
+        assert_eq!(completions(&session, ":se"), (0, vec![":set".to_owned()]));
+        assert_eq!(completions(&session, "  hel"), (2, vec!["help".to_owned()]));
+        assert_eq!(
+            completions(&session, ":set z"),
+            (5, vec!["Z".to_owned(), "Z/n".to_owned()])
+        );
+        assert_eq!(
+            completions(&session, "help integ"),
+            (5, vec!["integrate".to_owned()])
+        );
+        assert_eq!(
+            completions(&session, "help bui"),
+            (5, vec!["builtins".to_owned()])
+        );
     }
 }

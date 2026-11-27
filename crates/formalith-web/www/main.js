@@ -3,7 +3,8 @@
 // and plain text output. Lines changing the session, like definitions `f(x) := x^2`, are replayed in a new worker
 // after a panic. The transcript and these lines are kept in the local storage, so a reload shows the transcript
 // again and restores the session; `clear` (or Ctrl+L) clears the transcript. With Typst output, an input line is
-// typeset once evaluated, as it was typed (the session prints it without evaluating it).
+// typeset once evaluated, as it was typed (the session prints it without evaluating it). Tab completes builtins,
+// definitions, commands and sets, listing the candidates when there are several.
 
 const log = document.getElementById('log');
 const form = document.getElementById('prompt');
@@ -249,6 +250,8 @@ function renderInput(element, typst) {
 
 let worker;
 let pending = null;
+// The completion asked to the worker, `{ id, line, pos }`, until it answers
+let completing = null;
 let nextId = 0;
 // Lines which changed the session, replayed in a new worker (also after a reload)
 let replayLog = load(REPLAY_KEY);
@@ -259,6 +262,12 @@ function startWorker() {
     if (data.ready) {
       prefetchTypst();
       runQueued();
+      return;
+    }
+    if (data.completion) {
+      if (completing && data.id === completing.id) {
+        applyCompletion(data.completion);
+      }
       return;
     }
     if (data.id === -1 && data.set) {
@@ -294,7 +303,7 @@ function startWorker() {
         print(data.text);
         if (line === 'help' || line === ':help') {
           print(
-            '  clear         clear the screen (also Ctrl+L)\nCtrl+C interrupts a running computation.',
+            '  clear         clear the screen (also Ctrl+L)\nTab completes names, Ctrl+C interrupts a running computation.',
           );
         }
       } else if (data.kind === 'error') {
@@ -324,9 +333,43 @@ function replay() {
 }
 
 function restartWorker() {
+  completing = null;
   worker.terminate();
   startWorker();
   replay();
+}
+
+// Asks the worker for the completions of the word before the cursor, unless it is evaluating
+function requestCompletion() {
+  if (pending || completing || input.selectionStart !== input.selectionEnd) {
+    return;
+  }
+  completing = { id: nextId++, line: input.value, pos: input.selectionStart };
+  worker.postMessage({ id: completing.id, line: completing.line, complete: completing.pos });
+}
+
+// Replaces the word before the cursor by the longest common prefix of the candidates, listing them when it adds
+// nothing, unless the input changed meanwhile
+function applyCompletion({ start, candidates }) {
+  const { line, pos } = completing;
+  completing = null;
+  if (input.value !== line || input.selectionStart !== pos || input.selectionEnd !== pos || !candidates.length) {
+    return;
+  }
+  let prefix = candidates[0];
+  for (const candidate of candidates) {
+    while (!candidate.toLowerCase().startsWith(prefix.toLowerCase())) {
+      prefix = prefix.slice(0, -1);
+    }
+  }
+  if (prefix.length > pos - start || candidates.length === 1) {
+    input.value = line.slice(0, start) + prefix + line.slice(pos);
+    const cursor = start + prefix.length;
+    input.setSelectionRange(cursor, cursor);
+  } else {
+    show(candidates.join('  '), 'info');
+    scrollToPrompt();
+  }
 }
 
 function finish() {
@@ -380,7 +423,10 @@ form.addEventListener('submit', event => {
 });
 
 input.addEventListener('keydown', event => {
-  if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+  if (event.key === 'Tab' && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey) {
+    event.preventDefault();
+    requestCompletion();
+  } else if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
     event.preventDefault();
     if (historyIndex === history.length) {
       draft = input.value;

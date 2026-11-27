@@ -117,3 +117,49 @@ pub fn set_typst(typst: bool) {
 pub fn help() -> String {
     Session::help()
 }
+
+/// Tab completions of a line.
+#[wasm_bindgen]
+pub struct Completion {
+    start: usize,
+    candidates: Vec<String>,
+}
+
+#[wasm_bindgen]
+impl Completion {
+    /// Where the completed word starts, in UTF-16 code units like JavaScript string indices.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn start(&self) -> usize {
+        self.start
+    }
+
+    /// The candidates replacing the word, sorted.
+    #[wasm_bindgen(getter)]
+    #[must_use]
+    pub fn candidates(&self) -> Vec<String> {
+        self.candidates.clone()
+    }
+}
+
+/// The completions of the word ending at `pos` (in UTF-16 code units) in `line`: builtins, definitions, commands
+/// and sets, see [`Session::complete`].
+#[wasm_bindgen]
+#[must_use]
+pub fn complete(line: &str, pos: usize) -> Completion {
+    let mut units = 0;
+    let byte = line
+        .char_indices()
+        .find(|(_, c)| {
+            units += c.len_utf16();
+            units > pos
+        })
+        .map_or(line.len(), |(byte, _)| byte);
+    SESSION.with_borrow(|session| {
+        let (start, candidates) = session.complete(line, byte);
+        Completion {
+            start: line[..start].encode_utf16().count(),
+            candidates,
+        }
+    })
+}
