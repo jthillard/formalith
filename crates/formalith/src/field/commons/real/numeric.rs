@@ -53,12 +53,53 @@ pub fn free_symbols(term: &Term<Real>) -> BTreeSet<Symbol> {
     }
 }
 
+/// Serialization of the constants of a [`Numeric`]: finite values as numbers, others as the text `NaN`, `inf` or
+/// `-inf`, since formats like JSON have no number for them (`serde_json` writes `null`, which doesn't read back).
+#[cfg(feature = "serde")]
+mod float {
+    use serde::{Deserialize, Deserializer, Serializer, de::Error};
+
+    /// A finite number or the text of a non-finite one.
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Float {
+        Number(f64),
+        Text(String),
+    }
+
+    // The signature is the one serde's `with` requires
+    #[allow(clippy::trivially_copy_pass_by_ref)]
+    pub fn serialize<S: Serializer>(value: &f64, serializer: S) -> Result<S::Ok, S::Error> {
+        if value.is_finite() {
+            serializer.serialize_f64(*value)
+        } else if value.is_nan() {
+            serializer.serialize_str("NaN")
+        } else if *value > 0. {
+            serializer.serialize_str("inf")
+        } else {
+            serializer.serialize_str("-inf")
+        }
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<f64, D::Error> {
+        match Float::deserialize(deserializer)? {
+            Float::Number(value) => Ok(value),
+            Float::Text(text) => match text.as_str() {
+                "NaN" => Ok(f64::NAN),
+                "inf" => Ok(f64::INFINITY),
+                "-inf" => Ok(f64::NEG_INFINITY),
+                _ => Err(D::Error::custom(format!("invalid constant {text:?}"))),
+            },
+        }
+    }
+}
+
 /// A real expression evaluated with `f64`, see [`Numeric::compile`].
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum Numeric {
-    /// A constant.
-    Const(f64),
+    /// A constant, possibly NaN (`undefined`) or infinite (`oo`), which are serialized as the text `NaN`, `inf` or `-inf`.
+    Const(#[cfg_attr(feature = "serde", serde(with = "float"))] f64),
     /// The variable at this index of the values given to [`Numeric::eval`].
     Var(usize),
     /// A sum.

@@ -441,9 +441,20 @@ mod tests {
     #[test]
     fn test_serialize() {
         let mut worker = Worker::new();
-        for reply in run(&mut worker, &request(1, &["y = a*sin(x)", "x^2 + y^2 < 1"])) {
+        // Graphs with non-finite constants (`undefined`, `oo`), compared by their JSON since NaN != NaN
+        let lines = [
+            "y = a*sin(x)",
+            "x^2 + y^2 < 1",
+            "integrate(sqrt(x/r-1),r,r_1,x)",
+            "piecewise(x < 0, oo, x)",
+        ];
+        let mut all = String::new();
+        for reply in run(&mut worker, &request(1, &lines)) {
             let json = serde_json::to_string(&reply).unwrap();
-            assert_eq!(serde_json::from_str::<Reply>(&json).unwrap(), reply);
+            let read = serde_json::from_str::<Reply>(&json).unwrap();
+            assert_eq!(serde_json::to_string(&read).unwrap(), json);
+            all += &json;
         }
+        assert!(all.contains(r#"{"Const":"NaN"}"#) && all.contains(r#"{"Const":"inf"}"#));
     }
 }
