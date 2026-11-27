@@ -405,6 +405,25 @@ impl Context {
         )
     }
 
+    /// Return `true` if `symbol` is a builtin whose arguments are matrices whatever the set, like `det`: `det([[1, 2],
+    /// [3, 4]])` is `-2` in `R`.
+    #[must_use]
+    pub const fn takes_matrix(symbol: Symbol) -> bool {
+        matches!(
+            symbol,
+            Self::DET
+                | Self::TRANSPOSE
+                | Self::TRACE
+                | Self::RANK
+                | Self::KERNEL
+                | Self::CHARPOLY
+                | Self::EIGENVALUES
+                | Self::EIGENVECTORS
+                | Self::HERMITE
+                | Self::SMITH
+        )
+    }
+
     /// Return `true` if `symbol` is a builtin returning a matrix, like `transpose`, which is a function of the
     /// matrix set and not of its scalars.
     #[must_use]

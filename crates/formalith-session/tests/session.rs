@@ -230,3 +230,53 @@ fn typeset_input() {
         assert_eq!(session.typeset_input(line), None, "{line}");
     }
 }
+
+/// The error message of `line`.
+fn error(session: &mut Session, line: &str) -> String {
+    match session.run(line).output {
+        Output::Error(err) => err,
+        output => panic!("{line} isn't an error: {output:?}"),
+    }
+}
+
+/// Errors underline the part of the line they are about, and give a hint naming a set where the line means
+/// something.
+#[test]
+fn error_reports() {
+    let mut session = Session::new();
+    assert_eq!(
+        error(&mut session, "2 $ 3"),
+        "unexpected `$`\n  2 $ 3\n    ^"
+    );
+    // Columns are counted in characters
+    assert_eq!(
+        error(&mut session, "α + )"),
+        "expected an expression, found `α`\n  α + )\n  ^"
+    );
+    assert_eq!(
+        error(&mut session, "[[1, 2], [3, 4]]"),
+        "expected an expression, found `[`\n  [[1, 2], [3, 4]]\n  ^\nhint: matrices are in `M(R)`: `:set M(R)`"
+    );
+    // In the body of a definition
+    assert_eq!(
+        error(&mut session, "f(x) := x +"),
+        "expected an expression after `+`, found the end of the input\n  f(x) := x +\n            ^"
+    );
+    // Without a part of the line
+    assert!(run(&mut session, "g(x) := x").1);
+    assert_eq!(
+        error(&mut session, "g(1, 2)"),
+        "`g` expects 1 argument, found 2"
+    );
+    // In the sides of a relation drawn by the GUI
+    assert_eq!(
+        error(&mut session, "y = x +"),
+        "expected an expression after `+`, found the end of the input\n  y = x +\n        ^"
+    );
+    assert!(run(&mut session, ":set N").1);
+    assert_eq!(
+        error(&mut session, "1 - 2"),
+        "subtraction isn't defined in this set, which has no additive inverses\n  1 - 2\n    ^\nhint: \
+         negative numbers are in `Z`: `:set Z`"
+    );
+}

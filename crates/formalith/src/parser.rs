@@ -41,19 +41,79 @@ impl Op {
     }
 }
 
-/// Represent an error raised by the parser
+/// Represent an error raised by the parser, with the part of the input it is about and a hint to fix it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParserError {
     message: String,
+    span: Option<Range<usize>>,
+    hint: Option<String>,
 }
 
 impl ParserError {
-    /// Create a new parser error.
+    /// Create a new parser error, about no part of the input in particular.
     #[must_use]
     pub fn new<T: Into<String>>(message: T) -> Self {
         Self {
             message: message.into(),
+            span: None,
+            hint: None,
         }
+    }
+
+    /// The error, about the bytes `span` of the input.
+    #[must_use]
+    pub const fn with_span(mut self, span: Range<usize>) -> Self {
+        self.span = Some(span);
+        self
+    }
+
+    /// The error, with a hint to fix it, like a set where the input means something.
+    #[must_use]
+    pub fn with_hint<T: Into<String>>(mut self, hint: T) -> Self {
+        self.hint = Some(hint.into());
+        self
+    }
+
+    /// The error, with `hint` unless it has one already.
+    #[must_use]
+    pub fn or_hint<T: Into<String>>(mut self, hint: Option<T>) -> Self {
+        if self.hint.is_none() {
+            self.hint = hint.map(Into::into);
+        }
+        self
+    }
+
+    /// The error, about `span` unless it is about a part of the input already.
+    #[must_use]
+    pub const fn or_span(mut self, span: Option<Range<usize>>) -> Self {
+        if self.span.is_none() {
+            self.span = span;
+        }
+        self
+    }
+
+    /// The message of the error.
+    #[must_use]
+    pub fn message(&self) -> &str {
+        &self.message
+    }
+
+    /// The bytes of the input the error is about, if known.
+    #[must_use]
+    pub fn span(&self) -> Option<Range<usize>> {
+        self.span.clone()
+    }
+
+    /// A hint to fix the error.
+    #[must_use]
+    pub fn hint(&self) -> Option<&str> {
+        self.hint.as_deref()
+    }
+}
+
+impl From<String> for ParserError {
+    fn from(message: String) -> Self {
+        Self::new(message)
     }
 }
 
@@ -81,6 +141,11 @@ pub struct Parser<'a> {
     pub token: Token,
     start_span: usize,
     end_span: usize,
+    /// The span of the previous token
+    prev_span: Range<usize>,
+    /// Where the input starts in the line typed by the user, `None` when it isn't a part of it (the body of a
+    /// definition), so that errors point at the line
+    offset: Option<usize>,
     env: Option<&'a Environment>,
     /// The unknown function and its variable while parsing a differential equation, see [`Parser::parse_ode_function`]
     ode: Option<(Symbol, Symbol)>,
@@ -103,6 +168,8 @@ impl<'a> Parser<'a> {
             token: Token::new(TokenKind::Unknown, 0),
             start_span: 0,
             end_span: 0,
+            prev_span: 0..0,
+            offset: Some(0),
             env: None,
             ode: None,
             scalar_of_matrix: false,
@@ -110,6 +177,14 @@ impl<'a> Parser<'a> {
         };
         parser.next_token();
         parser
+    }
+
+    /// Parse a text which starts at byte `offset` of the line typed by the user, or isn't a part of it if `None`,
+    /// so that errors point at the line.
+    #[must_use]
+    pub const fn with_offset(mut self, offset: Option<usize>) -> Self {
+        self.offset = offset;
+        self
     }
 
     /// Expand the definitions of `env` while parsing.
@@ -163,6 +238,7 @@ impl Parser<'_> {
     }
     /// Update the current and previous token, skipping unnecessary tokens
     pub fn next_token(&mut self) {
+        let span = self.span();
         let next = loop {
             match self.next_token_internal() {
                 None => break Token::new(TokenKind::Eof, 0),
@@ -173,10 +249,31 @@ impl Parser<'_> {
                 Some(token) => break token,
             }
         };
+        self.prev_span = span;
         self.prev_token = std::mem::replace(&mut self.token, next);
     }
     const fn span(&self) -> Range<usize> {
         self.start_span..self.end_span
+    }
+    /// The bytes `span` of the input, in the line typed by the user, if the input is a part of it.
+    fn line_span(&self, span: Range<usize>) -> Option<Range<usize>> {
+        self.offset
+            .map(|offset| span.start + offset..span.end + offset)
+    }
+    /// An error about the bytes `span` of the input.
+    pub(crate) fn error_at(&self, span: Range<usize>, message: impl Into<String>) -> ParserError {
+        ParserError::new(message).or_span(self.line_span(span))
+    }
+    /// An error about the current token.
+    pub(crate) fn error_here(&self, message: impl Into<String>) -> ParserError {
+        self.error_at(self.span(), message)
+    }
+    /// The current token as the user typed it, quoted, like `` `$` ``, or "the end of the input".
+    pub(crate) fn describe_token(&self) -> String {
+        match self.token.kind {
+            TokenKind::Eof => "the end of the input".to_owned(),
+            _ => format!("`{}`", &self.input[self.span()]),
+        }
     }
     /// Eat a token with a specific kind, raising an error if the current token kind doesn't match.
     ///
@@ -188,10 +285,7 @@ impl Parser<'_> {
                 self.next_token();
                 Ok(())
             }
-            _ => Err(ParserError::new(format!(
-                "expect {:?}, found {:?}",
-                kind, self.token.kind
-            ))),
+            _ => Err(self.error_here(format!("expected {kind}, found {}", self.describe_token()))),
         }
     }
     /// Whether the current token starts an implicit product with the operand just before it: an identifier or a
@@ -227,7 +321,10 @@ impl Parser<'_> {
             if self.token.kind == TokenKind::Eof {
                 ParserError::new("Input was empty")
             } else {
-                ParserError::new(format!("Unexpected token at position {}", self.start_span))
+                self.error_here(format!(
+                    "unexpected {}, expected an expression",
+                    self.describe_token()
+                ))
             }
         })?;
         self.expect_eof()?;
@@ -237,10 +334,13 @@ impl Parser<'_> {
     /// Parse an expression, without normalizing it, checking that no operator is left.
     fn parse_operand<E: Set>(&mut self, set: E) -> Result<Option<Term<E>>, ParserError> {
         let term = ParseExpression::<E>::parse_expression(self, 0, set)?;
-        if let Some(op) = self.get_op() {
-            return Err(ParserError::new(format!(
-                "Operand expected for binary operation {op:?} at position {}",
-                self.end_span
+        if self.get_op().is_some() {
+            let operator = self.describe_token();
+            let mut next = self.clone();
+            next.next_token();
+            return Err(self.error_here(format!(
+                "expected an expression after {operator}, found {}",
+                next.describe_token()
             )));
         }
         Ok(term)
@@ -249,10 +349,7 @@ impl Parser<'_> {
     /// Check that the whole input was parsed.
     fn expect_eof(&self) -> Result<(), ParserError> {
         if self.token.kind != TokenKind::Eof {
-            return Err(ParserError::new(format!(
-                "Unexpected {:?} at position {}",
-                self.token.kind, self.start_span
-            )));
+            return Err(self.error_here(format!("unexpected {}", self.describe_token())));
         }
         Ok(())
     }
@@ -275,9 +372,9 @@ impl Parser<'_> {
                 let content = ParseExpression::<E>::parse_expression(self, 0, set);
                 self.scalar_of_matrix = scalar_of_matrix;
                 let content = content?.ok_or_else(|| {
-                    ParserError::new(format!(
-                        "Expression expected at position {}",
-                        self.start_span
+                    self.error_here(format!(
+                        "expected an expression, found {}",
+                        self.describe_token()
                     ))
                 })?;
                 self.expect_token(&TokenKind::CloseParen)?;
@@ -300,7 +397,10 @@ impl Parser<'_> {
         let params = definition.params();
         let args = if self.token.kind == TokenKind::OpenParen {
             if params.is_empty() {
-                return Err(ParserError::new(format!("`{name}` is not a function")));
+                return Err(self.error_at(
+                    self.prev_span.clone(),
+                    format!("`{name}` is not a function"),
+                ));
             }
             self.next_token();
             self.parse_args_source()?
@@ -310,19 +410,21 @@ impl Parser<'_> {
         if args.len() != params.len() {
             let plural = if params.len() == 1 { "" } else { "s" };
             return Err(ParserError::new(format!(
-                "Function {name} expects {} argument{plural}, found {}",
+                "`{name}` expects {} argument{plural}, found {}",
                 params.len(),
                 args.len()
             )));
         }
         let mut body_env = definition.env().clone();
         body_env.bind(params, args, env);
-        let mut parser = Parser::new(definition.body()).with_environment(&body_env);
+        let mut parser = Parser::new(definition.body())
+            .with_offset(None)
+            .with_environment(&body_env);
         let term = ParseExpression::<E>::parse_expression(&mut parser, 0, set)?;
         if parser.token.kind != TokenKind::Eof {
             return Err(ParserError::new(format!(
-                "Unexpected {:?} in the definition of {name}",
-                parser.token.kind
+                "unexpected {} in the definition of `{name}`",
+                parser.describe_token()
             )));
         }
         Ok(term)
@@ -393,7 +495,10 @@ impl Parser<'_> {
         let name = function.name();
         let primed = format!("{name}{}", "'".repeat(order));
         if self.token.kind != TokenKind::OpenParen {
-            return Err(ParserError::new(format!("expected `(` after `{primed}`")));
+            return Err(self.error_here(format!(
+                "expected `(` after `{primed}`, found {}",
+                self.describe_token()
+            )));
         }
         let single_variable = self.env.and_then(|env| env.get(function)).map_or_else(
             || {
@@ -473,11 +578,11 @@ impl Parser<'_> {
 
     /// Parse `source` with the environment of this parser, normalized.
     fn parse_source<E: Set>(&self, source: &str, set: E) -> Result<Term<E>, ParserError> {
-        let mut parser = Parser::new(source);
+        let mut parser = Parser::new(source).with_offset(None);
         parser.env = self.env;
         parser.ode = self.ode;
         let term = ParseExpression::<E>::parse_expression(&mut parser, 0, set)?
-            .ok_or_else(|| ParserError::new(format!("Expression expected in `{source}`")))?;
+            .ok_or_else(|| ParserError::new(format!("expected an expression in `{source}`")))?;
         parser.expect_eof()?;
         Ok(term.normalize())
     }
@@ -500,9 +605,9 @@ impl Parser<'_> {
                 TokenKind::Comma | TokenKind::CloseParen if depth == 0 => {
                     let arg = self.input[start..self.start_span].trim();
                     if arg.is_empty() {
-                        return Err(ParserError::new(format!(
-                            "Argument expected at position {}",
-                            self.start_span
+                        return Err(self.error_here(format!(
+                            "expected an argument, found {}",
+                            self.describe_token()
                         )));
                     }
                     args.push(arg.to_owned());
@@ -517,7 +622,9 @@ impl Parser<'_> {
                 TokenKind::CloseParen | TokenKind::CloseBracket | TokenKind::CloseBrace => {
                     depth -= 1;
                 }
-                TokenKind::Eof => return Err(ParserError::new("expect CloseParen, found Eof")),
+                TokenKind::Eof => {
+                    return Err(self.error_here("expected `)`, found the end of the input"));
+                }
                 _ => {}
             }
             self.next_token();
@@ -529,17 +636,21 @@ impl Parser<'_> {
     fn parse_piecewise_args<E: Set>(&mut self, set: E) -> Result<Vec<Term<E>>, ParserError> {
         let mut args = vec![];
         loop {
-            let position = self.start_span;
             let lhs = ParseExpression::<E>::parse_expression(self, 0, set)?.ok_or_else(|| {
-                ParserError::new(format!("Argument expected at position {position}"))
+                self.error_here(format!(
+                    "expected an argument, found {}",
+                    self.describe_token()
+                ))
             })?;
             let arg = match Relation::from_token(&self.token.kind) {
                 Some(relation) if args.len() % 2 == 0 => {
                     self.next_token();
-                    let position = self.start_span;
                     let rhs =
                         ParseExpression::<E>::parse_expression(self, 0, set)?.ok_or_else(|| {
-                            ParserError::new(format!("Expression expected at position {position}"))
+                            self.error_here(format!(
+                                "expected an expression, found {}",
+                                self.describe_token()
+                            ))
                         })?;
                     Term::Fun(Box::new(Fun::new(relation.symbol(), vec![lhs, rhs], set)))
                 }
@@ -575,7 +686,10 @@ impl Parser<'_> {
         loop {
             args.push(
                 ParseExpression::<E>::parse_expression(self, 0, arg_set)?.ok_or_else(|| {
-                    ParserError::new(format!("Argument expected at position {}", self.start_span))
+                    self.error_here(format!(
+                        "expected an argument, found {}",
+                        self.describe_token()
+                    ))
                 })?,
             );
             if self.token.kind != TokenKind::Comma {
@@ -645,16 +759,7 @@ where
                     self.next_token();
                     let ident = symbol.symbol;
                     let (fun, args_count): (Term<E>, _) = match ident {
-                        Context::DET
-                        | Context::TRANSPOSE
-                        | Context::TRACE
-                        | Context::RANK
-                        | Context::KERNEL
-                        | Context::CHARPOLY
-                        | Context::EIGENVALUES
-                        | Context::EIGENVECTORS
-                        | Context::HERMITE
-                        | Context::SMITH => {
+                        ident if Context::takes_matrix(ident) => {
                             let args = self.parse_args(set.get_matrix_argument_set())?;
                             let count = args.len();
                             (Term::Fun(Box::new(Fun::new(ident, args, set))), count)
@@ -687,7 +792,7 @@ where
                             (min, max) => format!("{min} to {max} arguments"),
                         };
                         return Err(ParserError::new(format!(
-                            "Function {} expects {expected}, found {args_count}",
+                            "`{}` expects {expected}, found {args_count}",
                             ident.name()
                         )));
                     }
@@ -732,10 +837,9 @@ where
                 }
                 Ok(Some(node))
             }
-            (None, Ok(Some(_))) => Err(ParserError::new(format!(
-                "Unexpected literal at position {}",
-                self.start_span
-            ))),
+            (None, Ok(Some(_))) => {
+                Err(self.error_here(format!("unexpected {}", self.describe_token())))
+            }
         }
     }
 }
@@ -766,6 +870,11 @@ impl<E: Set> ParseBinary<E> for Parser<'_> {
         Ok((current, false))
     }
 }
+
+/// The hint of an error in a set without negative numbers, see [`crate::dynamic::SetChoice`].
+const NEGATIVE_HINT: &str = "negative numbers are in `Z`: `:set Z`";
+/// The hint of an error in a set without division.
+const FRACTION_HINT: &str = "fractions are in `R`: `:set R`";
 
 /// Rejects exponents that mean nothing in a set, like `x^(1/2)` in `Z/n` or `R[x]`, whose exponents are integers.
 trait CheckExponent<E: Set> {
@@ -803,7 +912,8 @@ impl CheckExponent<N<Natural>> for Parser<'_> {
             return Err(ParserError::new(format!(
                 "the exponent {} is negative, but division isn't defined in this set",
                 exponent.with_options(PrintOptions::plain())
-            )));
+            ))
+            .with_hint(FRACTION_HINT));
         }
         Ok(())
     }
@@ -850,8 +960,11 @@ fn apply_semiring_binary<E: Semiring>(
         }),
         Op::Subtract => Err(ParserError::new(
             "subtraction isn't defined in this set, which has no additive inverses",
-        )),
-        Op::Divide => Err(ParserError::new("division isn't defined in this set")),
+        )
+        .with_hint(NEGATIVE_HINT)),
+        Op::Divide => {
+            Err(ParserError::new("division isn't defined in this set").with_hint(FRACTION_HINT))
+        }
         Op::Pow => unreachable!(),
     }
 }
@@ -911,13 +1024,16 @@ impl<E: Semiring> ParseBinary<E> for Parser<'_> {
         op: Op,
         set: E,
     ) -> Result<(Term<E>, bool), ParserError> {
+        // The operator, unless the product is implicit
+        let op_span = self.line_span(self.prev_span.clone());
         if Op::Pow == op {
             if let Some(right) = ParseExpression::<E::ExponantSet>::parse_expression(
                 self,
                 op.get_priority() - 1,
                 set.get_exponant_set(),
             )? {
-                <Self as CheckExponent<E>>::check_exponent(&right)?;
+                <Self as CheckExponent<E>>::check_exponent(&right)
+                    .map_err(|err| err.or_span(op_span))?;
                 // `sqrt(x)^2` is `x`, the optimizer needs `{$x >= 0$}`
                 crate::optimize::domain::record(|| {
                     Term::Pow(Pow::new(current.clone(), right.clone(), set))
@@ -934,7 +1050,8 @@ impl<E: Semiring> ParseBinary<E> for Parser<'_> {
                     op,
                     right,
                     set,
-                )?,
+                )
+                .map_err(|err| err.or_span(op_span))?,
                 true,
             ));
         }
@@ -1014,9 +1131,9 @@ impl<E: Monoid> ParseUnary<E> for Parser<'_> {
                 self.next_token();
                 ParseExpression::<E>::parse_expression(self, Op::Multiply.get_priority(), set)
             }
-            Some(Op::Subtract) => Err(ParserError::new(
-                "negation isn't defined in this set, which has no additive inverses",
-            )),
+            Some(Op::Subtract) => Err(self
+                .error_here("negation isn't defined in this set, which has no additive inverses")
+                .with_hint(NEGATIVE_HINT)),
             _ => Ok(None),
         }
     }

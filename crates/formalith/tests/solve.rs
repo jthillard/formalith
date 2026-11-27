@@ -82,7 +82,7 @@ fn errors() {
     );
     assert_eq!(
         solve("x = "),
-        Err("Expression expected at position 4".to_owned())
+        Err("expected an expression, found the end of the input".to_owned())
     );
     assert!(solve("x = 1 = 2").is_err());
 }

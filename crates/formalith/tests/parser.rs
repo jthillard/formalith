@@ -4,6 +4,7 @@ use formalith::{
         integer::Z,
         matrix::{M, VectorSpaceElement},
         modular::Zn,
+        natural::N,
         real::R,
     },
     matrix::Matrix,
@@ -90,12 +91,74 @@ fn test_parse_error_messages() {
         try_parse!("", R).unwrap_err().to_string(),
         try_parse!(" ", R).unwrap_err().to_string()
     );
-    assert!(
-        try_parse!("x^", R)
-            .unwrap_err()
-            .to_string()
-            .contains("position 2")
+    let err = try_parse!("x^", R).unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "expected an expression after `^`, found the end of the input"
     );
+    assert_eq!(err.span(), Some(1..2));
+}
+
+/// Errors name the token they are about, and its bytes in the input.
+#[test]
+fn test_parse_error_spans() {
+    let error = |input: &str| {
+        let err = try_parse!(input, R).unwrap_err();
+        (err.to_string(), err.span())
+    };
+    assert_eq!(error("2 $ 3"), ("unexpected `$`".to_owned(), Some(2..3)));
+    assert_eq!(
+        error("x +"),
+        (
+            "expected an expression after `+`, found the end of the input".to_owned(),
+            Some(2..3)
+        )
+    );
+    assert_eq!(
+        error("f("),
+        (
+            "expected an argument, found the end of the input".to_owned(),
+            Some(2..2)
+        )
+    );
+    assert_eq!(
+        error("(x + 1"),
+        (
+            "expected `)`, found the end of the input".to_owned(),
+            Some(6..6)
+        )
+    );
+    assert_eq!(error("sin(1, 2)").1, None);
+    // After a character of two bytes
+    assert_eq!(error("α + )").1, Some(0..2));
+}
+
+/// Matrix literals explain how matrices are written.
+#[test]
+fn test_parse_matrix_error_messages() {
+    let err = try_parse!("[1, 2]", M).unwrap_err();
+    assert_eq!(err.to_string(), "expected `[` starting a row, found `1`");
+    assert_eq!(err.span(), Some(1..2));
+    assert!(err.hint().unwrap().contains("[[1], [2]]"));
+    assert_eq!(
+        try_parse!("[[1, 2], [3]]", M).unwrap_err().to_string(),
+        "the rows of a matrix must have the same length: row 2 has 1 entry, row 1 has 2 entries"
+    );
+}
+
+/// Sets without negative numbers or fractions name the set which has them.
+#[test]
+fn test_parse_natural_hints() {
+    for (input, set) in [
+        ("1 - 2", "`Z`"),
+        ("-3", "`Z`"),
+        ("2/3", "`R`"),
+        ("x^-1", "`R`"),
+    ] {
+        let err = try_parse!(input, N).unwrap_err();
+        assert!(err.hint().unwrap().contains(set), "{input}: {err:?}");
+    }
+    assert_eq!(try_parse!("1 - 2", N).unwrap_err().span(), Some(2..3));
 }
 
 #[test]
@@ -215,15 +278,15 @@ fn test_parse_more_errors() {
 fn test_parse_builtin_arity_messages() {
     assert_eq!(
         try_parse!("sin(1, 2)", R).unwrap_err().to_string(),
-        "Function sin expects 1 argument, found 2"
+        "`sin` expects 1 argument, found 2"
     );
     assert_eq!(
         try_parse!("log(1, 2, 3)", R).unwrap_err().to_string(),
-        "Function log expects 1 to 2 arguments, found 3"
+        "`log` expects 1 to 2 arguments, found 3"
     );
     assert_eq!(
         try_parse!("lim(x, x)", R).unwrap_err().to_string(),
-        "Function lim expects 3 to 4 arguments, found 2"
+        "`lim` expects 3 to 4 arguments, found 2"
     );
 }
 

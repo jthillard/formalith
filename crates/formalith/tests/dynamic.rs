@@ -91,3 +91,33 @@ fn eval_inequalities() {
     assert_eq!(eval("x^2 >= 0"), Ok("x ∈ ℝ".to_owned()));
     assert_eq!(eval("x^2*(x-1) >= 0"), Ok("x ∈ {0} ∪ [1, +∞)".to_owned()));
 }
+
+/// Matrix literals outside of matrices name the matrix set of the current set.
+#[test]
+fn matrix_hints() {
+    for (set, matrices) in [
+        (SetChoice::R, "M(R)"),
+        (SetChoice::C, "M(C)"),
+        (SetChoice::Z, "M(Z)"),
+        (SetChoice::N, "M(Z)"),
+        (SetChoice::Zn(7), "M(Z/7)"),
+    ] {
+        let err = set
+            .try_evaluate("[[1, 2], [3, 4]]", &mut Environment::default())
+            .unwrap_err();
+        assert_eq!(
+            err.hint(),
+            Some(format!("matrices are in `{matrices}`: `:set {matrices}`").as_str()),
+            "{set}"
+        );
+    }
+    // A hint of the parser wins
+    let err = SetChoice::N
+        .try_evaluate("1 - 2", &mut Environment::default())
+        .unwrap_err();
+    assert!(err.hint().unwrap().contains("`Z`"));
+    // Matrices are already right inside `det`, the error is elsewhere
+    assert_eq!(SetChoice::R.hint("det([[1, 2], [3, 4]]) +"), None);
+    assert!(SetChoice::R.hint("det([[1]]) + [[1]]").is_some());
+    assert_eq!(SetChoice::MR.hint("[[1]] +"), None);
+}

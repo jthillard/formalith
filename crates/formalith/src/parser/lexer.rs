@@ -83,6 +83,41 @@ pub enum TokenKind {
     Unknown,
 }
 
+impl Display for TokenKind {
+    /// The token as the user would type it, quoted, for error messages: `` `)` ``, "a number".
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let symbol = match self {
+            Self::Whitespace => return f.write_str("a space"),
+            Self::Ident(name) => return write!(f, "`{name}`"),
+            Self::Literal { .. } => return f.write_str("a number"),
+            Self::Eof => return f.write_str("the end of the input"),
+            Self::Unknown => return f.write_str("an unknown character"),
+            Self::OpenParen => "(",
+            Self::CloseParen => ")",
+            Self::OpenBracket => "[",
+            Self::CloseBracket => "]",
+            Self::OpenBrace => "{",
+            Self::CloseBrace => "}",
+            Self::Plus => "+",
+            Self::Minus => "-",
+            Self::Star => "*",
+            Self::Slash => "/",
+            Self::Caret => "^",
+            Self::Comma => ",",
+            Self::Define => ":=",
+            Self::Equal => "=",
+            Self::Less => "<",
+            Self::LessEqual => "<=",
+            Self::Greater => ">",
+            Self::GreaterEqual => ">=",
+            Self::NotEqual => "!=",
+            Self::Bang => "!",
+            Self::Prime => "'",
+        };
+        write!(f, "`{symbol}`")
+    }
+}
+
 /// Describe the type of a literal
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum LiteralTokenKind {

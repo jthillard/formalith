@@ -121,7 +121,7 @@ fn derivatives() {
 fn constants_are_reserved() {
     assert_eq!(
         eval("pi(1)"),
-        Err("Function pi expects 0 arguments, found 1".to_owned())
+        Err("`pi` expects 0 arguments, found 1".to_owned())
     );
     assert_eq!(
         eval("pi := 3"),

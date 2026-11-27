@@ -434,7 +434,11 @@ impl Parser<'_> {
         let Some((name, params, body_start)) = self.clone().definition_head() else {
             return self.parse_equations(set);
         };
-        let source = self.input[body_start..].trim().to_owned();
+        let body = &self.input[body_start..];
+        let source = body.trim().to_owned();
+        let body_offset = self
+            .offset
+            .map(|offset| offset + body_start + body.len() - body.trim_start().len());
         for (i, &symbol) in params.iter().chain([&name]).enumerate() {
             let symbol_name = symbol.name();
             if Context::is_builtin_constant(symbol) {
@@ -463,7 +467,10 @@ impl Parser<'_> {
         for param in &params {
             env.definitions.remove(param);
         }
-        let body = Parser::new(&source).with_environment(&env).parse(set)?;
+        let body = Parser::new(&source)
+            .with_offset(body_offset)
+            .with_environment(&env)
+            .parse(set)?;
         Ok(Statement::Definition {
             name,
             params,
@@ -555,9 +562,9 @@ impl Parser<'_> {
                 TokenKind::Comma => self.next_token(),
                 TokenKind::CloseParen => break,
                 _ => {
-                    return Err(ParserError::new(format!(
-                        "Unexpected token at position {}, expected `,` or `)`",
-                        self.start_span
+                    return Err(self.error_here(format!(
+                        "expected `,` or `)`, found {}",
+                        self.describe_token()
                     )));
                 }
             }
@@ -637,7 +644,7 @@ impl Parser<'_> {
         let rhs_source = self.input[rhs_start..self.start_span].trim().to_owned();
         // Read again as real expressions, whatever the set
         let parse = |source: &str| {
-            let parser = Parser::new(source);
+            let parser = Parser::new(source).with_offset(None);
             let mut parser = match self.env {
                 Some(env) => parser.with_environment(env),
                 None => parser,
@@ -899,7 +906,7 @@ impl Parser<'_> {
                     "dsolve expects a single equation, then initial conditions",
                 ));
             }
-            let mut parser = Parser::new(source).with_ode(function, x);
+            let mut parser = Parser::new(source).with_offset(None).with_ode(function, x);
             parser.env = self.env;
             let lhs = parser.parse_side(set)?;
             parser.expect_token(&TokenKind::Equal).map_err(|_| {
@@ -956,7 +963,7 @@ impl Parser<'_> {
         x: Symbol,
         set: E,
     ) -> Result<Option<Condition<E>>, ParserError> {
-        let mut parser = Parser::new(source);
+        let mut parser = Parser::new(source).with_offset(None);
         parser.env = self.env;
         if !matches!(&parser.token.kind, TokenKind::Ident(name) if Symbol::new(name.as_str()) == function)
         {
@@ -1059,10 +1066,14 @@ impl Parser<'_> {
 
     /// Parse a side of an equation, normalized.
     fn parse_side<E: Set>(&mut self, set: E) -> Result<Term<E>, ParserError> {
-        let position = self.start_span;
         self.parse_operand(set)?
             .map(|term| term.normalize())
-            .ok_or_else(|| ParserError::new(format!("Expression expected at position {position}")))
+            .ok_or_else(|| {
+                self.error_here(format!(
+                    "expected an expression, found {}",
+                    self.describe_token()
+                ))
+            })
     }
 
     /// Check if the input is a definition, like `f(x) := x^2`, without checking its body.

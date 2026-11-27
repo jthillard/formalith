@@ -1226,7 +1226,16 @@ impl<T: SetParseExpression> SetParseExpression for M<T> {
                 let mut lines = vec![];
                 let mut size = None;
                 loop {
-                    parser.expect_token(&TokenKind::OpenBracket)?;
+                    if parser.token.kind != TokenKind::OpenBracket {
+                        return Err(parser.error_here(format!(
+                            "expected `[` starting a row, found {}",
+                            parser.describe_token()
+                        ))
+                        .with_hint(
+                            "a matrix is written by rows: `[[1, 2]]` is a row, `[[1], [2]]` a column",
+                        ));
+                    }
+                    parser.next_token();
 
                     let mut line_size = 0;
                     loop {
@@ -1246,9 +1255,14 @@ impl<T: SetParseExpression> SetParseExpression for M<T> {
                     }
                     if let Some(size) = size {
                         if size != line_size {
-                            return Err(ParserError::new(
-                                "Matrix dimension aren't coherent !".to_string(),
-                            ));
+                            let entries =
+                                |n: usize| format!("{n} entr{}", if n == 1 { "y" } else { "ies" });
+                            return Err(ParserError::new(format!(
+                                "the rows of a matrix must have the same length: row {} has {}, row 1 has {}",
+                                (lines.len() - line_size) / size + 1,
+                                entries(line_size),
+                                entries(size)
+                            )));
                         }
                     } else {
                         size = Some(line_size);

@@ -36,7 +36,7 @@ use formalith::{
             numeric::{Numeric, free_symbols},
         },
     },
-    parser::{Parser, environment::Statement},
+    parser::{Parser, ParserError, environment::Statement},
     term::{Term, relation::Relation},
 };
 
@@ -497,11 +497,23 @@ fn split_relations(line: &str) -> Option<Vec<(&str, Relation, &str)>> {
 }
 
 /// Parse an expression in `R` with the definitions of `env`.
-fn parse(input: &str, env: &Environment) -> Result<Term<Real>, String> {
+fn parse(input: &str, env: &Environment) -> Result<Term<Real>, ParserError> {
     Parser::new(input)
+        .with_offset(None)
         .with_environment(env)
         .parse(R)
-        .map_err(|err| err.to_string())
+}
+
+/// Parse an expression in `R` like [`parse`], `input` being a part of `line`, so that errors point at `line`.
+fn parse_part(input: &str, line: &str, env: &Environment) -> Result<Term<Real>, ParserError> {
+    // The parts of a line are slices of it
+    let offset = (input.as_ptr().addr())
+        .checked_sub(line.as_ptr().addr())
+        .filter(|offset| offset + input.len() <= line.len());
+    Parser::new(input)
+        .with_offset(offset)
+        .with_environment(env)
+        .parse(R)
 }
 
 /// Evaluate a line in `R`, which isn't a command, with its graph.
@@ -511,27 +523,27 @@ fn parse(input: &str, env: &Environment) -> Result<Term<Real>, String> {
 /// else kept as they are.
 ///
 /// # Errors
-/// Returns the parsing error message if `line` is not a valid statement.
+/// Returns the parsing error if `line` is not a valid statement.
 ///
 /// # Panics
 /// Panics if an operation is not supported.
 pub(crate) fn evaluate(
     line: &str,
     env: &mut Environment,
-) -> Result<(Evaluated, Option<Graph>), String> {
+) -> Result<(Evaluated, Option<Graph>), ParserError> {
     let (x, y) = xy();
     if let Some((a, b)) = split_point(line) {
-        let (a, b) = (parse(a, env)?, parse(b, env)?);
+        let (a, b) = (parse_part(a, line, env)?, parse_part(b, line, env)?);
         let graph = compile([&a, &b], x, |[x, y]| GraphKind::Point { x, y });
         return Ok((Evaluated::point(a, b), Some(graph)));
     }
     if let Some((lhs, relation, rhs)) = split_relation(line) {
-        let (lhs, rhs) = (parse(lhs, env)?, parse(rhs, env)?);
+        let (lhs, rhs) = (parse_part(lhs, line, env)?, parse_part(rhs, line, env)?);
         let graph = relation_graph(&lhs, relation, &rhs);
         if lhs.symbols().contains(&y) || rhs.symbols().contains(&y) {
             return Ok((Evaluated::relation(lhs, relation, rhs), graph));
         }
-        let statement = env.eval(line, R).map_err(|err| err.to_string())?;
+        let statement = env.eval(line, R)?;
         return Ok((Evaluated::new(statement), graph));
     }
     if let Some(relations) = split_relations(line)
@@ -541,8 +553,14 @@ pub(crate) fn evaluate(
     {
         let relations = relations
             .into_iter()
-            .map(|(lhs, relation, rhs)| Ok((parse(lhs, env)?, relation, parse(rhs, env)?)))
-            .collect::<Result<Vec<_>, String>>()?;
+            .map(|(lhs, relation, rhs)| {
+                Ok((
+                    parse_part(lhs, line, env)?,
+                    relation,
+                    parse_part(rhs, line, env)?,
+                ))
+            })
+            .collect::<Result<Vec<_>, ParserError>>()?;
         let graph = region_graph(
             &relations
                 .iter()
@@ -555,10 +573,10 @@ pub(crate) fn evaluate(
         return Ok((evaluated, graph));
     }
     if let Some(graph) = integral_graph(line, env) {
-        let statement = env.eval(line, R).map_err(|err| err.to_string())?;
+        let statement = env.eval(line, R)?;
         return Ok((Evaluated::new(statement), Some(graph)));
     }
-    let statement = env.eval(line, R).map_err(|err| err.to_string())?;
+    let statement = env.eval(line, R)?;
     let graph_of = |term: &Term<Real>| {
         let symbols = term.symbols();
         match (symbols.contains(&x), symbols.contains(&y)) {
@@ -633,17 +651,17 @@ fn complex_point(c: &Term<Complex>) -> Option<Graph> {
 /// [`GraphKind::ComplexCurve`]), and points `(Re c, Im c)` for constants `c`.
 ///
 /// # Errors
-/// Returns the parsing error message if `line` is not a valid statement.
+/// Returns the parsing error if `line` is not a valid statement.
 ///
 /// # Panics
 /// Panics if an operation is not supported.
 pub(crate) fn evaluate_complex(
     line: &str,
     env: &mut Environment,
-) -> Result<(Evaluated, Option<Graph>), String> {
+) -> Result<(Evaluated, Option<Graph>), ParserError> {
     let (x, y) = xy();
     let z = Symbol::new("z");
-    let statement = env.eval(line, C).map_err(|err| err.to_string())?;
+    let statement = env.eval(line, C)?;
     let graph_of = |term: &Term<Complex>| {
         let symbols = term.symbols();
         match [x, y, z].map(|symbol| symbols.contains(&symbol)) {

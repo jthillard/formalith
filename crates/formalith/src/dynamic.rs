@@ -11,7 +11,11 @@ use crate::{
         Set, SetParseExpression, complex::C, integer::Z, matrix::M, modular::Zn, natural::N,
         real::R,
     },
-    parser::environment::{Environment, Statement, head, integers_line},
+    parser::{
+        Parser, ParserError,
+        environment::{Environment, Statement, head, integers_line},
+        lexer::TokenKind,
+    },
     printer::{PrettyPrint, PrettyPrinter, Print, PrintOptions},
     solve::inequality::Inequality,
     term::{Term, TermSet, relation::Relation},
@@ -118,7 +122,23 @@ impl SetChoice {
     /// # Panics
     /// Panics if an operation is not supported by the set.
     pub fn evaluate(self, input: &str, env: &mut Environment) -> Result<Evaluated, String> {
-        match self {
+        self.try_evaluate(input, env).map_err(|err| err.to_string())
+    }
+
+    /// Parse and evaluate `input` in this set like [`SetChoice::evaluate`], with the error itself: the part of
+    /// `input` it is about, and a hint to fix it (see [`SetChoice::hint`]).
+    ///
+    /// # Errors
+    /// Returns the parsing error if `input` is not a valid expression or definition.
+    ///
+    /// # Panics
+    /// Panics if an operation is not supported by the set.
+    pub fn try_evaluate(
+        self,
+        input: &str,
+        env: &mut Environment,
+    ) -> Result<Evaluated, ParserError> {
+        let result = match self {
             Self::N => eval_in(input, N, env),
             Self::Z => eval_in(input, Z, env),
             Self::R => eval_in(input, R, env),
@@ -133,8 +153,79 @@ impl SetChoice {
             Self::Poly(Coefficients::Zn(n), x) => {
                 eval_in(input, Zn::new(n).get_polynomial_ring(x), env)
             }
+        };
+        result.map_err(|err| err.or_hint(self.hint(input)))
+    }
+
+    /// Whether this is a set of matrices.
+    #[must_use]
+    pub const fn is_matrix(self) -> bool {
+        matches!(self, Self::MR | Self::MC | Self::MZ | Self::MZn(_))
+    }
+
+    /// The set of matrices with entries in this set, or the closest one.
+    #[must_use]
+    pub const fn matrices(self) -> Self {
+        match self {
+            Self::N | Self::Z => Self::MZ,
+            Self::R | Self::Poly(Coefficients::R, _) => Self::MR,
+            Self::C | Self::Poly(Coefficients::C, _) => Self::MC,
+            Self::Zn(n) | Self::Poly(Coefficients::Zn(n), _) => Self::MZn(n),
+            matrices @ (Self::MR | Self::MC | Self::MZ | Self::MZn(_)) => matrices,
         }
     }
+
+    /// A hint for an input which failed in this set, naming a set where it may mean something: a matrix literal
+    /// like `[[1, 2]]` outside of matrices is in `M(R)`. Only the tokens of `input` are looked at, nothing is
+    /// evaluated again.
+    #[must_use]
+    pub fn hint(self, input: &str) -> Option<String> {
+        if !self.is_matrix() && has_matrix_literal(&tokens(input)) {
+            let matrices = self.matrices();
+            return Some(format!("matrices are in `{matrices}`: `:set {matrices}`"));
+        }
+        None
+    }
+}
+
+/// Whether `tokens` have a matrix literal outside of the arguments of builtins taking matrices in any set, like
+/// `det` (see [`Context::takes_matrix`]).
+fn has_matrix_literal(tokens: &[TokenKind]) -> bool {
+    // The depth of parentheses, and the depths where an argument of `det` or alike starts
+    let mut depth = 0usize;
+    let mut matrix_arguments = vec![];
+    for (i, token) in tokens.iter().enumerate() {
+        match token {
+            TokenKind::OpenParen => {
+                depth += 1;
+                if let Some(TokenKind::Ident(name)) = i.checked_sub(1).map(|i| &tokens[i])
+                    && Context::takes_matrix(Symbol::new(name.as_str()))
+                {
+                    matrix_arguments.push(depth);
+                }
+            }
+            TokenKind::CloseParen => {
+                if matrix_arguments.last() == Some(&depth) {
+                    matrix_arguments.pop();
+                }
+                depth = depth.saturating_sub(1);
+            }
+            TokenKind::OpenBracket if matrix_arguments.is_empty() => return true,
+            _ => {}
+        }
+    }
+    false
+}
+
+/// The tokens of `input`, without spaces.
+fn tokens(input: &str) -> Vec<TokenKind> {
+    let mut parser = Parser::new(input);
+    let mut tokens = vec![];
+    while parser.token.kind != TokenKind::Eof {
+        tokens.push(parser.token.kind.clone());
+        parser.next_token();
+    }
+    tokens
 }
 
 /// The kind of statement an evaluated input was.
@@ -367,8 +458,8 @@ fn eval_in<E: SetParseExpression>(
     input: &str,
     set: E,
     env: &mut Environment,
-) -> Result<Evaluated, String> {
-    let statement = env.eval(input, set).map_err(|err| err.to_string())?;
+) -> Result<Evaluated, ParserError> {
+    let statement = env.eval(input, set)?;
     Ok(Evaluated::new(statement))
 }
 

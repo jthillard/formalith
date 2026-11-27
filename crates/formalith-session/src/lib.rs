@@ -46,7 +46,7 @@ use formalith::{
         docs::{self, BUILTIN_DOCS, Category},
     },
     dynamic::{self, Evaluated, StatementKind},
-    parser::syntax::input_typst,
+    parser::{ParserError, syntax::input_typst},
     printer::PrintOptions,
 };
 use graph::Graph;
@@ -355,8 +355,10 @@ impl Session {
             return (self.run(line), None);
         }
         let env = &mut self.env;
-        let result = panic::catch_unwind(AssertUnwindSafe(|| evaluate(line, env)));
-        let (output, changes_state, graph) = self.respond(result);
+        let result = panic::catch_unwind(AssertUnwindSafe(|| {
+            evaluate(line, env).map_err(|err| err.or_hint(SetChoice::R.hint(line)))
+        }));
+        let (output, changes_state, graph) = self.respond(line, result);
         let response = Response {
             output,
             replay: changes_state,
@@ -369,16 +371,17 @@ impl Session {
         let set = self.set;
         let env = &mut self.env;
         let result = panic::catch_unwind(AssertUnwindSafe(|| {
-            set.evaluate(input, env).map(|result| (result, ()))
+            set.try_evaluate(input, env).map(|result| (result, ()))
         }));
-        let (output, changes_state, _) = self.respond(result);
+        let (output, changes_state, _) = self.respond(input, result);
         (output, changes_state)
     }
 
     /// The output of an evaluation, whether it changed the state of the session, and its extra result.
     fn respond<T>(
         &self,
-        result: std::thread::Result<Result<(Evaluated, T), String>>,
+        input: &str,
+        result: std::thread::Result<Result<(Evaluated, T), ParserError>>,
     ) -> (Output, bool, Option<T>) {
         match result {
             Ok(Ok((result, extra))) => {
@@ -392,7 +395,7 @@ impl Session {
                 };
                 (output, changes_state, Some(extra))
             }
-            Ok(Err(err)) => (Output::Error(err), false, None),
+            Ok(Err(err)) => (Output::Error(error_report(input, &err)), false, None),
             Err(_) => (
                 Output::Error(format!("this operation is not supported in {}", self.set)),
                 false,
@@ -400,6 +403,35 @@ impl Session {
             ),
         }
     }
+}
+
+/// The message of `error` about `input`, with the part of `input` it is about underlined, and its hint:
+///
+/// ```text
+/// unexpected `$`
+///   2 $ 3
+///     ^
+/// ```
+fn error_report(input: &str, error: &ParserError) -> String {
+    let mut report = error.message().to_owned();
+    if let Some(span) = error.span()
+        && span.end <= input.len()
+        && input.is_char_boundary(span.start)
+        && input.is_char_boundary(span.end)
+    {
+        let column = input[..span.start].chars().count();
+        let width = input[span].chars().count().max(1);
+        let _ = write!(
+            report,
+            "\n  {input}\n  {}^{}",
+            " ".repeat(column),
+            "~".repeat(width - 1)
+        );
+    }
+    if let Some(hint) = error.hint() {
+        let _ = write!(report, "\nhint: {hint}");
+    }
+    report
 }
 
 /// The argument of `command` in `line`, if `line` is this command.
@@ -524,8 +556,8 @@ mod tests {
     #[test]
     fn panics_are_errors() {
         let session = Session::new();
-        let panic: std::thread::Result<Result<(Evaluated, ()), String>> = Err(Box::new(()));
-        let (output, changes_state, extra) = session.respond(panic);
+        let panic: std::thread::Result<Result<(Evaluated, ()), ParserError>> = Err(Box::new(()));
+        let (output, changes_state, extra) = session.respond("", panic);
         assert!(matches!(output, Output::Error(_)));
         assert!(!changes_state);
         assert!(extra.is_none());
