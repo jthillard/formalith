@@ -1,0 +1,27 @@
+name: Setup Rust
+description: Installs the nightly toolchain of last Monday, with optional components and targets
+
+inputs:
+  components:
+    description: "Components to install, separated by commas (e.g. `rustfmt, clippy`)"
+    default: ""
+  targets:
+    description: "Targets to install, separated by commas (e.g. `wasm32-unknown-unknown`)"
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    # The nightly of last Monday rather than that of `rust-toolchain.toml` (`RUSTUP_TOOLCHAIN` overrides it), so the
+    # cache keyed by the rustc version is rebuilt once a week instead of every day
+    - shell: bash
+      run: echo "RUSTUP_TOOLCHAIN=nightly-$(date -d 'last monday' +%F)" >> "$GITHUB_ENV"
+    - shell: bash
+      env:
+        COMPONENTS: ${{ inputs.components }}
+        TARGETS: ${{ inputs.targets }}
+      run: |
+        args=()
+        for c in ${COMPONENTS//,/ }; do args+=(--component "$c"); done
+        for t in ${TARGETS//,/ }; do args+=(--target "$t"); done
+        rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal "${args[@]}"
