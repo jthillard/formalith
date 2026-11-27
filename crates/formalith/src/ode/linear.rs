@@ -2,12 +2,16 @@
 //!
 //! A root `r` of multiplicity `m` of the characteristic polynomial `{$sum_k a_k r^k$}` gives the solutions
 //! `{$x^j e^(r x)$}` for `{$j < m$}`, written `{$x^j e^(u x) cos(v x)$}` and `{$x^j e^(u x) sin(v x)$}` for a pair of
-//! complex roots `{$u plus.minus i v$}`. A particular solution `{$sum_i u_i y_i$}` is found by variation of
-//! parameters: `{$sum_i u_i' y_i^((k)) = 0$}` for `{$k < n - 1$}` and `{$sum_i u_i' y_i^((n - 1)) = g / a_n$}`.
+//! complex roots `{$u plus.minus i v$}`. A particular solution is found by undetermined coefficients when the
+//! right side is a sum of terms `{$q(x) e^(a x) cos(b x)$}` and `{$q(x) e^(a x) sin(b x)$}`, otherwise as
+//! `{$sum_i u_i y_i$}` by variation of parameters: `{$sum_i u_i' y_i^((k)) = 0$}` for `{$k < n - 1$}` and `{$sum_i u_i' y_i^((n - 1)) = g / a_n$}`.
 
 use std::cmp::Ordering;
 
-use malachite::{Rational, base::num::basic::traits::Zero};
+use malachite::{
+    Rational,
+    base::num::basic::traits::{One, Zero},
+};
 
 use crate::{
     context::{Context, Symbol},
@@ -15,10 +19,14 @@ use crate::{
         complex::C,
         real::{
             R,
-            expr::{Expr, Real, constant_sign, depends, fun, subs, value, variable, zero},
+            expr::{Expr, Real, constant_sign, depends, fun, subs, unary, value, variable, zero},
         },
     },
-    integrate::{poly::Poly, rational},
+    integrate::{
+        factors,
+        poly::{Coefficient, Poly},
+        rational,
+    },
     solve::{Equation, Solution, Solve, polynomial::PolynomialRoots},
     term::{Expand, Term},
 };
@@ -69,7 +77,11 @@ pub(super) fn solve(
         .zip(constants)
         .fold(zero(), |s, (y, c)| s + variable(*c) * y);
     if !rest.is_zero() {
-        res += particular(&basis, &(-rest.clone() / value(lead)), x)?;
+        let g = -rest.clone() / value(lead);
+        res += match undetermined(coefficients, &g, x) {
+            Some(y) => y,
+            None => particular(&basis, &g, x)?,
+        };
     }
     Ok(vec![OdeBranch::Explicit(tidy(&res))])
 }
@@ -117,6 +129,106 @@ fn basis(p: &Poly, x: Symbol) -> OdeResult<Vec<Expr>> {
         return Err(unsolvable());
     }
     Ok(basis)
+}
+
+/// A Gaussian rational `{$a + b i$}`.
+type Gaussian = [Rational; 2];
+
+/// A particular solution of `{$sum_k a_k y^((k)) = a_n g$}` by undetermined coefficients, when every term of `g` is
+/// `{$q(x) e^(a x) cos(b x)$}` or `{$q(x) e^(a x) sin(b x)$}` with a polynomial `q` and rationals `a`, `b` (or
+/// without the cosine and the sine), the real or imaginary part of `{$h(x) e^(s x)$}` with `{$s = a + b i$}`:
+/// `{$P(D) (h e^(s x)) = e^(s x) P(D + s) h$}`, so `h` is a polynomial solution of `{$P(D + s) h = a_n q$}`.
+/// Unlike variation of parameters it needs neither the roots of `P` nor integrals, which are very slow with the
+/// nested radicals of Cardano's formula.
+fn undetermined(coefficients: &[Rational], g: &Expr, x: Symbol) -> Option<Expr> {
+    let lead = &coefficients[coefficients.len() - 1];
+    let p = Poly::new(
+        coefficients
+            .iter()
+            .map(|c| [c / lead, Rational::ZERO])
+            .collect::<Vec<Gaussian>>(),
+    );
+    let terms = match g.expand() {
+        Term::Add(add) => add.iter().cloned().collect(),
+        term => vec![term],
+    };
+    let x_term = variable(x);
+    let mut res = zero();
+    for term in terms {
+        let (q, a, b, sine) = forcing_term(&term, x)?;
+        let h = shifted_solution(&p, &q, &[a.clone(), b.clone()]);
+        let part = |i: usize| {
+            Poly::new(h.coefficients().iter().map(|c| c[i].clone()).collect()).to_term(x)
+        };
+        // `{$q cos(b x) = "Re"(q e^(i b x))$}` and `{$q sin(b x) = "Im"(q e^(i b x))$}`
+        let (cos_part, sin_part) = if sine {
+            (part(1), part(0))
+        } else {
+            (part(0), -part(1))
+        };
+        let angle = value(b) * &x_term;
+        res += fun(Context::EXP, value(a) * &x_term)
+            * (cos_part * fun(Context::COS, angle.clone()) + sin_part * fun(Context::SIN, angle));
+    }
+    Some(res)
+}
+
+/// The polynomial `q`, the rationals `a`, `b` and whether the term is a sine, for a term
+/// `{$q(x) e^(a x) cos(b x)$}` or `{$q(x) e^(a x) sin(b x)$}` (`{$b = 0$}` without them).
+fn forcing_term(term: &Expr, x: Symbol) -> Option<(Poly, Rational, Rational, bool)> {
+    let rate = |u: &Expr| match u.derivative(x) {
+        Term::Value(v)
+            if (u - &(value(v.value.clone()) * variable(x)))
+                .expand()
+                .is_zero() =>
+        {
+            Some(v.value)
+        }
+        _ => None,
+    };
+    let mut a = Rational::ZERO;
+    let mut trigonometric = None;
+    let mut rest = value(Rational::ONE);
+    for factor in factors(term) {
+        match unary(&factor) {
+            Some((Context::EXP, u)) => a += rate(u)?,
+            Some((ident @ (Context::COS | Context::SIN), u)) if trigonometric.is_none() => {
+                trigonometric = Some((rate(u)?, ident == Context::SIN));
+            }
+            _ => rest *= &factor,
+        }
+    }
+    let q = Poly::from_term(&rest, x)?;
+    let (b, sine) = trigonometric.unwrap_or((Rational::ZERO, false));
+    Some((q, a, b, sine))
+}
+
+/// The polynomial `h` solving `{$P(D + s) h = q$}`, of the lowest degree, whose coefficients below the order
+/// `m` of `{$P(r + s)$}` at `{$r = 0$}` (the multiplicity of the root `s` of `P`) are zero: `{$f = h^((m))$}` is
+/// found from its leading coefficient down, then integrated `m` times.
+fn shifted_solution(p: &Poly<Gaussian>, q: &Poly, s: &Gaussian) -> Poly<Gaussian> {
+    let c = p.shift(s);
+    let m = c.order_at_zero();
+    let d = q.coefficients().len().saturating_sub(1);
+    let mut f = vec![Gaussian::zero(); d + 1];
+    for j in (0..=d).rev() {
+        let mut r: Gaussian = [q.coefficient(j), Rational::ZERO];
+        // `{$D^t x^(j + t) = (j + t)! / j! x^j$}`
+        let mut weight = Rational::ONE;
+        for t in 1..=d - j {
+            weight *= Rational::from(j + t);
+            let term = c.coefficient(m + t).times(&f[j + t]);
+            r = r.minus(&[&term[0] * &weight, &term[1] * &weight]);
+        }
+        f[j] = r.divide(&c.coefficient(m));
+    }
+    let mut h = vec![Gaussian::zero(); m];
+    for (j, fj) in f.into_iter().enumerate() {
+        // `{$x^j$}` integrated `m` times is `{$j! / (j + m)! x^(j + m)$}`
+        let scale = (1..=m).fold(Rational::ONE, |s, i| s / Rational::from(j + i));
+        h.push([&fj[0] * &scale, &fj[1] * &scale]);
+    }
+    Poly::new(h)
 }
 
 /// A particular solution of `{$sum_k a_k y^((k)) = a_n g$}` by variation of parameters, `basis` being a basis of

@@ -404,7 +404,7 @@ fn linear(u: &Expr, x: Symbol) -> Option<Expr> {
 }
 
 /// The factors of a product, or the term itself.
-fn factors(term: &Expr) -> Vec<Expr> {
+pub(crate) fn factors(term: &Expr) -> Vec<Expr> {
     match term {
         Term::Mul(mul) => {
             let mut factors: Vec<_> = mul.iter().cloned().collect();

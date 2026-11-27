@@ -230,3 +230,11 @@ fn bug_dsolve_complex_roots_with_sin_2x_forcing() {
     // The sums and constant factors of the variation of parameters used up the integrator's depth
     regression("y'' - y' + 3*y = sin(2*x)");
 }
+
+#[test]
+fn bug_dsolve_cardano_roots_with_forcing_is_slow() {
+    // Variation of parameters integrated quotients of the Wronskian with the nested radicals of Cardano's
+    // formula, the particular solution now comes from undetermined coefficients
+    regression("1*y''' + -1*y'' + -3*y' + -2*y = 1");
+    regression("2*y''' + -2*y'' + 3*y' + 1*y = cos(3*x)");
+}
