@@ -621,11 +621,14 @@ fn inequalities_in_several_unknowns() {
         solve("solve(x^2 + y^2 < 1, y, x)"),
         ok("y in (-1, 1), x in (-sqrt(-y^2+1), sqrt(-y^2+1))")
     );
-    assert_eq!(
-        solve("x^2 + y^2 + z^2 < 1"),
-        ok(
-            "x in (-1, 1), y in (-sqrt(-x^2+1), sqrt(-x^2+1)), z in (-sqrt(-x^2-y^2+1), sqrt(-x^2-y^2+1))"
-        )
+    // The order of `x^2` and `y^2` in a sum depends on the symbol the process interned first
+    let ball = solve("x^2 + y^2 + z^2 < 1");
+    assert!(
+        ["-x^2-y^2+1", "-y^2-x^2+1"].iter().any(|r| ball
+            == ok(&format!(
+                "x in (-1, 1), y in (-sqrt(-x^2+1), sqrt(-x^2+1)), z in (-sqrt({r}), sqrt({r}))"
+            ))),
+        "{ball:?}"
     );
 }
 
