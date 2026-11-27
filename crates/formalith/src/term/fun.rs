@@ -38,6 +38,8 @@ pub trait Function<T: Set>: Debug + DynClone + DynEq + DynHash + Flags + PrettyP
     fn cmp_dyn(&self, other: &dyn Function<T>) -> Ordering;
     /// Add the symbols of the arguments to `symbols`.
     fn collect_symbols(&self, symbols: &mut BTreeSet<Symbol>);
+    /// Whether the function is `ident` or one of its arguments mentions it, see [`Term::mentions_function`].
+    fn mentions_function(&self, ident: Symbol) -> bool;
     /// Get the identifier of the function as a string.
     fn get_ident_as_str(&self) -> &str {
         // A held sum prints like a sum, so that it can be parsed back
@@ -80,6 +82,9 @@ impl<From: Set, T: Set> Function<T> for Fun<From, T> {
         for arg in &self.args {
             arg.collect_symbols(symbols);
         }
+    }
+    fn mentions_function(&self, ident: Symbol) -> bool {
+        self.ident == ident || self.args.iter().any(|arg| arg.mentions_function(ident))
     }
     fn cmp_dyn(&self, other: &dyn Function<T>) -> Ordering {
         self.ident.cmp(&other.get_ident()).then_with(|| {

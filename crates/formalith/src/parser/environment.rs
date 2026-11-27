@@ -903,15 +903,18 @@ impl Parser<'_> {
             res
         };
         let calls: Vec<_> = args.iter().flat_map(|arg| identifiers(arg)).collect();
+        // Derivatives of builtins and definitions, like `f'(x)`, aren't the unknown function
+        let unknown = |symbol: Symbol| {
+            Context::builtin_arity(symbol).is_none()
+                && self.env.is_none_or(|env| env.get(symbol).is_none())
+        };
         calls
             .iter()
-            .find(|(_, next)| *next == TokenKind::Prime)
+            .find(|(symbol, next)| *next == TokenKind::Prime && unknown(*symbol))
             .or_else(|| {
-                calls.iter().find(|(symbol, next)| {
-                    *next == TokenKind::OpenParen
-                        && Context::builtin_arity(*symbol).is_none()
-                        && self.env.is_none_or(|env| env.get(*symbol).is_none())
-                })
+                calls
+                    .iter()
+                    .find(|(symbol, next)| *next == TokenKind::OpenParen && unknown(*symbol))
             })
             .map(|(symbol, _)| *symbol)
     }

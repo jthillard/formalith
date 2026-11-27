@@ -225,6 +225,20 @@ impl<T: Set> Term<T> {
             Self::Fun(fun) => fun.collect_symbols(symbols),
         }
     }
+    /// Whether the function `ident` appears in the expression, including in exponents and function arguments of
+    /// any set.
+    #[must_use]
+    pub fn mentions_function(&self, ident: Symbol) -> bool {
+        match self {
+            Self::Value(_) | Self::Symbol(_) => false,
+            Self::Add(add) => add.iter().any(|term| term.mentions_function(ident)),
+            Self::Mul(mul) => mul.iter().any(|term| term.mentions_function(ident)),
+            Self::Pow(pow) => {
+                pow.base.mentions_function(ident) || pow.exponant.mentions_function(ident)
+            }
+            Self::Fun(fun) => fun.mentions_function(ident),
+        }
+    }
     /// Return `self` as [Value] if self is a `Value`, None otherwise.
     pub fn as_value(self) -> Option<Value<T>> {
         match self {

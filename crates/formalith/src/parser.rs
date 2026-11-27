@@ -356,6 +356,124 @@ impl Parser<'_> {
         Ok(Some(res))
     }
 
+    /// Parse `f'(a)`, `f''(a)`... outside of the unknown function of a differential equation: the derivative of the
+    /// function of one variable `f` (a definition, a builtin or an unknown function) at `a`. It is differentiated
+    /// in a new variable, which no free symbol of a definition captures, then evaluated at `a`; a derivative staying
+    /// unevaluated is only kept at a symbol, `g'(x) = diff(g(x), x)`, since `diff(g(2), 2)` means nothing.
+    fn parse_prime_derivative<E: SetParseExpression>(
+        &mut self,
+        set: E,
+    ) -> Result<Option<Term<E>>, ParserError> {
+        let TokenKind::Ident(name) = &self.token.kind else {
+            return Ok(None);
+        };
+        let function = Symbol::new(name.as_str());
+        if self.ode.is_some_and(|(unknown, _)| unknown == function) {
+            return Ok(None);
+        }
+        let mut next = self.clone();
+        next.next_token();
+        if next.token.kind != TokenKind::Prime {
+            return Ok(None);
+        }
+        *self = next;
+        let mut order = 0;
+        while self.token.kind == TokenKind::Prime {
+            order += 1;
+            self.next_token();
+        }
+        let name = function.name();
+        let primed = format!("{name}{}", "'".repeat(order));
+        if self.token.kind != TokenKind::OpenParen {
+            return Err(ParserError::new(format!("expected `(` after `{primed}`")));
+        }
+        let single_variable = self.env.and_then(|env| env.get(function)).map_or_else(
+            || {
+                !Context::is_builtin_constant(function)
+                    && Context::builtin_arity(function)
+                        .is_none_or(|(min, max)| min <= 1 && 1 <= max)
+            },
+            |definition| definition.params().len() == 1,
+        );
+        if !single_variable {
+            return Err(ParserError::new(format!(
+                "`{primed}` needs a function of a single variable"
+            )));
+        }
+        self.next_token();
+        let args = self.parse_args_source()?;
+        let [arg] = args.as_slice() else {
+            return Err(ParserError::new(format!(
+                "`{primed}` expects 1 argument, found {}",
+                args.len()
+            )));
+        };
+        let point = self.parse_source(arg, set)?;
+        let point_symbols = point.symbols();
+        let used = |symbol: Symbol| {
+            symbol == function
+                || point_symbols.contains(&symbol)
+                || self.env.is_some_and(|env| env.get(symbol).is_some())
+                || Context::builtin_arity(symbol).is_some()
+                || set.is_constant(symbol.name())
+        };
+        // A free symbol of the definition shows in `f(t)`, unless it is `t`
+        let first = Symbol::fresh(&["t"], "t", used)
+            .next()
+            .expect("The sequence is infinite");
+        let mut taken = self
+            .parse_source(&format!("{name}({})", first.name()), set)?
+            .symbols();
+        taken.insert(first);
+        let variable = Symbol::fresh(&["t"], "t", |symbol| {
+            used(symbol) || taken.contains(&symbol)
+        })
+        .next()
+        .expect("The sequence is infinite");
+        let derivative = |at: Symbol| -> Result<Term<E>, ParserError> {
+            let at_term = Term::Symbol(SymbolTerm::new(at, set));
+            let mut res = self.parse_source(&format!("{name}({})", at.name()), set)?;
+            for _ in 0..order {
+                res = Term::Fun(Box::new(Fun::new(
+                    Context::DIFF,
+                    vec![res, at_term.clone()],
+                    set,
+                )))
+                .normalize();
+            }
+            Ok(res)
+        };
+        let res = derivative(variable)?;
+        if !res.mentions_function(Context::DIFF) {
+            let variable = Term::Symbol(SymbolTerm::new(variable, set));
+            return Ok(Some(
+                Term::Fun(Box::new(Fun::new(
+                    Context::SUBS,
+                    vec![res, variable, point],
+                    set,
+                )))
+                .normalize(),
+            ));
+        }
+        match point {
+            Term::Symbol(symbol) => derivative(symbol.symbol).map(Some),
+            _ => Err(ParserError::new(format!(
+                "the derivative of `{name}` can't be evaluated at `{arg}`"
+            ))),
+        }
+    }
+
+    /// Parse `source` with the environment of this parser, normalized.
+    fn parse_source<E: Set>(&self, source: &str, set: E) -> Result<Term<E>, ParserError> {
+        let mut parser = Parser::new(source);
+        parser.env = self.env;
+        parser.ode = self.ode;
+        let term = ParseExpression::<E>::parse_expression(&mut parser, 0, set)?
+            .ok_or_else(|| ParserError::new(format!("Expression expected in `{source}`")))?;
+        parser.expect_eof()?;
+        Ok(term.normalize())
+    }
+
     /// Parse the input as a differential equation for `function(x)`, see [`Parser::parse_ode_function`].
     #[must_use]
     pub(crate) const fn with_ode(mut self, function: Symbol, x: Symbol) -> Self {
@@ -485,6 +603,7 @@ where
         self.priority = priority;
         let mut self_in_coefficient_set = self.clone();
         let node = self.parse_ode_function(set)?;
+        let node = node.map_or_else(|| self.parse_prime_derivative(set), |n| Ok(Some(n)))?;
         // Definitions are expanded in the outermost set, before sets parse identifiers (like scalars of `M`)
         let node = node.map_or_else(|| self.parse_definition(set), |n| Ok(Some(n)))?;
         let node = node.map_or_else(|| set.parse_expression(self), |n| Ok(Some(n)))?;

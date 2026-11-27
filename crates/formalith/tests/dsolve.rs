@@ -285,3 +285,12 @@ fn unsupported() {
         );
     }
 }
+
+#[test]
+fn prime_derivatives_of_known_functions() {
+    // `sin'` is a derivative, not the unknown function
+    assert_eq!(
+        dsolve("dsolve(sin'(x) + y' = 0)"),
+        dsolve("dsolve(cos(x) + y' = 0)")
+    );
+}

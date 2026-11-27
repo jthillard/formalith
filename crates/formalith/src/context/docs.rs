@@ -336,10 +336,12 @@ pub static BUILTIN_DOCS: [BuiltinDoc; Context::BUILTIN_NAMES.len()] = [
         Calculus,
         "diff(f, x, [n])",
         "n-th derivative of f with respect to x (the first by default).",
-        "On a matrix, differentiates each entry.",
+        "On a matrix, differentiates each entry. The prime notation f'(a), f''(a)... is the derivative of a function \
+         of one variable f (a definition, a builtin or an unknown function, kept as diff(g(x), x) at a symbol) at a.",
         &[
             ex("diff(x^3, x)", "3 x^2"),
             ex("diff(sin(x), x, 2)", "-sin(x)"),
+            ex("sin''(2 x)", "-sin(2 x)"),
             ex_in(
                 "M",
                 "diff([[x^2, x], [1, x^3]], x)",

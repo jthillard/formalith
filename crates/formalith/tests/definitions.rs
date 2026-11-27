@@ -173,3 +173,32 @@ fn builtin_constants_cannot_be_defined() {
         assert!(ok(statement).is_err(), "{statement}");
     }
 }
+
+#[test]
+fn prime_derivatives() {
+    assert_eq!(eval(&["f(x) := x^3", "f'(x)"]), ok("3*x^2"));
+    assert_eq!(eval(&["f(x) := x^3", "f''(2)"]), Ok("12".to_owned()));
+    assert_eq!(eval(&["f(x) := x^3", "f'(2*y)"]), ok("12*y^2"));
+    assert_eq!(eval(&["f(x) := x^3", "2f'(1) + f'(1)f''(1)"]), ok("24"));
+    assert_eq!(
+        eval(&["f(x) := x^3", "h(x) := f'(x) + 1", "h(1)"]),
+        Ok("4".to_owned())
+    );
+    assert_eq!(eval(&["f(x) := x^3", "f'''(x)"]), ok("6"));
+    // The free symbol `t` of the body isn't the variable of the derivative
+    assert_eq!(eval(&["f(x) := x*t", "f'(2)"]), ok("t"));
+    assert_eq!(eval(&["f(x) := x*t", "f'(t)"]), ok("t"));
+    assert_eq!(eval(&["f(x) := x^2*y", "f'(y)"]), ok("2*y^2"));
+    assert_eq!(eval(&["t := 5", "f(x) := x^2", "f'(1)"]), ok("2"));
+    // Builtins and unknown functions
+    assert_eq!(ok("sin'(x)"), ok("cos(x)"));
+    assert_eq!(ok("exp''(2*x)"), ok("exp(2*x)"));
+    assert_eq!(ok("sin'(pi)"), ok("-1"));
+    assert_eq!(ok("g'(x)"), ok("diff(g(x), x)"));
+    assert!(ok("g'(2)").is_err());
+    assert!(ok("f'").is_err());
+    assert!(ok("x' + 1").is_err());
+    assert!(ok("pi'(1)").is_err());
+    assert!(ok("sin'(1, 2)").is_err());
+    assert!(eval(&["f(x, y) := x*y", "f'(1)"]).is_err());
+}

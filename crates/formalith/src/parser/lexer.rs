@@ -75,7 +75,7 @@ pub enum TokenKind {
     NotEqual,
     /// !, a factorial `n!`
     Bang,
-    /// ', a derivative in `dsolve`
+    /// ', a derivative `f'(x)`
     Prime,
     /// End Of File
     Eof,
