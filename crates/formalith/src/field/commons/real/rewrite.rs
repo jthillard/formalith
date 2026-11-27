@@ -61,26 +61,28 @@ pub(super) fn is_trigonometric_zero(term: &Expr) -> bool {
     linearized != *term && linearized.expand().is_zero()
 }
 
-/// Rewrite the products of `sin` and `cos` as sums, `{$sin a cos b = (sin(a + b) + sin(a - b))/2$}`,
+/// Rewrite the products and powers of `sin` and `cos` as sums, `{$sin a cos b = (sin(a + b) + sin(a - b))/2$}`,
 /// `{$cos a cos b = (cos(a - b) + cos(a + b))/2$}`, `{$sin a sin b = (cos(a - b) - cos(a + b))/2$}`, so that
-/// `{$cos(2 x) cos(3 x) + sin(2 x) sin(3 x) = cos x$}` once expanded.
+/// `{$cos(2 x) cos(3 x) + sin(2 x) sin(3 x) = cos x$}` and `{$cos(x)^3 = (3 cos x + cos(3 x))/4$}` once expanded.
 fn products_to_sums(term: &Expr) -> Expr {
     map_tree(term, &|t| {
-        let Term::Mul(mul) = t else { return None };
         let mut factors = vec![];
-        let mut rest = value(mul.coefficient.clone());
-        for factor in mul {
-            let factor = products_to_sums(factor);
-            let (base, n) = match &factor {
-                Term::Pow(pow) => (&*pow.base, pow.exponant.to_i64().filter(|n| *n > 0)),
-                _ => (&factor, Some(1)),
-            };
-            match (unary(base), n.and_then(|n| usize::try_from(n).ok())) {
-                (Some((ident @ (Context::SIN | Context::COS), arg)), Some(n)) => {
-                    factors.extend(std::iter::repeat_n((ident, arg.clone()), n));
+        let mut rest = one();
+        match t {
+            Term::Mul(mul) => {
+                rest = value(mul.coefficient.clone());
+                for factor in mul {
+                    if !trigonometric_factor(factor, &mut factors) {
+                        rest *= &products_to_sums(factor);
+                    }
                 }
-                _ => rest *= &factor,
             }
+            Term::Pow(_) => {
+                if !trigonometric_factor(t, &mut factors) {
+                    return None;
+                }
+            }
+            _ => return None,
         }
         if factors.len() < 2 || factors.len() > MAX_LINEARIZED_FACTORS {
             return None;
@@ -115,6 +117,24 @@ fn products_to_sums(term: &Expr) -> Expr {
                 .fold(Term::zero(R), |res, (c, f, a)| res + value(c) * fun(f, a)),
         )
     })
+}
+
+/// Push `factor` to `factors` as `{$(f, a)$}` repeated `n` times when it is `{$f(a)^n$}` for `f` being `sin` or
+/// `cos` and a positive integer `n`, its argument linearized. Whether it was one.
+fn trigonometric_factor(factor: &Expr, factors: &mut Vec<(crate::context::Symbol, Expr)>) -> bool {
+    let (base, n) = match factor {
+        Term::Pow(pow) => (&*pow.base, pow.exponant.to_i64().filter(|n| *n > 0)),
+        _ => (factor, Some(1)),
+    };
+    match (unary(base), n.and_then(|n| usize::try_from(n).ok())) {
+        (Some((ident @ (Context::SIN | Context::COS), arg)), Some(n))
+            if n <= MAX_LINEARIZED_FACTORS =>
+        {
+            factors.extend(std::iter::repeat_n((ident, products_to_sums(arg)), n));
+            true
+        }
+        _ => false,
+    }
 }
 
 /// `term` with its hyperbolic functions written with exponentials.

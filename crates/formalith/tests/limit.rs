@@ -100,6 +100,8 @@ fn limits_of_oscillating_functions() {
     // Angles linked by `{$g_2 ~ k g_1 + d$}`
     assert_eq!(lim("lim(sin(x)^2+cos(x)^2, x, oo)"), "1");
     assert_eq!(lim("lim(sin(2*x)-2*sin(x)*cos(x), x, oo)"), "0");
+    // Powers of `cos` written as sums, `{$cos(t)^2 = (1 + cos(2 t))/2$}`
+    assert_eq!(lim("lim(cos(x)^2-cos(2*x)/2, x, oo)"), "1/2");
     assert_eq!(lim("lim(cos(x+pi)+cos(x), x, oo)"), "0");
 }
 
