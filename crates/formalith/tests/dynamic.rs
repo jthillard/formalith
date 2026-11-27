@@ -60,6 +60,23 @@ fn eval() {
         eval("smith([[2,4],[6,8]])", "M(Z/6)"),
         eval("[[2,0],[0,2]]", "M(Z/6)")
     );
+    // Invertible over Z only with a determinant ±1
+    for input in [
+        "[[2,0],[0,2]]^-1",
+        "1/[[2,0],[0,2]]",
+        "[[1,1],[0,1]]/[[2,0],[0,2]]",
+        "[[2,1,0],[1,1,0],[0,0,2]]^-1",
+    ] {
+        assert_eq!(eval(input, "M(Z)"), Ok("undefined".to_owned()), "{input}");
+    }
+    assert_eq!(
+        eval("[[1,1],[0,1]]^-1", "M(Z)"),
+        eval("[[1,-1],[0,1]]", "M(Z)")
+    );
+    assert_eq!(
+        eval("[[2,0],[0,2]]^-1", "M"),
+        eval("[[1/2,0],[0,1/2]]", "M")
+    );
     assert_eq!(eval("x+1", "Z/2[x]"), Ok("x + 1".to_owned()));
     assert_eq!(eval("quo(17, 5)", "Z"), Ok("3".to_owned()));
     assert_eq!(eval("rem(-17, 5)", "Z"), Ok("3".to_owned()));

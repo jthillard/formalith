@@ -562,6 +562,8 @@ pub trait MatrixEntries: Ring {
     fn factorint(n: &Self::Element) -> Option<Matrix<Self>>;
     /// The symbol `x` as an element.
     fn from_symbol(set: Self, x: Symbol) -> Option<Self::Element>;
+    /// Whether `element` is invertible in `set`, `None` when it is unknown (a symbolic entry).
+    fn is_unit(set: Self, element: &Self::Element) -> Option<bool>;
     /// The builtin `ident` (see [`Context::maps_entries`]) evaluated at `entry` and the other arguments `args`.
     fn apply_builtin(
         set: Self,
@@ -607,6 +609,9 @@ impl<T: Ring> MatrixEntries for T {
     }
     default fn from_symbol(_: Self, _: Symbol) -> Option<Self::Element> {
         None
+    }
+    default fn is_unit(set: Self, element: &Self::Element) -> Option<bool> {
+        Some(set.try_inv(element).is_some())
     }
     default fn apply_builtin(
         _: Self,
@@ -657,6 +662,15 @@ impl<T: Ring> MatrixEntries for TermSet<T> {
     }
     default fn from_symbol(set: Self, x: Symbol) -> Option<Self::Element> {
         Some(Term::Symbol(SymbolTerm::new(x, *set.get_set())))
+    }
+    /// Whether a value is invertible in the entries' set, like `{$plus.minus 1$}` in `{$ZZ$}`, unknown for a
+    /// symbolic entry which doesn't vanish, whose inverse is a symbolic fraction.
+    default fn is_unit(set: Self, element: &Self::Element) -> Option<bool> {
+        match element.normalize() {
+            Term::Value(value) => Some(value.set.try_inv(&value.value).is_some()),
+            _ if set.vanishes(element) => Some(false),
+            _ => None,
+        }
     }
     /// The builtin of the entries' set, normalized, so that it is evaluated by their own rules.
     default fn apply_builtin(
@@ -864,9 +878,26 @@ impl MatrixEntries for TermSet<C<R<Rational>>> {
 }
 
 impl<T: Ring> M<T> {
+    /// The inverse of `matrix`, which needs a determinant invertible in the entries' set: `{$mat(2, 0; 0, 2)$}`
+    /// isn't invertible over `{$ZZ$}`.
+    ///
+    /// # Errors
+    /// If `matrix` isn't square or isn't invertible.
+    fn inverse(&self, matrix: &Matrix<T>) -> MatrixResult<Matrix<T>> {
+        // Up to sign, the constant coefficient of the characteristic polynomial, computed without division
+        let det = matrix
+            .charpoly_coefficients()?
+            .pop()
+            .expect("A constant coefficient");
+        if T::is_unit(self.scalar_sub_set, &det) == Some(false) {
+            return Err(MatrixError::NotInvertible);
+        }
+        matrix.inv()
+    }
+
     /// Whether `a` has no value because of the sizes of its matrix values: a sum or a product of matrices of
     /// incompatible sizes (normalization merges compatible ones), a non-square matrix plus a scalar, a power of a
-    /// non-square matrix, a negative power of a singular one, or a builtin needing a square matrix (`det`, `trace`,
+    /// non-square matrix, a negative power of a non-invertible one, or a builtin needing a square matrix (`det`, `trace`,
     /// `charpoly`, `eigenvalues`, `eigenvectors`) of a non-square one.
     fn is_undefined_operation(&self, a: &Term<Self>) -> bool {
         const fn matrix<T: Set>(term: &Term<M<T>>) -> Option<&Matrix<T>> {
@@ -911,7 +942,7 @@ impl<T: Ring> M<T> {
                                 &**pow.exponant,
                                 Term::Value(Value { value: n, .. })
                                     if self.get_exponant_set().is_strictly_negative(n)
-                            ) && matches!(m.inv(), Err(MatrixError::NotInvertible))
+                            ) && matches!(self.inverse(m), Err(MatrixError::NotInvertible))
                         }))
             }
             Term::Fun(fun) => {
@@ -1036,7 +1067,7 @@ impl<T: Ring> Semiring for M<T> {
                     }),
                 ) = (&**base, &***exponant)
                     && self.get_exponant_set().is_strictly_negative(exponant)
-                    && let Ok(inverse) = matrix.inv()
+                    && let Ok(inverse) = self.inverse(matrix)
                 {
                     return Term::Pow(term::Pow::new(
                         Term::Value(Value::new(VectorSpaceElement::Vector(inverse), *self)),
@@ -1120,7 +1151,9 @@ impl<T: Ring> Ring for M<T> {
                 .scalar_sub_set
                 .try_inv(scalar)
                 .map(|elem| VectorSpaceElement::Scalar(elem, self.scalar_sub_set)),
-            VectorSpaceElement::Vector(matrix) => matrix.inv().ok().map(VectorSpaceElement::Vector),
+            VectorSpaceElement::Vector(matrix) => {
+                self.inverse(matrix).ok().map(VectorSpaceElement::Vector)
+            }
         }
     }
 
