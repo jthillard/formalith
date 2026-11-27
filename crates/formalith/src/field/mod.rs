@@ -347,6 +347,19 @@ pub trait SetParseExpression: Set {
     fn is_constant(&self, _name: &str) -> bool {
         false
     }
+
+    /// Check if the arguments of the builtin `ident` are parsed in `{$ZZ$}` rather than in this set, like those of
+    /// `factorial` in `{$ZZ\/n ZZ$}`, so that `factorial(8)` isn't `factorial(1)` in `{$ZZ\/7 ZZ$}`. The function
+    /// is then a [`Fun`](crate::term::Fun) with arguments in `{$ZZ$}`, converted with [`Self::reduce_integer_term`].
+    fn integer_arguments(&self, _ident: Symbol) -> bool {
+        false
+    }
+
+    /// Convert an expression of `{$ZZ$}` to this set, for the sets with [`Self::integer_arguments`]. Returns
+    /// `None` when it can't be converted.
+    fn reduce_integer_term(&self, _term: &Term<integer::Z<Integer>>) -> Option<Term<Self>> {
+        None
+    }
 }
 
 /// Trait to cast an expression from a set to another set.

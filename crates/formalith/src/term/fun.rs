@@ -5,12 +5,14 @@ use std::{cmp::Ordering, collections::BTreeSet, fmt::Debug, hash::Hash};
 use dyn_clone::DynClone;
 use dyn_eq::DynEq;
 use dyn_hash::DynHash;
+use malachite::{Integer, base::num::basic::traits::One};
 use owo_colors::colors::Cyan;
 
 use crate::{
     context::{Context, Symbol},
     field::{
         Derivable, Monoid, Ring, Set,
+        integer::Z,
         matrix::{M, MatrixEntries, VectorSpaceElement},
         real::{Real, rootof},
     },
@@ -565,6 +567,85 @@ where
         Context::DEGREE => eval_degree(fun),
         _ => eval_algebra_builtin(fun),
     }
+}
+
+/// Evaluate the builtins `sum(f, k, a, b)` and `product(f, k, a, b)` whose arguments are in `{$ZZ$}`, with integer
+/// bounds and at most [`crate::sum::MAX_TERMS`] terms, by adding or multiplying the terms `{$f(k)$}` converted to
+/// `T` with `convert`. Returns `None` for other functions, or when a term can't be converted.
+pub(crate) fn eval_integer_sum<T: Ring>(
+    fun: &dyn Function<T>,
+    convert: impl Fn(&Term<Z<Integer>>) -> Option<Term<T>>,
+) -> Option<Term<T>> {
+    let product = match fun.get_ident() {
+        Context::SUM => false,
+        Context::PRODUCT => true,
+        _ => return None,
+    };
+    let [f, Term::Symbol(k), Term::Value(a), Term::Value(b)] =
+        fun.get_args::<Z<Integer>>()?.as_slice()
+    else {
+        return None;
+    };
+    let count = if b.value < a.value {
+        0
+    } else {
+        u64::try_from(&(&b.value - &a.value + Integer::ONE)).ok()?
+    };
+    if count > crate::sum::MAX_TERMS {
+        return None;
+    }
+    let set = fun.get_set();
+    let mut res = if product {
+        Term::one(set)
+    } else {
+        Term::zero(set)
+    };
+    let mut i = a.value.clone();
+    for _ in 0..count {
+        let term = convert(&substitute_integer(
+            f,
+            k.symbol,
+            &Term::constant(i.clone(), Z),
+        )?)?;
+        res = if product { res * term } else { res + term };
+        i += Integer::ONE;
+    }
+    Some(res)
+}
+
+/// Replace `symbol` by `value` in an expression of `{$ZZ$}`, like [`Term::substitute`] but also in exponents,
+/// which are in `{$ZZ$}` too: `{$x^k$}` is `{$x^2$}` for `{$k = 2$}`.
+fn substitute_integer(
+    term: &Term<Z<Integer>>,
+    symbol: Symbol,
+    value: &Term<Z<Integer>>,
+) -> Option<Term<Z<Integer>>> {
+    let recurse = |term: &Term<Z<Integer>>| substitute_integer(term, symbol, value);
+    if !term.symbols().contains(&symbol) {
+        return Some(term.clone());
+    }
+    Some(match term {
+        Term::Pow(pow) => recurse(&pow.base)?.pow(&recurse(&pow.exponant)?),
+        Term::Mul(mul) => mul
+            .factors
+            .iter()
+            .try_fold(Term::constant(mul.coefficient.clone(), Z), |res, factor| {
+                Some(res * recurse(factor)?)
+            })?,
+        Term::Add(add) => add
+            .terms
+            .iter()
+            .try_fold(Term::zero(Z), |res, term| Some(res + recurse(term)?))?,
+        Term::Fun(fun) => {
+            let args = fun
+                .get_args::<Z<Integer>>()?
+                .iter()
+                .map(recurse)
+                .collect::<Option<_>>()?;
+            Term::Fun(Box::new(Fun::new(fun.get_ident(), args, Z))).normalize()
+        }
+        Term::Value(_) | Term::Symbol(_) => value.clone(),
+    })
 }
 
 /// Evaluate the builtins `expand(u)` and `simplify(u)`, which rewrite their argument in any ring. Returns `None`

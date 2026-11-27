@@ -674,6 +674,33 @@ impl Parser<'_> {
         Ok(args)
     }
 
+    /// Parse again in `Z`, from `start`, the operand of postfix factorials and the factorials, for the sets whose
+    /// factorials have [`SetParseExpression::integer_arguments`]: `8!` is `factorial(8)` in `Z/7`, not `1!`.
+    /// Returns `None` (keeping the parser unchanged) when it doesn't span the same tokens or isn't an integer
+    /// expression.
+    fn parse_integer_factorial<E: SetParseExpression>(
+        &mut self,
+        start: Option<Self>,
+        set: E,
+    ) -> Option<Term<E>> {
+        let mut parser = start?;
+        // The operand and its factorials, without the operators after them
+        let term =
+            ParseExpression::<Z<Integer>>::parse_expression(&mut parser, Op::Pow.get_priority(), Z)
+                .ok()??;
+        let mut end = self.clone();
+        while end.token.kind == TokenKind::Bang {
+            end.next_token();
+        }
+        if parser.start_span != end.start_span {
+            return None;
+        }
+        let res = set.reduce_integer_term(&term)?;
+        parser.priority = self.priority;
+        *self = parser;
+        Some(res)
+    }
+
     /// parse arguments of a function, separated by a comma.
     fn parse_args<E: Set>(&mut self, arg_set: E) -> Result<Vec<Term<E>>, ParserError> {
         let scalar_of_matrix = std::mem::replace(&mut self.scalar_of_matrix, false);
@@ -723,6 +750,10 @@ where
             return Ok(None);
         }
         self.priority = priority;
+        // Factorials of integers are parsed again in `Z`, see `Parser::parse_integer_factorial`
+        let start = set
+            .integer_arguments(Context::FACTORIAL)
+            .then(|| self.clone());
         let mut self_in_coefficient_set = self.clone();
         let node = self.parse_ode_function(set)?;
         let node = node.map_or_else(|| self.parse_prime_derivative(set), |n| Ok(Some(n)))?;
@@ -775,6 +806,12 @@ where
                             let count = args.len();
                             (Term::Fun(Box::new(Fun::new(ident, args, set))), count)
                         }
+                        // Integers, like `factorial(8)` in `Z/7`, whose argument isn't `1`
+                        _ if set.integer_arguments(ident) => {
+                            let args = self.parse_args(Z)?;
+                            let count = args.len();
+                            (Term::Fun(Box::new(Fun::new(ident, args, set))), count)
+                        }
                         _ => {
                             let args = self.parse_args(set)?;
                             let count = args.len();
@@ -801,6 +838,12 @@ where
                     node = fun.normalize();
                 }
                 // Postfix factorials bind tighter than any operator: `{$n!^2 = (n!)^2$}`, `{$2^3! = 2^(3!)$}`
+                if self.token.kind == TokenKind::Bang
+                    && let Some(res) = self.parse_integer_factorial(start, set)
+                {
+                    node = res;
+                    node_in_coefficient_set = Err(ParserError::new("factorial of a coefficient"));
+                }
                 while self.token.kind == TokenKind::Bang {
                     self.next_token();
                     node = Term::Fun(Box::new(Fun::new(Context::FACTORIAL, vec![node], set)))

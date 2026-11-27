@@ -150,3 +150,50 @@ fn factor_of_constants() {
     assert_eq!(eval("factor(6)"), Ok("6".to_owned()));
     assert_eq!(eval("factor(7*x^2 + 3)"), Ok("3".to_owned()));
 }
+
+#[test]
+fn integer_arguments_are_not_reduced() {
+    assert_eq!(eval("factorial(8)", 7), "0");
+    assert_eq!(eval("factorial(6)", 7), "6");
+    assert_eq!(eval("8!", 7), "0");
+    assert_eq!(eval("3 + 8!^2", 7), "3");
+    assert_eq!(eval("2^3!", 7), "1");
+    assert_eq!(eval("factorial(n) - n!", 7), "0");
+    assert_eq!(eval("factorial(-1)", 7), "undefined");
+    assert_eq!(eval("isprime(7)", 7), "1");
+    assert_eq!(eval("isprime(14)", 7), "0");
+    // 120 = 1 mod 7
+    assert_eq!(eval("binomial(10, 3)", 7), "1");
+    assert_eq!(eval("gcd(14, 21)", 7), "0");
+    assert_eq!(eval("gcd(14, 21)", 5), "2");
+    assert_eq!(eval("rem(10, 4)", 7), "2");
+    assert_eq!(eval("quo(10, 4)", 7), "2");
+    assert_eq!(eval("factorint(56)", 7), "factorint(56)");
+}
+
+#[test]
+fn finite_sums_and_products() {
+    assert_eq!(eval("sum(k, k, 1, 7)", 7), "0");
+    assert_eq!(eval("sum(k, k, 1, 8)", 7), "1");
+    assert_eq!(eval("sum(k, k, 3, 1)", 7), "0");
+    assert_eq!(eval("sum(x^k, k, 0, 3)", 7), eval("x^3 + x^2 + x + 1", 7));
+    // 1 + 1/2 + 1/3 = 11/6 = 4 * 6 = 3
+    assert_eq!(eval("sum(1/k, k, 1, 3)", 7), "3");
+    assert_eq!(eval("sum(binomial(7, k), k, 0, 7)", 7), "2");
+    assert_eq!(eval("sum(sum(j, j, 1, k), k, 1, 3)", 7), "3");
+    assert_eq!(eval("product(k, k, 1, 8)", 7), "0");
+    assert_eq!(eval("product(k, k, 1, 6)", 7), "6");
+    assert_eq!(eval("sum(k, k, 1, n)", 7), "sum(k, k, 1, n)");
+}
+
+#[test]
+fn integer_arguments_of_definitions() {
+    let mut env = Environment::new();
+    SetChoice::Zn(7)
+        .eval("f(n) := n!", false, &mut env)
+        .unwrap();
+    assert_eq!(
+        SetChoice::Zn(7).eval("f(8)", false, &mut env),
+        Ok("0".to_owned())
+    );
+}

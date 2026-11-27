@@ -298,7 +298,7 @@ pub static BUILTIN_DOCS: [BuiltinDoc; Context::BUILTIN_NAMES.len()] = [
         Arithmetic,
         "gcd(a, b)",
         "Greatest common divisor of two integers or polynomials.",
-        "Evaluated in Z, Z/n and the polynomial rings K[x].",
+        "Evaluated in Z, Z/n and the polynomial rings K[x]. In Z/n, the arguments are integers and the result is reduced mod n.",
         &[
             ex_in("Z", "gcd(12, 18)", "6"),
             ex_in("R[x]", "gcd(x^2 - 1, x^2 + 2*x + 1)", "x + 1"),
@@ -309,7 +309,7 @@ pub static BUILTIN_DOCS: [BuiltinDoc; Context::BUILTIN_NAMES.len()] = [
         Arithmetic,
         "lcm(a, b)",
         "Least common multiple of two integers or polynomials.",
-        "Evaluated in Z, Z/n and the polynomial rings K[x].",
+        "Evaluated in Z, Z/n and the polynomial rings K[x]. In Z/n, the arguments are integers and the result is reduced mod n.",
         &[ex_in("Z", "lcm(4, 6)", "12")],
     ),
     doc(
@@ -317,7 +317,7 @@ pub static BUILTIN_DOCS: [BuiltinDoc; Context::BUILTIN_NAMES.len()] = [
         Arithmetic,
         "quo(a, b)",
         "Quotient of the Euclidean division of a by b.",
-        "Evaluated in Z, Z/n and the polynomial rings K[x].",
+        "Evaluated in Z, Z/n and the polynomial rings K[x]. In Z/n, the arguments are integers and the result is reduced mod n.",
         &[ex_in("Z", "quo(17, 5)", "3")],
     ),
     doc(
@@ -325,7 +325,7 @@ pub static BUILTIN_DOCS: [BuiltinDoc; Context::BUILTIN_NAMES.len()] = [
         Arithmetic,
         "rem(a, b)",
         "Remainder of the Euclidean division of a by b.",
-        "Evaluated in Z, Z/n and the polynomial rings K[x].",
+        "Evaluated in Z, Z/n and the polynomial rings K[x]. In Z/n, the arguments are integers and the result is reduced mod n.",
         &[
             ex_in("Z", "rem(17, 5)", "2"),
             ex_in("R[x]", "rem(x^3 + 1, x - 1)", "2"),
@@ -625,9 +625,11 @@ pub static BUILTIN_DOCS: [BuiltinDoc; Context::BUILTIN_NAMES.len()] = [
         Arithmetic,
         "factorial(n)",
         "Factorial n!, extended to half-integers.",
-        "Also written `n!`, binding tighter than any operator (`n!^2` is `(n!)^2`, `-3!` is `-6`); `n!=3` is `n != 3`, write `n! = 3`.",
+        "Also written `n!`, binding tighter than any operator (`n!^2` is `(n!)^2`, `-3!` is `-6`); `n!=3` is `n != 3`, \
+         write `n! = 3`. In Z/n, n is an integer and the result is reduced mod n.",
         &[
             ex("factorial(5)", "120"),
+            ex_in("Z/7", "factorial(8)", "0"),
             ex("3!^2", "36"),
             ex("factorial(1/2)", "sqrt(pi)/2"),
         ],
@@ -637,8 +639,11 @@ pub static BUILTIN_DOCS: [BuiltinDoc; Context::BUILTIN_NAMES.len()] = [
         Arithmetic,
         "binomial(n, k)",
         "Binomial coefficient, n choose k.",
-        "Evaluated for a natural k and a rational n.",
-        &[ex("binomial(5, 2)", "10")],
+        "Evaluated for a natural k and a rational n. In Z/n, n and k are integers and the result is reduced mod n.",
+        &[
+            ex("binomial(5, 2)", "10"),
+            ex_in("Z/7", "binomial(10, 3)", "1"),
+        ],
     ),
     doc(
         Context::INTEGRATE,
@@ -749,7 +754,8 @@ pub static BUILTIN_DOCS: [BuiltinDoc; Context::BUILTIN_NAMES.len()] = [
         "Sum of f for the integers k from a to b.",
         "Bounds may be oo or -oo. Closed forms come from Faulhaber's formula, geometric sums, Gosper's algorithm, \
          digamma functions for rational functions and known series, and definite sums of hypergeometric terms up to \
-         a bound depending on n (like binomial(n, k) from 0 to n) from Zeilberger's algorithm.",
+         a bound depending on n (like binomial(n, k) from 0 to n) from Zeilberger's algorithm. In Z and Z/n, sums with \
+         integer bounds are expanded (up to 1000 terms), the terms and bounds being integers reduced mod n.",
         &[
             ex("sum(k, k, 1, n)", "n (n + 1)/2"),
             ex("sum(1/k^2, k, 1, oo)", "pi^2/6"),
@@ -761,7 +767,8 @@ pub static BUILTIN_DOCS: [BuiltinDoc; Context::BUILTIN_NAMES.len()] = [
         Calculus,
         "product(f, k, a, b)",
         "Product of f for the integers k from a to b.",
-        "Bounds may be oo or -oo.",
+        "Bounds may be oo or -oo. In Z and Z/n, products with integer bounds are expanded (up to 1000 factors), the \
+         factors and bounds being integers reduced mod n.",
         &[
             ex("product(k, k, 1, n)", "n!"),
             ex("product(1 + 1/k, k, 1, n)", "n + 1"),
@@ -1148,7 +1155,7 @@ pub static BUILTIN_DOCS: [BuiltinDoc; Context::BUILTIN_NAMES.len()] = [
         Arithmetic,
         "isprime(n)",
         "1 if the integer n is a prime number, 0 otherwise.",
-        "In Z and R. Exact below 3.3 10^24, a strong probable prime test with many bases above.",
+        "In Z, R and Z/m (where n is read as an integer, then the result is reduced mod m). Exact below 3.3 10^24, a strong probable prime test with many bases above.",
         &[ex("isprime(97)", "1"), ex("isprime(91)", "0")],
     ),
     doc(

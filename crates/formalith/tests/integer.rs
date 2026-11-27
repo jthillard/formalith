@@ -108,3 +108,20 @@ fn expand() {
     assert_eq!(line(&parse!("expand((x+1)^2)", Z)), "2*x+x^2+1");
     assert_eq!(line(&parse!("expand((2*x*y)^3)", Z)), "8*(x^3)*(y^3)");
 }
+
+#[test]
+fn binomials() {
+    assert_eq!(line(&parse!("binomial(10, 3)", Z)), "120");
+    assert_eq!(line(&parse!("binomial(3, 5)", Z)), "0");
+    assert_eq!(line(&parse!("binomial(-3, 2)", Z)), "6");
+    assert_eq!(line(&parse!("binomial(-3, 3)", Z)), "-10");
+    assert_eq!(line(&parse!("binomial(5, -1)", Z)), "0");
+}
+
+#[test]
+fn finite_sums_and_products() {
+    assert_eq!(line(&parse!("sum(k, k, 1, 7)", Z)), "28");
+    assert_eq!(line(&parse!("product(k, k, 1, 5)", Z)), "120");
+    assert_eq!(parse!("sum(x^k, k, 0, 2)", Z), parse!("x^2 + x + 1", Z));
+    assert_eq!(line(&parse!("sum(k, k, 1, n)", Z)), "sum(k, k, 1, n)");
+}

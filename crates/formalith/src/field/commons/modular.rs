@@ -12,7 +12,7 @@ use malachite::{
 
 use super::parse_integer_literal;
 
-use crate::term::fun::eval_ring_builtin;
+use crate::term::fun::{Function, eval_integer_sum, eval_ring_builtin};
 use crate::{
     context::{Context, Symbol},
     field::{
@@ -22,7 +22,7 @@ use crate::{
     parser::Parser,
     polynom::factor::modular::{factor_with_multiplicities, is_prime},
     printer::{PrettyPrinter, PrintOptions},
-    term::{self, Expand, Normalize, SymbolTerm, Term, TermSet},
+    term::{self, Expand, Fun, Normalize, SymbolTerm, Term, TermSet},
 };
 
 /// The ring of integers modulo `n`, `{$ZZ\/n ZZ$}`, which is a field when `n` is prime.
@@ -170,6 +170,25 @@ impl Zn {
     }
 }
 
+impl Zn {
+    /// Evaluate a builtin whose arguments are integers (see [`SetParseExpression::integer_arguments`]) in `{$ZZ$}`,
+    /// reducing its value: `{$8! = 0$}` in `{$ZZ\/7 ZZ$}`. The terms of finite sums and products are reduced one by
+    /// one. Returns `None` when the value isn't an integer, like `factorial(n)`.
+    fn eval_integer_builtin(self, fun: &dyn Function<Self>) -> Option<Term<Self>> {
+        if let Some(res) = eval_integer_sum(fun, |term| self.reduce_integer_term(term)) {
+            return Some(res);
+        }
+        let args = fun.get_args::<Z<Integer>>()?;
+        match Term::Fun(Box::new(Fun::new(fun.get_ident(), args.clone(), Z))).normalize() {
+            Term::Value(value) => Some(Term::constant(self.reduce(&value.value), self)),
+            Term::Symbol(symbol) if symbol.symbol == Context::UNDEFINED => {
+                Some(Term::Symbol(SymbolTerm::new(Context::UNDEFINED, self)))
+            }
+            _ => None,
+        }
+    }
+}
+
 impl Set for Zn {
     type Element = u64;
     type ExponantSet = Z<Integer>;
@@ -249,7 +268,7 @@ impl Semiring for Zn {
                 let res = if fun.get_ident() == Context::FACTOR {
                     fun.get_arg::<Self>().and_then(|arg| self.factor(arg))
                 } else {
-                    eval_ring_builtin(&**fun)
+                    eval_ring_builtin(&**fun).or_else(|| self.eval_integer_builtin(&**fun))
                 };
                 if let Some(res) = res {
                     return res;
@@ -304,5 +323,46 @@ impl SetParseExpression for Zn {
 
     fn parse_literal(&self, parser: &mut Parser) -> Result<Option<Self::Element>, String> {
         parser.is_literal_and(|value| Ok(Some(self.reduce(&parse_integer_literal(value)?))))
+    }
+
+    /// The builtins defined on integers, whose value is reduced: `factorial`, `binomial`, `isprime`, `gcd`,
+    /// `lcm`, `quo`, `rem`, `factorint`, and `sum` and `product` (whose terms are reduced).
+    fn integer_arguments(&self, ident: Symbol) -> bool {
+        matches!(
+            ident,
+            Context::FACTORIAL
+                | Context::BINOMIAL
+                | Context::ISPRIME
+                | Context::GCD
+                | Context::LCM
+                | Context::QUO
+                | Context::REM
+                | Context::FACTORINT
+                | Context::SUM
+                | Context::PRODUCT
+        )
+    }
+
+    /// Reduce the integers of `term`, the functions being builtins with integer arguments.
+    fn reduce_integer_term(&self, term: &Term<Z<Integer>>) -> Option<Term<Self>> {
+        Some(match term {
+            Term::Value(value) => Term::constant(self.reduce(&value.value), *self),
+            Term::Symbol(symbol) => Term::Symbol(SymbolTerm::new(symbol.symbol, *self)),
+            Term::Add(add) => add.terms.iter().try_fold(Term::zero(*self), |res, term| {
+                Some(res + self.reduce_integer_term(term)?)
+            })?,
+            Term::Mul(mul) => mul.factors.iter().try_fold(
+                Term::constant(self.reduce(&mul.coefficient), *self),
+                |res, factor| Some(res * self.reduce_integer_term(factor)?),
+            )?,
+            Term::Pow(pow) => self.reduce_integer_term(&pow.base)?.pow(&pow.exponant),
+            Term::Fun(fun) => {
+                if !self.integer_arguments(fun.get_ident()) {
+                    return None;
+                }
+                let args = fun.get_args::<Z<Integer>>()?.clone();
+                Term::Fun(Box::new(Fun::new(fun.get_ident(), args, *self))).normalize()
+            }
+        })
     }
 }

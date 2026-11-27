@@ -6,13 +6,15 @@ use malachite::{
     Integer, Natural,
     base::num::{
         arithmetic::traits::{
-            Abs, DivMod, DivisibleBy, Factorial, Gcd, Lcm, Mod, Pow, Sign, UnsignedAbs,
+            Abs, DivMod, DivisibleBy, Factorial, Gcd, Lcm, Mod, Parity, Pow, Sign, UnsignedAbs,
         },
         basic::traits::{NegativeOne, One, Zero},
     },
 };
 
 use super::{parse_integer_literal, primes};
+
+use crate::combinatorics::Combinatorics;
 
 use crate::{
     context::Context,
@@ -22,7 +24,10 @@ use crate::{
     },
     parser::Parser,
     printer::PrettyPrinter,
-    term::{self, Fun, SymbolTerm, Term, TermSet, Value, fun::eval_ring_builtin},
+    term::{
+        self, Fun, SymbolTerm, Term, TermSet, Value,
+        fun::{eval_integer_sum, eval_ring_builtin},
+    },
 };
 
 /// The integer ring `{$ZZ$}`
@@ -160,7 +165,9 @@ impl Semiring for Z<Integer> {
                 }
             }
             Term::Fun(fun) => {
-                if let Some(res) = eval_ring_builtin(&**fun) {
+                if let Some(res) = eval_ring_builtin(&**fun)
+                    .or_else(|| eval_integer_sum(&**fun, |t| Some(t.clone())))
+                {
                     return res;
                 }
                 if fun.get_ident() == Context::ABS
@@ -187,6 +194,9 @@ impl Semiring for Z<Integer> {
                         return Term::Value(Value::new(Integer::from(u8::from(prime)), *self));
                     }
                     (Context::FACTOR, Some([arg])) => return arg.factor(),
+                    (Context::BINOMIAL, Some([Term::Value(n), Term::Value(k)])) => {
+                        return Term::Value(Value::new(binomial(&n.value, &k.value), *self));
+                    }
                     (Context::FACTORIAL, Some([Term::Value(n)])) => {
                         // Poles at the negative integers
                         if n.value < 0 {
@@ -223,6 +233,18 @@ impl Semiring for Z<Integer> {
             _ => {}
         }
         a
+    }
+}
+
+/// `{$binom(n, k)$}` for integers, `{$(-1)^k binom(k - n - 1, k)$}` for `{$n < 0$}` and 0 for `{$k < 0$}`.
+fn binomial(n: &Integer, k: &Integer) -> Integer {
+    if *k < 0 {
+        Integer::ZERO
+    } else if *n < 0 {
+        let res = Integer::binom(k - n - Integer::ONE, k.clone());
+        if k.odd() { -res } else { res }
+    } else {
+        Integer::binom(n.clone(), k.clone())
     }
 }
 
