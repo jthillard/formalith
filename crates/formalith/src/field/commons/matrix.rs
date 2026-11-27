@@ -398,10 +398,14 @@ impl<T: Ring> M<T> {
             Context::HERMITE => VectorSpaceElement::Vector(<T as MatrixEntries>::hermite(matrix)?),
             Context::SMITH => VectorSpaceElement::Vector(<T as MatrixEntries>::smith(matrix)?),
             Context::EIGENVALUES => {
-                let values: Vec<_> = eigenspaces()?
-                    .into_iter()
-                    .flat_map(|(value, multiplicity, _)| std::iter::repeat_n(value, multiplicity))
-                    .collect();
+                // The roots of the characteristic polynomial, in the order of `eigenvectors`, without computing
+                // the eigenspaces, which is slow with radicals
+                let x = Symbol::new("@l");
+                let charpoly = <T as MatrixEntries>::charpoly(matrix, x)?;
+                let values = <T as MatrixEntries>::roots(&charpoly, x)?;
+                if values.len() != matrix.height() {
+                    return None;
+                }
                 VectorSpaceElement::Vector(Matrix::new((values.len(), 1), values, scalars))
             }
             Context::EIGENVECTORS => VectorSpaceElement::Vector(

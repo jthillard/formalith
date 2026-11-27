@@ -205,11 +205,18 @@ fn complex_eigen(a: &str) -> Verdict {
     }
     let mut distinct = values.clone();
     distinct.dedup();
+    // Eigenvectors come in the order of their eigenvalues, so the eigenvalue of a column is the one of the
+    // previous column or a later one
+    let mut current = 0;
     for v in columns(&vectors).unwrap() {
-        let ok = distinct
-            .iter()
-            .any(|lambda| complex_zero(&format!("{a} * {v} - ({lambda}) * {v}")));
-        if !ok || complex_zero(&v) {
+        let found = (current..distinct.len()).find(|&j| {
+            let lambda = &distinct[j];
+            complex_zero(&format!("{a} * {v} - ({lambda}) * {v}"))
+        });
+        if let Some(j) = found {
+            current = j;
+        }
+        if found.is_none() || complex_zero(&v) {
             return Verdict::Wrong(format!("eigenvector {v} of eigenvalues {values:?}"));
         }
     }

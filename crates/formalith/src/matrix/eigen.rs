@@ -5,7 +5,7 @@ use malachite::rational::Rational;
 use crate::{
     context::Symbol,
     field::{Derivable, Group, real::R},
-    solve::{Equation, Solution, Solve},
+    solve::{Equation, Solution, Solve, polynomial::polynomial_form},
     term::{Expand, Term, TermSet},
 };
 
@@ -91,6 +91,17 @@ pub fn roots<T: EigenSet>(p: &Term<T>, x: Symbol) -> Option<Vec<(Term<T>, usize)
         Solution::Alternatives(branches) => branches,
         Solution::NoSolution => vec![],
     };
+    // As many distinct roots as the degree: they are all simple, without the zero tests below, slow with radicals
+    let degree = polynomial_form(p, x).ok()?.len().saturating_sub(1);
+    if roots.len() == degree {
+        return roots
+            .into_iter()
+            .map(|assignments| match assignments.as_slice() {
+                [(_, value)] => Some((value.clone(), 1)),
+                _ => None,
+            })
+            .collect();
+    }
     let mut multiplicities = vec![];
     for assignments in roots {
         let [(_, value)] = assignments.as_slice() else {
