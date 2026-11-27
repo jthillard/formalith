@@ -306,6 +306,45 @@ pub fn pretty_name(name: &str) -> std::borrow::Cow<'_, str> {
         })
 }
 
+/// Whether `name` is written as is in Typst math: a single character or the name of a Typst symbol.
+fn is_typst_identifier(name: &str) -> bool {
+    name.chars().count() == 1
+        || matches!(name, "pi" | "oo")
+        || GREEK.iter().any(|(greek, _)| *greek == name)
+}
+
+/// The name of a symbol in Typst math, where a multi-letter identifier is a variable: quoted as text unless it is a
+/// single letter or a Greek letter, like `"abc"`, also in a subscript (`x_("ab")`, `t_12`).
+#[must_use]
+pub fn typst_name(name: &str) -> std::borrow::Cow<'_, str> {
+    let (base, subscript) = name
+        .split_once('_')
+        .map_or((name, None), |(base, rest)| (base, Some(rest)));
+    let base_ok = is_typst_identifier(base);
+    let subscript_ok = subscript.is_none_or(|rest| {
+        is_typst_identifier(rest) || (!rest.is_empty() && rest.chars().all(|c| c.is_ascii_digit()))
+    });
+    if base_ok && subscript_ok {
+        return std::borrow::Cow::Borrowed(name);
+    }
+    let mut res = if base_ok {
+        base.to_owned()
+    } else {
+        format!("\"{base}\"")
+    };
+    if let Some(rest) = subscript {
+        if subscript_ok {
+            res.push('_');
+            res.push_str(rest);
+        } else {
+            res.push_str("_(");
+            res.push_str(&typst_name(rest));
+            res.push(')');
+        }
+    }
+    std::borrow::Cow::Owned(res)
+}
+
 impl PrettyPrinter {
     /// Create a new blank pretty printer.
     #[must_use]

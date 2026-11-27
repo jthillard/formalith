@@ -28,6 +28,13 @@ fn commands() {
     );
     assert_eq!(run(&mut session, ":set R").0, "");
     assert_eq!(run(&mut session, "x/2").0, "frac(1, 2) x");
+    assert_eq!(run(&mut session, "abc := 2").0, "\"abc\" := 2");
+    assert_eq!(
+        run(&mut session, "fun(xy) := xy").0,
+        "op(\"fun\")(\"xy\") := \"xy\""
+    );
+    assert_eq!(run(&mut session, "rho > 1").0, "rho in (1, +oo)");
+    assert_eq!(run(&mut session, "ab > 1").0, "\"ab\" in (1, +oo)");
     assert_eq!(run(&mut session, ":typst").0, "typst output disabled");
 
     assert!(matches!(session.run(":unknown").output, Output::Error(_)));

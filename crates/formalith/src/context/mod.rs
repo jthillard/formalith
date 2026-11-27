@@ -75,9 +75,12 @@ impl Symbol {
 impl Print for Symbol {
     fn print(
         &self,
-        _options: &crate::printer::PrintOptions,
+        options: &crate::printer::PrintOptions,
         f: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result {
+        if options.typst {
+            return f.write_str(&crate::printer::typst_name(self.name()));
+        }
         f.write_str(self.name())
     }
 }

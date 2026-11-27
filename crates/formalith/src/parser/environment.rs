@@ -98,17 +98,34 @@ impl Definition {
 
 impl fmt::Display for Definition {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{} := {}", head(self.name, &self.params), self.body)
+        write!(
+            f,
+            "{} := {}",
+            head(self.name, &self.params, false),
+            self.body
+        )
     }
 }
 
 /// Return `name(x, y)`, or `name` if there is no parameter.
-pub(crate) fn head(name: Symbol, params: &[Symbol]) -> String {
-    let name = name.name();
+pub(crate) fn head(name: Symbol, params: &[Symbol], typst: bool) -> String {
+    let print = |symbol: &Symbol| {
+        if typst {
+            crate::printer::typst_name(symbol.name())
+        } else {
+            symbol.name().into()
+        }
+    };
     if params.is_empty() {
-        return name.to_owned();
+        return print(&name).into_owned();
     }
-    let params: Vec<&str> = params.iter().map(|param| param.name()).collect();
+    // A function name as `Fun` prints it in Typst, `op("name")` for several letters
+    let name = if typst && name.name().chars().count() != 1 {
+        format!("op(\"{}\")", name.name())
+    } else {
+        name.name().to_owned()
+    };
+    let params: Vec<_> = params.iter().map(print).collect();
     format!("{name}({})", params.join(", "))
 }
 
@@ -350,7 +367,16 @@ pub fn integers_line(integers: &[Symbol], typst: bool) -> String {
         .into_iter()
         .filter(|(symbols, _)| !symbols.is_empty())
         .map(|(symbols, set)| {
-            let names: Vec<_> = symbols.iter().map(|symbol| symbol.name()).collect();
+            let names: Vec<_> = symbols
+                .iter()
+                .map(|symbol| {
+                    if typst {
+                        crate::printer::typst_name(symbol.name())
+                    } else {
+                        symbol.name().into()
+                    }
+                })
+                .collect();
             format!("{} {set}", names.join(", "))
         })
         .collect::<Vec<_>>()
@@ -366,7 +392,7 @@ impl<E: Set> fmt::Display for Statement<E> {
             Self::Expression(term) => write!(f, "{term}"),
             Self::Definition {
                 name, params, body, ..
-            } => write!(f, "{} := {body}", head(*name, params)),
+            } => write!(f, "{} := {body}", head(*name, params, false)),
             Self::System {
                 solution, integers, ..
             } => {

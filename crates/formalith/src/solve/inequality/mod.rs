@@ -210,7 +210,11 @@ impl<T: Set> Region<T> {
         } else {
             (" ∈ ", " ∪ ", "ℝ")
         };
-        let name = unknown.name();
+        let name = if options.typst {
+            crate::printer::typst_name(unknown.name())
+        } else {
+            unknown.name().into()
+        };
         if let [interval] = intervals
             && let Some(point) = interval.point()
         {

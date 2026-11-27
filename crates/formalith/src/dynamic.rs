@@ -379,20 +379,21 @@ fn print_with<P: PrettyPrint + fmt::Display>(value: &P, options: Option<PrintOpt
 
 /// A definition `name(params) := body`, the body laid out with the head when pretty printed.
 struct DefinitionPrinter<'a, E: Set> {
-    head: String,
+    name: Symbol,
+    params: &'a [Symbol],
     body: &'a Term<E>,
 }
 
 impl<E: Set> Print for DefinitionPrinter<'_, E> {
     fn print(&self, options: &PrintOptions, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{} := ", self.head)?;
+        write!(f, "{} := ", head(self.name, self.params, options.typst))?;
         self.body.print(options, f)
     }
 }
 
 impl<E: Set> PrettyPrint for DefinitionPrinter<'_, E> {
     fn pretty_print(&self, options: &PrintOptions) -> PrettyPrinter {
-        let mut res = PrettyPrinter::from(self.head.clone());
+        let mut res = PrettyPrinter::from(head(self.name, self.params, false));
         res.concat(":=", true, &self.body.pretty_print(options));
         res
     }
@@ -480,7 +481,8 @@ fn print_statement<E: SetParseExpression>(
             name, params, body, ..
         } => print_with(
             &DefinitionPrinter {
-                head: head(*name, params),
+                name: *name,
+                params,
                 body,
             },
             options,

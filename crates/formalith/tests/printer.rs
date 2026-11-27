@@ -313,6 +313,17 @@ fn typst_output_of_calculus() {
 }
 
 #[test]
+fn typst_multi_letter_symbols() {
+    assert_eq!(typst(&parse!("abc", R)), "\"abc\"");
+    assert_eq!(typst(&parse!("2 abc^2", R)), "2 \"abc\"^2");
+    assert_eq!(typst(&parse!("x_ab", R)), "x_(\"ab\")");
+    assert_eq!(typst(&parse!("ab_1", R)), "\"ab\"_1");
+    assert_eq!(typst(&parse!("t_12", R)), "t_12");
+    assert_eq!(typst(&parse!("alpha_1", R)), "alpha_1");
+    assert_eq!(typst(&parse!("a_b_c", R)), "a_(b_c)");
+}
+
+#[test]
 fn print_factorials() {
     assert_eq!(line(&parse!("factorial(n)", R)), "n!");
     assert_eq!(line(&parse!("factorial(x+1)", R)), "(x+1)!");

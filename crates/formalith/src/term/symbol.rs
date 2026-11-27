@@ -49,6 +49,9 @@ impl<T: Debug> Print for SymbolTerm<T> {
         if options.typst && self.symbol == Context::EULER_GAMMA {
             return f.write_str("gamma");
         }
+        if options.typst {
+            return f.write_str(&crate::printer::typst_name(self.symbol.name()));
+        }
         write!(f, "{}", self.symbol.name())
     }
 }
