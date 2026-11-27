@@ -3,6 +3,7 @@
 // Indices and orders are small
 #![allow(clippy::cast_possible_wrap)]
 
+pub mod numeric;
 mod system;
 
 use std::{cell::RefCell, cmp::Ordering, collections::BTreeSet};

@@ -238,3 +238,101 @@ fn test_errors() {
     session.run(":set Z/7");
     assert_eq!(draw(&mut session, "x + 8"), ("x+1".to_owned(), None));
 }
+
+/// The terms of indices `from` to `to` of the sequence drawn for `line`, with the values `params` of its
+/// parameters, and the names of the parameters.
+fn sequence_terms(
+    session: &mut Session,
+    line: &str,
+    params: &[f64],
+    (from, to): (i64, i64),
+) -> (Vec<(i64, f64)>, Vec<String>) {
+    let Some(Graph {
+        kind: GraphKind::Sequence { terms },
+        params: names,
+    }) = draw(session, line).1
+    else {
+        panic!("{line} is not a sequence");
+    };
+    assert!(terms.unsupported().is_none(), "{line}");
+    (terms.terms(params, from, to), names)
+}
+
+#[test]
+fn test_sequences() {
+    let mut session = Session::new();
+    session.run(":set R^N");
+    assert_eq!(
+        sequence_terms(&mut session, "n^2", &[], (0, 2)),
+        (vec![(0, 0.), (1, 1.), (2, 4.)], vec![])
+    );
+    // Undefined terms are left out
+    assert_eq!(
+        sequence_terms(&mut session, "1/n", &[], (-1, 1)).0,
+        [(-1, -1.), (1, 1.)]
+    );
+    assert_eq!(
+        sequence_terms(&mut session, "a n", &[3.], (1, 2)),
+        (vec![(1, 3.), (2, 6.)], vec!["a".to_owned()])
+    );
+    let fib = "recurrence(u(n) = u(n - 1) + u(n - 2), u(0) = 0, u(1) = 1)";
+    assert_eq!(
+        sequence_terms(&mut session, fib, &[], (-1, 6)).0,
+        [
+            (0, 0.),
+            (1, 1.),
+            (2, 1.),
+            (3, 2.),
+            (4, 3.),
+            (5, 5.),
+            (6, 8.)
+        ]
+    );
+    // A system, with a value replacing the rule
+    assert_eq!(
+        sequence_terms(
+            &mut session,
+            &format!("{fib}^2 + recurrence(v(n) = 2 v(n - 1), v(0) = 1, v(2) = 0)"),
+            &[],
+            (0, 3)
+        )
+        .0,
+        [(0, 1.), (1, 3.), (2, 1.), (3, 4.)]
+    );
+    // Constants aren't drawn
+    assert_eq!(draw(&mut session, "5").1, None);
+    // Definitions
+    session.run("w(0) := c");
+    assert_eq!(
+        sequence_terms(&mut session, "w(n) := 2 w(n - 1)", &[3.], (0, 2)),
+        (vec![(0, 3.), (1, 6.), (2, 12.)], vec!["c".to_owned()])
+    );
+    session.run(":set R^N[k]");
+    assert_eq!(
+        sequence_terms(&mut session, "k^3", &[], (2, 2)).0,
+        [(2, 8.)]
+    );
+}
+
+#[test]
+fn test_recursive_definitions() {
+    let mut session = Session::new();
+    // Drawn once its initial value is given
+    session.run("u(n) := 2 u(n - 1) + 1");
+    assert_eq!(
+        sequence_terms(&mut session, "u(0) := 1", &[], (0, 3)).0,
+        [(0, 1.), (1, 3.), (2, 7.), (3, 15.)]
+    );
+    assert_eq!(
+        sequence_terms(&mut session, "u(n) := 3 u(n - 1)", &[], (0, 2)).0,
+        [(0, 1.), (1, 3.), (2, 9.)]
+    );
+    assert_eq!(draw(&mut session, "v(n) := v(n - 2)").1, None);
+    assert_eq!(draw(&mut session, "v(0) := 1").1, None);
+    // A function with a value is a curve
+    session.run("f(0) := 1");
+    assert!(matches!(
+        draw(&mut session, "f(x) := sin(x)/x").1.unwrap().kind,
+        GraphKind::Function { .. }
+    ));
+}

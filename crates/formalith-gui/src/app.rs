@@ -417,7 +417,7 @@ impl App {
                     self.edit();
                 }
                 ui.label("set").on_hover_text(
-                    "The set expressions are evaluated in, like R, C, Z/7 or M(Z). Graphs are drawn in R.",
+                    "The set expressions are evaluated in, like R, C, Z/7 or M(Z). Graphs are drawn in R, C and R^N.",
                 );
             });
         });

@@ -1,7 +1,7 @@
 //! Drawing of the graphs of the lines in an interactive plot. Curves, paths and the grids of complex maps are sampled
 //! in `f64` on the CPU ([`crate::geometry`]) over a window around the view, sampled again when the view leaves it or
 //! is zoomed, and drawn as lines; implicit relations and regions are plot items running their shader over the plot
-//! ([`crate::gpu`]). The remarkable points of the selected curve are searched on the CPU ([`crate::analysis`]).
+//! ([`crate::gpu`]). Sequences are drawn as the points `(k, u_k)` of the integers `k` of the view. The remarkable points of the selected curve are searched on the CPU ([`crate::analysis`]).
 //! Surfaces are drawn by the 3D view ([`crate::space`]) instead.
 
 use std::{cell::RefCell, collections::HashMap, ops::RangeInclusive, sync::Arc};
@@ -15,7 +15,7 @@ use egui_plot::{
     PlotItem, PlotItemBase, PlotPoint, PlotTransform, PlotUi, Points, VLine,
 };
 use formalith_session::{
-    formalith::field::real::numeric::Numeric,
+    formalith::field::{real::numeric::Numeric, sequence::numeric::NumericSequence},
     graph::{Comparison, Graph, GraphKind},
 };
 
@@ -95,6 +95,8 @@ const DASH_PERIOD: f32 = 10.;
 
 /// Distance in points from a graph under which it is hovered.
 const HOVER_DISTANCE: f64 = 6.;
+/// Largest number of points drawn for a sequence, beyond which one term out of several is drawn.
+const MAX_SEQUENCE_POINTS: i64 = 2000;
 
 /// What the remarkable points of the selected curve depend on, besides the view: its line, revision and
 /// parameters, and those of the other curves.
@@ -450,6 +452,17 @@ impl Plotter {
                     );
                 }
             }
+            GraphKind::Sequence { terms } => {
+                let points = sequence_points(terms, params, view.x_min, view.x_max);
+                plot_ui.points(
+                    Points::new(drawable.name.clone(), points)
+                        .id(drawable.id)
+                        .shape(MarkerShape::Circle)
+                        .radius(3.)
+                        .filled(true)
+                        .color(drawable.color),
+                );
+            }
             GraphKind::ComplexMap { re, im } => {
                 let families = self.sampled(drawable, Slot::Main, view, pixel, |window, pixel| {
                     let (re, im) = (function_xy(re, params), function_xy(im, params));
@@ -689,6 +702,28 @@ fn paint_ticks(ui: &egui::Ui, transform: &PlotTransform) {
 }
 
 /// The label of a point of a graph.
+/// The points `(k, u_k)` of a sequence for the integers `k` from `x_min` to `x_max`, at most [`MAX_SEQUENCE_POINTS`]
+/// of them, evenly spaced, with the values `params` of its parameters.
+#[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
+fn sequence_points(
+    terms: &NumericSequence,
+    params: &[f64],
+    x_min: f64,
+    x_max: f64,
+) -> Vec<[f64; 2]> {
+    // Beyond, the terms aren't computed anyway
+    let bound = |x: f64| x.clamp(-1e15, 1e15) as i64;
+    let (from, to) = (bound(x_min.ceil()), bound(x_max.floor()));
+    let count = to.saturating_sub(from).saturating_add(1);
+    let step = ((count + MAX_SEQUENCE_POINTS - 1) / MAX_SEQUENCE_POINTS).max(1);
+    terms
+        .terms(params, from, to)
+        .into_iter()
+        .filter(|(k, _)| (k - from) % step == 0)
+        .map(|(k, value)| [k as f64, value])
+        .collect()
+}
+
 fn label(name: &str, x: f64, y: f64) -> String {
     format!("{name}\n({}, {})", format_number(x), format_number(y))
 }
@@ -782,6 +817,19 @@ fn hover(
                     others_hold.then_some((distance, point))
                 });
                 match hits.min_by(|(a, _), (b, _)| a.total_cmp(b)) {
+                    Some(hit) => hit,
+                    None => continue,
+                }
+            }
+            GraphKind::Sequence { terms } => {
+                // The terms whose indices are within the hover distance of the pointer
+                let reach = (HOVER_DISTANCE / kx).ceil();
+                let points = sequence_points(terms, &drawable.params, px - reach, px + reach);
+                match points
+                    .into_iter()
+                    .map(|[x, y]| (((x - px) * kx).hypot((y - py) * ky), [x, y]))
+                    .min_by(|(a, _), (b, _)| a.total_cmp(b))
+                {
                     Some(hit) => hit,
                     None => continue,
                 }

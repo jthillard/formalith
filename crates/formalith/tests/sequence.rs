@@ -271,3 +271,40 @@ fn errors() {
         same("R", "u(4)")
     );
 }
+
+/// Terms computed in floats are those computed exactly.
+#[test]
+fn numeric_terms() {
+    use formalith::field::sequence::numeric::NumericSequence;
+    let set = R.get_sequence_set(symbol!("n"));
+    for input in [
+        "recurrence(u(n) = u(n - 1) + u(n - 2), u(0) = 0, u(1) = 1)",
+        "recurrence(u(n) = 2 u(n - 1) + 1, u(0) = 1)",
+        "recurrence(u(n) = 2 u(n - 1), u(0) = 1, u(3) = 0) + n^2",
+        "recurrence(u(n) = n u(n - 1), u(1) = 1) * recurrence(u(n) = u(n - 1) + n, u(-2) = 3)",
+        "shift(recurrence(u(n) = u(n - 1) + u(n - 2), u(0) = 0, u(1) = 1), 3) - 2^n",
+        "(n + 1)^2/(n - 2)",
+    ] {
+        let u = parse!(input, set);
+        let numeric = NumericSequence::of_term(&u, symbol!("n"), &[]).unwrap();
+        let terms = numeric.terms(&[], -3, 12);
+        let exact: Vec<(i64, f64)> = (-3..=12)
+            .filter_map(|m| {
+                let value = eval("R^N", &[&format!("term({input}, {m})")]).ok()?;
+                let value = eval("R", &[&format!("approx({value})")]).ok()?;
+                Some((m, value.parse().ok()?))
+            })
+            .collect();
+        assert_eq!(terms.len(), exact.len(), "{input}: {terms:?} {exact:?}");
+        for ((k, a), (m, b)) in terms.iter().zip(&exact) {
+            assert!(
+                k == m && (a - b).abs() <= 1e-9 * b.abs().max(1.),
+                "{input}: {terms:?} {exact:?}"
+            );
+        }
+    }
+    // With a parameter
+    let u = parse!("recurrence(u(n) = a u(n - 1), u(0) = 1)", set);
+    let numeric = NumericSequence::of_term(&u, symbol!("n"), &[symbol!("a")]).unwrap();
+    assert_eq!(numeric.terms(&[3.], 0, 2), [(0, 1.), (1, 3.), (2, 9.)]);
+}

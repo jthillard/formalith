@@ -68,7 +68,8 @@ Add `--release` for an optimized build (otherwise a debug build without `wasm-op
 
 `./dev gui` runs the graphical interface (`cargo run -p formalith-gui`): a list of lines with their results, next
 to a plot of curves (`y = sin(x)`, `f(x) := x^3 - x`, `x = y^2`), implicit curves and regions (`x^2 + y^2 = 1`,
-`y < exp(-x^2)`) and points (`(1, f(1))`), with sliders for parameters (`y = a*sin(b*x)`) and the roots, extrema
+`y < exp(-x^2)`), points (`(1, f(1))`) and sequences (`n^2/10` in the set `R^N`, or `u(0) := 1` and
+`u(n) := 2 u(n - 1) + 1` in `R`, as the points `(k, u_k)`), with sliders for parameters (`y = a*sin(b*x)`) and the roots, extrema
 and intersections of the selected curve. `./dev gui-web` builds it for the browser (WebGPU, or WebGL2 without it),
 `./dev gui-web --serve` also serves it on port 8001.
 

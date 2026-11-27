@@ -36,6 +36,11 @@ impl<T: Set> Value<T> {
             set,
         }
     }
+
+    /// The element of the set.
+    pub const fn element(&self) -> &T::Element {
+        &self.value
+    }
 }
 
 impl<T: Set> Flags for Value<T> {

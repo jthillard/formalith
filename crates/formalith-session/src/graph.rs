@@ -7,7 +7,8 @@
 //! `f(z)` are drawn as the images of the lines of a grid, or in 3D as the surface `|f|` colored by `arg f`
 //! ([`GraphKind::ComplexMap`]), real ones as surfaces `f(x + i y)`, functions of a real `x` as curves (with their
 //! real and imaginary parts when they aren't real, [`GraphKind::ComplexCurve`]), and constants as points
-//! `(Re, Im)`.
+//! `(Re, Im)`. Sequences of `R^N` and recursive definitions in `R` (`u(0) := 1`, `u(n) := 2 u(n - 1) + 1`) are drawn
+//! as their points `(k, u_k)` ([`GraphKind::Sequence`]).
 //!
 //! Graphs are compiled to [`Numeric`] expressions, evaluated with the values `[x, y, params...]`: `x` at index
 //! [`Graph::X`], `y` at index [`Graph::Y`] and the parameters of [`Graph::params`] after them.
@@ -30,11 +31,13 @@ use formalith::{
     context::{Context, Symbol},
     dynamic::Evaluated,
     field::{
+        Set,
         complex::{C, Complex, parts, real_parts},
         real::{
             R, Real,
             numeric::{Numeric, free_symbols},
         },
+        sequence::{Seq, numeric::NumericSequence},
     },
     parser::{Parser, ParserError, environment::Statement},
     term::{Term, relation::Relation},
@@ -112,6 +115,11 @@ pub enum GraphKind {
         re_derivative: Option<Numeric>,
         /// `(Im f)'(x)`, if it can be evaluated.
         im_derivative: Option<Numeric>,
+    },
+    /// The points `(k, u_k)` of a sequence `u`, for the integers `k` where it is defined.
+    Sequence {
+        /// The sequence, its index being `x`.
+        terms: NumericSequence,
     },
     /// A point.
     Point {
@@ -208,6 +216,7 @@ impl Graph {
                 .unsupported()
                 .or_else(|| a.unsupported())
                 .or_else(|| b.unsupported()),
+            GraphKind::Sequence { terms } => terms.unsupported(),
             GraphKind::Point { x, y }
             | GraphKind::ComplexMap { re: x, im: y }
             | GraphKind::ComplexCurve { re: x, im: y, .. } => {
@@ -333,6 +342,46 @@ fn integral_graph(line: &str, env: &Environment) -> Option<Graph> {
             b,
         },
     ))
+}
+
+/// The points of a sequence of `R^N` indexed by `index`, `None` for a constant sequence.
+fn sequence_graph(term: &Term<Seq<Real>>, index: Symbol) -> Option<Graph> {
+    let Term::Value(value) = term else {
+        return None;
+    };
+    let sequence = value.element();
+    let symbols = NumericSequence::symbols(sequence);
+    if sequence.as_closed().is_some() && !symbols.contains(&index) {
+        return None;
+    }
+    let mut params: Vec<Symbol> = symbols
+        .into_iter()
+        .filter(|symbol| *symbol != index && !Context::is_builtin_constant(*symbol))
+        .collect();
+    params.sort_by_key(|symbol| symbol.name());
+    Some(Graph {
+        kind: GraphKind::Sequence {
+            terms: NumericSequence::compile(sequence, index, &params),
+        },
+        params: params.iter().map(|param| param.name().to_owned()).collect(),
+    })
+}
+
+/// The points of the sequence defined as `name` by a recursive rule and values at integers, like `u(0) := 1` and
+/// `u(n) := 2 u(n - 1) + 1`, `None` if it can't be built yet (a value is missing) or isn't a sequence.
+fn defined_sequence(name: Symbol, env: &Environment) -> Option<Graph> {
+    let definition = env
+        .get(name)
+        .filter(|definition| definition.is_sequence())?;
+    let index = match definition.params() {
+        [index] => *index,
+        _ => Symbol::new("n"),
+    };
+    let term = Parser::new(name.name())
+        .with_environment(env)
+        .parse(R.get_sequence_set(index))
+        .ok()?;
+    sequence_graph(&term, index)
 }
 
 /// The graph of a relation `lhs op rhs`, if it depends on `x` or `y`.
@@ -587,12 +636,42 @@ pub(crate) fn evaluate(
     };
     let graph = match &statement {
         Statement::Expression(term) => graph_of(term),
+        Statement::Definition { name, .. }
+            if env
+                .get(*name)
+                .is_some_and(formalith::parser::environment::Definition::is_recursive) =>
+        {
+            defined_sequence(*name, env)
+        }
         Statement::Definition { params, body, .. } => match params.as_slice() {
             [param] => Some(function(body, *param)),
             [p, q] => Some(surface(body, [*p, *q])),
             [] => graph_of(body),
             _ => None,
         },
+        _ => None,
+    };
+    Ok((Evaluated::new(statement), graph))
+}
+
+/// Evaluate a line in `set`, a set `R^N` of sequences, which isn't a command, with its graph: the points of
+/// sequences which aren't constant.
+///
+/// # Errors
+/// Returns the parsing error if `line` is not a valid statement.
+///
+/// # Panics
+/// Panics if an operation is not supported.
+pub(crate) fn evaluate_sequence(
+    line: &str,
+    env: &mut Environment,
+    set: Seq<Real>,
+) -> Result<(Evaluated, Option<Graph>), ParserError> {
+    let statement = env.eval(line, set)?;
+    let graph = match &statement {
+        Statement::Expression(term) | Statement::Definition { body: term, .. } => {
+            sequence_graph(term, set.index())
+        }
         _ => None,
     };
     Ok((Evaluated::new(statement), graph))

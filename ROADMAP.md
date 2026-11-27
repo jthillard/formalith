@@ -124,7 +124,8 @@ sessions, and their terms in `R`, `C` and `Z`.
   initial values.
 - Calls with a symbolic argument (`sum(u(k), k, 1, 10)` in `R`) stay unevaluated, definitions being expanded when
   parsed.
-- Sequences in the GUI (points `(k, u_k)`).
+- Sequences of `C^N` in the GUI (points of their real and imaginary parts); the terms of recurrences are
+  recomputed in f64 for each frame.
 
 ## Matrices
 

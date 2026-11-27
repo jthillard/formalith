@@ -8,7 +8,8 @@ behavior of each builtin is documented in `crates/formalith/src/context/docs.rs`
 
 - `formalith`: the CAS library. Paths below like `src/...` are relative to `crates/formalith/`.
 - `formalith-session`: interactive `Session` shared by the interfaces (commands, definitions, panics caught,
-  `replay` lines restoring state), and `graph.rs` (graphs of a line, for the GUI).
+  `replay` lines restoring state), and `graph.rs` (graphs of a line, for the GUI; sequences of `R^N` and
+  recursive definitions as `GraphKind::Sequence`, compiled by `sequence/numeric.rs`).
 - `formalith-cli`: binary `formalith`, the default `cargo run` (REPL, or evaluates its arguments).
 - `formalith-web`: wasm web REPL (`www/`, session in a Web Worker, Typst rendered with typst.ts).
 - `formalith-gui`: graphing calculator (egui / eframe / wgpu, native and wasm). Not a default member.
@@ -70,7 +71,7 @@ in the root `Cargo.toml` (`dev` keeps line tables only, dependencies at `opt-lev
 - `N`, `Z`, `R` (exact rationals via `malachite`, plus symbolic constants; where calculus lives, `real/`),
 - `C` (Gaussian rationals; calculus is done in `R` on real and imaginary parts, `complex/parts.rs`),
 - `Zn` (`Z/nZ`, runtime modulus), `Poly<K>` (`K[x]`, `polynomial.rs`),
-- `Seq<K>` (sequences `R^N`, `C^N`, `R^N[k]`; `sequence.rs`, `sequence/system.rs`): an element is a system of
+- `Seq<K>` (sequences `R^N`, `C^N`, `R^N[k]`; `sequence.rs`, `sequence/system.rs`, `sequence/numeric.rs` in f64): an element is a system of
   equations, closed forms (`n^2 + 1`) or recurrences with initial values, made canonical after each componentwise
   operation; symbols and functions fold into a single value (`Seq::normalize`),
 - `M` (matrices with symbolic entries, `M<TermSet<R>>`, also over `C`, `Z`, `Zn`, sets `M(R)`, `M(C)`, `M(Z)`,

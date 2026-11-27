@@ -46,6 +46,7 @@ use formalith::{
         docs::{self, BUILTIN_DOCS, Category},
     },
     dynamic::{self, Evaluated, StatementKind},
+    field::{Set, real::R},
     parser::{ParserError, syntax::input_typst},
     printer::PrintOptions,
 };
@@ -339,7 +340,7 @@ impl Session {
         }
     }
 
-    /// Run a line like [`Session::run`], with its graph when the set is `R` or `C`, see [`graph`].
+    /// Run a line like [`Session::run`], with its graph when the set is `R`, `C` or `R^N`, see [`graph`].
     ///
     /// Relations in `y`, like `y = x^2` or `x^2 + y^2 < 1`, and points `(a, b)` are kept as they are rather than
     /// solved.
@@ -349,8 +350,23 @@ impl Session {
         let evaluate = match self.set {
             SetChoice::R => graph::evaluate,
             SetChoice::C => graph::evaluate_complex,
+            SetChoice::Seq(Coefficients::R, index) => {
+                let set = R.get_sequence_set(index);
+                return self.graph_with(line, move |line, env| {
+                    graph::evaluate_sequence(line, env, set)
+                });
+            }
             _ => return (self.run(line), None),
         };
+        self.graph_with(line, evaluate)
+    }
+
+    /// Run a line like [`Session::graph`], evaluated by `evaluate`.
+    fn graph_with(
+        &mut self,
+        line: &str,
+        evaluate: impl FnOnce(&str, &mut Environment) -> Result<(Evaluated, Option<Graph>), ParserError>,
+    ) -> (Response, Option<Graph>) {
         if line.is_empty() || line.starts_with(':') || line == "help" {
             return (self.run(line), None);
         }
