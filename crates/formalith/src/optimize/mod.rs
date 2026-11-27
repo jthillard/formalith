@@ -154,10 +154,18 @@ impl<T: Set> PrettyPrint for Extrema<T> {
             let mut line = PrettyPrinter::empty();
             let value = Equation::new(Self::function(point.value.get_set()), point.value.clone());
             for equation in Solution::equations(&point.point).chain([value]) {
-                line.concat(", ", false, &equation.pretty_print(options));
+                line.concat_breaking(
+                    ", ",
+                    false,
+                    &equation.pretty_print(options),
+                    crate::printer::BreakKind::Separator,
+                );
             }
             let mut labeled = PrettyPrinter::from(Self::label(point, *options));
-            labeled.concat(" ", false, &line);
+            let width = options
+                .width
+                .map(|width| width.saturating_sub(labeled.width() + 1));
+            labeled.concat(" ", false, &line.wrapped(width));
             res.stack(&labeled);
         }
         res

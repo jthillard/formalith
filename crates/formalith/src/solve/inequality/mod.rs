@@ -56,10 +56,11 @@ impl<T: Set> Print for Inequality<T> {
 impl<T: Set> PrettyPrint for Inequality<T> {
     fn pretty_print(&self, options: &PrintOptions) -> PrettyPrinter {
         let mut res = self.lhs.pretty_print(options);
-        res.concat(
+        res.concat_breaking(
             self.relation.pretty_operator(),
             true,
             &self.rhs.pretty_print(options),
+            crate::printer::BreakKind::Relation,
         );
         res
     }
@@ -247,7 +248,12 @@ impl<T: Set> Region<T> {
         let mut res = PrettyPrinter::from(unknown.name().to_owned());
         if let [interval] = intervals {
             if let Some(point) = interval.point() {
-                res.concat("=", true, &point.pretty_print(&options));
+                res.concat_breaking(
+                    "=",
+                    true,
+                    &point.pretty_print(&options),
+                    crate::printer::BreakKind::Relation,
+                );
                 return res;
             }
             if interval.is_everything() {
@@ -257,9 +263,14 @@ impl<T: Set> Region<T> {
         }
         let mut union = PrettyPrinter::empty();
         for interval in intervals {
-            union.concat("∪", true, &interval.pretty_print_interval(options));
+            union.concat_breaking(
+                "∪",
+                true,
+                &interval.pretty_print_interval(options),
+                crate::printer::BreakKind::Sum,
+            );
         }
-        res.concat("∈", true, &union);
+        res.concat_breaking("∈", true, &union, crate::printer::BreakKind::Relation);
         res
     }
 }
@@ -295,18 +306,20 @@ impl<T: Set> PrettyPrint for Region<T> {
         for (prefix, union) in self.lines() {
             let mut line = PrettyPrinter::empty();
             for (unknown, interval) in others.iter().zip(prefix) {
-                line.concat(
+                line.concat_breaking(
                     ", ",
                     false,
                     &Self::pretty_print_coordinate(*unknown, &[interval], *options),
+                    crate::printer::BreakKind::Separator,
                 );
             }
-            line.concat(
+            line.concat_breaking(
                 ", ",
                 false,
                 &Self::pretty_print_coordinate(*last, &union, *options),
+                crate::printer::BreakKind::Separator,
             );
-            res.stack(&line);
+            res.stack(&line.wrapped(options.width));
         }
         res
     }

@@ -22,6 +22,9 @@ pub struct PrintOptions {
     pub typst: bool,
     /// Fancier printing using ASCII art.
     pub pretty_print: bool,
+    /// The maximum width of the lines of pretty printing, wider results being cut into stacked chunks
+    /// ([`PrettyPrinter::wrap`]), like the width of a terminal. Unlimited by default.
+    pub width: Option<usize>,
 }
 
 impl Default for PrintOptions {
@@ -30,6 +33,7 @@ impl Default for PrintOptions {
             colors: supports_color::on_cached(supports_color::Stream::Stdout).is_some(),
             typst: false,
             pretty_print: true,
+            width: None,
         }
     }
 }
@@ -41,6 +45,7 @@ impl PrintOptions {
             colors: supports_color::on_cached(supports_color::Stream::Stdout).is_some(),
             typst: false,
             pretty_print: false,
+            width: None,
         }
     }
     /// Single line, without colors.
@@ -50,6 +55,7 @@ impl PrintOptions {
             colors: false,
             typst: false,
             pretty_print: false,
+            width: None,
         }
     }
     /// Single-line typst math source, without colors.
@@ -59,7 +65,13 @@ impl PrintOptions {
             colors: false,
             typst: true,
             pretty_print: false,
+            width: None,
         }
+    }
+    /// The same options with lines of pretty printing at most `width` wide (unlimited for `None`).
+    #[must_use]
+    pub const fn with_width(self, width: Option<usize>) -> Self {
+        Self { width, ..self }
     }
     /// Check if colors should be written.
     const fn use_colors(self) -> bool {
@@ -240,7 +252,7 @@ pub trait PrettyPrint: Print {
     /// Returns an error if the formatter fails.
     fn fmt(&self, options: &PrintOptions, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if options.pretty_print && !options.typst {
-            write!(f, "{}", self.pretty_print(options))
+            write!(f, "{}", self.pretty_print(options).wrapped(options.width))
         } else {
             self.print(options, f)
         }
@@ -258,6 +270,30 @@ pub struct PrettyPrinter {
     width: usize,
     /// Give the height of the base of the expression.
     pub baseline: usize,
+    /// The columns where the printer may be cut when it is too wide, see [`PrettyPrinter::wrap`].
+    breaks: Vec<Break>,
+}
+
+/// Where a line which is too wide is preferably cut, from the best place to the worst one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum BreakKind {
+    /// After a separator between items, like the `, ` between the equations of a solution.
+    Separator,
+    /// Before a relation, like `=` or `<`.
+    Relation,
+    /// Before the `+` or `-` of a sum.
+    Sum,
+    /// Before the `⋅` of a product.
+    Product,
+}
+
+/// A column where a pretty printer may be cut, the next chunk starting there.
+#[derive(Debug, Clone, Copy)]
+struct Break {
+    column: usize,
+    kind: BreakKind,
+    /// The number of parentheses or other constructs around it, cutting at the outermost level first.
+    depth: u8,
 }
 
 impl From<String> for PrettyPrinter {
@@ -266,6 +302,7 @@ impl From<String> for PrettyPrinter {
             width: value.chars().count(),
             lines: vec![value],
             baseline: 0,
+            breaks: vec![],
         }
     }
 }
@@ -399,6 +436,7 @@ impl PrettyPrinter {
             lines: vec![],
             width: 0,
             baseline: 0,
+            breaks: vec![],
         }
     }
     /// Check if the pretty printer is blank.
@@ -444,6 +482,7 @@ impl PrettyPrinter {
         }
 
         self.width = width;
+        self.breaks.clear();
         self.height()
     }
 
@@ -451,6 +490,16 @@ impl PrettyPrinter {
     ///
     /// self + other
     pub fn concat(&mut self, sym: &str, space: bool, other: &Self) {
+        self.concat_with(sym, space, other, None);
+    }
+
+    /// Concat two pretty printers like [`PrettyPrinter::concat`], allowing to cut the result at `sym` when it is
+    /// too wide: after it for a [`BreakKind::Separator`], before it otherwise.
+    pub fn concat_breaking(&mut self, sym: &str, space: bool, other: &Self, kind: BreakKind) {
+        self.concat_with(sym, space, other, Some(kind));
+    }
+
+    fn concat_with(&mut self, sym: &str, spaced: bool, other: &Self, kind: Option<BreakKind>) {
         if self.is_empty() {
             *self = other.clone();
             return;
@@ -474,7 +523,7 @@ impl PrettyPrinter {
         }
 
         // Add space and the symbol
-        let (sym, space) = if space {
+        let (sym, space) = if spaced {
             (format!(" {sym} "), " ".repeat(sym.chars().count() + 2))
         } else {
             (sym.to_string(), " ".repeat(sym.chars().count()))
@@ -497,6 +546,23 @@ impl PrettyPrinter {
         }
 
         // Update printer infos
+        let offset = self.width + space.len();
+        if let Some(kind) = kind {
+            let column = if kind == BreakKind::Separator {
+                offset
+            } else {
+                self.width + usize::from(spaced)
+            };
+            self.breaks.push(Break {
+                column,
+                kind,
+                depth: 0,
+            });
+        }
+        self.breaks.extend(other.breaks.iter().map(|other| Break {
+            column: other.column + offset,
+            ..*other
+        }));
         self.width += other.width + space.len();
     }
 
@@ -529,6 +595,7 @@ impl PrettyPrinter {
         };
 
         // Add the symbol
+        self.breaks.clear();
         self.baseline = self.height();
         self.lines.push(sym.repeat(self.width()));
 
@@ -550,6 +617,7 @@ impl PrettyPrinter {
             return;
         }
         let width = self.width().max(other.width());
+        self.breaks.clear();
         for line in &mut self.lines {
             *line += &" ".repeat(width - self.width);
         }
@@ -619,6 +687,8 @@ impl PrettyPrinter {
         self.lines = lines;
         self.width += sign_width;
         self.baseline += 1;
+        self.shift_breaks(sign_width);
+        self.nest();
 
         let Some(index) = index else {
             return;
@@ -631,6 +701,7 @@ impl PrettyPrinter {
             line.insert_str(0, &" ".repeat(extra));
         }
         self.width += extra;
+        self.shift_breaks(extra);
         let missing = (index.height() - 1).saturating_sub(bottom);
         for _ in 0..missing {
             self.lines.insert(0, " ".repeat(self.width));
@@ -665,6 +736,7 @@ impl PrettyPrinter {
             lines: sign_lines,
             width: 1,
             baseline: 0,
+            breaks: vec![],
         };
         let (mut column, upper_height) = match bounds {
             Some((lower, upper)) => {
@@ -676,6 +748,7 @@ impl PrettyPrinter {
             None => (sign, 0),
         };
         // The body starts on the line below `⌠`
+        self.nest();
         column.baseline = upper_height + 1 + self.baseline;
         column.concat(" ", false, self);
         *self = column;
@@ -692,6 +765,7 @@ impl PrettyPrinter {
         column.over(&Self::from(sign.to_string()));
         column.over(lower);
         column.baseline = upper.map_or(0, Self::height);
+        self.nest();
         column.concat(" ", false, self);
         *self = column;
     }
@@ -758,6 +832,7 @@ impl PrettyPrinter {
             line.insert_str(0, &format!("{brace} "));
         }
         res.width += 2;
+        res.breaks.clear();
         res
     }
     /// Add `sym` at the left of self, converting it to unicode drawings chars.
@@ -783,8 +858,9 @@ impl PrettyPrinter {
             );
         }
         self.width += 1;
+        self.shift_breaks(1);
     }
-    /// Add `sym` at the left of self, converting it to unicode drawings chars.
+    /// Add `sym` at the right of self, converting it to unicode drawings chars.
     pub fn right(&mut self, sym: char) {
         let or = (sym, sym, sym);
         let height = self.height();
@@ -809,6 +885,112 @@ impl PrettyPrinter {
     pub fn group(&mut self, start: char, end: char) {
         self.left(start);
         self.right(end);
+        self.nest();
+    }
+    /// Move the breaks of self `columns` to the right, after adding columns at its left.
+    fn shift_breaks(&mut self, columns: usize) {
+        for cut in &mut self.breaks {
+            cut.column += columns;
+        }
+    }
+    /// Make the breaks of self one level deeper, to be cut after the ones outside of it.
+    fn nest(&mut self) {
+        for cut in &mut self.breaks {
+            cut.depth = cut.depth.saturating_add(1);
+        }
+    }
+    /// Self wrapped at `width` (see [`PrettyPrinter::wrap`]), or unchanged for `None`.
+    #[must_use]
+    pub fn wrapped(self, width: Option<usize>) -> Self {
+        match width {
+            Some(width) if self.width > width => self.wrap(width),
+            _ => self,
+        }
+    }
+    /// Cut self into chunks at most `width` wide, stacked: at its breaks (outermost ones first, the best kind
+    /// first, preferably in the right half of the line so that chunks aren't too short, and only when the next
+    /// chunk can end at a break too), or at `width` when there is none. Each chunk is the slice of every line, without its blank rows and columns at the edges, so a chunk
+    /// of a single line takes a single line; chunks taller than a line are separated by an empty line.
+    #[must_use]
+    pub fn wrap(&self, width: usize) -> Self {
+        let width = width.max(1);
+        if self.width <= width {
+            return self.clone();
+        }
+        let rows: Vec<Vec<char>> = self
+            .lines
+            .iter()
+            .map(|line| line.chars().collect())
+            .collect();
+        let blank_column = |column: usize| {
+            rows.iter()
+                .all(|row| row.get(column).is_none_or(|c| *c == ' '))
+        };
+        // Cutting at `column` is useless when the next chunk must be cut at a width anyway
+        let useful = |column: usize| {
+            self.width - column <= width
+                || self
+                    .breaks
+                    .iter()
+                    .any(|cut| cut.column > column && cut.column <= column + width)
+        };
+        let mut chunks = vec![];
+        let mut start = 0;
+        while self.width - start > width {
+            let end = start + width;
+            let best = |from: usize| {
+                self.breaks
+                    .iter()
+                    .filter(|cut| cut.column > from.max(start) && cut.column <= end)
+                    .filter(|cut| useful(cut.column))
+                    .min_by_key(|cut| (cut.depth, cut.kind, std::cmp::Reverse(cut.column)))
+            };
+            let cut = best(start + width / 2)
+                .or_else(|| best(start))
+                .map_or(end, |cut| cut.column);
+            chunks.push((start, cut));
+            start = cut;
+        }
+        chunks.push((start, self.width));
+        let mut res = Self::empty();
+        let mut previous_height = 0;
+        for (mut start, mut end) in chunks {
+            while start < end && blank_column(start) {
+                start += 1;
+            }
+            while end > start && blank_column(end - 1) {
+                end -= 1;
+            }
+            if start == end {
+                continue;
+            }
+            let mut lines: Vec<String> = rows
+                .iter()
+                .map(|row| {
+                    (start..end)
+                        .map(|column| row.get(column).copied().unwrap_or(' '))
+                        .collect()
+                })
+                .collect();
+            let blank = |line: &String| line.chars().all(|c| c == ' ');
+            let top = lines.iter().take_while(|line| blank(line)).count();
+            lines.drain(..top);
+            while lines.last().is_some_and(blank) {
+                lines.pop();
+            }
+            let chunk = Self {
+                baseline: self.baseline.saturating_sub(top).min(lines.len() - 1),
+                lines,
+                width: end - start,
+                breaks: vec![],
+            };
+            if !res.is_empty() && previous_height.max(chunk.height()) > 1 {
+                res.stack(&Self::from(String::new()));
+            }
+            previous_height = chunk.height();
+            res.stack(&chunk);
+        }
+        res
     }
     /// Wrap self between paren.
     pub fn paren(&mut self) {

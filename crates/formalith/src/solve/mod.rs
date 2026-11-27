@@ -71,7 +71,12 @@ impl<T: Set> Print for Equation<T> {
 impl<T: Set> PrettyPrint for Equation<T> {
     fn pretty_print(&self, options: &PrintOptions) -> PrettyPrinter {
         let mut res = self.lhs.pretty_print(options);
-        res.concat("=", true, &self.rhs.pretty_print(options));
+        res.concat_breaking(
+            "=",
+            true,
+            &self.rhs.pretty_print(options),
+            crate::printer::BreakKind::Relation,
+        );
         res
     }
 }
@@ -212,9 +217,14 @@ impl<T: Set> PrettyPrint for Solution<T> {
         for assignments in self.branches() {
             let mut line = PrettyPrinter::empty();
             for equation in Self::equations(assignments) {
-                line.concat(", ", false, &equation.pretty_print(options));
+                line.concat_breaking(
+                    ", ",
+                    false,
+                    &equation.pretty_print(options),
+                    crate::printer::BreakKind::Separator,
+                );
             }
-            res.stack(&line);
+            res.stack(&line.wrapped(options.width));
         }
         res
     }

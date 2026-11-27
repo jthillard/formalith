@@ -108,7 +108,7 @@ impl<T: Set> PrettyPrint for OdeSolution<T> {
     fn pretty_print(&self, options: &PrintOptions) -> PrettyPrinter {
         let mut res = PrettyPrinter::empty();
         for equation in self.equations() {
-            res.stack(&equation.pretty_print(options));
+            res.stack(&equation.pretty_print(options).wrapped(options.width));
         }
         res
     }

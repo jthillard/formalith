@@ -307,7 +307,7 @@ impl<T: Set> Mul<T> {
                     part.paren();
                 }
                 if let Some(res) = &mut res {
-                    res.concat("⋅", false, &part);
+                    res.concat_breaking("⋅", false, &part, crate::printer::BreakKind::Product);
                 } else {
                     res = Some(part);
                 }

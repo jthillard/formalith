@@ -391,14 +391,19 @@ impl<From: Set, T: Set> PrettyPrint for Fun<From, T> {
             (Relation::from_symbol(self.ident), self.args.as_slice())
         {
             let mut res = lhs.pretty_print(options);
-            res.concat(relation.pretty_operator(), true, &rhs.pretty_print(options));
+            res.concat_breaking(
+                relation.pretty_operator(),
+                true,
+                &rhs.pretty_print(options),
+                crate::printer::BreakKind::Relation,
+            );
             return res;
         }
         let mut args = self.args.iter().map(|x| x.pretty_print(options));
         let mut res = args.next().unwrap();
         for mut arg in args {
             arg.left(' ');
-            res.concat(",", false, &arg);
+            res.concat_breaking(",", false, &arg, crate::printer::BreakKind::Separator);
         }
         res.paren();
         let name = match self.ident {

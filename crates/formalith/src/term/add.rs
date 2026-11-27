@@ -210,12 +210,17 @@ impl<T: Set> Add<T> {
                         let coeff = &mut mul.coefficient;
                         mul.set.get_coefficient_set().neg_assign(coeff);
                         let elem = PrettyPrint::pretty_print(&mul, &options);
-                        res.as_mut().unwrap().concat("-", true, &elem);
+                        res.as_mut().unwrap().concat_breaking(
+                            "-",
+                            true,
+                            &elem,
+                            crate::printer::BreakKind::Sum,
+                        );
                     }
                     _ => {
                         let elem = term.pretty_print_operand(options);
                         if let Some(res) = &mut res {
-                            res.concat("+", true, &elem);
+                            res.concat_breaking("+", true, &elem, crate::printer::BreakKind::Sum);
                         } else {
                             res = Some(elem);
                         }
@@ -243,7 +248,7 @@ impl<T: Group> PrettyPrint for Add<T> {
                 {
                     let elem =
                         PrettyPrint::pretty_print(&Value::new(set.neg(value), *set), options);
-                    res.concat("-", true, &elem);
+                    res.concat_breaking("-", true, &elem, crate::printer::BreakKind::Sum);
                     true
                 } else {
                     false

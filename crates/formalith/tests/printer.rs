@@ -237,6 +237,7 @@ fn print_typst_has_no_colors() {
             colors: true,
             typst: true,
             pretty_print: true,
+            width: None,
         })
     );
     assert!(!printed.contains('\u{1b}'));
@@ -375,4 +376,58 @@ fn pretty_print_limits_and_derivatives() {
         pretty(&parse!("diff(f(x), x, 2)", R)),
         " 2     \nd      \n───f(x)\n  2    \ndx     "
     );
+}
+
+/// Pretty printing without colors, lines at most `width` wide.
+const fn wrapping(width: usize) -> PrintOptions {
+    PrintOptions {
+        pretty_print: true,
+        ..PrintOptions::plain()
+    }
+    .with_width(Some(width))
+}
+
+/// Pretty print without colors, lines at most `width` wide.
+fn wrapped<T: formalith::printer::PrettyPrint>(value: &T, width: usize) -> String {
+    format!("{}", value.with_options(wrapping(width)))
+}
+
+#[test]
+fn wrap_sums_before_their_operators() {
+    let term = parse!("x^6 + 2 x^5 + 3 x^4 - 4 x^3 + 5 x^2 + 6 x + 7", R);
+    assert_eq!(pretty(&term).lines().count(), 2);
+    assert_eq!(wrapped(&term, 80), pretty(&term));
+    let printed = wrapped(&term, 24);
+    assert_eq!(
+        printed,
+        "         2      3     \n6⋅x + 5⋅x  - 4⋅x      \n                      \n     4      5    6    \n+ 3⋅x  + 2⋅x  + x  + 7"
+    );
+    assert!(printed.lines().all(|line| line.chars().count() <= 24));
+}
+
+#[test]
+fn wrap_keeps_fractions_whole() {
+    let term = parse!("a/(x + 1) + b/(x + 2) + c/(x + 3) + d/(x + 4)", R);
+    assert_eq!(
+        wrapped(&term, 20),
+        "  a       b    \n───── + ─────  \nx + 1   x + 2  \n               \n    c       d  \n+ ───── + ─────\n  x + 3   x + 4"
+    );
+}
+
+#[test]
+fn wrap_solutions_after_their_separators() {
+    let mut env = formalith::parser::environment::Environment::new();
+    let solution = formalith::dynamic::SetChoice::R
+        .evaluate("solve(x + y = a + b + c, x - y = a - b, x, y)", &mut env)
+        .unwrap();
+    assert_eq!(
+        solution.print(wrapping(16)),
+        "        c \nx = a + ─,\n        2 \n          \n        c \ny = b + ─ \n        2 "
+    );
+}
+
+#[test]
+fn wrap_cuts_too_wide_parts() {
+    let term = parse!("foobarbazquxquux", R);
+    assert_eq!(wrapped(&term, 6), "foobar\nbazqux\nquux  ");
 }

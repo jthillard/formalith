@@ -394,7 +394,12 @@ impl<E: Set> Print for DefinitionPrinter<'_, E> {
 impl<E: Set> PrettyPrint for DefinitionPrinter<'_, E> {
     fn pretty_print(&self, options: &PrintOptions) -> PrettyPrinter {
         let mut res = PrettyPrinter::from(head(self.name, self.params, false));
-        res.concat(":=", true, &self.body.pretty_print(options));
+        res.concat_breaking(
+            ":=",
+            true,
+            &self.body.pretty_print(options),
+            crate::printer::BreakKind::Relation,
+        );
         res
     }
 }
@@ -421,7 +426,12 @@ impl<E: Set> Print for Point<E> {
 impl<E: Set> PrettyPrint for Point<E> {
     fn pretty_print(&self, options: &PrintOptions) -> PrettyPrinter {
         let mut res = self.0.pretty_print(options);
-        res.concat(", ", false, &self.1.pretty_print(options));
+        res.concat_breaking(
+            ", ",
+            false,
+            &self.1.pretty_print(options),
+            crate::printer::BreakKind::Separator,
+        );
         res.paren();
         res
     }
@@ -452,7 +462,12 @@ impl<E: Set> PrettyPrint for Relations<E> {
     fn pretty_print(&self, options: &PrintOptions) -> PrettyPrinter {
         let mut res = PrettyPrinter::empty();
         for relation in &self.0 {
-            res.concat(", ", false, &relation.pretty_print(options));
+            res.concat_breaking(
+                ", ",
+                false,
+                &relation.pretty_print(options),
+                crate::printer::BreakKind::Separator,
+            );
         }
         res
     }

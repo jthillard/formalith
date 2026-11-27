@@ -7,14 +7,26 @@
 
 use std::process::ExitCode;
 
-use formalith_session::{Output, Session, sets_help};
+use formalith_session::{Output, Session, formalith::printer::PrintOptions, sets_help};
 use rustyline::{DefaultEditor, error::ReadlineError};
 
-/// Run a line in `session` and print the answer.
+/// Run a line in `session` and print the answer, results being cut at the width of the terminal (when stdout is
+/// one) rather than wrapped by it, which would mix the rows of their 2D layout.
 fn run(session: &mut Session, line: &str) {
     match session.run(line).output {
         Output::None => {}
         Output::Error(err) => eprintln!("error: {err}"),
+        Output::Result {
+            result,
+            typst: false,
+        } => {
+            let width = terminal_size::terminal_size_of(std::io::stdout())
+                .map(|(width, _)| usize::from(width.0));
+            println!(
+                "{}",
+                result.print(PrintOptions::default().with_width(width))
+            );
+        }
         output => println!("{output}"),
     }
 }

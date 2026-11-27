@@ -146,6 +146,7 @@ const PRINT_OPTIONS: PrintOptions = PrintOptions {
     colors: false,
     typst: false,
     pretty_print: true,
+    width: None,
 };
 
 /// A line evaluated by an earlier request.
