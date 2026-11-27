@@ -1,8 +1,8 @@
 //! Integrals of elementary functions of a linear argument, of square roots of quadratic polynomials, of
 //! products `{$e^u sin v$}` and `{$e^u cos v$}`, and of `{$p e^q$}` for polynomials `p` and quadratic
 //! polynomials `q` with the error functions `{$"erf"$}` and `{$"erfi"$}`, and of `{$1 / (A x^2 + B)$}` with
-//! symbolic `A` and `B`, and of `{$e^u / v$}`, `{$sin(u) / v$}` and `{$cos(u) / v$}` for linear `u` and `v`, with the
-//! exponential, sine and cosine integrals.
+//! symbolic `A` and `B`, and of `{$e^u / v^n$}`, `{$sin(u) / v^n$}` and `{$cos(u) / v^n$}` for linear `u` and `v`, with
+//! the exponential, sine and cosine integrals.
 
 use crate::field::real::expr::{
     Expr, constant_sign, depends, fun, int, map_tree, one, ratio, unary, value, variable, zero,
@@ -19,7 +19,7 @@ use crate::{
 
 use super::{Integrator, ci_abs, factors, linear, ln_abs, poly::Poly};
 
-pub(super) fn integrate(_: &mut Integrator, f: &Expr, x: Symbol) -> Option<Expr> {
+pub(super) fn integrate(integrator: &mut Integrator, f: &Expr, x: Symbol) -> Option<Expr> {
     match f {
         Term::Symbol(_) => Some(ratio(1, 2) * variable(x).pow(&int(2))),
         Term::Pow(pow) => {
@@ -61,7 +61,8 @@ pub(super) fn integrate(_: &mut Integrator, f: &Expr, x: Symbol) -> Option<Expr>
         Term::Mul(_) => exp_trig(f, x)
             .or_else(|| linear_quadratic(f, x))
             .or_else(|| polynomial_gaussian(f, x))
-            .or_else(|| exponential_integral(f, x)),
+            .or_else(|| exponential_integral(f, x))
+            .or_else(|| exponential_integral_power(integrator, f, x)),
         Term::Value(_) | Term::Add(_) => None,
     }
 }
@@ -156,6 +157,38 @@ fn exponential_integral(f: &Expr, x: Symbol) -> Option<Expr> {
             _ => cos * ci - sin * si,
         } / p,
     )
+}
+
+/// `{$integral g(u) / t^n$}` for `g` among `{$exp$}`, `{$sin$}` and `{$cos$}`, linear `{$u = a x + b$}` and
+/// `{$t = p x + q$}` and an integer `{$n >= 2$}`, by parts down to [`exponential_integral`]:
+/// `{$integral g(u) / t^n = -g(u) / ((n - 1) p t^(n - 1)) + a / ((n - 1) p) integral g'(u) / t^(n - 1)$}`, so
+/// `{$integral sin(t) / t^2 = -sin(t) / t + "Ci"(t)$}`.
+fn exponential_integral_power(integrator: &mut Integrator, f: &Expr, x: Symbol) -> Option<Expr> {
+    /// Largest power reduced.
+    const MAX_POWER: i64 = 20;
+    let [first, second] = factors(f).try_into().ok()?;
+    let ((ident, u), t, n) = match (&first, &second) {
+        (Term::Pow(pow), g) | (g, Term::Pow(pow)) => {
+            let n = -pow.exponant.to_i64()?;
+            (unary(g)?, &*pow.base, n)
+        }
+        _ => return None,
+    };
+    if !(2..=MAX_POWER).contains(&n) {
+        return None;
+    }
+    let derivative = match ident {
+        Context::EXP => fun(Context::EXP, u.clone()),
+        Context::SIN => fun(Context::COS, u.clone()),
+        Context::COS => -fun(Context::SIN, u.clone()),
+        _ => return None,
+    };
+    let (a, p) = (linear(u, x)?, linear(t, x)?);
+    let m = int(n - 1);
+    let lower = t.pow(&-&m);
+    let rest = integrator.integrate(&(derivative * &lower), x)?;
+    let g = fun(ident, u.clone());
+    Some((a * rest - g * lower) / (m * p))
 }
 
 /// A quadratic polynomial `{$c_2 x^2 + c_1 x + c_0$}` written `{$c_2 (x + h)^2 + k$}`, as `{$(c_2, h, k)$}`.

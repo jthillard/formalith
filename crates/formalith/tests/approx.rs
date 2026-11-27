@@ -238,6 +238,15 @@ fn approx_numerical_integrals() {
 }
 
 #[test]
+fn approx_integrals_with_closed_forms() {
+    // Oscillating infinitely often at 0, out of reach of the quadrature, but `{$sin(1) - "Ci"(1)$}`
+    assert_eq!(
+        approx("approx(integrate(sin(1/x), x, 0, 1))"),
+        "0.504067061906928"
+    );
+}
+
+#[test]
 #[ignore = "future: numerical integration of oscillating integrands on infinite intervals"]
 fn approx_oscillating_integrals() {
     assert_eq!(

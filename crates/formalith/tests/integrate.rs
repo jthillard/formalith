@@ -617,11 +617,39 @@ fn exponential_integrals() {
         integrate("integrate(cos(x)/x, x, 1, 2)"),
         integrate("Ci(2) - Ci(1)")
     );
+    // Higher powers by parts
+    assert_eq!(
+        integrate("integrate(sin(x)/x^2, x)"),
+        integrate("Ci(abs(x)) - sin(x)/x")
+    );
+    assert_eq!(
+        integrate("integrate(exp(2*x)/x^2, x)"),
+        integrate("2*Ei(2*x) - exp(2*x)/x")
+    );
+    check_at("exp(x)/x^2", &["-21/10", "-3/10", "3/10", "21/10"]);
+    check_at("cos(x)/x^3", &["-21/10", "-3/10", "3/10", "21/10"]);
+    check_at("sin(2*x + 1)/(3*x - 1)^2", &["-21/10", "3/10", "21/10"]);
+    // With `{$u = 1/x$}`, `{$integral sin(1/x) = x sin(1/x) - "Ci"(1/|x|)$}`
+    check_at("sin(1/x)", &["-21/10", "-3/10", "3/10", "21/10"]);
+    check_at("cos(1/x)", &["-21/10", "-3/10", "3/10", "21/10"]);
+    check_at("exp(1/x)", &["-21/10", "-3/10", "3/10", "21/10"]);
+    assert_eq!(
+        integrate("integrate(sin(1/x), x, 0, 1)"),
+        integrate("sin(1) - Ci(1)")
+    );
+    assert_eq!(
+        integrate("integrate(sin(x)/x^2, x, 1, oo)"),
+        integrate("sin(1) - Ci(1)")
+    );
+    assert_eq!(
+        integrate("integrate(cos(1/x), x, 0, 1)"),
+        integrate("cos(1) + Si(1) - pi/2")
+    );
 }
 
 #[test]
 fn non_elementary_integrals_stay_unevaluated() {
-    for f in ["sin(x^2)", "x^x", "exp(x)/x^2"] {
+    for f in ["sin(x^2)", "x^x", "exp(x)/(x^2 + 1)"] {
         assert!(
             integrate(&format!("integrate({f}, x)")).contains("integrate"),
             "{f}"
