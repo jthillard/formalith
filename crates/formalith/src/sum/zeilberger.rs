@@ -16,12 +16,12 @@
 
 use std::convert::Infallible;
 
-use malachite::{Rational, base::num::arithmetic::traits::Abs};
+use malachite::Rational;
 
 use crate::{
     context::{Context, Symbol},
     field::real::{
-        R, approx,
+        R,
         expr::{
             Expr, Real, depends, map_tree, one, size, subs, try_map_operands, unary, value,
             variable, zero,
@@ -308,15 +308,14 @@ fn direct(f: &Expr, n: Symbol, k: Symbol, a: &Expr, b: &Expr, m: usize) -> Optio
     subs(f, n, &m).sum(k, a, &subs(b, n, &m)).ok()
 }
 
-/// Whether a constant is zero up to its approximation, for closed forms with angles like `{$cos(n theta)$}` not
-/// reduced at integers.
+/// Whether a constant is indistinguishable from zero at the maximum precision of approximations (see
+/// [`constant_sign`]), for closed forms with angles like `{$cos(n theta)$}` not reduced at integers.
 fn negligible(difference: &Expr) -> bool {
     difference
         .symbols()
         .iter()
         .all(|s| Context::is_builtin_constant(*s))
-        && approx::approximate(difference, 30)
-            .is_some_and(|d| d.abs() < Rational::from_signeds(1, 1_000_000_000_000_000_000_i64))
+        && crate::field::real::expr::constant_sign(difference).is_none()
 }
 
 /// A recurrence `{$sum_j sigma_j F(n + j, k) = G(n, k + 1) - G(n, k)$}` with its certificate `{$G = R F$}`, as
