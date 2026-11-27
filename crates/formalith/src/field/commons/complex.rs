@@ -398,6 +398,41 @@ impl C<R<Rational>> {
         Some(rest.into_iter().fold(product, |res, f| res * f))
     }
 
+    /// A trigonometric or hyperbolic function of an inverse one, which holds for every `z` with the principal
+    /// branches: `{$cos(acos z) = z$}`, `{$cos(asin z) = sqrt(1 - z^2)$}`, `{$cos(atan z) = 1 / sqrt(1 + z^2)$}`...
+    fn eval_inverse_composition(self, fun: &dyn crate::term::Function<Self>) -> Option<Term<Self>> {
+        let Some(Term::Fun(inner)) = fun.get_arg::<Self>() else {
+            return None;
+        };
+        let z = inner.get_arg::<Self>()?;
+        let value = |n, d| {
+            Term::Value(Value::new(
+                [Rational::from_signeds(n, d), Rational::ZERO],
+                self,
+            ))
+        };
+        let sqrt = |t: Term<Self>| t.pow(&value(1, 2));
+        let square = z.pow(&value(2, 1));
+        Some(match (fun.get_ident(), inner.get_ident()) {
+            (Context::SIN, Context::ASIN)
+            | (Context::COS, Context::ACOS)
+            | (Context::SINH, Context::ASINH)
+            | (Context::COSH, Context::ACOSH) => z.clone(),
+            // Except at the poles `{$atan(plus.minus i)$}` and `{$"atanh"(plus.minus 1)$}`
+            (Context::TAN, Context::ATAN) if !(value(1, 1) + &square).is_zero() => z.clone(),
+            (Context::TANH, Context::ATANH) if !(value(1, 1) - &square).is_zero() => z.clone(),
+            (Context::COS, Context::ASIN) | (Context::SIN, Context::ACOS) => {
+                sqrt(value(1, 1) - square)
+            }
+            (Context::TAN, Context::ASIN) => z / &sqrt(value(1, 1) - square),
+            (Context::TAN, Context::ACOS) => sqrt(value(1, 1) - square) / z,
+            (Context::COS, Context::ATAN) => sqrt(value(1, 1) + square).inv(),
+            (Context::SIN, Context::ATAN) => z / &sqrt(value(1, 1) + square),
+            (Context::COSH, Context::ASINH) => sqrt(value(1, 1) + square),
+            _ => return None,
+        })
+    }
+
     /// The principal value `{$z^w = e^(w ln z)$}` of a power with a non-real exponent, when it is real: `{$i^i =
     /// e^(-pi/2)$}`. Other powers, like `{$2^i$}`, are kept.
     fn principal_pow(self, base: &[Rational; 2], exponant: &[Rational; 2]) -> Option<Term<Self>> {
@@ -726,7 +761,10 @@ impl Semiring for C<R<Rational>> {
                     }
                 }
                 _ => {
-                    if let Some(res) = eval_ring_builtin(&**fun) {
+                    if let Some(res) = self
+                        .eval_inverse_composition(&**fun)
+                        .or_else(|| eval_ring_builtin(&**fun))
+                    {
                         return res;
                     }
                 }

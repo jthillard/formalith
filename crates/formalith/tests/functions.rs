@@ -189,6 +189,44 @@ fn inverse_trigonometric_values() {
 }
 
 #[test]
+fn functions_of_inverse_functions() {
+    let eq =
+        |input: &str, expected: &str| assert_eq!(parse!(input, R), parse!(expected, R), "{input}");
+    // Defined on all of R
+    eq("tan(atan(x))", "x");
+    eq("sinh(asinh(x))", "x");
+    eq("cos(atan(x))", "1/sqrt(1 + x^2)");
+    eq("sin(atan(x))", "x/sqrt(1 + x^2)");
+    eq("cosh(asinh(x))", "sqrt(1 + x^2)");
+    // Only where the inner function is defined
+    eq("cos(acos(1/3))", "1/3");
+    eq("sin(asin(-1/2))", "-1/2");
+    eq("cos(asin(1/3))", "2*sqrt(2)/3");
+    eq("cosh(acosh(3))", "3");
+    eq("tan(acos(0))", "undefined");
+    for input in [
+        "cos(acos(x))",
+        "cos(acos(2))",
+        "sin(acos(x))",
+        "tanh(atanh(x))",
+        "cosh(acosh(1/2))",
+    ] {
+        assert!(matches!(parse!(input, R), Term::Fun(_)), "{input}");
+    }
+    // In C, everywhere with the principal branches
+    let eq =
+        |input: &str, expected: &str| assert_eq!(parse!(input, C), parse!(expected, C), "{input}");
+    eq("cos(acos(x))", "x");
+    eq("cos(acos(2))", "2");
+    eq("sin(asin(3 + i))", "3 + i");
+    eq("tanh(atanh(x))", "x");
+    eq("cos(asin(x))", "sqrt(1 - x^2)");
+    eq("tan(acos(x))", "sqrt(1 - x^2)/x");
+    // Poles of atan
+    assert!(matches!(parse!("tan(atan(i))", C), Term::Fun(_)));
+}
+
+#[test]
 fn arctangent_of_tangent() {
     assert_eq!(parse!("atan(tan(1))", R), parse!("1", R));
     assert_eq!(parse!("atan(tan(4))", R), parse!("4 - pi", R));

@@ -1125,7 +1125,8 @@ impl R<Rational> {
         let undefined = || Term::Symbol(SymbolTerm::new(Context::UNDEFINED, self));
         if let [x] = args
             && let Some(res) = self
-                .eval_parity(ident, x)
+                .eval_inverse_composition(ident, x)
+                .or_else(|| self.eval_parity(ident, x))
                 .or_else(|| self.eval_periodicity(ident, x))
                 .or_else(|| self.eval_integer_turns(ident, x))
                 .or_else(|| self.eval_at_infinity(ident, x))
@@ -1761,6 +1762,60 @@ impl R<Rational> {
             }
         })?;
         self.reduce_angle(theta)
+    }
+
+    /// A trigonometric or hyperbolic function of an inverse one, like `{$cos(acos y) = y$}` or `{$cos(asin y) =
+    /// sqrt(1 - y^2)$}`. Those only defined on a part of `{$RR$}` are evaluated when `y` is provably in it, from the
+    /// assumptions or a constant's approximation: `{$cos(acos 2)$}` stays as it is.
+    fn eval_inverse_composition(self, ident: Symbol, x: &Term<Self>) -> Option<Term<Self>> {
+        let Term::Fun(inner) = x else {
+            return None;
+        };
+        let y = inner.get_arg::<Self>()?;
+        let value = |n, d| Term::Value(Value::new(Rational::from_signeds(n, d), self));
+        let sqrt = |t: Term<Self>| t.pow(&value(1, 2));
+        let square = y.pow(&value(2, 1));
+        let has_sign = |t: Term<Self>, signs: SignSet| {
+            sign::sign_set(&t, SignMode::APPROXIMATE).is_subset(signs)
+        };
+        // `{$-1 <= y <= 1$}`, or `{$-1 < y < 1$}` when `strict`
+        let in_unit_interval = |strict: bool| {
+            let signs = if strict {
+                SignSet::POSITIVE
+            } else {
+                SignSet::NONNEGATIVE
+            };
+            has_sign(value(1, 1) - y, signs) && has_sign(value(1, 1) + y, signs)
+        };
+        Some(match (ident, inner.get_ident()) {
+            (Context::TAN, Context::ATAN) | (Context::SINH, Context::ASINH) => y.clone(),
+            (Context::COS, Context::ATAN) => sqrt(value(1, 1) + square).inv(),
+            (Context::SIN, Context::ATAN) => y / &sqrt(value(1, 1) + square),
+            (Context::COSH, Context::ASINH) => sqrt(value(1, 1) + square),
+            (Context::SIN, Context::ASIN) | (Context::COS, Context::ACOS)
+                if in_unit_interval(false) =>
+            {
+                y.clone()
+            }
+            (Context::COS, Context::ASIN) | (Context::SIN, Context::ACOS)
+                if in_unit_interval(false) =>
+            {
+                sqrt(value(1, 1) - square)
+            }
+            (Context::TAN, Context::ASIN) if in_unit_interval(true) => {
+                y / &sqrt(value(1, 1) - square)
+            }
+            (Context::TAN, Context::ACOS)
+                if in_unit_interval(false) && has_sign(y.clone(), SignSet::NONZERO) =>
+            {
+                sqrt(value(1, 1) - square) / y
+            }
+            (Context::TANH, Context::ATANH) if in_unit_interval(true) => y.clone(),
+            (Context::COSH, Context::ACOSH) if has_sign(y - &value(1, 1), SignSet::NONNEGATIVE) => {
+                y.clone()
+            }
+            _ => return None,
+        })
     }
 
     /// Evaluate `asin`, `acos` or `atan` at the classic values, like `{$asin(1/2) = pi/6$}`.

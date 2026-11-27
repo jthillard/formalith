@@ -296,3 +296,19 @@ fn linear_solving() {
         eval(&["solve(x^2 + y^2 < 1, x > y, x, y)"])
     );
 }
+
+#[test]
+fn functions_of_inverse_functions_in_their_domain() {
+    assert_eq!(eval(&["assume(x >= -1, x <= 1)", "cos(acos(x))"]), "x");
+    assert_eq!(
+        eval(&["assume(x >= -1, x <= 1)", "sin(acos(x))"]),
+        expr("sqrt(1 - x^2)")
+    );
+    // `{$x = 1$}` is a pole of `{$tan(asin x)$}`
+    assert_eq!(
+        eval(&["assume(x >= -1, x <= 1)", "tan(asin(x))"]),
+        "tan(asin(x))"
+    );
+    assert_eq!(eval(&["assume(x > -1, x < 1)", "tanh(atanh(x))"]), "x");
+    assert_eq!(eval(&["assume(y > 1)", "cosh(acosh(y))"]), "y");
+}
