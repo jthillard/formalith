@@ -55,6 +55,8 @@ impl<T: Set> Pow<T> {
 
 impl<T: Set, E: Set> Drop for Pow<T, E> {
     fn drop(&mut self) {
+        // SAFETY: `exponant` is never taken out of its `ManuallyDrop` (no `ManuallyDrop::take` or `into_inner`),
+        // so it is still initialized here, and `self` isn't used after `drop`, so it is dropped exactly once.
         unsafe {
             ManuallyDrop::drop(&mut self.exponant);
         }
