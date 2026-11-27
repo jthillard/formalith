@@ -104,6 +104,56 @@ fn rational_sums() {
 }
 
 #[test]
+fn alternating_series() {
+    assert_eq!(eval("sum((-1)^k/k, k, 1, oo)"), eval("-ln(2)"));
+    assert_eq!(eval("sum((-1)^(k+1)/k, k, 1, oo)"), eval("ln(2)"));
+    assert_eq!(eval("sum((-1)^k/k, k, 2, oo)"), eval("-(ln(2) - 1)"));
+    assert_eq!(eval("sum((-1)^k/k^2, k, 1, oo)"), eval("-pi^2/12"));
+    // Leibniz's series, with Gauss's digamma theorem
+    assert_eq!(eval("sum((-1)^k/(2*k+1), k, 0, oo)"), eval("pi/4"));
+    assert_eq!(
+        eval("sum((-1)^k/(3*k+1), k, 0, oo)"),
+        eval("ln(2)/3 + pi*sqrt(3)/9")
+    );
+    // Terms not tending to 0
+    assert_eq!(eval("sum((-1)^k*k, k, 1, oo)"), "undefined");
+}
+
+#[test]
+fn logarithmic_series() {
+    assert_eq!(eval("sum((1/2)^k/k, k, 1, oo)"), eval("ln(2)"));
+    assert_eq!(eval("sum(2^(-k)/k, k, 1, oo)"), eval("ln(2)"));
+    assert_eq!(eval("sum((-1/3)^k/(k+1), k, 0, oo)"), eval("3*ln(4/3)"));
+    assert_eq!(eval("sum(2^k/k, k, 1, oo)"), "+oo");
+    assert_eq!(eval("sum((-2)^k/k, k, 1, oo)"), "undefined");
+    assert_eq!(
+        eval("sum(x^k/k, k, 1, oo)"),
+        eval("piecewise(x < -1, undefined, x < 1, -ln(1 - x), oo)")
+    );
+}
+
+#[test]
+fn digamma_at_rationals() {
+    assert_eq!(eval("digamma(1/4)"), eval("-euler_gamma - pi/2 - 3*ln(2)"));
+    assert_eq!(eval("digamma(3/4)"), eval("-euler_gamma + pi/2 - 3*ln(2)"));
+    assert_eq!(
+        eval("digamma(2/3)"),
+        eval("-euler_gamma + pi*sqrt(3)/6 - 3/2*ln(3)")
+    );
+    assert_eq!(
+        eval("digamma(1/6)"),
+        eval("-euler_gamma - pi*sqrt(3)/2 - 2*ln(2) - 3/2*ln(3)")
+    );
+    assert_eq!(eval("digamma(7/4)"), eval("digamma(3/4) + 4/3"));
+    assert_eq!(eval("digamma(-1/3)"), eval("digamma(2/3) + 3"));
+    assert!(
+        eval("digamma(1/5)").starts_with("polygamma("),
+        "{}",
+        eval("digamma(1/5)")
+    );
+}
+
+#[test]
 fn infinite_sums() {
     assert_eq!(eval("sum(1/k^2, k, 1, oo)"), eval("pi^2/6"));
     assert_eq!(eval("sum(1/k^2, k, 2, oo)"), eval("pi^2/6 - 1"));

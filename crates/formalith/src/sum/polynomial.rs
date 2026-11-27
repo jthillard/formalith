@@ -10,9 +10,10 @@ use malachite::{
 };
 
 use crate::{
-    context::{Context, Symbol},
+    context::{Context, Symbol, assumptions::SignSet},
     field::real::{
-        expr::{Expr, depends, fun, polygamma, subs, value, variable, zero},
+        expr::{Expr, depends, fun, one, polygamma, subs, value, variable, zero},
+        sign::{SignMode, sign, sign_set},
         special::bernoulli,
     },
     integrate::rational::rational_roots,
@@ -24,6 +25,7 @@ use crate::{
 };
 
 use super::{
+    SumError, SumResult,
     field::Params,
     gosper::{ratio, solve_key_equation},
 };
@@ -215,6 +217,77 @@ pub(super) fn known_series(f: &Expr, k: Symbol, a: &Expr) -> Option<Expr> {
     let c = subs(&rest, k, &zero());
     let head = head(0, &|i| subs(f, k, &value(Rational::from(i))))?;
     Some(c * fun(Context::EXP, x) - head)
+}
+
+/// The logarithmic series `{$sum_(k >= a) c z^k / (k + j)$}` for an integer `j`, `{$z^k$}` being a product of powers
+/// `{$b^(n k + m)$}` with integers `n`: `{$z^(-j) (-ln(1 - z) - sum_(n = 1)^(a + j - 1) z^n / n)$}` for
+/// `{$-1 <= z < 1$}`, so `{$sum_(k >= 1) (1/2)^k / k = ln 2$}`. Divergent for `{$z >= 1$}` and undefined for
+/// `{$z < -1$}`. `None` when `f` isn't such a series or the sign of `{$z plus.minus 1$}` is unknown (it is then
+/// recorded, and the sum split on the values of its parameters).
+pub(super) fn logarithmic(f: &Expr, k: Symbol, a: &Expr) -> Option<SumResult<Expr>> {
+    let Term::Value(start) = a else {
+        return None;
+    };
+    let start = i64::try_from(&start.value).ok()?;
+    let (mut c, factors): (Expr, Vec<&Expr>) = match f {
+        Term::Mul(mul) => (value(mul.coefficient.clone()), mul.iter().collect()),
+        f => (one(), vec![f]),
+    };
+    let (mut z, mut pole) = (one(), None);
+    let k_term = variable(k);
+    for t in factors {
+        match t {
+            _ if !depends(t, k) => c *= t,
+            // `{$1 / (k + j)$}`
+            Term::Pow(pow) if **pow.exponant == -one() && pole.is_none() => {
+                let Term::Value(j) = &*pow.base - &k_term else {
+                    return None;
+                };
+                pole = Some(i64::try_from(&j.value).ok()?);
+            }
+            // `{$b^(n k + m) = (b^n)^k b^m$}`
+            Term::Pow(pow) if !depends(&pow.base, k) => {
+                let exponent = &**pow.exponant;
+                let Term::Value(n) = exponent.derivative(k) else {
+                    return None;
+                };
+                if malachite::Integer::try_from(&n.value).is_err() {
+                    return None;
+                }
+                z *= pow.base.pow(&value(n.value));
+                c *= pow.base.pow(&subs(exponent, k, &zero()));
+            }
+            _ => return None,
+        }
+    }
+    let j = pole?;
+    let first = start.checked_add(j)?;
+    if first < 1 || z.is_one() || z.is_zero() {
+        return None;
+    }
+    let signs = |t: Expr| sign_set(&t, SignMode::APPROXIMATE);
+    let (above, below) = (signs(&z - &one()), signs(&z + &one()));
+    if above.is_subset(SignSet::NONNEGATIVE) {
+        return Some(Err(
+            sign(&c, SignMode::APPROXIMATE).map_or(SumError::Unsupported, SumError::Divergent)
+        ));
+    }
+    if below.is_subset(SignSet::NEGATIVE) {
+        return Some(Err(SumError::Undefined));
+    }
+    if !above.is_subset(SignSet::NEGATIVE) || !below.is_subset(SignSet::NONNEGATIVE) {
+        return None;
+    }
+    let count = u64::try_from(first - 1).ok()?;
+    if count > super::MAX_TERMS {
+        return None;
+    }
+    let head = (1..=count).fold(zero(), |res, n| {
+        let n = value(Rational::from(n));
+        res + z.pow(&n) / n
+    });
+    let series = -fun(Context::LN, one() - &z) - head;
+    Some(Ok(c * z.pow(&value(Rational::from(-j))) * series))
 }
 
 #[cfg(test)]

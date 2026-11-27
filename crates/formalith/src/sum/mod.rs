@@ -138,8 +138,11 @@ impl Term<Real> {
         match (res, count(a, b)) {
             (Err(SumError::Unsupported), _) if infinity_sign(b) == Some(Ordering::Greater) => {
                 polynomial::known_series(self, k, a)
+                    .map(Ok)
+                    .or_else(|| alternating(self, k, a))
+                    .or_else(|| polynomial::logarithmic(self, k, a))
+                    .unwrap_or(Err(SumError::Unsupported))
                     .map(|res| tidy(&res))
-                    .ok_or(SumError::Unsupported)
             }
             (Err(SumError::Unsupported), Some(count)) if count <= MAX_TERMS => {
                 Ok(direct(self, k, a, count, zero(), |res, t| res + t))
@@ -282,6 +285,69 @@ fn zero_powers(f: &Expr, k: Symbol, a: &Expr, b: &Expr) -> Option<SumResult<Expr
         return Some(Ok(zero()));
     }
     Some(Ok(subs(f, k, &value(k0))))
+}
+
+/// The alternating series `{$sum_(k >= a) (-1)^(c k + d) g(k)$}` for an odd `c`, an integer `d` and `{$g -> 0$}`, by
+/// pairing consecutive terms: `{$sum_(j >= a/2) (-1)^d (g(2j) - g(2j + 1))$}` for an even `a` (the first term being
+/// apart for an odd `a`), so `{$sum_(k >= 1) (-1)^k / k = sum_(j >= 1) 1/(2j) - 1/(2j - 1) = -ln 2$}`. `None` when
+/// `f` isn't such a series, `g` doesn't tend to 0 or the paired sum is unsupported.
+fn alternating(f: &Expr, k: Symbol, a: &Expr) -> Option<SumResult<Expr>> {
+    let Term::Value(start) = a else {
+        return None;
+    };
+    let start = malachite::Integer::try_from(&start.value).ok()?;
+    let factors: Vec<&Expr> = match f {
+        Term::Mul(mul) => mul.iter().collect(),
+        f => vec![f],
+    };
+    let is_sign = |t: &Expr| match t {
+        Term::Pow(pow) => *pow.base == -one() && depends(&pow.exponant, k),
+        _ => false,
+    };
+    let [sign] = factors
+        .iter()
+        .copied()
+        .filter(|t| is_sign(t))
+        .collect::<Vec<_>>()
+        .try_into()
+        .ok()?;
+    let Term::Pow(pow) = sign else {
+        return None;
+    };
+    let exponent = &**pow.exponant;
+    let Term::Value(c) = exponent.derivative(k) else {
+        return None;
+    };
+    let Term::Value(d) = subs(exponent, k, &zero()) else {
+        return None;
+    };
+    let odd = |q: &Rational| {
+        malachite::Integer::try_from(q)
+            .is_ok_and(|n| malachite::base::num::arithmetic::traits::Parity::odd(&n))
+    };
+    let integer = |q: &Rational| malachite::Integer::try_from(q).is_ok();
+    if !odd(&c.value) || !integer(&d.value) {
+        return None;
+    }
+    let g = f / sign;
+    if g.limit(k, &infinity(), Direction::Both) != Ok(zero()) {
+        return None;
+    }
+    // `{$(-1)^(c k + d)$}` at the even `{$k = 2j$}`
+    let even_sign = if odd(&d.value) { -one() } else { one() };
+    let j = Symbol::new("@j");
+    let two_j = value(Rational::from(2)) * variable(j);
+    let paired = {
+        let _guard = integer_index(j);
+        &even_sign * &(subs(&g, k, &two_j) - subs(&g, k, &(&two_j + &one())))
+    };
+    let odd_start = malachite::base::num::arithmetic::traits::Parity::odd(&start);
+    let first = if odd_start { subs(f, k, a) } else { zero() };
+    let j0 = (Rational::from(start) + Rational::from(u8::from(odd_start))) / Rational::from(2);
+    match paired.sum(j, &value(j0), &infinity()) {
+        Err(SumError::Unsupported) => None,
+        res => Some(res.map(|res| first + res)),
+    }
 }
 
 /// Assume that `k` is an integer until the guard is dropped.

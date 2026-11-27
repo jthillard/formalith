@@ -6,7 +6,7 @@ use std::sync::RwLock;
 use malachite::{
     Natural, Rational,
     base::num::{
-        arithmetic::traits::{Abs, BinomialCoefficient, Factorial, Pow},
+        arithmetic::traits::{Abs, BinomialCoefficient, Factorial, Floor, Pow},
         basic::traits::{One, Zero},
     },
 };
@@ -225,7 +225,7 @@ impl R<Rational> {
         Term::Fun(Box::new(Fun::new(ident, args, self))).normalize()
     }
 
-    /// `{$psi^((m))(q)$}` for an integer or half-integer `q`, `undefined` at the poles `{$q <= 0$}` integer.
+    /// `{$psi^((m))(q)$}` for an integer or half-integer `q`, or `{$psi(q)$}` for a denominator 3, 4 or 6, `undefined` at the poles `{$q <= 0$}` integer.
     fn eval_polygamma(self, m: u64, q: &Rational) -> Option<Term<Self>> {
         if *q <= 0 && q.denominator_ref() == &Natural::ONE {
             return Some(Term::Symbol(SymbolTerm::new(Context::UNDEFINED, self)));
@@ -245,28 +245,68 @@ impl R<Rational> {
                 self.value(polygamma_factor(m)) * (zeta() - harmonic)
             });
         }
-        let half = Rational::from_signeds(1, 2);
-        let n = i64::try_from(&(q - &half)).ok()?;
+        // `{$q = r + n$}` with `{$0 < r < 1$}`
+        let n = i64::try_from(&q.floor()).ok()?;
+        let r = q - Rational::from(n);
         if n.unsigned_abs() > MAX_HARMONIC {
             return None;
         }
-        // `{$psi(1/2) = -gamma - 2 ln 2$}`, `{$psi^((m))(1/2) = (-1)^(m + 1) m! (2^(m + 1) - 1) zeta(m + 1)$}`
-        let at_half = if m == 0 {
-            -gamma
-                - self.value(Rational::from(2))
-                    * self.call(Context::LN, vec![self.value(Rational::from(2))])
+        let at_r = if *r.denominator_ref() == 2u32 {
+            // `{$psi(1/2) = -gamma - 2 ln 2$}`, `{$psi^((m))(1/2) = (-1)^(m + 1) m! (2^(m + 1) - 1) zeta(m + 1)$}`
+            if m == 0 {
+                -gamma - self.value(Rational::from(2)) * self.ln_of(2)
+            } else {
+                let scale =
+                    polygamma_factor(m) * (Rational::from(2_u32).pow(m + 1) - Rational::ONE);
+                self.value(scale) * zeta()
+            }
+        } else if m == 0 {
+            self.gauss_digamma(&r)? - gamma
         } else {
-            let scale = polygamma_factor(m) * (Rational::from(2_u32).pow(m + 1) - Rational::ONE);
-            self.value(scale) * zeta()
+            return None;
         };
         // `{$psi^((m))(t + 1) = psi^((m))(t) + (-1)^m m! / t^(m + 1)$}`
-        let term = |k: i64| (Rational::from(k) + &half).pow(m + 1).pow(-1_i64);
+        let term = |k: i64| (Rational::from(k) + &r).pow(m + 1).pow(-1_i64);
         let shift = if n >= 0 {
             (0..n).fold(Rational::ZERO, |sum, k| sum + term(k))
         } else {
             -(n..0).fold(Rational::ZERO, |sum, k| sum + term(k))
         };
-        Some(at_half - self.value(polygamma_factor(m) * shift))
+        Some(at_r - self.value(polygamma_factor(m) * shift))
+    }
+
+    /// `{$ln n$}`.
+    fn ln_of(self, n: i64) -> Term<Self> {
+        self.call(Context::LN, vec![self.value(Rational::from(n))])
+    }
+
+    /// `{$psi(r) + gamma$}` for `{$0 < r < 1$}` with a denominator 3, 4 or 6, by Gauss's digamma theorem:
+    /// `{$psi(1/4) = -gamma - pi/2 - 3 ln 2$}`, `{$psi(1/3) = -gamma - pi / (2 sqrt 3) - 3/2 ln 3$}`,
+    /// `{$psi(1/6) = -gamma - sqrt(3)/2 pi - 2 ln 2 - 3/2 ln 3$}`, and `{$psi(1 - r) = psi(r) + pi cot(pi r)$}`.
+    fn gauss_digamma(self, r: &Rational) -> Option<Term<Self>> {
+        let q = |n, d| self.value(Rational::from_signeds(n, d));
+        let pi = Term::Symbol(SymbolTerm::new(Context::PI, self));
+        let sqrt3 = self.value(Rational::from(3)).pow(&q(1, 2));
+        let (small, cot) = match (r.numerator_ref(), r.denominator_ref()) {
+            (n, d) if *d == 4u32 => (
+                -q(3, 1) * self.ln_of(2) - q(1, 2) * &pi,
+                (*n == 3u32).then(|| q(1, 1)),
+            ),
+            (n, d) if *d == 3u32 => (
+                -q(3, 2) * self.ln_of(3) - q(1, 6) * &sqrt3 * &pi,
+                (*n == 2u32).then(|| q(1, 3) * &sqrt3),
+            ),
+            (n, d) if *d == 6u32 => (
+                -q(2, 1) * self.ln_of(2) - q(3, 2) * self.ln_of(3) - q(1, 2) * &sqrt3 * &pi,
+                (*n == 5u32).then(|| sqrt3.clone()),
+            ),
+            _ => return None,
+        };
+        // `{$psi(1 - r) - psi(r) = pi cot(pi r)$}`, `{$cot(pi/4) = 1$}`, `{$cot(pi/3) = 1/sqrt 3$}`, `{$cot(pi/6) = sqrt 3$}`
+        Some(match cot {
+            Some(cot) => small + cot * pi,
+            None => small,
+        })
     }
 
     /// `{$zeta(n)$}` for an integer `n`: `{$zeta(2 k) = (-1)^(k + 1) B_(2 k) (2 pi)^(2 k) / (2 (2 k)!)$}`,
