@@ -114,6 +114,14 @@ fn several_variables() {
     // A local minimum only
     assert_eq!(argmin("argmin(x^3 - 3*x + y^2, x, y)"), none());
     assert_eq!(argmin("argmin(x*y, x, y)"), none());
+    // Unbounded along a line, `{$f(t, 0) = t^3$}`, `{$f(0, t) = -t^2$}`
+    assert_eq!(argmin("argmin(x^3 + y^2, x, y)"), none());
+    assert_eq!(argmin("argmin(x^2 - y^2 - 5, x, y)"), none());
+    // `{$f(0) = -5$}` along no line
+    assert_eq!(
+        argmin("argmin(x^2 + x*y + y^2 - 5, x, y)"),
+        solved("x = 0, y = 0, x, y")
+    );
     assert!(argmin("argmin(exp(x + y), x, y)").is_err());
     assert!(argmin("argmin(x^2 + a*y^2, x, y)").is_err());
 }
@@ -251,6 +259,11 @@ mod both {
             argmin("extrema(x^3/x, x, -1, 1)"),
             ok("\"max:\" x = -1, quad f = 1 \\ \"max:\" x = 1, quad f = 1")
         );
+        // Critical points at roots of a quartic, `{$f(t, t) = t^3 + 5t^2 + 4t$}` being unbounded
+        assert_eq!(
+            argmin("extrema(2*x^2 + 3*y^2 + (4*x^2*y + -3*x*y^2 + 4*x), x, y)"),
+            ok("\"no extremum\"")
+        );
         // Reached everywhere
         assert_eq!(
             argmin("extrema(5, x)"),
@@ -279,6 +292,11 @@ mod both {
         assert_eq!(argmin("localextrema(x^3/x)"), ok("\"no extremum\""));
         assert_eq!(
             argmin("localextrema((x^2 + y^2) x/x, x, y)"),
+            ok("\"no extremum\"")
+        );
+        // Two saddles at roots of `{$3x^4 - x^3 - 3x^2 - 3x + 3$}`, whose radicals are nested 4 deep
+        assert_eq!(
+            argmin("localextrema(2*x^2 + 3*y^2 + (4*x^2*y + -3*x*y^2 + 4*x), x, y)"),
             ok("\"no extremum\"")
         );
         // Either kind failing is an error

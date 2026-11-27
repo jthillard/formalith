@@ -362,6 +362,22 @@ pub fn has_function(term: &Expr, idents: &[Symbol]) -> bool {
     )
 }
 
+/// The nesting depth of the roots of `term`: 1 for a root of a value, 2 for a root of a sum of such roots...
+pub fn root_depth(term: &Expr) -> usize {
+    match term {
+        Term::Value(_) | Term::Symbol(_) | Term::Fun(_) => 0,
+        Term::Add(add) => add.iter().map(root_depth).max().unwrap_or(0),
+        Term::Mul(mul) => mul.iter().map(root_depth).max().unwrap_or(0),
+        Term::Pow(pow) => {
+            let inner = root_depth(&pow.base).max(root_depth(&pow.exponant));
+            match &**pow.exponant {
+                Term::Value(e) if e.value.denominator_ref() != &1u32 => inner + 1,
+                _ => inner,
+            }
+        }
+    }
+}
+
 /// The number of nodes of a term.
 pub fn size(term: &Expr) -> usize {
     1 + match term {

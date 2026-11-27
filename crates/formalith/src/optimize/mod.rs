@@ -50,7 +50,7 @@ use crate::{
         real::{
             Real,
             approx::enclose,
-            expr::{Expr, constant_sign, depends, fun, map_tree, size, subs, zero},
+            expr::{Expr, constant_sign, depends, fun, map_tree, root_depth, size, subs, zero},
         },
     },
     printer::{PrettyPrint, PrettyPrinter, Print, PrintOptions},
@@ -368,22 +368,6 @@ fn value_at(f: &Expr, point: &Assignments<Real>) -> Result<Expr, SolveError> {
     } else {
         res
     })
-}
-
-/// The nesting depth of the roots of `term`: 1 for a root of a value, 2 for a root of a sum of such roots...
-fn root_depth(term: &Expr) -> usize {
-    match term {
-        Term::Value(_) | Term::Symbol(_) | Term::Fun(_) => 0,
-        Term::Add(add) => add.iter().map(root_depth).max().unwrap_or(0),
-        Term::Mul(mul) => mul.iter().map(root_depth).max().unwrap_or(0),
-        Term::Pow(pow) => {
-            let inner = root_depth(&pow.base).max(root_depth(&pow.exponant));
-            match &**pow.exponant {
-                Term::Value(e) if e.value.denominator_ref() != &1u32 => inner + 1,
-                _ => inner,
-            }
-        }
-    }
 }
 
 /// An error with `reason`.

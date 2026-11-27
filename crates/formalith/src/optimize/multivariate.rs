@@ -24,9 +24,13 @@ use crate::{
         real::{
             R, Real,
             approx::approximate,
-            expr::{DIGITS, Expr, constant_sign, depends, has_special_constant, subs},
+            expr::{
+                DIGITS, Expr, constant_sign, depends, has_special_constant, int, root_depth, subs,
+                variable,
+            },
         },
     },
+    integrate::poly::Poly,
     matrix::Matrix,
     solve::{
         Assignments, Equation, Solution, Solve, SolveError,
@@ -72,6 +76,9 @@ pub(super) fn argmin(
 ) -> Result<Solution<Real>, SolveError> {
     check_rational(f, unknowns)?;
     let conditions = conditions(f, domain, unknowns);
+    if conditions.is_empty() && is_unbounded_below(f, unknowns) {
+        return Ok(Solution::NoSolution);
+    }
     let mut best = vec![];
     for (branch, value) in critical_points(f, &conditions, unknowns, equations)? {
         keep_lowest(&mut best, branch, value)?;
@@ -85,6 +92,33 @@ pub(super) fn argmin(
     Ok(Solution::from_branches(
         best.into_iter().map(|(branch, _)| branch).collect(),
     ))
+}
+
+/// Most unknowns for which [`is_unbounded_below`] tries the `{$3^n - 1$}` directions.
+const MAX_DIRECTION_UNKNOWNS: usize = 4;
+
+/// Whether the polynomial `f` is proven unbounded below along a line `{$t d$}`, `d` having coordinates in
+/// `{$\{-1, 0, 1\}$}`: `{$f(t d)$}` isn't constant and has an odd degree or a negative leading coefficient, like
+/// `{$f(t, t) = t^3 + 5t^2 + 4t$}` for `{$f = 2x^2 + 3y^2 + 4x^2 y - 3x y^2 + 4x$}`. Found before the critical
+/// points, whose values may be nested radicals the cylindrical algebraic decomposition can't compare with `f`.
+fn is_unbounded_below(f: &Expr, unknowns: &[Symbol]) -> bool {
+    if unknowns.len() > MAX_DIRECTION_UNKNOWNS {
+        return false;
+    }
+    let used = f.symbols();
+    let t = Symbol::fresh(&["t"], "t", |t| used.contains(&t) || unknowns.contains(&t))
+        .next()
+        .expect("There are infinitely many names");
+    let count = 3usize.pow(u32::try_from(unknowns.len()).expect("Few unknowns"));
+    (0..count).any(|mut index| {
+        let restricted = unknowns.iter().fold(f.clone(), |res, x| {
+            let coordinate = i64::try_from(index % 3).expect("Below 3") - 1;
+            index /= 3;
+            subs(&res, *x, &(int(coordinate) * variable(t)))
+        });
+        Poly::from_term(&restricted.normalize(), t)
+            .is_some_and(|p| p.degree() > 0 && (p.degree() % 2 == 1 || p.leading() < 0u32))
+    })
 }
 
 /// The local minimizers of `f` in `unknowns`, `equations` being `{$diff f / diff x_i = 0$}`, `f` being only
@@ -200,14 +234,20 @@ fn critical_points(
         .collect())
 }
 
-/// `term` at the point given by `assignments`.
+/// `term` at the point given by `assignments`, not expanded when its roots are nested 3 deep (roots of quartics
+/// by Ferrari's method), whose expansion may not finish.
 fn at(term: &Expr, assignments: &Assignments<Real>) -> Expr {
-    assignments
+    let res = assignments
         .iter()
         .fold(term.clone(), |res, (symbol, point)| {
             subs(&res, *symbol, point)
         })
-        .expand()
+        .normalize();
+    if root_depth(&res) >= 3 {
+        res
+    } else {
+        res.expand()
+    }
 }
 
 /// Whether `{$f op m$}` has no solution where `conditions` hold: `m` is a lower bound of `f` for

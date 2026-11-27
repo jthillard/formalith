@@ -34,7 +34,7 @@ use crate::{
         modular::Zn,
         real::{
             R,
-            expr::{Expr, constant_sign, int},
+            expr::{Expr, any_subterm, constant_sign, int, root_depth},
             rootof,
             sign::{SignMode, linear_expr, sign_set},
         },
@@ -89,7 +89,7 @@ pub(super) fn solve<T: Ring>(
                 .map(|(unknown, value)| match value {
                     // Simplifying `1` in `Z` gives `1/1`
                     Term::Value(_) => (unknown, value),
-                    value => (unknown, value.simplify()),
+                    value => (unknown, T::tidy_value(value)),
                 })
                 .collect()
         })
@@ -154,6 +154,9 @@ pub trait PolynomialRoots: Ring {
     ///
     /// Returns `None` if the roots can't be computed.
     fn roots(coefficients: &[Term<Self>]) -> Option<Vec<Term<Self>>>;
+
+    /// `value` of an unknown in a solution, simplified as the elimination nests fractions.
+    fn tidy_value(value: Term<Self>) -> Term<Self>;
 }
 
 impl<T: Ring> PolynomialRoots for T {
@@ -163,6 +166,10 @@ impl<T: Ring> PolynomialRoots for T {
 
     default fn roots(_: &[Term<Self>]) -> Option<Vec<Term<Self>>> {
         None
+    }
+
+    default fn tidy_value(value: Term<Self>) -> Term<Self> {
+        value.simplify()
     }
 }
 
@@ -185,9 +192,24 @@ where
             .all(|coefficient| matches!(coefficient, Term::Value(_)))
             .then(Vec::new)
     }
+
+    default fn tidy_value(value: Term<Self>) -> Term<Self> {
+        value.simplify()
+    }
 }
 
 impl PolynomialRoots for R<Rational> {
+    /// Values whose roots are nested 3 deep (roots of quartics by Ferrari's method) with a root in a denominator,
+    /// like `{$y = 2x^2 / (3(x - 1))$}` at such an `x`, are kept as they are: cancelling common factors expands
+    /// them, which may not finish.
+    fn tidy_value(value: Term<Self>) -> Term<Self> {
+        if root_depth(&value) >= 3 && has_root_denominator(&value) {
+            value
+        } else {
+            value.simplify()
+        }
+    }
+
     /// Polynomials of degree one or two, and polynomials of these degrees in `{$x^k$}`, like `{$x^4 - x^2 - 1$}`
     /// or `{$x^3 - 2$}`, are solved with radicals, as well as cubics and quartics with rational coefficients (see
     /// [`cubic_roots`] and [`quartic_roots`]). Signs of radicals are found by approximating them. Other polynomials
@@ -367,7 +389,18 @@ fn trig_radical(ident: Symbol, q: &Rational) -> Option<Term<R<Rational>>> {
 
 /// Whether `term` contains a function.
 fn has_function(term: &Term<R<Rational>>) -> bool {
-    crate::field::real::expr::any_subterm(term, &|t| matches!(t, Term::Fun(_)))
+    any_subterm(term, &|t| matches!(t, Term::Fun(_)))
+}
+
+/// Whether `term` divides by a term with a root, like `{$1 / (sqrt(2) - 1)$}`.
+fn has_root_denominator(term: &Expr) -> bool {
+    any_subterm(term, &|t| match t {
+        Term::Pow(pow) => {
+            matches!(&**pow.exponant, Term::Value(e) if e.value < 0u32)
+                && root_depth(&pow.base) >= 1
+        }
+        _ => false,
+    })
 }
 
 /// The roots of the cyclotomic polynomial `{$Phi_n$}`, `{$cos((2 pi j) / n) + i sin((2 pi j) / n)$}` for
