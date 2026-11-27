@@ -398,6 +398,24 @@ impl C<R<Rational>> {
         Some(rest.into_iter().fold(product, |res, f| res * f))
     }
 
+    /// The principal value `{$z^w = e^(w ln z)$}` of a power with a non-real exponent, when it is real: `{$i^i =
+    /// e^(-pi/2)$}`. Other powers, like `{$2^i$}`, are kept.
+    fn principal_pow(self, base: &[Rational; 2], exponant: &[Rational; 2]) -> Option<Term<Self>> {
+        let z = Term::Value(Value::new(base.clone(), self));
+        if z.is_zero() {
+            return None;
+        }
+        let ln = parts::principal_ln(&z).or_else(|| {
+            // A positive real base, whose logarithm is real
+            (base[1] == 0 && base[0] > 0).then(|| self.fun(Context::LN, z))
+        })?;
+        let (u, v) = parts::split(&(Term::Value(Value::new(exponant.clone(), self)) * ln))?;
+        if !v.is_zero() {
+            return None;
+        }
+        parts::to_complex(&expr::fun(Context::EXP, u))
+    }
+
     /// Normalize `base^exponant` where both are constants.
     fn normalize_constant_pow(
         self,
@@ -409,7 +427,10 @@ impl C<R<Rational>> {
                 .pow_integer(base, &exponant)
                 .map(|res| Term::Value(Value::new(res, self)));
         }
-        if base[1] != 0 || exponant[1] != 0 {
+        if exponant[1] != 0 {
+            return self.principal_pow(base, exponant);
+        }
+        if base[1] != 0 {
             return None;
         }
         let (base, exponant) = (&base[0], &exponant[0]);
@@ -612,6 +633,17 @@ impl Semiring for C<R<Rational>> {
                         .and_then(|arg| parts::constant_part(Context::ABS, arg))
                     {
                         return res;
+                    }
+                    // `{$|z w| = |z| |w|$}`, so `{$|i x| = |x|$}`
+                    if let Some(Term::Mul(mul)) = fun.get_arg::<Self>()
+                        && (mul.factors.len() > 1 || !self.is_one(&mul.coefficient))
+                    {
+                        let coefficient = Term::Value(Value::new(mul.coefficient.clone(), *self));
+                        return mul
+                            .iter()
+                            .fold(self.fun(Context::ABS, coefficient), |res, factor| {
+                                res * self.fun(Context::ABS, factor.clone())
+                            });
                     }
                 }
                 Context::LN => {

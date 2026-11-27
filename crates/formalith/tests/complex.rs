@@ -182,6 +182,23 @@ fn powers_of_i() {
 }
 
 #[test]
+fn real_principal_powers_with_complex_exponents() {
+    assert_eq!(eval("i^i"), "exp(-1/2*pi)");
+    assert_eq!(eval("(-1)^i"), "exp(-pi)");
+    assert_eq!(eval("i^(2*i)"), "exp(-pi)");
+    // Non-real values are kept as powers
+    assert_eq!(eval("2^i"), "2^i");
+    assert_eq!(eval("(1+i)^i"), "(1+i)^i");
+}
+
+#[test]
+fn absolute_values_of_products() {
+    assert_eq!(eval("abs(i*x)"), "abs(x)");
+    assert_eq!(eval("abs(2*i*x)"), "2*abs(x)");
+    assert_eq!(eval("abs(x*y)"), "abs(x)*abs(y)");
+}
+
+#[test]
 fn square_roots_of_negative_values() {
     assert_eq!(eval("sqrt(-1)"), "i");
     assert_eq!(eval("sqrt(-4)"), "2*i");
