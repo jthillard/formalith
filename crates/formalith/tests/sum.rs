@@ -117,6 +117,35 @@ fn infinite_sums() {
     assert_eq!(eval("sum(k, k, -oo, 0)"), "-oo");
     assert_eq!(eval("sum(1, k, 0, oo)"), "+oo");
     assert_eq!(eval("sum((-1)^k, k, 0, oo)"), "undefined");
+    // Powers of zero: only the term `{$0^0 = 1$}`
+    assert_eq!(eval("sum(0^k, k, 0, oo)"), "1");
+    assert_eq!(eval("sum(0^k, k, 1, oo)"), "0");
+    assert_eq!(eval("sum(x*0^(k - 2), k, 2, oo)"), "x");
+    assert_eq!(eval("sum(0^(2*k - 3), k, 2, oo)"), "0");
+    // Divisions by zero
+    assert!(eval("sum(0^(k - 2), k, 0, oo)").starts_with("sum("));
+    assert!(eval("sum(0^(-k), k, 0, oo)").starts_with("sum("));
+    // Every case of the geometric series, `{$x <= -1$}` oscillating and `{$x = 0$}` merged
+    assert_eq!(
+        eval("sum(x^k, k, 0, oo)"),
+        eval("piecewise(x <= -1, undefined, x < 1, -1/(x - 1), oo)")
+    );
+    assert_eq!(
+        eval_statements(
+            SetChoice::R,
+            &["assume(x < -1)", "sum(x^k/(x - 1), k, 0, oo)"],
+            false
+        ),
+        Ok("undefined".to_string())
+    );
+    assert_eq!(
+        eval_statements(
+            SetChoice::R,
+            &["assume(x > 1)", "sum(-x^k/(x + 1), k, 0, oo)"],
+            false
+        ),
+        Ok("-∞".to_string())
+    );
     // Known series
     assert_eq!(eval("sum(1/k^s, k, 1, oo)"), eval("zeta(s)"));
     assert_eq!(eval("sum(x^k/factorial(k), k, 0, oo)"), eval("exp(x)"));
