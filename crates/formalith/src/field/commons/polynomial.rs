@@ -142,7 +142,7 @@ impl<K: Ring> Poly<K> {
         }
         match (fun.get_ident(), fun.get_args::<Self>()?.as_slice()) {
             (Context::GCD, [Term::Value(a), Term::Value(b)]) => {
-                Some(value(self.gcd(&a.value, &b.value)))
+                Some(value(Self::normalized(a.value.try_gcd(&b.value)?)))
             }
             (Context::LCM, [Term::Value(a), Term::Value(b)]) => {
                 if a.value.is_zero() || b.value.is_zero() {
@@ -153,12 +153,13 @@ impl<K: Ring> Poly<K> {
             (ident @ (Context::QUO | Context::REM), [Term::Value(a), Term::Value(b)])
                 if !b.value.is_zero() =>
             {
-                let (quotient, remainder) = self.quot_rem(&a.value, &b.value);
-                Some(value(if ident == Context::QUO {
+                // Stays unevaluated when the leading coefficient of `b` isn't invertible, the division isn't unique
+                let (quotient, remainder) = a.value.try_quot_rem(&b.value)?;
+                Some(value(Self::normalized(if ident == Context::QUO {
                     quotient
                 } else {
                     remainder
-                }))
+                })))
             }
             (Context::DEGREE, [Term::Value(a)] | [Term::Value(a), Term::Value(_)])
                 if !a.value.is_zero()

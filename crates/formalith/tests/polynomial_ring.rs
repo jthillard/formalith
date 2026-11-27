@@ -107,6 +107,25 @@ fn euclidean_division_corner_cases() {
 }
 
 #[test]
+fn bug_euclidean_division_by_non_invertible_leading_coefficient() {
+    let z4_x = Zn::new(4).get_polynomial_ring(symbol!("x"));
+    // 2 isn't invertible mod 4: the division isn't unique (2 x^2 = 2 x x = 2 x (x + 2)), the builtins stay unevaluated
+    for (input, expected) in [
+        ("quo(x^2, 2*x)", "quo(x^2, 2*x)"),
+        ("rem(x^2, 2*x)", "rem(x^2, 2*x)"),
+        ("quo(2*x^2, 2*x)", "quo(2*(x^2), 2*x)"),
+        ("gcd(x^2, 2*x)", "gcd(x^2, 2*x)"),
+        ("lcm(x^2, 2*x)", "lcm(x^2, 2*x)"),
+        ("gcd(2*x+2, 0)", "gcd(2*x+2, 0)"),
+    ] {
+        assert_eq!(line(&parse!(input, z4_x)), expected, "{input}");
+    }
+    assert_eq!(line(&parse!("quo(x^2, 3*x)", z4_x)), "-x");
+    assert_eq!(line(&parse!("rem(x^2+1, x)", z4_x)), "1");
+    assert_eq!(line(&parse!("gcd(x^2+2*x+1, x+1)", z4_x)), "x+1");
+}
+
+#[test]
 fn gcd_corner_cases() {
     assert_eq!(eval("gcd(x^4-1, x^6-1)"), eval("x^2-1"));
     assert_eq!(eval("gcd(0, x)"), "x");

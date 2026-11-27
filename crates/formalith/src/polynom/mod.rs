@@ -354,17 +354,16 @@ impl<V: Monomial, T: Ring, U: Ring> MultivariatePolynomial<V, T, U> {
         });
     }
 
-    /// Euclidian division of a monomial by another
+    /// Euclidian division of a monomial by another, whose coefficient has the inverse `denom_inv`
     fn quot_rem_monomial(
         num_vars: &[(V, U::Element)],
         num_coeff: &T::Element,
         denom_vars: &[(V, U::Element)],
-        denom_coeff: &T::Element,
+        denom_inv: &T::Element,
         set: T,
         exponant_set: U,
     ) -> Option<PolynomElement<V, U, T>> {
-        let denom_inv = set.try_inv(denom_coeff).unwrap();
-        let q_coeff = set.mul(num_coeff, &denom_inv);
+        let q_coeff = set.mul(num_coeff, denom_inv);
 
         let mut var_map: HashMap<_, _> = num_vars.iter().cloned().collect();
         for (v, e) in denom_vars {
@@ -396,27 +395,42 @@ impl<V: Monomial, T: Ring, U: Ring> MultivariatePolynomial<V, T, U> {
     }
 
     /// Euclidian division, returning quotient and remainder
+    ///
+    /// # Panics
+    /// Panics if the leading coefficient of `divisor` is not invertible.
     pub fn quot_rem(&self, divisor: &Self) -> (Self, Self) {
-        let (quotient, remainder, _) = self.quot_rem_checked(divisor);
-        (quotient, remainder)
+        self.try_quot_rem(divisor)
+            .expect("the leading coefficient of the divisor must be invertible")
     }
 
-    /// Euclidian division, also returning `false` if some leading terms didn't cancel, which happens with symbolic coefficients.
-    fn quot_rem_checked(&self, divisor: &Self) -> (Self, Self, bool) {
+    /// Euclidian division, returning quotient and remainder, or `None` if the leading coefficient of `divisor` is not
+    /// invertible (like `2` in `{$ZZ\/4 ZZ[x]$}`).
+    pub fn try_quot_rem(&self, divisor: &Self) -> Option<(Self, Self)> {
+        let (quotient, remainder, _) = self.quot_rem_checked(divisor)?;
+        Some((quotient, remainder))
+    }
+
+    /// Euclidian division, also returning `false` if some leading terms didn't cancel, which happens with symbolic
+    /// coefficients. Returns `None` if the leading coefficient of `divisor` is not invertible.
+    fn quot_rem_checked(&self, divisor: &Self) -> Option<(Self, Self, bool)> {
         let mut quotient = Self::zero(self.set, self.exponant_set);
         let mut remainder = Self::zero(self.set, self.exponant_set);
         let mut current_dividend = self.clone();
         let mut exact = true;
+        if current_dividend.is_zero() {
+            return Some((quotient, remainder, exact));
+        }
+        let (div_vars, div_coeff) = divisor.leading_term();
+        let div_inv = self.set.try_inv(&div_coeff)?;
 
         while !current_dividend.is_zero() {
             let (lead_vars, lead_coeff) = current_dividend.leading_term();
-            let (div_vars, div_coeff) = divisor.leading_term();
 
             if let Some((q_vars, q_coeff)) = Self::quot_rem_monomial(
                 &lead_vars,
                 &lead_coeff,
                 &div_vars,
-                &div_coeff,
+                &div_inv,
                 self.set,
                 self.exponant_set,
             ) {
@@ -443,7 +457,7 @@ impl<V: Monomial, T: Ring, U: Ring> MultivariatePolynomial<V, T, U> {
             }
         }
 
-        (quotient, remainder, exact)
+        Some((quotient, remainder, exact))
     }
     /// Divide the polynomial by its leading coefficient.
     ///
@@ -451,23 +465,26 @@ impl<V: Monomial, T: Ring, U: Ring> MultivariatePolynomial<V, T, U> {
     /// Panics if the leading coefficient is not invertible.
     #[must_use]
     pub fn monic(self) -> Self {
+        self.try_monic()
+            .expect("the leading coefficient must be invertible")
+    }
+
+    /// Divide the polynomial by its leading coefficient, `None` if it is not invertible.
+    #[must_use]
+    pub fn try_monic(self) -> Option<Self> {
         if self.is_zero() {
-            return self;
+            return Some(self);
         }
         // Symbolic coefficients times their inverse may not simplify to one
         if self.is_constant() {
-            return Self::one(self.set, self.exponant_set);
+            return Some(Self::one(self.set, self.exponant_set));
         }
         let leading_coeff = self.leading_term().1;
         if self.set.is_one(&leading_coeff) {
-            return self;
+            return Some(self);
         }
-        &self
-            * &Self::constant(
-                self.set.try_inv(&leading_coeff).unwrap(),
-                self.set,
-                self.exponant_set,
-            )
+        let inverse = self.set.try_inv(&leading_coeff)?;
+        Some(&self * &Self::constant(inverse, self.set, self.exponant_set))
     }
 
     /// Compute GCD between self and other, normalized with a leading coefficient equal to one.
@@ -475,36 +492,44 @@ impl<V: Monomial, T: Ring, U: Ring> MultivariatePolynomial<V, T, U> {
     /// Univariate polynomials use the euclide algorithm, multivariate ones a recursive algorithm on their main variable.
     ///
     /// # Panics
-    /// Panics if the leading coefficient is not invertible.
+    /// Panics if a leading coefficient is not invertible.
     #[must_use]
     pub fn gcd(&self, other: &Self) -> Self {
+        self.try_gcd(other)
+            .expect("the leading coefficients must be invertible")
+    }
+
+    /// Compute GCD between self and other like [`Self::gcd`], `None` if a leading coefficient met isn't invertible
+    /// (like `2` in `{$ZZ\/4 ZZ[x]$}`).
+    #[must_use]
+    pub fn try_gcd(&self, other: &Self) -> Option<Self> {
         if self.is_zero() {
-            return other.clone().monic();
+            return other.clone().try_monic();
         }
         if other.is_zero() {
-            return self.clone().monic();
+            return self.clone().try_monic();
         }
         if self.is_constant() || other.is_constant() {
-            return Self::one(self.set, self.exponant_set);
+            return Some(Self::one(self.set, self.exponant_set));
         }
         if self.variables().union(&other.variables()).count() > 1
             && let Some(var) = self.gcd_variable(other)
         {
-            return self.multivariate_gcd(other, &var);
+            return Some(self.multivariate_gcd(other, &var));
         }
 
         let (mut a, mut b) = (self.clone(), other.clone());
         let mut previous_quotient_zero = false;
         while !b.is_zero() {
-            let (quotient, remainder, exact) = a.quot_rem_checked(&b);
+            let (quotient, remainder, exact) = a.quot_rem_checked(&b)?;
             // Without progress the gcd is unknown, consider polynomials coprime
             if !exact || (quotient.is_zero() && previous_quotient_zero) {
-                return Self::one(self.set, self.exponant_set);
+                return Some(Self::one(self.set, self.exponant_set));
             }
             previous_quotient_zero = quotient.is_zero();
             (a, b) = (b, remainder);
         }
-        a.monic()
+        a.try_monic()
     }
 
     /// GCD of the contents times the GCD of the primitive parts, computed with pseudo-remainders on `var`.
@@ -629,16 +654,13 @@ impl<V: Monomial, T: Ring, U: Ring> MultivariatePolynomial<V, T, U> {
     }
 
     /// Compute the LCM of self and other, `{$a b / gcd(a, b)$}` made monic, or 0 if one of them is 0. Returns `None`
-    /// when the division by the GCD isn't exact.
-    ///
-    /// # Panics
-    /// Panics if a leading coefficient is not invertible.
+    /// when the division by the GCD isn't exact or a leading coefficient isn't invertible.
     #[must_use]
     pub fn lcm(&self, other: &Self) -> Option<Self> {
         if self.is_zero() || other.is_zero() {
             return Some(Self::zero(self.set, self.exponant_set));
         }
-        Some((self.exact_div(&self.gcd(other))? * other.clone()).monic())
+        (self.exact_div(&self.try_gcd(other)?)? * other.clone()).try_monic()
     }
 
     /// Divide the polynomial by `divisor`, returning `None` if the division is not exact.
