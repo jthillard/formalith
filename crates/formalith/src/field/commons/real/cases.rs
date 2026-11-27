@@ -98,10 +98,15 @@ fn insert(form: LinearForm, point: Rational) {
 
 /// `f()` without recording points, for signs of samples which say nothing about the parameters.
 pub fn unrecorded<T>(f: impl FnOnce() -> T) -> T {
-    let previous = RECORDING.take();
-    let res = f();
-    RECORDING.set(previous);
-    res
+    /// Restores the points recorded before when dropped (also on panics).
+    struct Restore(Option<Points>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            RECORDING.set(self.0.take());
+        }
+    }
+    let _restore = Restore(RECORDING.take());
+    f()
 }
 
 /// Stops splitting, then recording, when dropped (also on panics).
