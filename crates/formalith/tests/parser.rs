@@ -106,7 +106,7 @@ fn test_parse_nested_det() {
 #[test]
 fn test_parse_trailing_input() {
     for input in [
-        "5 x", "5)", "5 5", "x y", "5 $ 3", "x,y", "1..2", "abs 3", "2 (x)",
+        "5)", "5 5", "x 2", "(x+1)2", "5 $ 3", "x,y", "1..2", "abs 3",
     ] {
         assert!(try_parse!(input, R).is_err(), "{input:?}");
     }
@@ -151,9 +151,26 @@ fn test_parse_implicit_product() {
         ("1/2x", "x/2"),
         ("-2x", "-2*x"),
         ("acos(2x/(1+x^2))", "acos(2*x/(1+x^2))"),
+        ("x y", "x*y"),
+        ("5 x", "5*x"),
+        ("2 (x + 1)", "2*(x + 1)"),
+        ("(x+1)y", "(x+1)*y"),
+        ("(x+1) y", "(x+1)*y"),
+        ("(x+1) (x-1)", "(x+1)*(x-1)"),
+        ("x y^2", "x*y^2"),
+        ("a/b c", "a/b*c"),
+        ("2 x y z", "2*x*y*z"),
+        ("-x y + 1", "-x*y + 1"),
+        ("sin(x) cos(x)", "sin(x)*cos(x)"),
+        ("2 sin(x)", "2*sin(x)"),
+        ("n! x", "factorial(n)*x"),
     ] {
         assert_eq!(parse!(input, R), parse!(expected, R), "{input:?}");
     }
+    // A single identifier
+    assert_ne!(parse!("xy", R), parse!("x*y", R));
+    // An identifier followed by a parenthesis is a call, whatever the spacing
+    assert_eq!(parse!("f (x)", R), parse!("f(x)", R));
 }
 
 #[test]

@@ -38,6 +38,15 @@ fn first_order_linear() {
         dsolve("dsolve(x*y' + y = x^2)"),
         ok("y(x) = (x^3/3 + c_1)/x")
     );
+    // Implicit products
+    assert_eq!(
+        dsolve("dsolve(y' + 2 x y = x)"),
+        dsolve("dsolve(y' + 2*x*y = x)")
+    );
+    assert_eq!(
+        dsolve("dsolve(x y' + y = x^2)"),
+        dsolve("dsolve(x*y' + y = x^2)")
+    );
 }
 
 #[test]

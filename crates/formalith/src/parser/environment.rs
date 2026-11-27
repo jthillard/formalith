@@ -27,7 +27,7 @@ use crate::{
     term::{Expand, Normalize, Term, relation::Relation},
 };
 
-use super::{Parser, ParserError, lexer::TokenKind};
+use super::{Op, ParseExpression, Parser, ParserError, lexer::TokenKind};
 
 /// Whether `source` is a single identifier.
 fn is_identifier(source: &str) -> bool {
@@ -583,6 +583,16 @@ impl Parser<'_> {
             }
             Ok(symbol)
         };
+        // `n integer`, read before the side, where it would be the implicit product `n*integer`
+        let mut ahead = self.clone();
+        if let Some(lhs) =
+            ParseExpression::<E>::parse_expression(&mut ahead, Op::Multiply.get_priority(), set)?
+            && matches!(&ahead.token.kind, TokenKind::Ident(word) if word == "integer")
+        {
+            ahead.next_token();
+            *self = ahead;
+            return Ok(AssumeItem::Integer(symbol(&lhs.normalize())?));
+        }
         let lhs_start = self.start_span;
         let lhs = self.parse_side(set)?;
         let lhs_source = self.input[lhs_start..self.start_span].trim().to_owned();
@@ -593,10 +603,6 @@ impl Parser<'_> {
             TokenKind::GreaterEqual => SignSet::NONNEGATIVE,
             TokenKind::NotEqual => SignSet::NONZERO,
             TokenKind::Equal => SignSet::ZERO,
-            TokenKind::Ident(ref name) if name == "integer" => {
-                self.next_token();
-                return Ok(AssumeItem::Integer(symbol(&lhs)?));
-            }
             _ => return Ok(AssumeItem::Listed(symbol(&lhs)?)),
         };
         self.next_token();

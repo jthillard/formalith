@@ -78,8 +78,6 @@ pub struct Parser<'a> {
     pub token: Token,
     start_span: usize,
     end_span: usize,
-    /// Whether the current token directly follows the previous one, without whitespace
-    adjacent: bool,
     env: Option<&'a Environment>,
     /// The unknown function and its variable while parsing a differential equation, see [`Parser::parse_ode_function`]
     ode: Option<(Symbol, Symbol)>,
@@ -102,7 +100,6 @@ impl<'a> Parser<'a> {
             token: Token::new(TokenKind::Unknown, 0),
             start_span: 0,
             end_span: 0,
-            adjacent: false,
             env: None,
             ode: None,
             scalar_of_matrix: false,
@@ -143,7 +140,6 @@ impl Parser<'_> {
     }
     /// Update the current and previous token, skipping unnecessary tokens
     pub fn next_token(&mut self) {
-        let prev_end = self.end_span;
         let next = loop {
             match self.next_token_internal() {
                 None => break Token::new(TokenKind::Eof, 0),
@@ -154,7 +150,6 @@ impl Parser<'_> {
                 Some(token) => break token,
             }
         };
-        self.adjacent = self.start_span == prev_end;
         self.prev_token = std::mem::replace(&mut self.token, next);
     }
     const fn span(&self) -> Range<usize> {
@@ -176,23 +171,31 @@ impl Parser<'_> {
             ))),
         }
     }
-    /// Whether the current token starts an implicit product with the number literal just before it, like `2x` or
-    /// `3(x + 1)`, or with the closing parenthesis just before it, like `(x + 1)(x - 1)`. A space (`5 x`) is not a
-    /// product (`1e3` is a single literal).
+    /// Whether the current token starts an implicit product with the operand just before it: an identifier or a
+    /// parenthesis after a number, an identifier, a closing parenthesis or bracket, a factorial or a prime, with or
+    /// without spaces (`2x`, `x y`, `(x + 1)y`, `5 (x + 1)`). An identifier followed by a parenthesis is a call
+    /// (`f (x)`), parsed before, and a number is never an implicit factor (`x 2` is an error, `xy` an identifier).
+    /// A builtin function name isn't a factor either, so `sin x` is an error rather than `sin*x`.
     fn implicit_product(&self) -> bool {
-        if !self.adjacent {
-            return false;
-        }
-        match self.prev_token.kind {
-            TokenKind::Literal {
-                kind: LiteralTokenKind::Int | LiteralTokenKind::Float,
-            } => matches!(self.token.kind, TokenKind::OpenParen | TokenKind::Ident(_)),
-            TokenKind::CloseParen => self.token.kind == TokenKind::OpenParen,
-            _ => false,
-        }
+        let ends_operand = match &self.prev_token.kind {
+            TokenKind::Ident(name) => !matches!(
+                Context::builtin_arity(Symbol::new(name.as_str())),
+                Some((min, _)) if min > 0
+            ),
+            kind => matches!(
+                kind,
+                TokenKind::Literal {
+                    kind: LiteralTokenKind::Int | LiteralTokenKind::Float,
+                } | TokenKind::CloseParen
+                    | TokenKind::CloseBracket
+                    | TokenKind::Bang
+                    | TokenKind::Prime
+            ),
+        };
+        ends_operand && matches!(self.token.kind, TokenKind::OpenParen | TokenKind::Ident(_))
     }
-    /// Return the next operator if it exists, a number literal followed by an identifier or a parenthesis being an
-    /// implicit product
+    /// Return the next operator if it exists, juxtaposed operands being an implicit product (see
+    /// [`Parser::implicit_product`])
     fn get_op(&self) -> Option<Op> {
         if self.implicit_product() {
             return Some(Op::Multiply);
