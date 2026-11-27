@@ -298,10 +298,13 @@ pub static BUILTIN_DOCS: [BuiltinDoc; Context::BUILTIN_NAMES.len()] = [
         Arithmetic,
         "gcd(a, b)",
         "Greatest common divisor of two integers or polynomials.",
-        "Evaluated in Z, Z/n and the polynomial rings K[x]. In Z/n, the arguments are integers and the result is reduced mod n. \
-         In Z/n[x] with n composite, it stays unevaluated when a leading coefficient isn't invertible, like 2 x in Z/4[x].",
+        "Evaluated in Z, Z/n and the polynomial rings K[x]. In Z, the gcd of polynomials is the gcd of their contents \
+         times the gcd of their primitive parts. In Z/n, integer arguments are computed in Z and the result is reduced \
+         mod n, polynomials are divided mod n when n is prime. In Z/n[x] with n composite, it stays unevaluated when a \
+         leading coefficient isn't invertible, like 2 x in Z/4[x].",
         &[
             ex_in("Z", "gcd(12, 18)", "6"),
+            ex_in("Z", "gcd(6*x^2 - 6, 4*x - 4)", "2 x - 2"),
             ex_in("R[x]", "gcd(x^2 - 1, x^2 + 2*x + 1)", "x + 1"),
         ],
     ),
@@ -310,9 +313,14 @@ pub static BUILTIN_DOCS: [BuiltinDoc; Context::BUILTIN_NAMES.len()] = [
         Arithmetic,
         "lcm(a, b)",
         "Least common multiple of two integers or polynomials.",
-        "Evaluated in Z, Z/n and the polynomial rings K[x]. In Z/n, the arguments are integers and the result is reduced mod n. \
-         In Z/n[x] with n composite, it stays unevaluated when a leading coefficient isn't invertible, like 2 x in Z/4[x].",
-        &[ex_in("Z", "lcm(4, 6)", "12")],
+        "Evaluated in Z, Z/n and the polynomial rings K[x]. In Z, the lcm of polynomials is the lcm of their contents \
+         times the lcm of their primitive parts. In Z/n, integer arguments are computed in Z and the result is reduced \
+         mod n, polynomials are divided mod n when n is prime. In Z/n[x] with n composite, it stays unevaluated when a \
+         leading coefficient isn't invertible, like 2 x in Z/4[x].",
+        &[
+            ex_in("Z", "lcm(4, 6)", "12"),
+            ex_in("Z", "lcm(2*x, 3*x^2)", "6 x^2"),
+        ],
     ),
     doc(
         Context::QUO,

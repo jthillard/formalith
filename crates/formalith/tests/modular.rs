@@ -172,6 +172,16 @@ fn integer_arguments_are_not_reduced() {
 }
 
 #[test]
+fn polynomial_gcd_and_lcm() {
+    // Computed modulo 7, not in Z where they are coprime
+    assert_eq!(eval("gcd(x + 1, x + 8)", 7), "x+1");
+    assert_eq!(eval("gcd(x^2 - 1, x - 1)", 7), eval("x - 1", 7));
+    assert_eq!(eval("lcm(x + 1, x - 1)", 7), eval("x^2 - 1", 7));
+    // Polynomials modulo a composite number have no Euclidean division
+    assert_eq!(eval("gcd(x^2, 2*x)", 4), "gcd(x^2, 2*x)");
+}
+
+#[test]
 fn finite_sums_and_products() {
     assert_eq!(eval("sum(k, k, 1, 7)", 7), "0");
     assert_eq!(eval("sum(k, k, 1, 8)", 7), "1");

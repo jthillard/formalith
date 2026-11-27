@@ -76,6 +76,20 @@ fn integer_builtins() {
 }
 
 #[test]
+fn polynomial_gcd_and_lcm() {
+    let eval = |input: &str| parse!(input, Z);
+    assert_eq!(eval("gcd(x^2 - 1, x - 1)"), eval("x - 1"));
+    // The gcd of the contents times the gcd of the primitive parts
+    assert_eq!(eval("gcd(2*x + 2, 4)"), eval("2"));
+    assert_eq!(eval("gcd(6*x^2 - 6, 4*x - 4)"), eval("2*x - 2"));
+    assert_eq!(eval("gcd(-2*x - 2, x + 1)"), eval("x + 1"));
+    assert_eq!(eval("gcd(2*x, 3)"), eval("1"));
+    assert_eq!(eval("gcd(x*y, x^2)"), eval("x"));
+    assert_eq!(eval("lcm(2*x, 3*x^2)"), eval("6*x^2"));
+    assert_eq!(eval("lcm(x - 1, x + 1)"), eval("x^2 - 1"));
+}
+
+#[test]
 fn factor() {
     assert_eq!(
         parse!("factor(2*x^2 + 3*x + 1)", Z),

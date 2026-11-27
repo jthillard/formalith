@@ -20,7 +20,10 @@ use crate::{
         matrix::M,
     },
     parser::Parser,
-    polynom::factor::modular::{factor_with_multiplicities, is_prime},
+    polynom::{
+        ToTerm,
+        factor::modular::{factor_with_multiplicities, is_prime},
+    },
     printer::{PrettyPrinter, PrintOptions},
     term::{self, Expand, Fun, Normalize, SymbolTerm, Term, TermSet},
 };
@@ -179,6 +182,27 @@ impl Zn {
             return Some(res);
         }
         let args = fun.get_args::<Z<Integer>>()?;
+        // Polynomials are divided in `{$ZZ\/p ZZ[x]$}`, where `{$gcd(x + 1, x + 8) = x + 1$}` for `{$p = 7$}`, and
+        // stay unevaluated for a composite modulus, whose polynomials have no Euclidean division
+        if let ident @ (Context::GCD | Context::LCM) = fun.get_ident()
+            && let [a, b] = args.as_slice()
+            && !(matches!(a, Term::Value(_)) && matches!(b, Term::Value(_)))
+        {
+            if !self.is_field() {
+                return None;
+            }
+            let (a, b) = (self.reduce_integer_term(a)?, self.reduce_integer_term(b)?);
+            if ident == Context::LCM && (a.is_zero() || b.is_zero()) {
+                return Some(Term::zero(self));
+            }
+            let (a, b) = (a.to_polynomial(), b.to_polynomial());
+            let res = if ident == Context::GCD {
+                a.try_gcd(&b)?
+            } else {
+                a.lcm(&b)?
+            };
+            return Some(res.to_term());
+        }
         match Term::Fun(Box::new(Fun::new(fun.get_ident(), args.clone(), Z))).normalize() {
             Term::Value(value) => Some(Term::constant(self.reduce(&value.value), self)),
             Term::Symbol(symbol) if symbol.symbol == Context::UNDEFINED => {

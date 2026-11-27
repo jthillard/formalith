@@ -3,7 +3,7 @@
 use std::{cmp::Ordering, marker::PhantomData};
 
 use malachite::{
-    Integer, Natural,
+    Integer, Natural, Rational,
     base::num::{
         arithmetic::traits::{
             Abs, DivMod, DivisibleBy, Factorial, Gcd, Lcm, Mod, Parity, Pow, Sign, UnsignedAbs,
@@ -17,15 +17,20 @@ use super::{parse_integer_literal, primes};
 use crate::combinatorics::Combinatorics;
 
 use crate::{
-    context::Context,
+    context::{Context, Symbol},
     field::{
         EuclideanRing, Group, Monoid, PartiallyOrderedSet, Ring, Semiring, Set, SetParseExpression,
-        matrix::M, real::MAX_FACTORIAL,
+        matrix::M,
+        real::{
+            MAX_FACTORIAL,
+            expr::{Expr, value, variable, zero},
+        },
     },
     parser::Parser,
+    polynom::ToTerm,
     printer::PrettyPrinter,
     term::{
-        self, Fun, SymbolTerm, Term, TermSet, Value,
+        self, Expand, Fun, SymbolTerm, Term, TermSet, Value,
         fun::{eval_integer_sum, eval_ring_builtin},
     },
 };
@@ -189,6 +194,11 @@ impl Semiring for Z<Integer> {
                         };
                         return Term::Value(Value::new(Integer::from(res), *self));
                     }
+                    (ident @ (Context::GCD | Context::LCM), Some([a, b])) => {
+                        if let Some(res) = polynomial_gcd_lcm(ident, a, b) {
+                            return res;
+                        }
+                    }
                     (Context::ISPRIME, Some([Term::Value(n)])) => {
                         let prime = Natural::try_from(&n.value).is_ok_and(|n| primes::is_prime(&n));
                         return Term::Value(Value::new(Integer::from(u8::from(prime)), *self));
@@ -299,3 +309,104 @@ impl SetParseExpression for Z<Integer> {
 pub const Z: Z<Integer> = Z {
     phantom: PhantomData,
 };
+
+/// `{$gcd(a, b)$}` or `{$"lcm"(a, b)$}` of polynomials with integer coefficients, by Gauss's lemma: the gcd (or
+/// lcm) of their contents times the primitive part of their gcd (or lcm) over `{$QQ$}`, with a positive leading
+/// coefficient. `{$gcd(2x^2 - 2, 4x - 4) = 2x - 2$}`.
+fn polynomial_gcd_lcm(
+    ident: Symbol,
+    a: &Term<Z<Integer>>,
+    b: &Term<Z<Integer>>,
+) -> Option<Term<Z<Integer>>> {
+    let (a, b) = (
+        to_real(&a.expand())?.expand(),
+        to_real(&b.expand())?.expand(),
+    );
+    let (content_a, content_b) = (content(&a), content(&b));
+    let (a_poly, b_poly) = (a.to_polynomial(), b.to_polynomial());
+    let (content, rational) = if ident == Context::GCD {
+        (content_a.gcd(content_b), a_poly.gcd(&b_poly).to_term())
+    } else {
+        (content_a.lcm(content_b), a_poly.lcm(&b_poly)?.to_term())
+    };
+    let rational = rational.expand();
+    if rational.is_zero() || content == 0u32 {
+        return Some(Term::zero(Z));
+    }
+    // The primitive part, from the leading coefficient of the polynomial over `{$QQ$}`, which is monic
+    let coefficients = coefficients(&rational);
+    let denominators = coefficients
+        .iter()
+        .fold(Natural::ONE, |res, c| res.lcm(c.denominator_ref()));
+    let numerators = coefficients.iter().fold(Natural::ZERO, |res, c| {
+        res.gcd(c.numerator_ref() * &denominators / c.denominator_ref())
+    });
+    let scale = Rational::from_naturals(denominators, numerators);
+    let primitive = from_real(&(value(scale) * rational).expand())?;
+    Some((Term::constant(Integer::from(content), Z) * primitive).expand())
+}
+
+/// The coefficients of the monomials of an expanded polynomial.
+fn coefficients(p: &Expr) -> Vec<Rational> {
+    let coefficient = |t: &Expr| match t {
+        Term::Value(v) => v.value.clone(),
+        Term::Mul(mul) => mul.coefficient.clone(),
+        _ => Rational::ONE,
+    };
+    match p {
+        Term::Add(add) => add.iter().map(coefficient).collect(),
+        _ => vec![coefficient(p)],
+    }
+}
+
+/// The content of an expanded polynomial with integer coefficients, the gcd of its coefficients.
+fn content(p: &Expr) -> Natural {
+    coefficients(p)
+        .iter()
+        .fold(Natural::ZERO, |res, c| res.gcd(c.numerator_ref()))
+}
+
+/// A polynomial of `{$ZZ$}` as a real expression, `None` for other terms.
+fn to_real(t: &Term<Z<Integer>>) -> Option<Expr> {
+    Some(match t {
+        Term::Value(v) => value(Rational::from(&v.value)),
+        Term::Symbol(s) => variable(s.symbol),
+        Term::Add(add) => add
+            .iter()
+            .try_fold(zero(), |res, t| Some(res + to_real(t)?))?,
+        Term::Mul(mul) => mul
+            .iter()
+            .try_fold(value(Rational::from(&mul.coefficient)), |res, t| {
+                Some(res * to_real(t)?)
+            })?,
+        Term::Pow(pow) => match &**pow.exponant {
+            Term::Value(n) if n.value >= 0 => {
+                to_real(&pow.base)?.pow(&value(Rational::from(&n.value)))
+            }
+            _ => return None,
+        },
+        Term::Fun(_) => return None,
+    })
+}
+
+/// A polynomial with integer coefficients as a term of `{$ZZ$}`, `None` for other terms.
+fn from_real(t: &Expr) -> Option<Term<Z<Integer>>> {
+    let integer = |q: &Rational| Integer::try_from(q).ok();
+    Some(match t {
+        Term::Value(v) => Term::constant(integer(&v.value)?, Z),
+        Term::Symbol(s) => Term::Symbol(SymbolTerm::new(s.symbol, Z)),
+        Term::Add(add) => add
+            .iter()
+            .try_fold(Term::zero(Z), |res, t| Some(res + from_real(t)?))?,
+        Term::Mul(mul) => mul
+            .iter()
+            .try_fold(Term::constant(integer(&mul.coefficient)?, Z), |res, t| {
+                Some(res * from_real(t)?)
+            })?,
+        Term::Pow(pow) => match &**pow.exponant {
+            Term::Value(n) => from_real(&pow.base)?.pow(&Term::constant(integer(&n.value)?, Z)),
+            _ => return None,
+        },
+        Term::Fun(_) => return None,
+    })
+}
