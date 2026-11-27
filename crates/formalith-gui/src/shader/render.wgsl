@@ -38,6 +38,25 @@ fn vs_main(@builtin(vertex_index) index: u32) -> VertexOutput {
     return out;
 }
 
+// The values of the relations around the fragment: `F_i` at the pixel (sample `5 i`) and at the corners of a box
+// around it (samples `5 i + 1` to `5 i + 4`, see `sample_offset`). They are computed by a single call of `F_at`,
+// since drivers inline `F_i` at each call, and the compilation of large relations took seconds with one call per use.
+var<private> samples: array<f32, max(COUNT, 1u) * 5u>;
+
+// The offset of the sample `k` of a relation from the pixel: none, then the corners of a box around it.
+fn sample_offset(k: u32) -> vec2<f32> {
+    let h = u.frame.z + 0.5;
+    let sx = h * ((u.view.y - u.view.x) / u.frame.x);
+    let sy = h * ((u.view.w - u.view.z) / u.frame.y);
+    switch k {
+        case 1u: { return vec2<f32>(sx, sy); }
+        case 2u: { return vec2<f32>(sx, -sy); }
+        case 3u: { return vec2<f32>(-sx, sy); }
+        case 4u: { return vec2<f32>(-sx, -sy); }
+        default: { return vec2<f32>(0.0); }
+    }
+}
+
 // Whether the comparison of the relation `i` (0: `=`, 1: `<`, 2: `<=`, 3: `>`, 4: `>=`) holds for `value`.
 fn holds(i: u32, value: f32) -> bool {
     let relation = relation_of(i);
@@ -56,27 +75,26 @@ fn holds(i: u32, value: f32) -> bool {
     return false;
 }
 
-// Whether every relation which isn't an equation holds at `(x, y)`, except `skip`.
-fn others_hold(skip: u32, x: f32, y: f32) -> bool {
+// Whether every relation which isn't an equation holds at the pixel, except `skip`.
+fn others_hold(skip: u32) -> bool {
     for (var j = 0u; j < COUNT; j++) {
-        if j != skip && relation_of(j) != 0.0 && !holds(j, F_at(j, x, y)) {
+        if j != skip && relation_of(j) != 0.0 && !holds(j, samples[5u * j]) {
             return false;
         }
     }
     return true;
 }
 
-// The coverage of the curve `F_i(x, y) = 0` at the pixel `p` (from the bottom left), from `F_i` at the center
-// `value` and at the corners of a box around it.
-fn contour_coverage(i: u32, p: vec2<f32>, x: f32, y: f32, value: f32) -> f32 {
+// The coverage of the curve `F_i(x, y) = 0` at the pixel `p` (from the bottom left), from the samples of `F_i` at
+// the pixel and at the corners of a box around it.
+fn contour_coverage(i: u32, p: vec2<f32>) -> f32 {
     let w = u.frame.z;
     let h = w + 0.5;
-    let sx = (u.view.y - u.view.x) / u.frame.x;
-    let sy = (u.view.w - u.view.z) / u.frame.y;
-    let f_pp = F_at(i, x + h * sx, y + h * sy);
-    let f_pm = F_at(i, x + h * sx, y - h * sy);
-    let f_mp = F_at(i, x - h * sx, y + h * sy);
-    let f_mm = F_at(i, x - h * sx, y - h * sy);
+    let value = samples[5u * i];
+    let f_pp = samples[5u * i + 1u];
+    let f_pm = samples[5u * i + 2u];
+    let f_mp = samples[5u * i + 3u];
+    let f_mm = samples[5u * i + 4u];
     if !(nf_finite(value) && nf_finite(f_pp) && nf_finite(f_pm) && nf_finite(f_mp) && nf_finite(f_mm)) {
         return 0.0;
     }
@@ -116,14 +134,18 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let p = vec2<f32>(pixel.x, u.frame.y - pixel.y);
     let x = u.view.x + p.x * (u.view.y - u.view.x) / u.frame.x;
     let y = u.view.z + p.y * (u.view.w - u.view.z) / u.frame.y;
-    let inside = others_hold(COUNT, x, y);
+    for (var k = 0u; k < COUNT * 5u; k++) {
+        let offset = sample_offset(k % 5u);
+        samples[k] = F_at(k / 5u, x + offset.x, y + offset.y);
+    }
+    let inside = others_hold(COUNT);
     // With equations, their common points where the other relations hold
     var equations = false;
     var on_curves = 1.0;
     for (var i = 0u; i < COUNT; i++) {
         if relation_of(i) == 0.0 {
             equations = true;
-            on_curves = min(on_curves, contour_coverage(i, p, x, y, F_at(i, x, y)));
+            on_curves = min(on_curves, contour_coverage(i, p));
         }
     }
     if equations {
@@ -136,8 +158,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     }
     var coverage = 0.0;
     for (var i = 0u; i < COUNT; i++) {
-        if others_hold(i, x, y) {
-            coverage = max(coverage, contour_coverage(i, p, x, y, F_at(i, x, y)));
+        if others_hold(i) {
+            coverage = max(coverage, contour_coverage(i, p));
         }
     }
     return u.color * coverage + background * (1.0 - coverage);

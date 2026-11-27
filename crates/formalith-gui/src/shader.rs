@@ -127,6 +127,7 @@ impl Emitter<'_> {
             Numeric::RationalPow(base, num, den) => {
                 let base = self.emit(base);
                 match (i32::try_from(*num), i32::try_from(*den)) {
+                    (Ok(num), Ok(1)) => self.integer_pow(base, num),
                     (Ok(num), Ok(den)) => self.bind(&format!("nf_rpow({base}, {num}, {den})")),
                     _ => {
                         let exponent = literal(*num as f64 / *den as f64);
@@ -205,6 +206,38 @@ impl Emitter<'_> {
             "select({}, ldexp({mantissa}, {exponent}), {finite})",
             factors.join(" * ")
         ))
+    }
+
+    /// `base^n`, by the products of `nf_powi` in the same order (so with the same value) written out: drivers
+    /// inline and unroll each call of `nf_powi`, and compiling iterated functions like `{$f(z)^2 + z$}` with
+    /// hundreds of squares took seconds.
+    fn integer_pow(&mut self, base: String, n: i32) -> String {
+        if n == 0 {
+            return "1.0".to_owned();
+        }
+        let mut base = base;
+        let mut e = n.unsigned_abs();
+        let mut result: Option<String> = None;
+        loop {
+            if e & 1 != 0 {
+                result = Some(match result {
+                    // `1.0 * base` is `base`
+                    None => base.clone(),
+                    Some(result) => self.bind(&format!("{result} * {base}")),
+                });
+            }
+            e >>= 1;
+            if e == 0 {
+                break;
+            }
+            base = self.bind(&format!("{base} * {base}"));
+        }
+        let result = result.unwrap_or_else(|| "1.0".to_owned());
+        if n < 0 {
+            self.bind(&format!("1.0 / {result}"))
+        } else {
+            result
+        }
     }
 
     /// The sum or product of `terms`, `empty` without terms.
@@ -452,7 +485,7 @@ pub(crate) mod tests {
 
     /// Expressions using every kind of node and function.
     pub const EXPRESSIONS: [&str; 18] = [
-        "x^2 + 3*x*y - 1/2",
+        "x^2 + 3*x*y - 1/2 + x^7 * y^(-3) + a^(-1)",
         "sqrt(x) + x^(1/3) + x^(-2/5) + x^y + 2^x + x^123456789012",
         "exp(x) + ln(x) + sin(x) + cos(x) + tan(x)",
         "asin(x) + acos(x) + atan(x) + sinh(x) + cosh(x) + tanh(x)",
