@@ -365,6 +365,14 @@ fn limits_of_gamma_at_minus_infinity() {
     assert_eq!(lim("lim(gamma(x)/gamma(x+1), x, -oo)"), "0");
     assert_eq!(lim("lim(x*gamma(x)/gamma(x+1), x, -oo)"), "1");
     assert_eq!(lim("lim(gamma(x)*gamma(1-x)*sin(pi*x), x, -oo)"), "pi");
+    // Removable singularities of the reflected `sin(pi x)`
+    assert_eq!(lim("lim(gamma(x)*sin(2*pi*x), x, -oo)"), "0");
+    assert_eq!(lim("lim(exp(gamma(x)*sin(2*pi*x)), x, -oo)"), "1");
+    // Arguments with their own oscillations
+    assert_eq!(
+        lim("lim(gamma(-x + sin(x))*sin(pi*(-x + sin(x))), x, oo)"),
+        "0"
+    );
 }
 
 #[test]
@@ -373,6 +381,9 @@ fn limits_with_accumulating_poles() {
     assert_eq!(lim("lim(tan(x), x, oo)"), "undefined");
     assert_eq!(lim("lim(1/cos(x)^2, x, oo)"), "undefined");
     assert_eq!(lim("lim(sin(x)/sin(x+1), x, oo)"), "undefined");
+    // `sin(2 x)/sin(x) = 2 cos(x)`
+    assert_eq!(lim("lim(sin(2*x)/sin(x), x, oo)"), "undefined");
+    assert_eq!(lim("lim(sin(3*x)/(x*sin(x)), x, oo)"), "0");
 }
 
 #[test]
@@ -381,6 +392,27 @@ fn limits_with_polygamma() {
     assert_eq!(lim("lim(x*(digamma(x) - ln(x)), x, oo)"), "-1/2");
     assert_eq!(lim("lim(x*polygamma(1, x), x, oo)"), "1");
     assert_eq!(lim("lim(digamma(x) + 1/x, x, 0)"), "-euler_gamma");
+}
+
+#[test]
+fn limits_of_polygamma_at_minus_infinity() {
+    // Poles accumulate at `-oo`
+    assert_eq!(lim("lim(digamma(x), x, -oo)"), "undefined");
+    assert_eq!(lim("lim(polygamma(1, x), x, -oo)"), "undefined");
+    assert_eq!(lim("lim(polygamma(1, 1/x), x, 0, -1)"), "undefined");
+    assert_eq!(lim("lim(digamma(x)/digamma(1-x), x, -oo)"), "undefined");
+    assert_eq!(lim("lim(digamma(x)*sin(pi*x), x, -oo)"), "undefined");
+    assert_eq!(lim("lim(polygamma(2, x)*sin(pi*x)^3, x, -oo)"), "undefined");
+    // By the reflection formula `psi(1 - x) - psi(x) = pi cot(pi x)` and its derivatives
+    assert_eq!(
+        lim("lim((digamma(x) - digamma(1-x))*tan(pi*x), x, -oo)"),
+        "-pi"
+    );
+    assert_eq!(lim("lim(polygamma(1, x)*sin(pi*x)^2, x, -oo)"), "pi^2");
+    assert_eq!(
+        lim("lim((polygamma(2, x) - polygamma(2, 1-x))*sin(pi*x)^3/cos(pi*x), x, -oo)"),
+        "-2*(pi^3)"
+    );
 }
 
 #[test]

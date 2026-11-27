@@ -52,15 +52,11 @@ What is left:
 - Fourier-Motzkin elimination gives up past 400 constraints, taking the system as feasible (sound, but nothing is
   concluded).
 
-## Limits
-
-- `polygamma(m, g)` with `g -> -oo` (`lim(polygamma(1, x), x, -oo)`, reflection with derivatives of `cot`), and
-  `gamma` at `-oo` nested in internal limits.
-
 ## Series
 
 - Relations between radical bases that aren't common factors over ℚ (nested radicals with related bases), bases
   vanishing at the point, and towers above dimension 64.
+- Series at `-oo` of the Gamma family aren't reflected like limits (`series(gamma(x)*sin(pi*x), x, -oo, 3)`).
 - Petkovšek's *Hyper* over algebraic numbers (ratios other than rational or Gaussian, factors with irrational
   roots), with parameters, and coefficients without hypergeometric solutions (`series(x exp(x^2) cos(x), x, 0, oo)`
   would need d'Alembertian or Liouvillian solutions).

@@ -10,14 +10,22 @@ use crate::field::real::expr::{
     Expr, depends, fun, half, infinity, int, is_infinite, one, polygamma, polygamma_args, size,
     unary, value, variable, zero,
 };
-use crate::field::real::expr::{is_numerically_zero, is_proven_zero, try_map_operands};
-use std::cmp::Ordering;
+use crate::field::real::expr::{
+    any_subterm, is_numerically_zero, is_proven_zero, try_map_operands,
+};
+use std::{cell::RefCell, cmp::Ordering};
 
-use malachite::{Rational, base::num::basic::traits::Zero};
+use malachite::{
+    Natural, Rational,
+    base::num::{
+        arithmetic::traits::Lcm,
+        basic::traits::{One, Zero},
+    },
+};
 
 use crate::{
     context::{Context, Symbol},
-    term::{Normalize, Term},
+    term::{Expand, Normalize, Term},
 };
 
 use super::{
@@ -26,6 +34,32 @@ use super::{
     const_sign, only_symbols, series,
 };
 use crate::field::real::approx::enclose;
+
+/// `f` with each angle `t` replaced by `{$L t$}`, `L` being the least common multiple of the denominators of the
+/// rational multiples of `t` in the arguments of `sin` and `cos`, so that `{$sin t / sin(t/2)$}` becomes
+/// `{$sin(2 t) / sin t$}`, whose ratio `simplify` reduces. An angle stands for any value, so it can be rescaled.
+fn integer_angles(f: &Expr) -> Expr {
+    angles(f).into_iter().fold(f.clone(), |f, t| {
+        let lcm = RefCell::new(Natural::ONE);
+        any_subterm(&f, &|term| {
+            if let Some((Context::SIN | Context::COS, u)) = unary(term)
+                && let (Some(at_zero), Some(at_one)) =
+                    (u.substitute(t, &zero()), u.substitute(t, &one()))
+                && let Term::Value(k) = (at_one - at_zero).normalize()
+            {
+                let mut lcm = lcm.borrow_mut();
+                *lcm = (&*lcm).lcm(k.value.denominator_ref());
+            }
+            false
+        });
+        let lcm = lcm.into_inner();
+        if lcm == Natural::ONE {
+            return f;
+        }
+        f.substitute(t, &(value(Rational::from(lcm)) * variable(t)))
+            .unwrap_or(f)
+    })
+}
 
 /// Maximum depth of nested leading term computations.
 const MAX_DEPTH: usize = 48;
@@ -67,19 +101,28 @@ impl Gruntz {
     }
 
     /// `{$lim_(x -> +oo) f$}`, the entry point. Unlike [`Gruntz::limit_infinity`], used for the intermediate
-    /// limits, it supports oscillating `sin` and `cos`, `{$Gamma(g)$}` with `{$g -> -oo$}` (see
-    /// [`Self::reflect_gamma`]), and gives limits like `{$sign(a) oo$}` for a parameter `a`.
+    /// limits, it supports oscillating `sin` and `cos`, `{$Gamma(g)$}` and `{$psi^((m))(g)$}` with `{$g -> -oo$}`
+    /// (see [`Self::remove_oscillations`]), and gives limits like `{$sign(a) oo$}` for a parameter `a`.
     pub(super) fn limit(&mut self, f: &Expr) -> LimitResult<Expr> {
-        let f = self.reflect_gamma(f)?;
-        let f = self.remove_oscillations(&f)?;
+        let mut f = self.remove_oscillations(f)?;
         if let Err(error) = self.check_bounded(&f) {
-            return Err(if self.accumulating_poles(&f) {
-                LimitError::Undefined
-            } else {
-                error
-            });
+            if self.accumulating_poles(&f) {
+                return Err(LimitError::Undefined);
+            }
+            // Removable singularities, like `{$sin(2 t) / sin t = 2 cos t$}`
+            let cancelled = Self::cancel_angles(&integer_angles(&f).expand());
+            if cancelled == f {
+                return Err(error);
+            }
+            if let Err(error) = self.check_bounded(&cancelled) {
+                return Err(if self.accumulating_poles(&cancelled) {
+                    LimitError::Undefined
+                } else {
+                    error
+                });
+            }
+            f = cancelled;
         }
-        let mut f = f;
         let res = loop {
             if !self.depends(&f) {
                 break f;
@@ -94,31 +137,36 @@ impl Gruntz {
         Self::without_angles(&res).map(|res| res.normalize())
     }
 
-    /// Rewrite each `{$Gamma(g)$}` with `{$g -> -oo$}` in `f` by the reflection formula
-    /// `{$Gamma(g) = pi / (sin(pi g) Gamma(1 - g))$}`, so that `{$Gamma(1 - g)$}` is rewritten by Stirling's
-    /// formula and `{$sin(pi g)$}` gets an angle.
-    fn reflect_gamma(&mut self, f: &Expr) -> LimitResult<Expr> {
-        if !self.depends(f) {
-            return Ok(f.clone());
-        }
-        Ok(match f {
-            Term::Pow(pow) => self.reflect_gamma(&pow.base)?.pow(&pow.exponant),
-            Term::Fun(_) if polygamma_args(f).is_some() => {
-                let (m, arg) = polygamma_args(f).ok_or(LimitError::Unsupported)?;
-                polygamma(m, self.reflect_gamma(arg)?)
-            }
-            Term::Fun(_) => {
-                let (ident, arg) = unary(f).ok_or(LimitError::Unsupported)?;
-                let arg = self.reflect_gamma(arg)?;
-                if ident == Context::GAMMA && self.limit_infinity(&arg)? == -infinity() {
-                    let pi = variable(Context::PI);
-                    let sin = fun(Context::SIN, &pi * &arg);
-                    return Ok(pi / (sin * fun(Context::GAMMA, one() - arg)));
+    /// `f` with the factors of each product depending only on angles multiplied and simplified together, so that
+    /// `{$sin(2 t) / sin t$}` becomes `{$2 cos t$}`. Only these small trigonometric products are simplified, since
+    /// `simplify` may not terminate on other terms.
+    fn cancel_angles(f: &Expr) -> Expr {
+        /// Size of the product of angle factors above which it isn't simplified.
+        const MAX_SIMPLIFIED: usize = 60;
+        match f {
+            Term::Mul(mul) => {
+                let (angular, rest): (Vec<_>, Vec<_>) = mul
+                    .iter()
+                    .map(Self::cancel_angles)
+                    .partition(|factor| has_angle(factor) && only_symbols(factor, &angles(factor)));
+                let coefficient = value(mul.coefficient.clone());
+                let rest = rest
+                    .into_iter()
+                    .fold(coefficient, |res, factor| res * factor);
+                if angular.len() < 2 {
+                    return angular.into_iter().fold(rest, |res, factor| res * factor);
                 }
-                fun(ident, arg)
+                let product = angular.into_iter().fold(one(), |res, factor| res * factor);
+                if size(&product) > MAX_SIMPLIFIED {
+                    return rest * product;
+                }
+                rest * fun(Context::SIMPLIFY, product)
             }
-            _ => try_map_operands(f, |operand| self.reflect_gamma(operand))?,
-        })
+            _ => try_map_operands(f, |operand| {
+                Ok::<_, LimitError>(Self::cancel_angles(operand))
+            })
+            .unwrap_or_else(|_| f.clone()),
+        }
     }
 
     /// Whether `f`, rejected by [`Self::check_bounded`], has poles accumulating at `{$+oo$}` around which it is
@@ -186,12 +234,40 @@ impl Gruntz {
         Some(n % 2 == 1 || !is_infinite(&self.limit_infinity(&rest).ok()?))
     }
 
-    /// Replace the arguments `g` of `{$sin g$}` and `{$cos g$}` tending to `{$plus.minus oo$}` by angles.
+    /// Replace the arguments `g` of `{$sin g$}` and `{$cos g$}` tending to `{$plus.minus oo$}` by angles, bottom-up,
+    /// and rewrite the functions of the Gamma family whose argument `g` tends to `{$-oo$}`, where their poles
+    /// accumulate, by the reflection formulas `{$Gamma(g) = pi / (sin(pi g) Gamma(1 - g))$}` and
+    /// `{$psi^((m))(g) = (-1)^m psi^((m))(1 - g) - pi^(m + 1) cot^((m))(pi g)$}` (the `m`-th derivative of
+    /// `{$psi(1 - g) - psi(g) = pi cot(pi g)$}`). Their arguments tend to `{$+oo$}` and have asymptotic series,
+    /// and `{$sin(pi g)$}` gets an angle. Operands are rewritten first, so that the limit of `g` sees the angles
+    /// of its own oscillations.
     fn remove_oscillations(&mut self, f: &Expr) -> LimitResult<Expr> {
+        /// Largest order of a reflected polygamma, whose `{$cot^((m))$}` grows with `m`.
+        const MAX_REFLECTED_ORDER: u64 = 16;
         if !self.depends(f) {
             return Ok(f.clone());
         }
         Ok(match f {
+            Term::Fun(_) if polygamma_args(f).is_some() => {
+                let (m, arg) = polygamma_args(f).ok_or(LimitError::Unsupported)?;
+                let arg = self.remove_oscillations(arg)?;
+                if self.limit_infinity(&arg)? != -infinity() {
+                    return Ok(polygamma(m, arg));
+                }
+                if m > MAX_REFLECTED_ORDER {
+                    return Err(LimitError::Unsupported);
+                }
+                let s = Symbol::new("@s");
+                let cot = (0..m).fold(
+                    fun(Context::COS, variable(s)) / fun(Context::SIN, variable(s)),
+                    |cot, _| cot.derivative(s),
+                );
+                let angle = self.angle(&(variable(Context::PI) * &arg));
+                let cot = cot.substitute(s, &angle).ok_or(LimitError::Unsupported)?;
+                let sign = if m % 2 == 0 { one() } else { -one() };
+                let pi_power = variable(Context::PI).pow(&value(Rational::from(m + 1)));
+                sign * polygamma(m, one() - arg) - pi_power * cot
+            }
             Term::Fun(_) if unary(f).is_some() => {
                 let (ident, arg) = unary(f).ok_or(LimitError::Unsupported)?;
                 let arg = self.remove_oscillations(arg)?;
@@ -202,10 +278,15 @@ impl Gruntz {
                     && self.tends_to_infinity(&arg)?
                 {
                     self.trigonometric_integral_at_infinity(ident, arg)?
+                } else if ident == Context::GAMMA && self.limit_infinity(&arg)? == -infinity() {
+                    let pi = variable(Context::PI);
+                    let sin = fun(Context::SIN, self.angle(&(&pi * &arg)));
+                    pi / (sin * fun(Context::GAMMA, one() - arg))
                 } else {
                     fun(ident, arg)
                 }
             }
+            Term::Pow(pow) => self.remove_oscillations(&pow.base)?.pow(&pow.exponant),
             _ => try_map_operands(f, |operand| self.remove_oscillations(operand))?,
         })
     }
@@ -515,7 +596,7 @@ impl Gruntz {
                     let limit = self.limit_infinity(&arg)?;
                     if limit == -infinity() {
                         // Poles accumulate at `{$-oo$}`, only rewritten at the top level by
-                        // `Self::reflect_gamma`
+                        // `Self::remove_oscillations`
                         return Err(LimitError::Unsupported);
                     }
                     if limit == infinity() {
