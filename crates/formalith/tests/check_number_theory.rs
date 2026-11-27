@@ -99,7 +99,7 @@ fn isprime(input: &str) -> Verdict {
 /// Check `factorint(n)`: rows `[p, e]` with increasing prime bases (`-1` first for negatives), whose product is `n`.
 fn factorint(input: &str) -> Verdict {
     let n: i128 = input.parse().unwrap();
-    let output = match eval("M", &format!("factorint({n})")) {
+    let output = match eval("M(R)", &format!("factorint({n})")) {
         Ok(output) => output,
         Err(e) => return Verdict::Wrong(format!("factorint({n}): {e}")),
     };

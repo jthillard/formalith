@@ -29,7 +29,7 @@ pub enum SetChoice {
     /// Complex numbers.
     C,
     /// Matrices with rational coefficients.
-    M,
+    MR,
     /// Matrices with complex coefficients.
     MC,
     /// Matrices with integer coefficients.
@@ -60,7 +60,7 @@ impl SetChoice {
         Self::Z,
         Self::R,
         Self::C,
-        Self::M,
+        Self::MR,
         Self::MC,
         Self::MZ,
     ];
@@ -79,7 +79,7 @@ impl SetChoice {
             Self::Z => "integers",
             Self::R => "rationals",
             Self::C => "complex numbers, `i` is the imaginary unit",
-            Self::M => "matrices with rational coefficients, like [[1, 2], [3, 4]]",
+            Self::MR => "matrices with rational coefficients, like [[1, 2], [3, 4]]",
             Self::MC => "matrices with complex coefficients, with complex eigenvalues",
             Self::MZ => "matrices with integer coefficients, with hermite and smith normal forms",
             Self::MZn(_) => "matrices with coefficients modulo n, like M(Z/6)",
@@ -123,7 +123,7 @@ impl SetChoice {
             Self::Z => eval_in(input, Z, env),
             Self::R => eval_in(input, R, env),
             Self::C => eval_in(input, C, env),
-            Self::M => eval_in(input, M, env),
+            Self::MR => eval_in(input, M, env),
             Self::MC => eval_in(input, M::new(TermSet::new(C)), env),
             Self::MZ => eval_in(input, M::new(TermSet::new(Z)), env),
             Self::MZn(n) => eval_in(input, M::new(TermSet::new(Zn::new(n))), env),
@@ -242,7 +242,7 @@ impl fmt::Display for SetChoice {
             Self::Z => f.write_str("Z"),
             Self::R => f.write_str("R"),
             Self::C => f.write_str("C"),
-            Self::M => f.write_str("M"),
+            Self::MR => f.write_str("M(R)"),
             Self::MC => f.write_str("M(C)"),
             Self::MZ => f.write_str("M(Z)"),
             Self::MZn(n) => write!(f, "M(Z/{n})"),
@@ -269,7 +269,7 @@ fn is_variable_name(name: &str) -> bool {
 impl FromStr for SetChoice {
     type Err = String;
 
-    /// Parse a set name, like `R`, `Z/7` (or `Z/7Z`) or `Z/2[x]`, ignoring the case of set letters.
+    /// Parse a set name, like `R`, `Z/7` (or `Z/7Z`) or `Z/2[x]`, ignoring the case of set letters (`M` is `M(R)`).
     fn from_str(name: &str) -> Result<Self, Self::Err> {
         let name = name.trim();
         if let Some(entries) = name
@@ -278,7 +278,7 @@ impl FromStr for SetChoice {
             .and_then(|n| n.strip_suffix(')'))
         {
             return match entries.parse()? {
-                Self::R => Ok(Self::M),
+                Self::R => Ok(Self::MR),
                 Self::C => Ok(Self::MC),
                 Self::Z => Ok(Self::MZ),
                 Self::Zn(n) => Ok(Self::MZn(n)),
@@ -326,6 +326,9 @@ impl FromStr for SetChoice {
                     "invalid modulus `{modulus}`, expected an integer between 2 and 2^63"
                 )),
             };
+        }
+        if name.eq_ignore_ascii_case("M") {
+            return Ok(Self::MR);
         }
         Self::ALL
             .into_iter()

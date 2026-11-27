@@ -72,7 +72,7 @@ fn errors() {
             .contains("can't be solved")
     );
     assert!(
-        solve_in("M", "x = 1")
+        solve_in("M(R)", "x = 1")
             .unwrap_err()
             .contains("can't be solved")
     );

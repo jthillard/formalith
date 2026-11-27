@@ -776,7 +776,7 @@ fn factorint() {
 #[test]
 fn leading_minus_of_scalars() {
     let m = |input: &str| {
-        SetChoice::M
+        SetChoice::MR
             .eval(input, false, &mut Environment::new())
             .unwrap()
     };
@@ -788,7 +788,7 @@ fn leading_minus_of_scalars() {
 #[test]
 fn scalar_builtins_evaluated_in_m() {
     let m = |input: &str| {
-        SetChoice::M
+        SetChoice::MR
             .eval(input, false, &mut Environment::new())
             .unwrap()
     };
@@ -846,7 +846,7 @@ fn complex_matrices() {
     assert_eq!(entries("roots(x^3 + x + 1)"), 3);
     assert_eq!(mc("gradient(x^2 + i*y, x, y)"), mc("[[2*x], [i]]"));
     // Real matrices keep non-real eigenvalues unevaluated
-    let m = SetChoice::M
+    let m = SetChoice::MR
         .eval(
             "eigenvalues([[0, -1], [1, 0]])",
             false,
@@ -859,7 +859,7 @@ fn complex_matrices() {
 #[test]
 fn builtins_on_matrix_entries() {
     let mut env = Environment::new();
-    let mut m = |input: &str| SetChoice::M.eval(input, false, &mut env).unwrap();
+    let mut m = |input: &str| SetChoice::MR.eval(input, false, &mut env).unwrap();
     assert_eq!(
         m("simplify([[sin(x)^2 + cos(x)^2, 1], [0, x]])"),
         m("[[1, 1], [0, x]]")

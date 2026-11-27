@@ -156,7 +156,7 @@ pub static BUILTIN_DOCS: [BuiltinDoc; Context::BUILTIN_NAMES.len()] = [
         "Determinant of a square matrix.",
         "Evaluated in every set, its argument being parsed as a matrix over the set.",
         &[
-            ex_in("M", "det([[a, b], [c, d]])", "a d - b c"),
+            ex_in("M(R)", "det([[a, b], [c, d]])", "a d - b c"),
             ex("det([[1, 2], [3, 4]])", "-2"),
         ],
     ),
@@ -196,7 +196,7 @@ pub static BUILTIN_DOCS: [BuiltinDoc; Context::BUILTIN_NAMES.len()] = [
             ex("simplify((x^2 - 1)/(x - 1))", "x + 1"),
             ex("simplify(sin(x)^2 + cos(x)^2)", "1"),
             ex_in(
-                "M",
+                "M(R)",
                 "simplify([[sin(x)^2 + cos(x)^2, 1], [0, x]])",
                 "mat(1, 1; 0, x)",
             ),
@@ -343,7 +343,7 @@ pub static BUILTIN_DOCS: [BuiltinDoc; Context::BUILTIN_NAMES.len()] = [
             ex("diff(sin(x), x, 2)", "-sin(x)"),
             ex("sin''(2 x)", "-sin(2 x)"),
             ex_in(
-                "M",
+                "M(R)",
                 "diff([[x^2, x], [1, x^3]], x)",
                 "mat(2 x, 1; 0, 3 x^2)",
             ),
@@ -792,7 +792,11 @@ pub static BUILTIN_DOCS: [BuiltinDoc; Context::BUILTIN_NAMES.len()] = [
         "transpose(A)",
         "Transpose of a matrix.",
         "",
-        &[ex_in("M", "transpose([[1, 2], [3, 4]])", "mat(1, 3; 2, 4)")],
+        &[ex_in(
+            "M(R)",
+            "transpose([[1, 2], [3, 4]])",
+            "mat(1, 3; 2, 4)",
+        )],
     ),
     doc(
         Context::TRACE,
@@ -800,7 +804,7 @@ pub static BUILTIN_DOCS: [BuiltinDoc; Context::BUILTIN_NAMES.len()] = [
         "trace(A)",
         "Trace of a square matrix, the sum of its diagonal.",
         "",
-        &[ex_in("M", "trace([[1, 2], [3, 4]])", "5")],
+        &[ex_in("M(R)", "trace([[1, 2], [3, 4]])", "5")],
     ),
     doc(
         Context::RANK,
@@ -808,7 +812,7 @@ pub static BUILTIN_DOCS: [BuiltinDoc; Context::BUILTIN_NAMES.len()] = [
         "rank(A)",
         "Rank of a matrix.",
         "",
-        &[ex_in("M", "rank([[1, 2], [2, 4]])", "1")],
+        &[ex_in("M(R)", "rank([[1, 2], [2, 4]])", "1")],
     ),
     doc(
         Context::KERNEL,
@@ -816,7 +820,7 @@ pub static BUILTIN_DOCS: [BuiltinDoc; Context::BUILTIN_NAMES.len()] = [
         "kernel(A)",
         "Kernel of a matrix, as a matrix whose columns are a basis of it.",
         "A zero column for the zero kernel. Over Z, a basis of the lattice.",
-        &[ex_in("M", "kernel([[1, 2], [2, 4]])", "mat(-2; 1)")],
+        &[ex_in("M(R)", "kernel([[1, 2], [2, 4]])", "mat(-2; 1)")],
     ),
     doc(
         Context::CHARPOLY,
@@ -824,17 +828,17 @@ pub static BUILTIN_DOCS: [BuiltinDoc; Context::BUILTIN_NAMES.len()] = [
         "charpoly(A, [x])",
         "Characteristic polynomial det(x I - A) of a square matrix, in x by default.",
         "",
-        &[ex_in("M", "charpoly([[1, 2], [3, 4]])", "x^2 - 5 x - 2")],
+        &[ex_in("M(R)", "charpoly([[1, 2], [3, 4]])", "x^2 - 5 x - 2")],
     ),
     doc(
         Context::EIGENVALUES,
         Matrices,
         "eigenvalues(A)",
         "Eigenvalues of a square matrix, as a column repeating them by algebraic multiplicity.",
-        "When every root of the characteristic polynomial is found: in M when they are all real, in M(C) \
+        "When every root of the characteristic polynomial is found: in M(R) when they are all real, in M(C) \
          complex ones too.",
         &[
-            ex_in("M", "eigenvalues([[2, 1], [1, 2]])", "mat(1; 3)"),
+            ex_in("M(R)", "eigenvalues([[2, 1], [1, 2]])", "mat(1; 3)"),
             ex_in("M(C)", "eigenvalues([[0, -1], [1, 0]])", "mat(-i; i)"),
         ],
     ),
@@ -845,7 +849,7 @@ pub static BUILTIN_DOCS: [BuiltinDoc; Context::BUILTIN_NAMES.len()] = [
         "Eigenvectors of a square matrix, as columns, by eigenspace in the order of eigenvalues.",
         "In M and M(C), like eigenvalues.",
         &[ex_in(
-            "M",
+            "M(R)",
             "eigenvectors([[2, 1], [1, 2]])",
             "mat(-1, 1; 1, 1)",
         )],
@@ -913,7 +917,7 @@ pub static BUILTIN_DOCS: [BuiltinDoc; Context::BUILTIN_NAMES.len()] = [
         "gradient(f, [x_1, ..., x_n])",
         "Gradient of a scalar function, the column of its partial derivatives.",
         "The variables are every symbol of f, sorted by name, by default. In M and M(C).",
-        &[ex_in("M", "gradient(x^2*y, x, y)", "mat(2 x y; x^2)")],
+        &[ex_in("M(R)", "gradient(x^2*y, x, y)", "mat(2 x y; x^2)")],
     ),
     doc(
         Context::JACOBIAN,
@@ -922,7 +926,7 @@ pub static BUILTIN_DOCS: [BuiltinDoc; Context::BUILTIN_NAMES.len()] = [
         "Jacobian matrix of a row or column of functions, J_(i j) = d F_i / d x_j.",
         "The variables are every symbol of F, sorted by name, by default. In M and M(C).",
         &[ex_in(
-            "M",
+            "M(R)",
             "jacobian([[x*y, x + y]], x, y)",
             "mat(y, x; 1, 1)",
         )],
@@ -933,7 +937,7 @@ pub static BUILTIN_DOCS: [BuiltinDoc; Context::BUILTIN_NAMES.len()] = [
         "hessian(f, [x_1, ..., x_n])",
         "Hessian matrix of a scalar function, its second partial derivatives.",
         "The variables are every symbol of f, sorted by name, by default. In M and M(C).",
-        &[ex_in("M", "hessian(x^2*y)", "mat(2 y, 2 x; 2 x, 0)")],
+        &[ex_in("M(R)", "hessian(x^2*y)", "mat(2 y, 2 x; 2 x, 0)")],
     ),
     doc(
         Context::IDENTITY,
@@ -942,8 +946,8 @@ pub static BUILTIN_DOCS: [BuiltinDoc; Context::BUILTIN_NAMES.len()] = [
         "Identity matrix of size n.",
         "",
         &[
-            ex_in("M", "I(2)", "mat(1, 0; 0, 1)"),
-            ex_in("M", "2*I(2)", "mat(2, 0; 0, 2)"),
+            ex_in("M(R)", "I(2)", "mat(1, 0; 0, 1)"),
+            ex_in("M(R)", "2*I(2)", "mat(2, 0; 0, 2)"),
         ],
     ),
     doc(
@@ -1079,11 +1083,11 @@ pub static BUILTIN_DOCS: [BuiltinDoc; Context::BUILTIN_NAMES.len()] = [
         Algebra,
         "roots(p, [x])",
         "Roots of a polynomial, as a column repeated by multiplicity.",
-        "x may be omitted when p has a single symbol. In M, the real roots found by solve, and in M(C) the \
+        "x may be omitted when p has a single symbol. In M(R), the real roots found by solve, and in M(C) the \
          complex ones; unevaluated when there is none.",
         &[
-            ex_in("M", "roots(x^3 - x^2)", "mat(0; 0; 1)"),
-            ex_in("M", "roots(x^2 - 2)", "mat(sqrt(2); -sqrt(2))"),
+            ex_in("M(R)", "roots(x^3 - x^2)", "mat(0; 0; 1)"),
+            ex_in("M(R)", "roots(x^2 - 2)", "mat(sqrt(2); -sqrt(2))"),
             ex_in("M(C)", "roots(x^2 + 1)", "mat(-i; i)"),
         ],
     ),
@@ -1155,8 +1159,8 @@ pub static BUILTIN_DOCS: [BuiltinDoc; Context::BUILTIN_NAMES.len()] = [
         "In M and M(Z). A negative number has a first row [-1, 1], denominators have negative exponents, and 1 \
          is [1, 1]. Unevaluated when a factor is too large to be found.",
         &[
-            ex_in("M", "factorint(360)", "mat(2, 3; 3, 2; 5, 1)"),
-            ex_in("M", "factorint(-3/4)", "mat(-1, 1; 2, -2; 3, 1)"),
+            ex_in("M(R)", "factorint(360)", "mat(2, 3; 3, 2; 5, 1)"),
+            ex_in("M(R)", "factorint(-3/4)", "mat(-1, 1; 2, -2; 3, 1)"),
         ],
     ),
     doc(
@@ -1166,8 +1170,8 @@ pub static BUILTIN_DOCS: [BuiltinDoc; Context::BUILTIN_NAMES.len()] = [
         "Zero matrix with n rows and m columns, square by default.",
         "",
         &[
-            ex_in("M", "zeros(2)", "mat(0, 0; 0, 0)"),
-            ex_in("M", "zeros(1, 3)", "mat(0, 0, 0)"),
+            ex_in("M(R)", "zeros(2)", "mat(0, 0; 0, 0)"),
+            ex_in("M(R)", "zeros(1, 3)", "mat(0, 0, 0)"),
         ],
     ),
     doc(
@@ -1177,8 +1181,8 @@ pub static BUILTIN_DOCS: [BuiltinDoc; Context::BUILTIN_NAMES.len()] = [
         "Diagonal matrix with the entries a_1, ..., a_n.",
         "The entries may also be given as a single row or column.",
         &[
-            ex_in("M", "diag(1, 2)", "mat(1, 0; 0, 2)"),
-            ex_in("M", "diag([[a, b]])", "mat(a, 0; 0, b)"),
+            ex_in("M(R)", "diag(1, 2)", "mat(1, 0; 0, 2)"),
+            ex_in("M(R)", "diag([[a, b]])", "mat(a, 0; 0, b)"),
         ],
     ),
     doc(

@@ -39,7 +39,7 @@ fn columns(matrix: &str) -> Option<Vec<String>> {
 
 /// Evaluate in `M` (symbolic real entries).
 fn m(input: &str) -> Result<String, String> {
-    eval_in(SetChoice::M, &mut Environment::new(), input)
+    eval_in(SetChoice::MR, &mut Environment::new(), input)
 }
 
 /// Whether every entry of the printed matrix is numerically 0.

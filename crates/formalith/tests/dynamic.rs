@@ -11,7 +11,7 @@ fn parse(name: &str) -> Result<SetChoice, String> {
 #[test]
 fn set_names() {
     for name in [
-        "N", "Z", "R", "C", "M", "M(C)", "M(Z)", "M(Z/6)", "Z/7", "R[x]", "C[t]", "Z/2[x]",
+        "N", "Z", "R", "C", "M(R)", "M(C)", "M(Z)", "M(Z/6)", "Z/7", "R[x]", "C[t]", "Z/2[x]",
         "Z/7[y_1]",
     ] {
         assert_eq!(parse(name).map(SetChoice::name), Ok(name.to_owned()));
@@ -19,7 +19,8 @@ fn set_names() {
     assert_eq!(parse("r"), Ok(SetChoice::R));
     assert_eq!(parse("z/7z"), Ok(SetChoice::Zn(7)));
     assert_eq!(parse(" Z / 7 "), Ok(SetChoice::Zn(7)));
-    assert_eq!(parse("m(r)"), Ok(SetChoice::M));
+    assert_eq!(parse("m(r)"), Ok(SetChoice::MR));
+    assert_eq!(parse("M"), Ok(SetChoice::MR));
     assert_eq!(parse("m(c)"), Ok(SetChoice::MC));
     assert_eq!(parse("M( z/6z )"), Ok(SetChoice::MZn(6)));
     assert!(matches!(

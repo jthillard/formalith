@@ -35,7 +35,7 @@ pub fn eval_in(set: SetChoice, env: &mut Environment, input: &str) -> Result<Str
         SetChoice::Z => eval_plain(input, Z, env),
         SetChoice::R => eval_plain(input, R, env),
         SetChoice::C => eval_plain(input, C, env),
-        SetChoice::M => eval_plain(input, M, env),
+        SetChoice::MR => eval_plain(input, M, env),
         SetChoice::MC => eval_plain(input, M::new(TermSet::new(C)), env),
         SetChoice::MZ => eval_plain(input, M::new(TermSet::new(Z)), env),
         SetChoice::MZn(n) => eval_plain(input, M::new(TermSet::new(Zn::new(n))), env),

@@ -70,7 +70,8 @@ in the root `Cargo.toml` (`dev` keeps line tables only, dependencies at `opt-lev
 - `N`, `Z`, `R` (exact rationals via `malachite`, plus symbolic constants; where calculus lives, `real/`),
 - `C` (Gaussian rationals; calculus is done in `R` on real and imaginary parts, `complex/parts.rs`),
 - `Zn` (`Z/nZ`, runtime modulus), `Poly<K>` (`K[x]`, `polynomial.rs`),
-- `M` (matrices with symbolic entries, `M<TermSet<R>>`, also over `C`, `Z`, `Zn`; `matrix.rs`, `src/matrix/`),
+- `M` (matrices with symbolic entries, `M<TermSet<R>>`, also over `C`, `Z`, `Zn`, sets `M(R)`, `M(C)`, `M(Z)`,
+  `M(Z/n)`; `matrix.rs`, `src/matrix/`),
 - `CartesianPower<T, K>` (componentwise group, used by `C`).
 
 **Terms** (`src/term/`). `Term<T>` is `Value | Symbol | Add | Mul | Pow | Fun`. `Fun` holds

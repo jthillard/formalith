@@ -106,9 +106,9 @@ fn undecided_constant_equations() {
 fn vanishing_symbolic_pivots() {
     // The second row is the first one over `{$x + 1$}`, the eliminated entry `{$x - 1 - (x^2 - 1)/(x + 1)$}` is zero
     let m = "[[x+1, x^2-1],[1, x-1]]";
-    assert_eq!(eval_in("M", &[&format!("rank({m})")]), "1");
-    assert_eq!(eval_in("M", &[&format!("kernel({m})")]), "[[-x+1],[1]]");
-    assert!(!eval_in("M", &[&format!("{m}^(-1)")]).contains("0^-1"));
+    assert_eq!(eval_in("M(R)", &[&format!("rank({m})")]), "1");
+    assert_eq!(eval_in("M(R)", &[&format!("kernel({m})")]), "[[-x+1],[1]]");
+    assert!(!eval_in("M(R)", &[&format!("{m}^(-1)")]).contains("0^-1"));
 }
 
 #[test]
