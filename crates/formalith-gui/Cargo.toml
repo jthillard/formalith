@@ -34,7 +34,7 @@ ui = ["dep:eframe", "dep:egui_plot", "dep:egui_extras", "dep:typst", "dep:typst-
 profile = ["dep:profiling", "dep:puffin", "profiling/profile-with-puffin", "formalith-session/profile"]
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-eframe = { version = "0.37", default-features = false, features = ["wayland", "x11"], optional = true }
+eframe = { version = "0.37", default-features = false, features = ["wayland", "x11", "clipboard"], optional = true }
 # Typesetting of the results natively, with the math font in `fonts/` (in the browser: typst.ts, see `www/index.html`)
 typst = { version = "0.15.1", optional = true }
 typst-layout = { version = "0.15.1", optional = true }
