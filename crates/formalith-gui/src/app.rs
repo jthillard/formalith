@@ -409,10 +409,7 @@ impl App {
             });
             frame.show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    let mut color = Color32::from_rgb(line.color[0], line.color[1], line.color[2]);
-                    if ui.color_edit_button_srgba(&mut color).changed() {
-                        line.color = [color.r(), color.g(), color.b()];
-                    }
+                    ui.color_edit_button_srgb(&mut line.color);
                     if has_graph {
                         ui.checkbox(&mut line.visible, "")
                             .on_hover_text("Show the graph");
