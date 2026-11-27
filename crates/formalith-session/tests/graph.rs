@@ -390,4 +390,21 @@ fn test_complex_regions() {
     assert_eq!(relations[0].relation, Comparison::Equal);
     // Comparisons of non-real sides aren't drawn
     assert!(draw(&mut session, "z^2 < 1").1.is_none());
+    // Iterated functions share their subexpressions, instead of parts exponential in the number of iterations
+    session.run("f(c, 0) := c");
+    session.run("f(c, n) := f(c, n - 1)^2 + c");
+    let (_, graph) = draw(&mut session, "abs(f(z, 30)) < 2");
+    let graph = graph.unwrap();
+    assert!(graph.params.is_empty());
+    let GraphKind::Implicit { relations } = graph.kind else {
+        panic!("Expected a region");
+    };
+    assert!(inside(&relations, &[0., 0.]));
+    assert!(inside(&relations, &[-1., 0.]));
+    assert!(inside(&relations, &[0.25, 0.]));
+    assert!(!inside(&relations, &[1., 1.]));
+    assert!(!inside(&relations, &[0.5, 0.]));
+    // With a parameter in the shared parts
+    let (_, graph) = draw(&mut session, "abs(f(z, 10) - a) < 2");
+    assert_eq!(graph.unwrap().params, ["a"]);
 }

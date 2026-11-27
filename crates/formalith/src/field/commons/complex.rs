@@ -926,8 +926,67 @@ pub fn parts(f: &Term<Complex>, z: Symbol, a: Symbol, b: Symbol) -> Option<(Expr
         parts::Split {
             var: Some((z, &var)),
             numeric: true,
+            shared: None,
         },
     )
+}
+
+/// The parts of complex terms like [`parts`], their big subexpressions being bound to internal symbols.
+///
+/// Subexpressions are shared instead of copied, for graphs of iterated functions like
+/// `{$f(z, n) = f(z, n - 1)^2 + z$}`, whose plain parts have a size exponential in `n`. The bindings are shared by the
+/// terms split by the same value.
+///
+/// ```
+/// use formalith::{field::{complex::{C, SharedParts, parts}, real::numeric::Numeric}, parse, symbol};
+///
+/// let (x, y, z) = (symbol!("x"), symbol!("y"), symbol!("z"));
+/// let f = parse!("((((z^2 + z)^2 + z)^2 + z)^2 + z)^2 + z", C);
+/// let shared = SharedParts::new(z, x, y);
+/// let (u, _) = shared.parts(&f).unwrap();
+/// let bindings = shared.into_bindings();
+/// assert!(!bindings.is_empty());
+/// let shared = Numeric::compile_shared(&u, &[x, y], &bindings);
+/// let plain = Numeric::compile(&parts(&f, z, x, y).unwrap().0, &[x, y]);
+/// let point = [0.3, -0.2];
+/// assert!((shared.eval(&point) - plain.eval(&point)).abs() < 1e-12);
+/// ```
+pub struct SharedParts {
+    /// `z`, with the parts `(a, b)` it stands for.
+    var: (Symbol, (Expr, Expr)),
+    shared: parts::Shared,
+}
+
+impl SharedParts {
+    /// Splits of terms of `z`, `z` being `a + i b`.
+    #[must_use]
+    pub fn new(z: Symbol, a: Symbol, b: Symbol) -> Self {
+        Self {
+            var: (z, (variable(a), variable(b))),
+            shared: parts::Shared::default(),
+        }
+    }
+
+    /// The parts `{$(u, v)$}` of `{$f(a + i b) = u + i v$}` like [`parts`], with symbols bound in
+    /// [`SharedParts::into_bindings`].
+    #[must_use]
+    pub fn parts(&self, f: &Term<Complex>) -> Option<(Expr, Expr)> {
+        parts::split_with(
+            f,
+            parts::Split {
+                var: Some((self.var.0, &self.var.1)),
+                numeric: true,
+                shared: Some(&self.shared),
+            },
+        )
+    }
+
+    /// The symbols bound by the splits and the parts they stand for, in order: a part only uses the symbols
+    /// before it, see [`Numeric::compile_shared`](crate::field::real::numeric::Numeric::compile_shared).
+    #[must_use]
+    pub fn into_bindings(self) -> Vec<(Symbol, Expr)> {
+        self.shared.into_bindings()
+    }
 }
 
 /// The exact real and imaginary parts `{$(u, v)$}` of `{$f = u + i v$}`, every symbol of `f` being assumed real.
@@ -966,6 +1025,7 @@ pub fn real_parts(f: &Term<Complex>) -> Option<(Expr, Expr)> {
         parts::Split {
             var: None,
             numeric: true,
+            shared: None,
         },
     )
 }

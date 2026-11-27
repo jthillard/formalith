@@ -139,6 +139,13 @@ fn perturb(numeric: &Numeric) -> Numeric {
             return numeric.clone();
         }
         Numeric::Var(_) => numeric.clone(),
+        Numeric::Let { bindings, body } => Numeric::Let {
+            bindings: bindings
+                .iter()
+                .map(|(index, value)| (*index, perturb(value)))
+                .collect(),
+            body: Box::new(perturb(body)),
+        },
         Numeric::Add(terms) => Numeric::Add(terms.iter().map(perturb).collect()),
         Numeric::Mul(factors) => Numeric::Mul(factors.iter().map(perturb).collect()),
         Numeric::Pow(base, exponent) => {

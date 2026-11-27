@@ -1,6 +1,6 @@
 //! Real and imaginary parts of complex expressions, so that integrals, limits and series are computed in `{$RR$}`.
 
-use std::cmp::Ordering;
+use std::{cell::RefCell, cmp::Ordering, collections::HashMap};
 
 use malachite::{
     Integer, Rational,
@@ -30,6 +30,8 @@ type Complex = Term<C<R<Rational>>>;
 
 /// The largest absolute integer exponent expanded by [`split`].
 const MAX_EXPONANT: u64 = 16;
+/// The largest size of a non-constant part kept inline by a [`Shared`] split, bigger ones being bound to symbols.
+const MAX_INLINE: usize = 24;
 
 /// The parts `{$(u, v)$}` of `{$f = u + i v$}`, assuming every symbol is real. `None` when a part can't be
 /// written, like `{$sqrt(i x)$}`.
@@ -46,10 +48,58 @@ pub(super) struct Split<'a> {
     /// non-real arguments as internal functions (see [`Context::complex_part`]), and the principal argument as
     /// `{$2 atan(v / (|z| + u))$}` when the signs of the parts are unknown.
     pub numeric: bool,
+    /// Where big parts are bound to symbols, so that subexpressions are shared instead of copied (the parts of
+    /// `{$z_(k + 1) = z_k^2 + z$}` hold those of `{$z_k$}` twice, which would make them exponential in `k`).
+    pub shared: Option<&'a Shared>,
+}
+
+/// The bindings of the big parts of a split, see [`Split::shared`].
+#[derive(Default)]
+pub(super) struct Shared {
+    /// The symbols and the parts they stand for, a part only using the symbols bound before it.
+    bindings: RefCell<Vec<(Symbol, Expr)>>,
+    /// The parts of the terms already split.
+    cache: RefCell<HashMap<Complex, (Expr, Expr)>>,
+}
+
+impl Shared {
+    /// `part`, or a symbol bound to it when it is big and not constant.
+    fn bind(&self, part: Expr) -> Expr {
+        if size(&part) <= MAX_INLINE || part.symbols().into_iter().all(Context::is_builtin_constant)
+        {
+            return part;
+        }
+        let mut bindings = self.bindings.borrow_mut();
+        let symbol = Symbol::new(format!("@p{}", bindings.len()));
+        bindings.push((symbol, part));
+        variable(symbol)
+    }
+
+    /// The bindings, in order.
+    pub(super) fn into_bindings(self) -> Vec<(Symbol, Expr)> {
+        self.bindings.into_inner()
+    }
 }
 
 /// The parts `{$(u, v)$}` of `{$f = u + i v$}` like [`split`], with the options `split`.
 pub(super) fn split_with(f: &Complex, split: Split) -> Option<(Expr, Expr)> {
+    let Some(shared) = split.shared else {
+        return split_node(f, split);
+    };
+    if let Some(parts) = shared.cache.borrow().get(f) {
+        return Some(parts.clone());
+    }
+    let (u, v) = split_node(f, split)?;
+    let parts = match f {
+        Term::Value(_) | Term::Symbol(_) => (u, v),
+        _ => (shared.bind(u), shared.bind(v)),
+    };
+    shared.cache.borrow_mut().insert(f.clone(), parts.clone());
+    Some(parts)
+}
+
+/// The parts of `f` like [`split_with`], its operands being split by [`split_with`].
+fn split_node(f: &Complex, split: Split) -> Option<(Expr, Expr)> {
     let var = split.var;
     Some(match f {
         Term::Value(z) => (value(z.value[0].clone()), value(z.value[1].clone())),
@@ -447,8 +497,10 @@ fn integer_pow((u, v): (Expr, Expr), n: &Integer) -> Option<(Expr, Expr)> {
         if k & 1 == 1 {
             res = product(&res, &square);
         }
-        square = product(&square, &square);
         k >>= 1;
+        if k > 0 {
+            square = product(&square, &square);
+        }
     }
     Some((&res.0 * &scale, &res.1 * &scale))
 }

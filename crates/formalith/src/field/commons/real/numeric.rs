@@ -134,6 +134,14 @@ pub enum Numeric {
         /// The last index.
         to: Box<Self>,
     },
+    /// Shared subexpressions: the value of each binding is stored in the variable at its index, in order (a binding
+    /// may use the earlier ones), then `body` is evaluated, see [`Numeric::compile_shared`].
+    Let {
+        /// The indices of the variables and their values.
+        bindings: Vec<(usize, Self)>,
+        /// The expression using them.
+        body: Box<Self>,
+    },
     /// A part which can't be evaluated numerically, like an unevaluated integral, with its name.
     Unsupported(String),
 }
@@ -461,6 +469,51 @@ impl Numeric {
         }
     }
 
+    /// Compile `term` like [`Numeric::compile`], its symbols `bindings[k].0` standing for the terms `bindings[k].1`,
+    /// which may use the earlier ones. They are computed once in a [`Numeric::Let`], so that terms whose
+    /// subexpressions are shared stay small. The bindings `term` doesn't depend on are left out.
+    ///
+    /// ```
+    /// use formalith::{field::real::{R, numeric::Numeric}, parse, symbol};
+    ///
+    /// let (t, u) = (symbol!("t"), symbol!("u"));
+    /// let bindings = [(t, parse!("x + 1", R)), (u, parse!("t^2", R))];
+    /// let f = Numeric::compile_shared(&parse!("u + t", R), &[symbol!("x")], &bindings);
+    /// assert_eq!(f.eval(&[2.]), 12.);
+    /// ```
+    #[must_use]
+    pub fn compile_shared(
+        term: &Term<Real>,
+        vars: &[Symbol],
+        bindings: &[(Symbol, Term<Real>)],
+    ) -> Self {
+        let mut needed = free_symbols(term);
+        let mut kept = vec![];
+        for (symbol, value) in bindings.iter().rev() {
+            if needed.contains(symbol) {
+                needed.extend(free_symbols(value));
+                kept.push((*symbol, value));
+            }
+        }
+        if kept.is_empty() {
+            return Self::compile(term, vars);
+        }
+        kept.reverse();
+        let all: Vec<Symbol> = vars
+            .iter()
+            .copied()
+            .chain(kept.iter().map(|(symbol, _)| *symbol))
+            .collect();
+        Self::Let {
+            bindings: kept
+                .iter()
+                .enumerate()
+                .map(|(k, (_, value))| (vars.len() + k, Self::compile(value, &all)))
+                .collect(),
+            body: Box::new(Self::compile(term, &all)),
+        }
+    }
+
     /// The name of the first part which can't be evaluated, like `integrate`.
     #[must_use]
     pub fn unsupported(&self) -> Option<&str> {
@@ -475,6 +528,10 @@ impl Numeric {
                 .unsupported()
                 .or_else(|| from.unsupported())
                 .or_else(|| to.unsupported()),
+            Self::Let { bindings, body } => bindings
+                .iter()
+                .find_map(|(_, value)| value.unsupported())
+                .or_else(|| body.unsupported()),
             Self::Unsupported(name) => Some(name),
         }
     }
@@ -500,6 +557,17 @@ impl Numeric {
                 from,
                 to,
             } => finite_sum(body, *index, from.eval(vars), to.eval(vars), vars),
+            Self::Let { bindings, body } => {
+                let mut vars = vars.to_vec();
+                for (index, value) in bindings {
+                    let value = value.eval(&vars);
+                    if vars.len() <= *index {
+                        vars.resize(index + 1, f64::NAN);
+                    }
+                    vars[*index] = value;
+                }
+                body.eval(&vars)
+            }
             Self::Unsupported(_) => f64::NAN,
         }
     }

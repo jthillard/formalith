@@ -31,8 +31,11 @@ struct Emitter<'a> {
     param_offset: usize,
     /// The indentation of the statements, deeper in the loops of sums.
     depth: usize,
-    /// The variables of the indices of the sums being emitted, with the names of their values.
+    /// The variables of the indices of the sums and of the bindings of [`Numeric::Let`] being emitted, with the
+    /// names of their values.
     indices: Vec<(usize, String)>,
+    /// The number of sums being emitted.
+    sums: usize,
 }
 
 impl Emitter<'_> {
@@ -75,7 +78,9 @@ impl Emitter<'_> {
         #[allow(clippy::cast_precision_loss)]
         let k = self.bind(&format!("{} + f32({i})", literal(start as f64)));
         self.indices.push((index, k));
+        self.sums += 1;
         let term = self.emit(body);
+        self.sums -= 1;
         self.indices.pop();
         // A term overflowing f32 after negligible ones is in the tail, like `{$x^k / k!$}` with `{$k! > 2^128$}`
         self.line(&format!(
@@ -110,7 +115,7 @@ impl Emitter<'_> {
                     |(_, name)| name.clone(),
                 ),
             Numeric::Add(terms) => self.fold(terms, " + ", "0.0"),
-            Numeric::Mul(factors) if !self.indices.is_empty() && factors.len() > 1 => {
+            Numeric::Mul(factors) if self.sums > 0 && factors.len() > 1 => {
                 self.scaled_product(factors)
             }
             Numeric::Mul(factors) => self.fold(factors, " * ", "1.0"),
@@ -140,6 +145,16 @@ impl Emitter<'_> {
                 from,
                 to,
             } => self.finite_sum(body, *index, from, to),
+            Numeric::Let { bindings, body } => {
+                let depth = self.indices.len();
+                for (index, value) in bindings {
+                    let value = self.emit(value);
+                    self.indices.push((*index, value));
+                }
+                let value = self.emit(body);
+                self.indices.truncate(depth);
+                value
+            }
             Numeric::Unsupported(_) => "nf_nan()".to_owned(),
         }
     }
@@ -158,7 +173,9 @@ impl Emitter<'_> {
         self.depth += 1;
         let k = self.bind(&format!("{from} + f32({i})"));
         self.indices.push((index, k));
+        self.sums += 1;
         let term = self.emit(body);
+        self.sums -= 1;
         self.indices.pop();
         self.line(&format!("{total} += {term};"));
         self.depth -= 1;
@@ -325,6 +342,7 @@ pub fn function(expr: &Numeric, name: &str, param_offset: usize) -> String {
         param_offset,
         depth: 1,
         indices: Vec::new(),
+        sums: 0,
     };
     let value = emitter.emit(expr);
     let _ = writeln!(out, "    return {value};\n}}");
@@ -486,6 +504,15 @@ pub(crate) mod tests {
             (&f, Comparison::Less),
             (&g, Comparison::GreaterEqual),
         ]));
+        // Shared subexpressions, also inside a sum
+        let (t, u) = (symbol!("t"), symbol!("u"));
+        let shared = Numeric::compile_shared(
+            &parse!("u + t + sum(u * k, k, 1, floor(y))", R),
+            &[symbol!("x"), symbol!("y")],
+            &[(t, parse!("x + 1", R)), (u, parse!("t^2 * x", R))],
+        );
+        assert!(matches!(shared, Numeric::Let { .. }));
+        validate(&render(&[(&shared, Comparison::Less)]));
     }
 
     #[test]

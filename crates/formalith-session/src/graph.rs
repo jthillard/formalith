@@ -34,7 +34,7 @@ use formalith::{
     dynamic::Evaluated,
     field::{
         Set,
-        complex::{C, Complex, parts, real_parts},
+        complex::{C, Complex, SharedParts, real_parts},
         real::{
             R, Real,
             numeric::{Numeric, free_symbols},
@@ -250,12 +250,33 @@ fn params<'a>(terms: impl IntoIterator<Item = &'a Term<Real>>, excluded: &[Symbo
 /// `y`.
 fn compile_all(
     parts: &[&Term<Real>],
+    vars: [Symbol; 2],
+    kind: impl FnOnce(Vec<Numeric>) -> GraphKind,
+) -> Graph {
+    compile_shared(parts, vars, &[], kind)
+}
+
+/// Compile `parts` like [`compile_all`], their symbols `bindings[k].0` standing for the terms `bindings[k].1` (see
+/// [`SharedParts`]), which aren't parameters.
+fn compile_shared(
+    parts: &[&Term<Real>],
     [xvar, yvar]: [Symbol; 2],
+    bindings: &[(Symbol, Term<Real>)],
     kind: impl FnOnce(Vec<Numeric>) -> GraphKind,
 ) -> Graph {
     profile_scope!("compile graph");
     let (x, y) = xy();
-    let params = params(parts.iter().copied(), &[xvar, yvar, x, y]);
+    let excluded: Vec<Symbol> = [xvar, yvar, x, y]
+        .into_iter()
+        .chain(bindings.iter().map(|(symbol, _)| *symbol))
+        .collect();
+    let params = params(
+        parts
+            .iter()
+            .copied()
+            .chain(bindings.iter().map(|(_, value)| value)),
+        &excluded,
+    );
     let vars: Vec<Symbol> = [xvar, yvar]
         .into_iter()
         .chain(params.iter().copied())
@@ -264,7 +285,7 @@ fn compile_all(
         kind: kind(
             parts
                 .iter()
-                .map(|part| Numeric::compile(part, &vars))
+                .map(|part| Numeric::compile_shared(part, &vars, bindings))
                 .collect(),
         ),
         params: params.iter().map(|param| param.name().to_owned()).collect(),
@@ -420,6 +441,15 @@ fn relation_graph(lhs: &Term<Real>, relation: Relation, rhs: &Term<Real>) -> Opt
 /// The graph of the region where every relation `lhs op rhs` holds, `!=` relations being left out, if there are
 /// other ones.
 fn region_graph(relations: &[(&Term<Real>, Relation, &Term<Real>)]) -> Option<Graph> {
+    region_graph_shared(relations, &[])
+}
+
+/// The graph of the region where every relation holds like [`region_graph`], with the shared subexpressions
+/// `bindings` (see [`compile_shared`]).
+fn region_graph_shared(
+    relations: &[(&Term<Real>, Relation, &Term<Real>)],
+    bindings: &[(Symbol, Term<Real>)],
+) -> Option<Graph> {
     let (comparisons, differences): (Vec<Comparison>, Vec<Term<Real>>) = relations
         .iter()
         .filter_map(|(lhs, relation, rhs)| Some((Comparison::new(*relation)?, *lhs - *rhs)))
@@ -428,15 +458,18 @@ fn region_graph(relations: &[(&Term<Real>, Relation, &Term<Real>)]) -> Option<Gr
         return None;
     }
     let differences: Vec<&Term<Real>> = differences.iter().collect();
-    Some(compile_all(&differences, xy().into(), |exprs| {
-        GraphKind::Implicit {
+    Some(compile_shared(
+        &differences,
+        xy().into(),
+        bindings,
+        |exprs| GraphKind::Implicit {
             relations: exprs
                 .into_iter()
                 .zip(comparisons)
                 .map(|(expr, relation)| ImplicitRelation { expr, relation })
                 .collect(),
-        }
-    }))
+        },
+    ))
 }
 
 /// The index of the closing bracket matching the opening one at the start of `text`.
@@ -696,19 +729,20 @@ pub(crate) fn evaluate_sequence(
 /// real.
 fn complex_map(f: &Term<Complex>, var: Symbol) -> Option<Graph> {
     let (x, y) = xy();
-    let (re, im) = parts(f, var, x, y)?;
+    let shared = SharedParts::new(var, x, y);
+    let (re, im) = shared.parts(f)?;
+    let bindings = shared.into_bindings();
     if im.is_zero() {
-        return Some(surface(&re, [x, y]));
+        return Some(compile_shared(&[&re], [x, y], &bindings, |compiled| {
+            GraphKind::Surface {
+                expr: compiled.into_iter().next().expect("One expression"),
+            }
+        }));
     }
-    let params = params([&re, &im], &[x, y]);
-    let vars: Vec<Symbol> = [x, y].into_iter().chain(params.iter().copied()).collect();
-    Some(Graph {
-        kind: GraphKind::ComplexMap {
-            re: Numeric::compile(&re, &vars),
-            im: Numeric::compile(&im, &vars),
-        },
-        params: params.iter().map(|param| param.name().to_owned()).collect(),
-    })
+    Some(compile_shared(&[&re, &im], [x, y], &bindings, |compiled| {
+        let [re, im] = compiled.try_into().expect("Two parts");
+        GraphKind::ComplexMap { re, im }
+    }))
 }
 
 /// The graph of a function `f` of the real `var` in `C`: a curve `y = f(x)` when `f` is real, else a
@@ -744,21 +778,24 @@ fn complex_point(c: &Term<Complex>) -> Option<Graph> {
 /// holds, `!=` relations being left out, if both sides of every relation are real, like `abs(z) < 2`.
 fn complex_region(relations: &[(Term<Complex>, Relation, Term<Complex>)]) -> Option<Graph> {
     let (x, y) = xy();
-    let z = Symbol::new("z");
+    // The parts of iterated functions like `f(z, n) = f(z, n - 1)^2 + z` share their subexpressions
+    let shared = SharedParts::new(Symbol::new("z"), x, y);
     let differences = relations
         .iter()
         .filter(|(_, relation, _)| *relation != Relation::NotEqual)
         .map(|(lhs, relation, rhs)| {
-            let (re, im) = parts(&(lhs - rhs), z, x, y)?;
+            let (re, im) = shared.parts(&(lhs - rhs))?;
             im.is_zero().then_some((re, *relation))
         })
         .collect::<Option<Vec<_>>>()?;
+    let bindings = shared.into_bindings();
     let zero = Term::zero(R);
-    region_graph(
+    region_graph_shared(
         &differences
             .iter()
             .map(|(re, relation)| (re, *relation, &zero))
             .collect::<Vec<_>>(),
+        &bindings,
     )
 }
 
