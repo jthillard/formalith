@@ -96,7 +96,8 @@ What is left:
 
 ## Inequalities and optimization
 
-- Inequalities with parameters, more than 3 unknowns or 40 polynomials.
+- Inequalities with parameters, more than 3 unknowns or 40 polynomials, or functions other than `abs` and roots
+  (`exp`, `log`, trigonometric functions, `min` / `max`).
 - `argmin` / `argmax`: periodic special points, `floor`, `ceil` and `piecewise`; several variables beyond rational
   functions without parameters; extrema of two variables whose values come from Cardano's formula are slow.
 

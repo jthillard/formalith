@@ -4,8 +4,11 @@
 //!
 //! Each relation `lhs op rhs` is written as `{$f = n / d$}`, `n` and `d` being polynomials in the unknowns. The
 //! relations are split into groups sharing no unknown, each one solved by a cylindrical algebraic decomposition
-//! (see [`cad`]), and the solutions of the groups are combined.
+//! (see [`cad`]), and the solutions of the groups are combined. Absolute values and roots, like in
+//! `{$sqrt(x) < 3$}`, are eliminated into polynomials (see [`atoms`]), the domains of even roots being other
+//! relations.
 
+mod atoms;
 mod cad;
 
 use std::{collections::BTreeSet, fmt};

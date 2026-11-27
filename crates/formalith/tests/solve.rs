@@ -633,6 +633,36 @@ fn inequalities_in_several_unknowns() {
 }
 
 #[test]
+fn inequalities_with_abs_and_roots() {
+    // The domains of even roots are part of the solutions
+    assert_eq!(solve("sqrt(x) < 3"), ok("x in [0, 9)"));
+    assert_eq!(solve("sqrt(x) > x"), ok("x in (0, 1)"));
+    assert_eq!(solve("1/sqrt(x) > 1"), ok("x in (0, 1)"));
+    assert_eq!(solve("sqrt(1 + sqrt(x)) < 2"), ok("x in [0, 9)"));
+    assert_eq!(solve("sqrt(x - 1) + sqrt(3 - x) > 1"), ok("x in [1, 3]"));
+    assert_eq!(solve("sqrt(x) = 2, x > 0"), ok("x = 4"));
+    // Odd roots are real everywhere
+    assert_eq!(solve("x^(1/3) < 2"), ok("x in (-oo, 8)"));
+    assert_eq!(
+        solve("(x - 1)^(1/3) > x - 1"),
+        ok("x in (-oo, 0) union (1, 2)")
+    );
+    // The roots of both branches of an absolute value are merged when the solutions continue
+    assert_eq!(solve("abs(x - 1) < 8"), ok("x in (-7, 9)"));
+    assert_eq!(solve("abs(x) + x < 3"), ok("x in (-oo, frac(3, 2))"));
+    assert_eq!(solve("abs(abs(x) - 1) < 2"), ok("x in (-3, 3)"));
+    assert_eq!(solve("abs(x - 1) + abs(x + 2) <= 5"), ok("x in [-3, 2]"));
+    assert_eq!(solve("abs(x) < -1"), ok("\"no solution\""));
+    // A branch vanishing identically
+    assert_eq!(solve("abs(x) - x <= 0"), ok("x in [0, +oo)"));
+    assert_eq!(solve("abs(x)/(x - 1) >= 0"), ok("x in {0} union (1, +oo)"));
+    assert_eq!(
+        solve("sqrt(x^2 + y^2) < 1"),
+        ok("x in (-1, 1), y in (-sqrt(-x^2+1), sqrt(-x^2+1))")
+    );
+}
+
+#[test]
 fn unsupported_inequalities() {
     assert!(solve("sin(x) > 0").unwrap_err().contains("not polynomial"));
     assert!(

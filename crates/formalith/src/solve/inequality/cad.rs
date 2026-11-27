@@ -48,7 +48,7 @@ use crate::{
     term::{Expand, Normalize, Term, relation::Relation},
 };
 
-use super::{DIGITS, Inequality, Interval};
+use super::{DIGITS, Inequality, Interval, atoms::Atoms};
 
 /// Maximum number of unknowns related by the relations.
 const MAX_UNKNOWNS: usize = 3;
@@ -265,15 +265,26 @@ fn simplest_between(lo: Option<(&Rational, bool)>, hi: Option<(&Rational, bool)>
     }
 }
 
-/// A relation `{$c product p_i^(e_i) / product q_j^(f_j) op 0$}`.
-struct Constraint {
-    relation: Relation,
-    /// The sign of `c`, the part free of unknowns.
-    sign: Ordering,
-    /// The factors `p_i` of the numerator, and whether their multiplicity is odd.
-    numerator: Vec<(usize, bool)>,
-    /// The factors `q_j` of the denominator, and whether their multiplicity is odd.
-    denominator: Vec<(usize, bool)>,
+/// A relation of the decomposition.
+enum Constraint {
+    /// A relation `{$c product p_i^(e_i) / product q_j^(f_j) op 0$}`.
+    Factored {
+        relation: Relation,
+        /// The sign of `c`, the part free of unknowns.
+        sign: Ordering,
+        /// The factors `p_i` of the numerator, and whether their multiplicity is odd.
+        numerator: Vec<(usize, bool)>,
+        /// The factors `q_j` of the denominator, and whether their multiplicity is odd.
+        denominator: Vec<(usize, bool)>,
+    },
+    /// A relation `{$n / d op 0$}` with atoms (see [`Atoms`]), evaluated at the sample points, its sign being
+    /// constant on the cells where the eliminated polynomials have one. Its domain is checked by the previous
+    /// constraints.
+    Direct {
+        relation: Relation,
+        numerator: Expr,
+        denominator: Expr,
+    },
 }
 
 /// A sample point of a cell: values of the first unknowns.
@@ -329,6 +340,8 @@ struct Cad<'a> {
     /// The roots of each factor in its last unknown, as expressions of the previous ones.
     roots: Vec<Vec<Expr>>,
     constraints: Vec<Constraint>,
+    /// The absolute values and roots of the relations.
+    atoms: Atoms,
 }
 
 impl<'a> Cad<'a> {
@@ -339,6 +352,7 @@ impl<'a> Cad<'a> {
             levels: vec![],
             roots: vec![],
             constraints: vec![],
+            atoms: Atoms::new(),
         }
     }
 
@@ -349,20 +363,7 @@ impl<'a> Cad<'a> {
 
     /// Whether `term` is a polynomial in the unknowns, with coefficients free of them.
     fn is_polynomial(&self, term: &Expr) -> bool {
-        if !self.depends(term) {
-            return true;
-        }
-        match term {
-            Term::Value(_) | Term::Symbol(_) => true,
-            Term::Add(add) => add.iter().all(|t| self.is_polynomial(t)),
-            Term::Mul(mul) => mul.iter().all(|t| self.is_polynomial(t)),
-            Term::Pow(pow) => {
-                self.is_polynomial(&pow.base)
-                    && matches!(&**pow.exponant, Term::Value(n)
-                        if n.value > 0 && n.value.denominator_ref() == &1u32)
-            }
-            Term::Fun(_) => false,
-        }
+        is_polynomial_in(term, self.unknowns)
     }
 
     /// Whether `term` is a polynomial in the unknowns with rational coefficients, which can be factored.
@@ -462,18 +463,49 @@ impl<'a> Cad<'a> {
         let f = (lhs.clone() - rhs.clone()).normalize();
         let (num, den) = f.as_fraction(true);
         let (num, den) = (num.expand(), den.expand());
-        for p in [&num, &den] {
-            if !self.is_polynomial(p) {
-                return Err(SolveError::NotPolynomial(plain(p)));
-            }
+        if !self.is_polynomial(&num) || !self.is_polynomial(&den) {
+            return self.add_direct(&f, relation);
         }
         let (num_sign, numerator) = self.factors_of(&num)?;
         let (den_sign, denominator) = self.factors_of(&den)?;
-        self.constraints.push(Constraint {
+        self.constraints.push(Constraint::Factored {
             relation,
             sign: mul(num_sign, den_sign),
             numerator,
             denominator,
+        });
+        Ok(())
+    }
+
+    /// Add the relation `f op 0`, with absolute values or roots, after the domains of its roots.
+    fn add_direct(&mut self, f: &Expr, relation: Relation) -> Result<(), SolveError> {
+        let known = self.atoms.len();
+        let replaced = self.atoms.replace(f, self.unknowns).normalize();
+        let (num, den) = replaced.as_fraction(true);
+        let (num, den) = (num.expand(), den.expand());
+        let variables: Vec<Symbol> = self
+            .unknowns
+            .iter()
+            .copied()
+            .chain(self.atoms.symbols())
+            .collect();
+        if !is_polynomial_in(&num, &variables) || !is_polynomial_in(&den, &variables) {
+            return Err(SolveError::NotPolynomial(plain(&f.as_fraction(true).0)));
+        }
+        for base in self.atoms.domains(known) {
+            self.add_constraint(&base, Relation::GreaterEqual, &zero())?;
+        }
+        for p in [&num, &den] {
+            for eliminated in self.atoms.eliminate(p, Self::resultant)? {
+                for (factor, _) in self.split_factors(&eliminated).1 {
+                    self.add_factor(&factor)?;
+                }
+            }
+        }
+        self.constraints.push(Constraint::Direct {
+            relation,
+            numerator: self.atoms.restore(&num),
+            denominator: self.atoms.restore(&den),
         });
         Ok(())
     }
@@ -578,17 +610,56 @@ impl<'a> Cad<'a> {
         }
     }
 
+    /// The sign of `term`, with atoms, at `point`.
+    fn sign_at(term: &Expr, point: &[(Symbol, Expr)]) -> Result<Ordering, SolveError> {
+        let at = super::atoms::resolve_abs(&Self::substitute(term, point));
+        if let Some(sign) = crate::field::real::expr::constant_sign(&at) {
+            return Ok(sign);
+        }
+        if is_numerically_zero(&at) == Some(true) {
+            return Ok(Ordering::Equal);
+        }
+        Err(SolveError::Inequality(format!(
+            "can't find the sign of `{}`",
+            plain(&at)
+        )))
+    }
+
     /// Whether every relation holds at the sample point of a cell, giving a value to every unknown.
     fn holds(&self, sample: &Sample) -> Result<bool, SolveError> {
         for constraint in &self.constraints {
-            let mut sign = constraint.sign;
-            for (id, odd) in &constraint.numerator {
+            let (relation, sign, numerator, denominator) = match constraint {
+                Constraint::Factored {
+                    relation,
+                    sign,
+                    numerator,
+                    denominator,
+                } => (relation, *sign, numerator, denominator),
+                Constraint::Direct {
+                    relation,
+                    numerator,
+                    denominator,
+                } => {
+                    let point = self.point(sample);
+                    let den = Self::sign_at(denominator, &point)?;
+                    if den == Ordering::Equal {
+                        return Ok(false);
+                    }
+                    let sign = mul(Self::sign_at(numerator, &point)?, den);
+                    if relation.holds(SignSet::from_ordering(sign)) != Some(true) {
+                        return Ok(false);
+                    }
+                    continue;
+                }
+            };
+            let mut sign = sign;
+            for (id, odd) in numerator {
                 let factor = self.factor_sign(*id, sample)?;
                 if factor == Ordering::Equal || *odd {
                     sign = mul(sign, factor);
                 }
             }
-            for (id, odd) in &constraint.denominator {
+            for (id, odd) in denominator {
                 let factor = self.factor_sign(*id, sample)?;
                 if factor == Ordering::Equal {
                     return Ok(false);
@@ -597,7 +668,7 @@ impl<'a> Cad<'a> {
                     sign = mul(sign, factor);
                 }
             }
-            if constraint.relation.holds(SignSet::from_ordering(sign)) != Some(true) {
+            if relation.holds(SignSet::from_ordering(sign)) != Some(true) {
                 return Ok(false);
             }
         }
@@ -954,7 +1025,25 @@ impl<'a> Cad<'a> {
     }
 }
 
-/// Solve the polynomial `inequalities` for `unknowns`, which contain every symbol of the relations: the cells of
+/// Whether `term` is a polynomial in `variables`, with coefficients free of them.
+fn is_polynomial_in(term: &Expr, variables: &[Symbol]) -> bool {
+    if !variables.iter().any(|x| depends(term, *x)) {
+        return true;
+    }
+    match term {
+        Term::Value(_) | Term::Symbol(_) => true,
+        Term::Add(add) => add.iter().all(|t| is_polynomial_in(t, variables)),
+        Term::Mul(mul) => mul.iter().all(|t| is_polynomial_in(t, variables)),
+        Term::Pow(pow) => {
+            is_polynomial_in(&pow.base, variables)
+                && matches!(&**pow.exponant, Term::Value(n)
+                    if n.value > 0 && n.value.denominator_ref() == &1u32)
+        }
+        Term::Fun(_) => false,
+    }
+}
+
+/// Solve the `inequalities`, between polynomials with absolute values and roots, for `unknowns`, which contain every symbol of the relations: the cells of
 /// the solutions, with an interval per unknown.
 pub(super) fn solve(
     inequalities: &[&Inequality<R<Rational>>],

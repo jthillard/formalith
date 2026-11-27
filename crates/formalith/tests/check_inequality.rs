@@ -441,6 +441,18 @@ fn curated_inequalities() {
             "solve(x^2 + y^2 < 1, y, x)",
             "x^2 + y^2 + z^2 < 1",
             "x^2 + 1 > 0",
+            "sqrt(x) < 3",
+            "abs(x - 1) < 8",
+            "abs(x) + x < 3",
+            "sqrt(x) > x - 2",
+            "x^(1/3) < 2",
+            "1/sqrt(x) > 1",
+            "abs(abs(x) - 1) < 2",
+            "abs(x^2 - 4) > 3",
+            "sqrt(x - 1) + sqrt(3 - x) > 1",
+            "sqrt(x^2 + y^2) < 1",
+            "abs(x - y) < 1, x^2 + y^2 < 4",
+            "sqrt(x) + y < 1, y > 0",
         ],
         inequalities,
     );
@@ -521,6 +533,34 @@ fn mixed(rng: &mut Rng) -> String {
         4 => format!("x^2 + y^2 + z^2 {} {c}, z {} x + y", op(rng), op(rng)),
         _ => format!("x*y {} {c}, x + y {} {}", op(rng), op(rng), a + b),
     }
+}
+
+/// A random relation with absolute values or square roots of linear and quadratic terms.
+fn with_atoms(rng: &mut Rng) -> String {
+    let (a, b) = (random::linear(rng, "x"), random::linear(rng, "x"));
+    match rng.below(5) {
+        0 => format!("abs({a}) {} {}", op(rng), rng.range(-2, 6)),
+        1 => format!("abs({a}) + abs({b}) {} {}", op(rng), rng.range(1, 8)),
+        2 => format!("sqrt({a}) {} {b}", op(rng)),
+        3 => format!(
+            "sqrt({}) {} {}",
+            random::univariate(rng, "x", 2, 3),
+            op(rng),
+            rng.range(0, 4)
+        ),
+        _ => format!("abs({a}) {} sqrt({b}) + {}", op(rng), rng.range(-2, 2)),
+    }
+}
+
+#[test]
+#[ignore = "fuzz: relations with absolute values and roots, run with --ignored"]
+fn fuzz_atoms() {
+    fuzz(
+        "fuzz inequalities with atoms",
+        100,
+        with_atoms,
+        inequalities,
+    );
 }
 
 #[test]

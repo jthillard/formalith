@@ -360,7 +360,8 @@ pub static BUILTIN_DOCS: [BuiltinDoc; Context::BUILTIN_NAMES.len()] = [
         "Solves equations or inequalities for the listed unknowns.",
         "The other symbols are parameters. A line of comma-separated equations like x + y = 3, x - y = 1 is solved \
          for all its symbols. Several solutions are given one per line, and the integer parameters of periodic \
-         solutions are named k, k_1... Inequalities are solved in R, with at most 3 unknowns.",
+         solutions are named k, k_1... Inequalities are solved in R, with at most 3 unknowns, between polynomials with \
+         absolute values and roots: sqrt(x) < 3 gives x in [0, 9).",
         &[
             ex(
                 "solve(a*x + y = 1, x - y = b, x, y)",
