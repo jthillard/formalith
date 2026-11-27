@@ -50,9 +50,10 @@ use crate::{
     },
     field::real::R,
     field::real::expr::{
-        Expr, Real, constant_sign, depends, fun, has_special_constant, infinity_sign, map_tree,
-        one, smallest, subs, value, variable, zero,
+        Expr, Real, constant_sign, depends, fun, has_special_constant, infinity, infinity_sign,
+        map_tree, one, smallest, subs, value, variable, zero,
     },
+    field::real::sign::{SignMode, linear_form, sign},
     limit::{Direction, LimitError},
     term::{Expand, Fun, Normalize, Term},
 };
@@ -126,6 +127,9 @@ impl Term<Real> {
                 _ if self.is_zero() => Ok(zero()),
                 _ => Err(constant_sign(self).map_or(SumError::Unsupported, SumError::Divergent)),
             };
+        }
+        if let Some(res) = zero_powers(self, k, a, b) {
+            return res.map(|res| tidy(&res));
         }
         let _guard = integer_index(k);
         let res = antidifference(self, k).map_or(Err(SumError::Unsupported), |antidifference| {
@@ -233,6 +237,51 @@ fn direct(
     (0..count).fold(init, |res, i| {
         op(res, subs(f, k, &(a + &value(Rational::from(i)))))
     })
+}
+
+/// The sum of `f` with a factor `{$0^u$}`, `{$u = c k + d$}` linear in `k` with rational coefficients: only the term
+/// where `{$u = 0$}` isn't zero, like `{$sum_(k >= 0) 0^k = 1$}`. `None` when there is no such factor or the bounds
+/// are symbolic, unsupported when `{$u < 0$}` (a division by zero) for some `k` from `a` to `b`.
+fn zero_powers(f: &Expr, k: Symbol, a: &Expr, b: &Expr) -> Option<SumResult<Expr>> {
+    let factors: Vec<&Expr> = match f {
+        Term::Mul(mul) => mul.iter().collect(),
+        f => vec![f],
+    };
+    let u = factors.into_iter().find_map(|t| match t {
+        Term::Pow(pow) if pow.base.is_zero() && depends(&pow.exponant, k) => Some(&**pow.exponant),
+        _ => None,
+    })?;
+    let form = linear_form(u)?;
+    if form.symbols().any(|s| s != k) {
+        return None;
+    }
+    let c = form.coefficient(crate::context::assumptions::linear::Var::Symbol(k));
+    let d = form.constant;
+    let rational = |t: &Expr| match t {
+        Term::Value(v) => Some(v.value.clone()),
+        _ => None,
+    };
+    // The finite bound from which `{$u$}` grows must have `{$u >= 0$}`
+    let bound = if c > 0 { a } else { b };
+    if infinity_sign(bound).is_some() {
+        return Some(Err(SumError::Unsupported));
+    }
+    let start = rational(bound)?;
+    if &c * &start + &d < 0 {
+        return Some(Err(SumError::Unsupported));
+    }
+    let k0 = -d / &c;
+    let in_range = |t: &Expr, lower: bool| {
+        infinity_sign(t).map_or_else(
+            || rational(t).map(|t| if lower { t <= k0 } else { k0 <= t }),
+            |sign| Some((sign == Ordering::Less) == lower),
+        )
+    };
+    let inside = in_range(a, true)? && in_range(b, false)?;
+    if !inside || malachite::Integer::try_from(&k0).is_err() {
+        return Some(Ok(zero()));
+    }
+    Some(Ok(subs(f, k, &value(k0))))
 }
 
 /// Assume that `k` is an integer until the guard is dropped.
@@ -376,13 +425,36 @@ pub(super) fn limit(f: &Expr, k: Symbol, point: &Expr) -> SumResult<Expr> {
         Term::Pow(pow)
             if depends(&pow.exponant, x)
                 && !depends(&pow.base, x)
-                && constant_sign(&pow.base) == Some(Ordering::Less) =>
+                && sign(&pow.base, SignMode::APPROXIMATE) == Some(Ordering::Less) =>
         {
             let g = (**pow.exponant).clone();
             Some((-&*pow.base).pow(&g) * fun(Context::COS, variable(Context::PI) * g))
         }
         _ => None,
     });
+    // A constant factor of known sign is taken out, which the limit may not see through when the rest oscillates:
+    // `{$lim_(k -> oo) (-x)^k cos(pi k) / (x - 1)$}` for `{$x < -1$}`
+    if let Term::Mul(mul) = &f {
+        let constant = mul
+            .iter()
+            .filter(|t| !depends(t, x))
+            .fold(value(mul.coefficient.clone()), |res, t| res * t);
+        if constant != one()
+            && let Some(c) = sign(&constant, SignMode::APPROXIMATE).filter(|c| c.is_ne())
+        {
+            let rest = &f / &constant;
+            return limit_of(&rest, x, point).map(|res| match infinity_sign(&res) {
+                Some(s) if s == c => infinity(),
+                Some(_) => -infinity(),
+                None => constant * res,
+            });
+        }
+    }
+    limit_of(&f, x, point)
+}
+
+/// The limit of `f` at `point`, as the value of an infinite sum's bound.
+fn limit_of(f: &Expr, x: Symbol, point: &Expr) -> SumResult<Expr> {
     match f.limit(x, point, Direction::Both) {
         Ok(res) if res == variable(Context::UNDEFINED) => Err(SumError::Undefined),
         Ok(res)
