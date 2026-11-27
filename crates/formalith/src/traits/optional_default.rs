@@ -5,7 +5,7 @@ use malachite::{Integer, Rational};
 use crate::{
     field::{
         cartesian::CartesianPower, complex::C, integer::Z, matrix::M, modular::Zn,
-        polynomial::Poly, real::R,
+        polynomial::Poly, real::R, sequence::Seq,
     },
     term::TermSet,
 };
@@ -42,6 +42,11 @@ impl OptionalDefault for Zn {
     }
 }
 impl<K> OptionalDefault for Poly<K> {
+    fn optional_default() -> Option<Self> {
+        None
+    }
+}
+impl<K> OptionalDefault for Seq<K> {
     fn optional_default() -> Option<Self> {
         None
     }

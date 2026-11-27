@@ -61,6 +61,33 @@ fn definitions() {
 }
 
 #[test]
+fn sequences() {
+    let mut session = Session::new();
+    assert_eq!(
+        run(&mut session, "u(0) := 1"),
+        ("u(0) := 1".to_owned(), true)
+    );
+    assert_eq!(
+        run(&mut session, "u(n) := 2 u(n - 1) + 1"),
+        ("u(n) := 2*u(n-1)+1".to_owned(), true)
+    );
+    assert_eq!(run(&mut session, "u(10)"), ("2047".to_owned(), false));
+    assert_eq!(
+        run(&mut session, ":defs").0,
+        "u(0) := 1\nu(n) := 2 u(n - 1) + 1"
+    );
+    assert_eq!(run(&mut session, ":set R^N"), (String::new(), true));
+    assert_eq!(session.set().name(), "R^N");
+    assert_eq!(run(&mut session, "u(n + 1) - 2 u(n)").0, "1");
+    assert_eq!(
+        run(&mut session, "u").0,
+        "recurrence(u(n) = 2*u(n-1)+1, u(0) = 1)"
+    );
+    assert_eq!(run(&mut session, ":clear u"), (String::new(), true));
+    assert_eq!(run(&mut session, ":defs").0, "no definitions");
+}
+
+#[test]
 fn default_assumptions() {
     let mut session = Session::new();
     assert_eq!(run(&mut session, "sin(n*pi)").0, "0");

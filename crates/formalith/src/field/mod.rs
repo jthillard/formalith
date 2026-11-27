@@ -6,7 +6,7 @@ use malachite::Integer;
 
 use crate::{
     context::Symbol,
-    field::{cartesian::CartesianPower, matrix::M, polynomial::Poly},
+    field::{cartesian::CartesianPower, matrix::M, polynomial::Poly, sequence::Seq},
     parser::{Parser, ParserError},
     printer::{PrettyPrinter, PrintOptions},
     term::{Add, Function, Mul, Pow, SymbolTerm, Term, TermSet, Value},
@@ -84,6 +84,11 @@ pub trait Set: Clone + Copy + fmt::Debug + PartialEq + Eq + Hash + 'static {
     /// Get the ring `{$T[x]$}` of polynomials in `variable` with coefficients in this set
     fn get_polynomial_ring(&self, variable: Symbol) -> Poly<Self> {
         Poly::new(*self, variable)
+    }
+
+    /// Get the ring `{$T^NN$}` of the sequences of elements of this set, indexed by `index`
+    fn get_sequence_set(&self, index: Symbol) -> Seq<Self> {
+        Seq::new(*self, index)
     }
 
     /// Get the cartesian power `{$T^K$}` of this set
@@ -340,6 +345,12 @@ pub trait SetParseExpression: Set {
         _parser: &mut Parser<'_>,
     ) -> Result<Option<Term<Self>>, ParserError> {
         Ok(None)
+    }
+
+    /// Check if the identifier `name` is the index of a set of sequences, like `n` in `R^N`, which a sequence can
+    /// have as its parameter.
+    fn is_index(&self, _name: &str) -> bool {
+        false
     }
 
     /// Check if the identifier `name` is a constant of this set, like `i` in `C`, which can't be defined by

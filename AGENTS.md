@@ -70,6 +70,9 @@ in the root `Cargo.toml` (`dev` keeps line tables only, dependencies at `opt-lev
 - `N`, `Z`, `R` (exact rationals via `malachite`, plus symbolic constants; where calculus lives, `real/`),
 - `C` (Gaussian rationals; calculus is done in `R` on real and imaginary parts, `complex/parts.rs`),
 - `Zn` (`Z/nZ`, runtime modulus), `Poly<K>` (`K[x]`, `polynomial.rs`),
+- `Seq<K>` (sequences `R^N`, `C^N`, `R^N[k]`; `sequence.rs`, `sequence/system.rs`): an element is a system of
+  equations, closed forms (`n^2 + 1`) or recurrences with initial values, made canonical after each componentwise
+  operation; symbols and functions fold into a single value (`Seq::normalize`),
 - `M` (matrices with symbolic entries, `M<TermSet<R>>`, also over `C`, `Z`, `Zn`, sets `M(R)`, `M(C)`, `M(Z)`,
   `M(Z/n)`; `matrix.rs`, `src/matrix/`),
 - `CartesianPower<T, K>` (componentwise group, used by `C`).
@@ -97,8 +100,9 @@ impls for rings or for `R`. Set-specific parts go through specialized traits: `S
 ## Module map (`crates/formalith/src/`)
 
 - `parser/`, `parser.rs`: Pratt parser (`parse!` / `try_parse!`), lexer, `environment.rs` (definitions stored as
-  source text, expanded in the outermost set), `syntax.rs` (typesets the input without evaluating it). Per-set
-  parsing via `SetParseExpression`.
+  source text, expanded in the outermost set, with values at integers `u(0) := 1`), `sequence.rs` (definitions
+  with values are sequences referring to themselves, built in `Seq`, `ExpandSequence`), `syntax.rs` (typesets the
+  input without evaluating it). Per-set parsing via `SetParseExpression`.
 - `context/`: interned `Symbol`s (`symbol!("x")`), builtin names / arities, `docs.rs` (builtin docs),
   `assumptions/` (linear assumptions, Fourier-Motzkin in `linear.rs`, installed thread-locally).
 - `term/`: term operations, `derivative.rs`, `substitute.rs`, `relation.rs` (comparisons, `piecewise` conditions).

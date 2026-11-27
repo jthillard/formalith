@@ -101,6 +101,31 @@ What is left:
 - `argmin` / `argmax`: periodic special points, `floor`, `ceil` and `piecewise`; several variables beyond rational
   functions without parameters; extrema of two variables whose values come from Cardano's formula are slow.
 
+## Sequences
+
+Sequences of `R^N` and `C^N` are closed forms or systems of recurrences (`field/commons/sequence/`), with terms,
+shifts and componentwise operations. Recursive definitions (`u(0) := 1`, `u(n) := 2 u(n - 1) + 1`) give them in
+sessions, and their terms in `R`, `C` and `Z`.
+
+- Limits, convergence, boundedness and monotonicity of sequences (`lim(u)` over integers, `lim((-1)^n / n) = 0`,
+  `lim((-1)^n)` undefined). `lim`, `sum`, `integrate`... of a closed form are its general term's, componentwise.
+- Closed forms of recurrences (`rsolve`): constant coefficients (Binet), first order, hypergeometric solutions
+  with *Hyper* (`holonomic/hyper.rs`).
+- Equality and zero tests are structural (canonical systems, expansion of the rules): a canonical P-recursive
+  form with the Ore closure (`holonomic/ore.rs`, `lclm`, `symmetric_product`) would decide them for linear
+  recurrences (`fib(n + 1)^2 - fib(n) fib(n + 2) = (-1)^n` stays a system).
+- Partial sums `sum(u(k), k, 0, n)` and series of recurrences, generating functions.
+- Sets `Z^N`, `N^N`, `(Z/n)^N`; terms of recursive definitions in `Z/n` and `N` stay unevaluated.
+- Self-references other than `u(n - d)` (`u(n/2)`, `u(n + 1)`), mutually recursive sequences, subsequences `u(2n)`
+  of recurrences, sequences of several indices (`c(n, k)`).
+- Shifts by more than 256, or whose rule grows beyond 200 nodes (nonlinear recurrences), shift the starts of the
+  system rather than its rules, so they don't simplify with the original sequence.
+- `piecewise` in recursive rules: every branch is computed, so a rule `piecewise(n < 0, 0, u(n - 1))` needs its
+  initial values.
+- Calls with a symbolic argument (`sum(u(k), k, 1, 10)` in `R`) stay unevaluated, definitions being expanded when
+  parsed.
+- Sequences in the GUI (points `(k, u_k)`).
+
 ## Matrices
 
 - Eigenvalues in the trigonometric form of Cardano's or Ferrari's roots (characteristic polynomials

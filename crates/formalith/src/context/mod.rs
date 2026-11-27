@@ -348,9 +348,16 @@ impl Context {
     pub const BERNOULLI: Symbol = Symbol(103);
     /// Euler number `{$E_n$}`, the coefficients of `{$1 / cosh t = sum_n E_n t^n / n!$}`
     pub const EULER: Symbol = Symbol(104);
+    /// A sequence `recurrence(u(n) = rule, u(0) = a_0, ...)` defined by a recurrence and its initial values, in the
+    /// sets of sequences like `R^N`
+    pub const RECURRENCE: Symbol = Symbol(105);
+    /// The term `term(u, m)` of index `m` of a sequence `u`
+    pub const TERM: Symbol = Symbol(106);
+    /// The shifted sequence `shift(u, k)`, of general term `{$u_(n + k)$}`
+    pub const SHIFT: Symbol = Symbol(107);
 
     #[rustfmt::skip]
-    const BUILTIN_NAMES: [&'static str; 105] = [
+    const BUILTIN_NAMES: [&'static str; 108] = [
         "abs", "det", "expand", "factor", "simplify", "re", "im", "conj", "sqrt", "root", "sign",
         "floor", "ceil", "min", "max", "gcd", "lcm", "quo", "rem", "diff", "solve", "approx",
         "exp", "ln", "sin", "cos", "tan", "pi", "e", "lim", "oo", "undefined",
@@ -362,7 +369,7 @@ impl Context {
         "I", "degree", "argmin", "argmax", "localmin",
         "localmax", "extrema", "localextrema", "subs", "numer", "denom", "roots", "resultant",
         "discriminant", "erfc", "round", "trunc", "isprime", "factorint", "zeros", "diag", "Si", "Ci",
-        "Ei", "arg", "o", "rootof", "bernoulli", "euler",
+        "Ei", "arg", "o", "rootof", "bernoulli", "euler", "recurrence", "term", "shift",
     ];
 
     /// The internal function `@sum(f, k, a, b)`, a sum which isn't evaluated, printed like `sum`: the result of
@@ -474,7 +481,9 @@ impl Context {
             | Self::REM
             | Self::BINOMIAL
             | Self::BETA
-            | Self::POLYGAMMA => Some((2, 2)),
+            | Self::POLYGAMMA
+            | Self::TERM
+            | Self::SHIFT => Some((2, 2)),
             Self::MIN
             | Self::MAX
             | Self::SOLVE
@@ -489,7 +498,8 @@ impl Context {
             | Self::LOCALMAX
             | Self::EXTREMA
             | Self::LOCALEXTREMA
-            | Self::DIAG => Some((1, usize::MAX)),
+            | Self::DIAG
+            | Self::RECURRENCE => Some((1, usize::MAX)),
             Self::APPROX
             | Self::LOG
             | Self::CHARPOLY

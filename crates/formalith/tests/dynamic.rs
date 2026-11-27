@@ -12,7 +12,7 @@ fn parse(name: &str) -> Result<SetChoice, String> {
 fn set_names() {
     for name in [
         "N", "Z", "R", "C", "M(R)", "M(C)", "M(Z)", "M(Z/6)", "Z/7", "R[x]", "C[t]", "Z/2[x]",
-        "Z/7[y_1]",
+        "Z/7[y_1]", "R^N", "C^N", "R^N[k]", "C^N[t]",
     ] {
         assert_eq!(parse(name).map(SetChoice::name), Ok(name.to_owned()));
     }
@@ -23,6 +23,12 @@ fn set_names() {
     assert_eq!(parse("M"), Ok(SetChoice::MR));
     assert_eq!(parse("m(c)"), Ok(SetChoice::MC));
     assert_eq!(parse("M( z/6z )"), Ok(SetChoice::MZn(6)));
+    assert_eq!(parse("RR^NN").map(SetChoice::name), Ok("R^N".to_owned()));
+    assert_eq!(parse("R^N[n]").map(SetChoice::name), Ok("R^N".to_owned()));
+    assert_eq!(
+        parse("CC^NN[k]").map(SetChoice::name),
+        Ok("C^N[k]".to_owned())
+    );
     assert!(matches!(
         parse("Z/5[x]"),
         Ok(SetChoice::Poly(Coefficients::Zn(5), _))
@@ -33,7 +39,8 @@ fn set_names() {
 fn invalid_set_names() {
     for name in [
         "Q", "Z/1", "Z/0", "Z/x", "Z/-3", "Q[x]", "Z[x]", "M[x]", "R[2x]", "R[]", "C[i]", "R[abs]",
-        "R[x", "M(Q)", "M(Z/1)", "M(Z", "M(M)",
+        "R[x", "M(Q)", "M(Z/1)", "M(Z", "M(M)", "Z^N", "Q^N", "R^Z", "R^N[sin]", "C^N[i]",
+        "R^N[2]", "R^",
     ] {
         assert!(parse(name).is_err(), "{name}");
     }

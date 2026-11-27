@@ -11,6 +11,8 @@ A computer algebra system written in Rust. Expressions are generic over the alge
 - `C`: complex numbers over Gaussian rationals (`i` is the imaginary unit)
 - `Z/n`: integers modulo `n`
 - `K[x]`: univariate polynomials over a set `K`
+- `R^N`, `C^N`: sequences, given by a general term (`n^2 + 1`) or a recurrence
+  (`u(0) := 1`, `u(n) := 2 u(n - 1) + 1`), with terms `u(10)` and shifts `u(n + 1)`; `R^N[k]` for the index `k`
 - `M`: matrices with symbolic entries
 
 `R` supports derivatives, limits, series, integrals (with the Risch algorithm), sums and products (with Gosper's

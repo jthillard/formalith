@@ -2,6 +2,7 @@
 
 pub mod environment;
 pub mod lexer;
+mod sequence;
 pub mod syntax;
 
 use std::error::Error;
@@ -158,6 +159,16 @@ pub struct Parser<'a> {
 }
 
 impl<'a> Parser<'a> {
+    /// Take the environment of the parser, parsing without definitions until [`Parser::restore_environment`].
+    pub(crate) const fn take_environment(&mut self) -> Option<&'a Environment> {
+        self.env.take()
+    }
+
+    /// Restore the environment taken by [`Parser::take_environment`].
+    pub(crate) const fn restore_environment(&mut self, env: Option<&'a Environment>) {
+        self.env = env;
+    }
+
     /// Create a new parser over the `input` string.
     #[must_use]
     pub fn new(input: &'a str) -> Self {
@@ -389,10 +400,20 @@ impl Parser<'_> {
         let (TokenKind::Ident(name), Some(env)) = (&self.token.kind, self.env) else {
             return Ok(None);
         };
-        let Some(definition) = env.get(Symbol::new(name.as_str())) else {
+        let Some(definition) = env.get_rc(Symbol::new(name.as_str())) else {
             return Ok(None);
         };
         self.next_token();
+        if definition.is_sequence() {
+            let args = if self.token.kind == TokenKind::OpenParen {
+                self.next_token();
+                self.parse_args_source()?
+            } else {
+                vec![]
+            };
+            return sequence::ExpandSequence::expand_sequence(self, &definition, &args, set)
+                .map(Some);
+        }
         let name = definition.name().name();
         let params = definition.params();
         let args = if self.token.kind == TokenKind::OpenParen {
@@ -417,7 +438,8 @@ impl Parser<'_> {
         }
         let mut body_env = definition.env().clone();
         body_env.bind(params, args, env);
-        let mut parser = Parser::new(definition.body())
+        let body = definition.body().unwrap_or_default();
+        let mut parser = Parser::new(body)
             .with_offset(None)
             .with_environment(&body_env);
         let term = ParseExpression::<E>::parse_expression(&mut parser, 0, set)?;

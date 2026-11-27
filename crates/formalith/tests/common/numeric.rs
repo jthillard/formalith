@@ -45,6 +45,8 @@ pub fn eval_in(set: SetChoice, env: &mut Environment, input: &str) -> Result<Str
         SetChoice::Poly(Coefficients::Zn(n), x) => {
             eval_plain(input, Zn::new(n).get_polynomial_ring(x), env)
         }
+        SetChoice::Seq(Coefficients::C, n) => eval_plain(input, C.get_sequence_set(n), env),
+        SetChoice::Seq(_, n) => eval_plain(input, R.get_sequence_set(n), env),
     }
 }
 

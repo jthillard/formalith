@@ -44,6 +44,8 @@ pub enum SetChoice {
     Zn(u64),
     /// Polynomials in a variable, with coefficients in a set.
     Poly(Coefficients, Symbol),
+    /// Sequences of rationals ([`Coefficients::R`]) or complex numbers ([`Coefficients::C`]), with their index.
+    Seq(Coefficients, Symbol),
 }
 
 /// The sets of coefficients of polynomials which can be evaluated in [`SetChoice::Poly`].
@@ -90,6 +92,9 @@ impl SetChoice {
             Self::Zn(_) => "integers modulo n, a field when n is prime, like Z/7",
             Self::Poly(..) => {
                 "polynomials in x with coefficients in K = R, C or Z/n, like R[x] or Z/2[t]"
+            }
+            Self::Seq(..) => {
+                "sequences of index n with terms in K = R or C, like R^N, or R^N[k] for the index k"
             }
         }
     }
@@ -153,6 +158,8 @@ impl SetChoice {
             Self::Poly(Coefficients::Zn(n), x) => {
                 eval_in(input, Zn::new(n).get_polynomial_ring(x), env)
             }
+            Self::Seq(Coefficients::C, n) => eval_in(input, C.get_sequence_set(n), env),
+            Self::Seq(_, n) => eval_in(input, R.get_sequence_set(n), env),
         };
         result.map_err(|err| err.or_hint(self.hint(input)))
     }
@@ -168,9 +175,11 @@ impl SetChoice {
     pub const fn matrices(self) -> Self {
         match self {
             Self::N | Self::Z => Self::MZ,
-            Self::R | Self::Poly(Coefficients::R, _) => Self::MR,
-            Self::C | Self::Poly(Coefficients::C, _) => Self::MC,
-            Self::Zn(n) | Self::Poly(Coefficients::Zn(n), _) => Self::MZn(n),
+            Self::R | Self::Poly(Coefficients::R, _) | Self::Seq(Coefficients::R, _) => Self::MR,
+            Self::C | Self::Poly(Coefficients::C, _) | Self::Seq(Coefficients::C, _) => Self::MC,
+            Self::Zn(n)
+            | Self::Poly(Coefficients::Zn(n), _)
+            | Self::Seq(Coefficients::Zn(n), _) => Self::MZn(n),
             matrices @ (Self::MR | Self::MC | Self::MZ | Self::MZn(_)) => matrices,
         }
     }
@@ -346,8 +355,59 @@ impl fmt::Display for SetChoice {
                 };
                 write!(f, "{coefficients}[{}]", x.name())
             }
+            Self::Seq(values, n) => {
+                let values = if *values == Coefficients::C { "C" } else { "R" };
+                if n.name() == "n" {
+                    write!(f, "{values}^N")
+                } else {
+                    write!(f, "{values}^N[{}]", n.name())
+                }
+            }
         }
     }
+}
+
+/// Check that `variable` can be the variable of a polynomial ring or the index of sequences.
+fn check_variable(variable: &str) -> Result<Symbol, String> {
+    if !is_variable_name(variable) {
+        return Err(format!("invalid variable `{variable}`"));
+    }
+    let variable = Symbol::new(variable);
+    if Context::builtin_arity(variable).is_some() {
+        let kind = if Context::is_builtin_constant(variable) {
+            "constant"
+        } else {
+            "function"
+        };
+        return Err(format!("`{}` is a builtin {kind}", variable.name()));
+    }
+    Ok(variable)
+}
+
+/// Parse the sets of sequences `R^N`, `RR^NN`, `C^N` or `R^N[k]`, `None` if `name` isn't a power `^N`.
+fn parse_sequence_set(name: &str) -> Option<Result<SetChoice, String>> {
+    let (base, rest) = name.split_once('^')?;
+    let rest = rest.trim();
+    let (power, index) = match rest.strip_suffix(']').and_then(|r| r.split_once('[')) {
+        Some((power, index)) => (power.trim(), index.trim()),
+        None => (rest, "n"),
+    };
+    if !matches!(power, "N" | "NN") {
+        return Some(Err(format!(
+            "invalid set `{name}`, sequences are written like R^N or R^N[k]"
+        )));
+    }
+    let values = match base.trim() {
+        "R" | "RR" | "r" => Coefficients::R,
+        "C" | "CC" | "c" if index != "i" => Coefficients::C,
+        "C" | "CC" | "c" => return Some(Err("`i` is the imaginary unit of C".to_owned())),
+        base => {
+            return Some(Err(format!(
+                "sequences with terms in {base} are not supported, use R^N or C^N"
+            )));
+        }
+    };
+    Some(check_variable(index).map(|index| SetChoice::Seq(values, index)))
 }
 
 /// Check if `name` is an identifier which can be used as a polynomial variable.
@@ -378,6 +438,9 @@ impl FromStr for SetChoice {
                 )),
             };
         }
+        if let Some(set) = parse_sequence_set(name) {
+            return set;
+        }
         if let Some((base, variable)) = name.strip_suffix(']').and_then(|n| n.split_once('[')) {
             let variable = variable.trim();
             let coefficients = match base.trim().parse()? {
@@ -391,19 +454,7 @@ impl FromStr for SetChoice {
                     ));
                 }
             };
-            if !is_variable_name(variable) {
-                return Err(format!("invalid variable `{variable}`"));
-            }
-            let variable = Symbol::new(variable);
-            if Context::builtin_arity(variable).is_some() {
-                let kind = if Context::is_builtin_constant(variable) {
-                    "constant"
-                } else {
-                    "function"
-                };
-                return Err(format!("`{}` is a builtin {kind}", variable.name()));
-            }
-            return Ok(Self::Poly(coefficients, variable));
+            return Ok(Self::Poly(coefficients, check_variable(variable)?));
         }
         if let Some(modulus) = name
             .strip_prefix(['Z', 'z'])
@@ -439,6 +490,10 @@ pub fn sets() -> Vec<(String, &'static str)> {
             ("Z/n".to_owned(), SetChoice::Zn(2)),
             ("M(Z/n)".to_owned(), SetChoice::MZn(2)),
             ("K[x]".to_owned(), SetChoice::Poly(Coefficients::R, x)),
+            (
+                "K^N".to_owned(),
+                SetChoice::Seq(Coefficients::R, Symbol::new("n")),
+            ),
         ])
         .map(|(name, set)| (name, set.description()))
         .collect()
@@ -475,19 +530,31 @@ fn print_with<P: PrettyPrint + fmt::Display>(value: &P, options: Option<PrintOpt
 struct DefinitionPrinter<'a, E: Set> {
     name: Symbol,
     params: &'a [Symbol],
+    /// The integer of a value `name(m) := body`
+    case: Option<i64>,
     body: &'a Term<E>,
+}
+
+impl<E: Set> DefinitionPrinter<'_, E> {
+    /// The head `name(params)` or `name(m)`.
+    fn head(&self, typst: bool) -> String {
+        self.case.map_or_else(
+            || head(self.name, self.params, typst),
+            |m| head(self.name, &[], typst) + &format!("({m})"),
+        )
+    }
 }
 
 impl<E: Set> Print for DefinitionPrinter<'_, E> {
     fn print(&self, options: &PrintOptions, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{} := ", head(self.name, self.params, options.typst))?;
+        write!(f, "{} := ", self.head(options.typst))?;
         self.body.print(options, f)
     }
 }
 
 impl<E: Set> PrettyPrint for DefinitionPrinter<'_, E> {
     fn pretty_print(&self, options: &PrintOptions) -> PrettyPrinter {
-        let mut res = PrettyPrinter::from(head(self.name, self.params, false));
+        let mut res = PrettyPrinter::from(self.head(false));
         res.concat_breaking(
             ":=",
             true,
@@ -587,11 +654,16 @@ fn print_statement<E: SetParseExpression>(
             term.to_string(),
         ),
         Statement::Definition {
-            name, params, body, ..
+            name,
+            params,
+            case,
+            body,
+            ..
         } => print_with(
             &DefinitionPrinter {
                 name: *name,
                 params,
+                case: *case,
                 body,
             },
             options,

@@ -4,6 +4,11 @@
 //! definition isn't tied to a set. A definition captures the definitions existing when it is made: redefining `a`
 //! later doesn't change `b := a + 1`, and `a := a + 1` refers to the previous `a`. Arguments of a function are
 //! passed by name: each use of a parameter parses the argument again.
+//!
+//! A function of one variable can also be given values at integers, `u(0) := 1`, kept with its general rule
+//! `u(n) := ...`. Such a definition is a sequence, which refers to itself: `u(n) := 2 u(n - 1) + 1` is recursive,
+//! its terms like `u(10)` being computed by iteration (see `parser::sequence`), and in the sets of sequences like
+//! `R^N`, `u` is the whole sequence.
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -65,16 +70,45 @@ fn ode_variable(args: &[String], function: Symbol) -> Symbol {
     Symbol::new("x")
 }
 
-/// A definition `name(params) := body`.
+/// A definition `name(params) := body`, with values `name(m) := value` at integers `m` for a function of one
+/// variable.
 #[derive(Debug)]
 pub struct Definition {
     name: Symbol,
     params: Vec<Symbol>,
-    body: String,
+    /// `None` when only values at integers are given
+    body: Option<String>,
+    /// The values at integers, by increasing index
+    cases: Vec<(i64, String)>,
     env: Environment,
 }
 
 impl Definition {
+    /// The values given at integers, like `u(0) := 1`, by increasing index, making the definition a sequence
+    /// which may refer to itself.
+    #[must_use]
+    pub fn cases(&self) -> &[(i64, String)] {
+        &self.cases
+    }
+    /// Whether the definition has values at integers, making it a sequence.
+    #[must_use]
+    pub const fn is_sequence(&self) -> bool {
+        !self.cases.is_empty()
+    }
+    /// Whether the body refers to the defined name.
+    #[must_use]
+    pub fn is_recursive(&self) -> bool {
+        self.body.as_deref().is_some_and(|body| {
+            let mut parser = Parser::new(body);
+            while parser.token.kind != TokenKind::Eof {
+                if matches!(&parser.token.kind, TokenKind::Ident(ident) if *ident == self.name.name()) {
+                    return true;
+                }
+                parser.next_token();
+            }
+            false
+        })
+    }
     /// The defined name.
     #[must_use]
     pub const fn name(&self) -> Symbol {
@@ -85,10 +119,10 @@ impl Definition {
     pub fn params(&self) -> &[Symbol] {
         &self.params
     }
-    /// The source code of the body.
+    /// The source code of the body, `None` when only values at integers are given.
     #[must_use]
-    pub fn body(&self) -> &str {
-        &self.body
+    pub fn body(&self) -> Option<&str> {
+        self.body.as_deref()
     }
     /// The definitions the body can refer to.
     pub(crate) const fn env(&self) -> &Environment {
@@ -96,14 +130,21 @@ impl Definition {
     }
 }
 
+/// The definition, one line per value at an integer then the general rule.
 impl fmt::Display for Definition {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{} := {}",
-            head(self.name, &self.params, false),
-            self.body
-        )
+        let mut lines: Vec<String> = self
+            .cases
+            .iter()
+            .map(|(m, body)| format!("{}({m}) := {body}", self.name.name()))
+            .collect();
+        if let Some(body) = &self.body {
+            lines.push(format!(
+                "{} := {body}",
+                head(self.name, &self.params, false)
+            ));
+        }
+        f.write_str(&lines.join("\n"))
     }
 }
 
@@ -215,17 +256,67 @@ impl Environment {
 
     /// Define `name(params) := body`, capturing the current definitions. Prefer [`Environment::eval`], which
     /// checks the definition.
+    ///
+    /// The values at integers of a previous definition of `name` with a single parameter are kept, when `params`
+    /// is a single parameter too.
     pub fn insert(&mut self, name: Symbol, params: Vec<Symbol>, body: String) {
         let env = self.clone();
+        let cases = match self.get(name) {
+            Some(old) if old.params.len() == 1 && params.len() == 1 => old.cases.clone(),
+            _ => vec![],
+        };
         self.definitions.insert(
             name,
             Rc::new(Definition {
                 name,
                 params,
-                body,
+                body: Some(body),
+                cases,
                 env,
             }),
         );
+    }
+
+    /// Give the value `body` to `name(m)`, keeping the general rule of a previous definition of `name` with a single
+    /// parameter, and its other values.
+    pub fn insert_case(&mut self, name: Symbol, m: i64, body: String) {
+        let env = self.clone();
+        let (params, rule, mut cases) = match self.get(name) {
+            Some(old) if old.params.len() == 1 => {
+                (old.params.clone(), old.body.clone(), old.cases.clone())
+            }
+            _ => (vec![Symbol::new("n")], None, vec![]),
+        };
+        cases.retain(|(index, _)| *index != m);
+        cases.push((m, body));
+        cases.sort_by_key(|(index, _)| *index);
+        self.definitions.insert(
+            name,
+            Rc::new(Definition {
+                name,
+                params,
+                body: rule,
+                cases,
+                env,
+            }),
+        );
+    }
+
+    /// The definition of `name`, shared.
+    pub(crate) fn get_rc(&self, name: Symbol) -> Option<Rc<Definition>> {
+        self.definitions.get(&name).cloned()
+    }
+
+    /// Insert a shared definition, like a sequence in its own body.
+    pub(crate) fn insert_rc(&mut self, definition: Rc<Definition>) {
+        self.definitions.insert(definition.name, definition);
+    }
+
+    /// Remove the definition of `name` if any, keeping the others.
+    pub(crate) fn without(&self, name: Symbol) -> Self {
+        let mut env = self.clone();
+        env.definitions.remove(&name);
+        env
     }
 
     /// Bind each parameter to the source of an argument, parsed with the definitions of `caller`.
@@ -236,7 +327,8 @@ impl Environment {
                 Rc::new(Definition {
                     name: param,
                     params: vec![],
-                    body: arg,
+                    body: Some(arg),
+                    cases: vec![],
                     env: caller.clone(),
                 }),
             );
@@ -259,11 +351,15 @@ impl Environment {
         if let Statement::Definition {
             name,
             params,
+            case,
             source,
             ..
         } = &statement
         {
-            self.insert(*name, params.clone(), source.clone());
+            match case {
+                Some(m) => self.insert_case(*name, *m, source.clone()),
+                None => self.insert(*name, params.clone(), source.clone()),
+            }
         }
         if let Statement::Assume(assumptions) = &statement {
             self.assumptions
@@ -283,8 +379,10 @@ pub enum Statement<E: Set> {
     Definition {
         /// The defined name.
         name: Symbol,
-        /// The parameters, empty for a variable.
+        /// The parameters, empty for a variable or a value at an integer.
         params: Vec<Symbol>,
+        /// The integer `m` of a value `name(m) := body`.
+        case: Option<i64>,
         /// The source code of the body.
         source: String,
         /// The body evaluated with its parameters as symbols.
@@ -391,8 +489,18 @@ impl<E: Set> fmt::Display for Statement<E> {
         match self {
             Self::Expression(term) => write!(f, "{term}"),
             Self::Definition {
-                name, params, body, ..
+                name,
+                params,
+                case: None,
+                body,
+                ..
             } => write!(f, "{} := {body}", head(*name, params, false)),
+            Self::Definition {
+                name,
+                case: Some(m),
+                body,
+                ..
+            } => write!(f, "{}({m}) := {body}", name.name()),
             Self::System {
                 solution, integers, ..
             } => {
@@ -431,7 +539,7 @@ impl Parser<'_> {
     ) -> Result<Statement<E>, ParserError> {
         profile_scope!("parse_statement");
         let _assumptions = self.env.map(|env| env.assumptions().enter());
-        let Some((name, params, body_start)) = self.clone().definition_head() else {
+        let Some((name, params, case, body_start)) = self.clone().definition_head() else {
             return self.parse_equations(set);
         };
         let body = &self.input[body_start..];
@@ -456,7 +564,10 @@ impl Parser<'_> {
                     "Parameter `{symbol_name}` is repeated"
                 )));
             }
-            if set.is_constant(symbol_name) {
+            // The index of sequences is the parameter of a sequence, `u(n) := 2 u(n - 1)` in `R^N`
+            let index_parameter =
+                i < params.len() && params.len() == 1 && set.is_index(symbol_name);
+            if set.is_constant(symbol_name) && !index_parameter {
                 return Err(ParserError::new(format!(
                     "`{symbol_name}` is a constant of this set"
                 )));
@@ -467,13 +578,32 @@ impl Parser<'_> {
         for param in &params {
             env.definitions.remove(param);
         }
+        // The definition with its values at integers, a sequence referring to itself
+        let mut merged = self.env.cloned().unwrap_or_default();
+        match case {
+            Some(m) => merged.insert_case(name, m, source.clone()),
+            None => merged.insert(name, params.clone(), source.clone()),
+        }
+        let sequence = merged
+            .get_rc(name)
+            .filter(|definition| definition.is_sequence());
+        if case.is_none() && sequence.is_some() {
+            // Its calls in its rule stay unevaluated
+            env.definitions.remove(&name);
+        }
         let body = Parser::new(&source)
             .with_offset(body_offset)
             .with_environment(&env)
             .parse(set)?;
+        // In the sets of sequences, the rule of a sequence shows the whole sequence
+        let body = match (sequence, case) {
+            (Some(definition), None) => super::sequence::whole(&definition, set)?.unwrap_or(body),
+            _ => body,
+        };
         Ok(Statement::Definition {
             name,
             params,
+            case,
             source,
             body,
         })
@@ -1088,14 +1218,30 @@ impl Parser<'_> {
         self.is_call(Context::ASSUME)
     }
 
-    /// Parse `name :=` or `name(params) :=`, returning the name, the parameters and the position of the body.
-    fn definition_head(&mut self) -> Option<(Symbol, Vec<Symbol>, usize)> {
+    /// Parse `name :=`, `name(params) :=` or `name(m) :=` for an integer `m`, returning the name, the parameters,
+    /// the integer and the position of the body.
+    fn definition_head(&mut self) -> Option<(Symbol, Vec<Symbol>, Option<i64>, usize)> {
         let TokenKind::Ident(name) = &self.token.kind else {
             return None;
         };
         let name = Symbol::new(name.as_str());
         self.next_token();
         let mut params = vec![];
+        if self.token.kind == TokenKind::OpenParen
+            && let Some(m) = self.clone().case_head()
+        {
+            // `name(m) :=`
+            while self.token.kind != TokenKind::CloseParen {
+                self.next_token();
+            }
+            self.next_token();
+            return (self.token.kind == TokenKind::Define).then_some((
+                name,
+                params,
+                Some(m),
+                self.end_span,
+            ));
+        }
         if self.token.kind == TokenKind::OpenParen {
             loop {
                 self.next_token();
@@ -1112,7 +1258,20 @@ impl Parser<'_> {
             }
             self.next_token();
         }
-        (self.token.kind == TokenKind::Define).then_some((name, params, self.end_span))
+        (self.token.kind == TokenKind::Define).then_some((name, params, None, self.end_span))
+    }
+
+    /// At the `(` of a head, parse the integer `m` of `(m)` or `(-m)`.
+    fn case_head(&mut self) -> Option<i64> {
+        self.next_token();
+        let negative = self.token.kind == TokenKind::Minus;
+        if negative {
+            self.next_token();
+        }
+        let m = self
+            .is_literal_and(|source| Ok(source.parse::<i64>().ok()))
+            .ok()??;
+        (self.token.kind == TokenKind::CloseParen).then_some(if negative { -m } else { m })
     }
 }
 

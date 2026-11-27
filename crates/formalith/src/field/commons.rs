@@ -34,6 +34,7 @@ pub mod natural;
 pub mod polynomial;
 pub(crate) mod primes;
 pub mod real;
+pub mod sequence;
 
 /// Parse a number literal as a rational, `target` naming the malachite type in the error message.
 pub(crate) fn parse_rational_literal(value: &str, target: &str) -> Result<Rational, String> {

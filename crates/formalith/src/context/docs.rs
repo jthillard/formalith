@@ -25,13 +25,15 @@ pub enum Category {
     Calculus,
     /// Matrices and vector calculus
     Matrices,
+    /// Sequences of the sets `R^N` and `C^N`: recurrences, terms, shifts
+    Sequences,
     /// Builtins only allowed as a whole statement: solving equations, assumptions
     Statements,
 }
 
 impl Category {
     /// Every category, in the order they are documented.
-    pub const ALL: [Self; 9] = [
+    pub const ALL: [Self; 10] = [
         Self::Constants,
         Self::Arithmetic,
         Self::Complex,
@@ -40,6 +42,7 @@ impl Category {
         Self::Algebra,
         Self::Calculus,
         Self::Matrices,
+        Self::Sequences,
         Self::Statements,
     ];
 
@@ -55,6 +58,7 @@ impl Category {
             Self::Algebra => "Algebra",
             Self::Calculus => "Calculus",
             Self::Matrices => "Matrices",
+            Self::Sequences => "Sequences",
             Self::Statements => "Statements",
         }
     }
@@ -136,7 +140,8 @@ const fn doc(
 }
 
 use Category::{
-    Algebra, Arithmetic, Calculus, Complex, Constants, Elementary, Matrices, Special, Statements,
+    Algebra, Arithmetic, Calculus, Complex, Constants, Elementary, Matrices, Sequences, Special,
+    Statements,
 };
 
 /// The documentation of every builtin, indexed by their identifier.
@@ -1304,6 +1309,60 @@ pub static BUILTIN_DOCS: [BuiltinDoc; Context::BUILTIN_NAMES.len()] = [
         "Exact values for natural numbers n <= 1000, zero for odd n. They are the general terms of the whole \
          series of sec and 1/cosh.",
         &[ex("euler(10)", "-50521"), ex("euler(3)", "0")],
+    ),
+    doc(
+        Context::RECURRENCE,
+        Sequences,
+        "recurrence(u(n) = rule, u(0) = a_0, ...)",
+        "The sequence defined by a recurrence and its initial values, in R^N and C^N.",
+        "The rule may refer to u(n - d) for d >= 1, as many initial values as the largest d being given from the \
+         first one; values at other indices replace the rule there. Several sequences can be defined, each rule \
+         referring to the earlier ones at n - d for d >= 0, the last one being the result. Operations on \
+         recurrences are componentwise, and their terms are computed by iteration.",
+        &[
+            ex_in(
+                "R^N",
+                "term(recurrence(u(n) = 2 u(n - 1) + 1, u(0) = 1), 10)",
+                "2047",
+            ),
+            ex_in(
+                "R^N",
+                "recurrence(u(n) = n u(n - 1), u(0) = 1)",
+                "op(\"recurrence\")(u(n) = n u(n - 1), u(0) = 1)",
+            ),
+        ],
+    ),
+    doc(
+        Context::TERM,
+        Sequences,
+        "term(u, m)",
+        "The term u_m of index m of a sequence u, in R^N and C^N.",
+        "m must be an integer. Terms of recurrences are computed by iteration, at most 100000 steps, and stay \
+         unevaluated where the sequence isn't defined.",
+        &[
+            ex_in("R^N", "term(n^2 + 1, 3)", "10"),
+            ex_in(
+                "R^N",
+                "term(recurrence(u(n) = u(n - 1) + u(n - 2), u(0) = 0, u(1) = 1), 50)",
+                "12586269025",
+            ),
+        ],
+    ),
+    doc(
+        Context::SHIFT,
+        Sequences,
+        "shift(u, k)",
+        "The shifted sequence of general term u_(n + k), in R^N and C^N.",
+        "k must be an integer. A small shift of a recurrence is written with its rule, so that it simplifies with \
+         the recurrence.",
+        &[
+            ex_in("R^N", "shift(n^2, 1)", "(n + 1)^2"),
+            ex_in(
+                "R^N",
+                "shift(recurrence(u(n) = 2 u(n - 1) + 1, u(0) = 1), 1) - 2 recurrence(u(n) = 2 u(n - 1) + 1, u(0) = 1)",
+                "1",
+            ),
+        ],
     ),
 ];
 

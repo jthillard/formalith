@@ -113,8 +113,8 @@ fn solve_function() {
         ok("x = frac((w+1), (m+1)), y = frac((-m w+1), (m+1))")
     );
     assert_eq!(
-        solve("solve(p*x + q*y = r, s*x + v*y = u, x, y)"),
-        ok("x = frac((-q u+r v), (p v-q s)), y = frac((p u-r s), (p v-q s))")
+        solve("solve(p*x + q*y = r, s*x + l*y = j, x, y)"),
+        ok("x = frac((-q j+r l), (p l-q s)), y = frac((p j-r s), (p l-q s))")
     );
     assert_eq!(solve("solve(y = x + g, y)"), ok("y = x+g"));
     assert_eq!(solve("solve(x + y = 1, y)"), ok("y = -x+1"));

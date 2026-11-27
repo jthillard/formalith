@@ -59,6 +59,8 @@ fn builtins() {
 #[test]
 fn statements() {
     assert_eq!(typst("f(x) := x^2"), "f(x) := x^(2)");
+    assert_eq!(typst("u(0) := 1"), "u(0) := 1");
+    assert_eq!(typst("u(n) := 2 u(n - 1) + 1"), "u(n) := 2 u(n - 1) + 1");
     assert_eq!(typst("x + y = 3, x - y = 1"), "x + y = 3, quad x - y = 1");
     assert_eq!(typst("x^2 <= 4"), "x^(2) <= 4");
 }

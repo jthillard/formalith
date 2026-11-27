@@ -164,7 +164,12 @@ impl<'a> SyntaxParser<'a> {
                 Node::Ident(_) => true,
                 Node::Call {
                     primes: 0, args, ..
-                } => args.iter().all(|arg| matches!(arg, Node::Ident(_))),
+                } => {
+                    args.iter().all(|arg| matches!(arg, Node::Ident(_)))
+                        // A value at an integer, `u(0) := 1`
+                        || matches!(args.as_slice(), [Node::Number(_)])
+                        || matches!(args.as_slice(), [Node::Neg(m)] if matches!(**m, Node::Number(_)))
+                }
                 _ => false,
             };
             if !is_head {
