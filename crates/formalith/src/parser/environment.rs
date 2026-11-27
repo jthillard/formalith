@@ -70,25 +70,69 @@ fn ode_variable(args: &[String], function: Symbol) -> Symbol {
     Symbol::new("x")
 }
 
-/// A definition `name(params) := body`, with values `name(m) := value` at integers `m` for a function of one
-/// variable.
+/// A value `name(..., m, ...) := source` of a definition at an integer `m` of its index, like `u(0) := 1` or
+/// `f(c, 0) := c`.
+#[derive(Debug, Clone)]
+pub struct Case {
+    m: i64,
+    /// The names of the other parameters in this value, `[c]` for `f(c, 0) := c`
+    params: Vec<Symbol>,
+    source: String,
+}
+
+impl Case {
+    /// The integer `m` of the index.
+    #[must_use]
+    pub const fn m(&self) -> i64 {
+        self.m
+    }
+    /// The names of the parameters other than the index, in order.
+    #[must_use]
+    pub fn params(&self) -> &[Symbol] {
+        &self.params
+    }
+    /// The source code of the value.
+    #[must_use]
+    pub fn source(&self) -> &str {
+        &self.source
+    }
+}
+
+/// The arguments of a head with `index` replaced by `m`: `c, 0` for `f(c, 0)`.
+fn case_args(params: &[Symbol], index: usize, m: i64) -> String {
+    let mut args: Vec<String> = params.iter().map(|p| p.name().to_owned()).collect();
+    args.insert(index.min(args.len()), m.to_string());
+    args.join(", ")
+}
+
+/// A definition `name(params) := body`, with values at integers of one of its parameters.
+///
+/// Values `name(..., m, ...) := value` at integers `m` of the index make it a sequence, the other parameters being
+/// parameters of the sequence.
 #[derive(Debug)]
 pub struct Definition {
     name: Symbol,
     params: Vec<Symbol>,
+    /// The position of the index among the parameters, for values at integers
+    index: usize,
     /// `None` when only values at integers are given
     body: Option<String>,
     /// The values at integers, by increasing index
-    cases: Vec<(i64, String)>,
+    cases: Vec<Case>,
     env: Environment,
 }
 
 impl Definition {
-    /// The values given at integers, like `u(0) := 1`, by increasing index, making the definition a sequence
-    /// which may refer to itself.
+    /// The values given at integers, like `u(0) := 1` or `f(c, 0) := c`, by increasing index, making the
+    /// definition a sequence which may refer to itself.
     #[must_use]
-    pub fn cases(&self) -> &[(i64, String)] {
+    pub fn cases(&self) -> &[Case] {
         &self.cases
+    }
+    /// The position of the index of a sequence among the parameters, `1` for `f(c, n)` with `f(c, 0) := c`.
+    #[must_use]
+    pub const fn index(&self) -> usize {
+        self.index
     }
     /// Whether the definition has values at integers, making it a sequence.
     #[must_use]
@@ -136,7 +180,14 @@ impl fmt::Display for Definition {
         let mut lines: Vec<String> = self
             .cases
             .iter()
-            .map(|(m, body)| format!("{}({m}) := {body}", self.name.name()))
+            .map(|case| {
+                format!(
+                    "{}({}) := {}",
+                    self.name.name(),
+                    case_args(&case.params, self.index, case.m),
+                    case.source
+                )
+            })
             .collect();
         if let Some(body) = &self.body {
             lines.push(format!(
@@ -257,19 +308,19 @@ impl Environment {
     /// Define `name(params) := body`, capturing the current definitions. Prefer [`Environment::eval`], which
     /// checks the definition.
     ///
-    /// The values at integers of a previous definition of `name` with a single parameter are kept, when `params`
-    /// is a single parameter too.
+    /// The values at integers of a previous definition of `name` with as many parameters are kept.
     pub fn insert(&mut self, name: Symbol, params: Vec<Symbol>, body: String) {
         let env = self.clone();
-        let cases = match self.get(name) {
-            Some(old) if old.params.len() == 1 && params.len() == 1 => old.cases.clone(),
-            _ => vec![],
+        let (index, cases) = match self.get(name) {
+            Some(old) if old.params.len() == params.len() => (old.index, old.cases.clone()),
+            _ => (0, vec![]),
         };
         self.definitions.insert(
             name,
             Rc::new(Definition {
                 name,
                 params,
+                index,
                 body: Some(body),
                 cases,
                 env,
@@ -277,24 +328,53 @@ impl Environment {
         );
     }
 
-    /// Give the value `body` to `name(m)`, keeping the general rule of a previous definition of `name` with a single
-    /// parameter, and its other values.
-    pub fn insert_case(&mut self, name: Symbol, m: i64, body: String) {
+    /// Give the value `body` to `name(params...)` with `m` inserted at the position `index`, like `f(c, 0) := c`,
+    /// keeping the general rule of a previous definition of `name` with as many parameters, and its other values
+    /// when they are at the same position.
+    pub fn insert_case(
+        &mut self,
+        name: Symbol,
+        index: usize,
+        params: Vec<Symbol>,
+        m: i64,
+        body: String,
+    ) {
         let env = self.clone();
-        let (params, rule, mut cases) = match self.get(name) {
-            Some(old) if old.params.len() == 1 => {
-                (old.params.clone(), old.body.clone(), old.cases.clone())
+        let arity = params.len() + 1;
+        let (rule_params, rule, mut cases) = match self.get(name) {
+            Some(old) if old.params.len() == arity => {
+                let cases = if old.index == index {
+                    old.cases.clone()
+                } else {
+                    vec![]
+                };
+                (old.params.clone(), old.body.clone(), cases)
             }
-            _ => (vec![Symbol::new("n")], None, vec![]),
+            _ => {
+                // The index takes a name which isn't one of the other parameters
+                let n = ["n", "k", "m", "j"]
+                    .into_iter()
+                    .map(Symbol::new)
+                    .find(|n| !params.contains(n))
+                    .unwrap_or_else(|| Symbol::new("@n"));
+                let mut rule_params = params.clone();
+                rule_params.insert(index, n);
+                (rule_params, None, vec![])
+            }
         };
-        cases.retain(|(index, _)| *index != m);
-        cases.push((m, body));
-        cases.sort_by_key(|(index, _)| *index);
+        cases.retain(|case| case.m != m);
+        cases.push(Case {
+            m,
+            params,
+            source: body,
+        });
+        cases.sort_by_key(|case| case.m);
         self.definitions.insert(
             name,
             Rc::new(Definition {
                 name,
-                params,
+                params: rule_params,
+                index,
                 body: rule,
                 cases,
                 env,
@@ -327,6 +407,7 @@ impl Environment {
                 Rc::new(Definition {
                     name: param,
                     params: vec![],
+                    index: 0,
                     body: Some(arg),
                     cases: vec![],
                     env: caller.clone(),
@@ -357,7 +438,9 @@ impl Environment {
         } = &statement
         {
             match case {
-                Some(m) => self.insert_case(*name, *m, source.clone()),
+                Some((index, m)) => {
+                    self.insert_case(*name, *index, params.clone(), *m, source.clone());
+                }
                 None => self.insert(*name, params.clone(), source.clone()),
             }
         }
@@ -379,10 +462,10 @@ pub enum Statement<E: Set> {
     Definition {
         /// The defined name.
         name: Symbol,
-        /// The parameters, empty for a variable or a value at an integer.
+        /// The parameters, empty for a variable; for a value at an integer, the parameters other than the index.
         params: Vec<Symbol>,
-        /// The integer `m` of a value `name(m) := body`.
-        case: Option<i64>,
+        /// The position of the index and the integer `m` of a value `name(m) := body` or `name(c, m) := body`.
+        case: Option<(usize, i64)>,
         /// The source code of the body.
         source: String,
         /// The body evaluated with its parameters as symbols.
@@ -497,10 +580,16 @@ impl<E: Set> fmt::Display for Statement<E> {
             } => write!(f, "{} := {body}", head(*name, params, false)),
             Self::Definition {
                 name,
-                case: Some(m),
+                params,
+                case: Some((index, m)),
                 body,
                 ..
-            } => write!(f, "{}({m}) := {body}", name.name()),
+            } => write!(
+                f,
+                "{}({}) := {body}",
+                name.name(),
+                case_args(params, *index, *m)
+            ),
             Self::System {
                 solution, integers, ..
             } => {
@@ -564,9 +653,8 @@ impl Parser<'_> {
                     "Parameter `{symbol_name}` is repeated"
                 )));
             }
-            // The index of sequences is the parameter of a sequence, `u(n) := 2 u(n - 1)` in `R^N`
-            let index_parameter =
-                i < params.len() && params.len() == 1 && set.is_index(symbol_name);
+            // The index of sequences is a parameter of a sequence, `u(n) := 2 u(n - 1)` in `R^N`
+            let index_parameter = i < params.len() && set.is_index(symbol_name);
             if set.is_constant(symbol_name) && !index_parameter {
                 return Err(ParserError::new(format!(
                     "`{symbol_name}` is a constant of this set"
@@ -581,7 +669,7 @@ impl Parser<'_> {
         // The definition with its values at integers, a sequence referring to itself
         let mut merged = self.env.cloned().unwrap_or_default();
         match case {
-            Some(m) => merged.insert_case(name, m, source.clone()),
+            Some((index, m)) => merged.insert_case(name, index, params.clone(), m, source.clone()),
             None => merged.insert(name, params.clone(), source.clone()),
         }
         let sequence = merged
@@ -1220,36 +1308,29 @@ impl Parser<'_> {
 
     /// Parse `name :=`, `name(params) :=` or `name(m) :=` for an integer `m`, returning the name, the parameters,
     /// the integer and the position of the body.
-    fn definition_head(&mut self) -> Option<(Symbol, Vec<Symbol>, Option<i64>, usize)> {
+    #[allow(clippy::type_complexity)] // Returned once, destructured by the caller
+    fn definition_head(&mut self) -> Option<(Symbol, Vec<Symbol>, Option<(usize, i64)>, usize)> {
         let TokenKind::Ident(name) = &self.token.kind else {
             return None;
         };
         let name = Symbol::new(name.as_str());
         self.next_token();
         let mut params = vec![];
-        if self.token.kind == TokenKind::OpenParen
-            && let Some(m) = self.clone().case_head()
-        {
-            // `name(m) :=`
-            while self.token.kind != TokenKind::CloseParen {
-                self.next_token();
-            }
-            self.next_token();
-            return (self.token.kind == TokenKind::Define).then_some((
-                name,
-                params,
-                Some(m),
-                self.end_span,
-            ));
-        }
+        let mut case = None;
         if self.token.kind == TokenKind::OpenParen {
             loop {
                 self.next_token();
-                let TokenKind::Ident(param) = &self.token.kind else {
-                    return None;
-                };
-                params.push(Symbol::new(param.as_str()));
-                self.next_token();
+                if let TokenKind::Ident(param) = &self.token.kind {
+                    params.push(Symbol::new(param.as_str()));
+                    self.next_token();
+                } else {
+                    // A value at an integer `m`, `name(m) :=` or `name(c, m) :=`
+                    let m = self.case_arg()?;
+                    if case.is_some() {
+                        return None;
+                    }
+                    case = Some((params.len(), m));
+                }
                 match self.token.kind {
                     TokenKind::Comma => {}
                     TokenKind::CloseParen => break,
@@ -1258,12 +1339,11 @@ impl Parser<'_> {
             }
             self.next_token();
         }
-        (self.token.kind == TokenKind::Define).then_some((name, params, None, self.end_span))
+        (self.token.kind == TokenKind::Define).then_some((name, params, case, self.end_span))
     }
 
-    /// At the `(` of a head, parse the integer `m` of `(m)` or `(-m)`.
-    fn case_head(&mut self) -> Option<i64> {
-        self.next_token();
+    /// Parse the integer `m` or `-m` of an argument of a head, stopping after it.
+    fn case_arg(&mut self) -> Option<i64> {
         let negative = self.token.kind == TokenKind::Minus;
         if negative {
             self.next_token();
@@ -1271,7 +1351,7 @@ impl Parser<'_> {
         let m = self
             .is_literal_and(|source| Ok(source.parse::<i64>().ok()))
             .ok()??;
-        (self.token.kind == TokenKind::CloseParen).then_some(if negative { -m } else { m })
+        Some(if negative { -m } else { m })
     }
 }
 

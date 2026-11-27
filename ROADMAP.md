@@ -104,8 +104,8 @@ What is left:
 ## Sequences
 
 Sequences of `R^N` and `C^N` are closed forms or systems of recurrences (`field/commons/sequence/`), with terms,
-shifts and componentwise operations. Recursive definitions (`u(0) := 1`, `u(n) := 2 u(n - 1) + 1`) give them in
-sessions, and their terms in `R`, `C` and `Z`.
+shifts and componentwise operations. Recursive definitions (`u(0) := 1`, `u(n) := 2 u(n - 1) + 1`, with other parameters
+`f(c, n) := f(c, n - 1)^2 + c`) give them in sessions, and their terms in `R`, `C` and `Z`.
 
 - Limits, convergence, boundedness and monotonicity of sequences (`lim(u)` over integers, `lim((-1)^n / n) = 0`,
   `lim((-1)^n)` undefined). `lim`, `sum`, `integrate`... of a closed form are its general term's, componentwise.

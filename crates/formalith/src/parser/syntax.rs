@@ -165,10 +165,12 @@ impl<'a> SyntaxParser<'a> {
                 Node::Call {
                     primes: 0, args, ..
                 } => {
-                    args.iter().all(|arg| matches!(arg, Node::Ident(_)))
-                        // A value at an integer, `u(0) := 1`
-                        || matches!(args.as_slice(), [Node::Number(_)])
-                        || matches!(args.as_slice(), [Node::Neg(m)] if matches!(**m, Node::Number(_)))
+                    // Values at an integer too, `u(0) := 1`, `f(c, 0) := c`
+                    args.iter().all(|arg| match arg {
+                        Node::Ident(_) | Node::Number(_) => true,
+                        Node::Neg(m) => matches!(**m, Node::Number(_)),
+                        _ => false,
+                    })
                 }
                 _ => false,
             };

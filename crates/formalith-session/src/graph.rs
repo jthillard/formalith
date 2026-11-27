@@ -8,7 +8,8 @@
 //! ([`GraphKind::ComplexMap`]), real ones as surfaces `f(x + i y)`, functions of a real `x` as curves (with their
 //! real and imaginary parts when they aren't real, [`GraphKind::ComplexCurve`]), and constants as points
 //! `(Re, Im)`. Sequences of `R^N` and recursive definitions in `R` (`u(0) := 1`, `u(n) := 2 u(n - 1) + 1`) are drawn
-//! as their points `(k, u_k)` ([`GraphKind::Sequence`]).
+//! as their points `(k, u_k)` ([`GraphKind::Sequence`]), the other parameters of a definition `f(c, n)` being
+//! parameters of the graph.
 //!
 //! Graphs are compiled to [`Numeric`] expressions, evaluated with the values `[x, y, params...]`: `x` at index
 //! [`Graph::X`], `y` at index [`Graph::Y`] and the parameters of [`Graph::params`] after them.
@@ -373,10 +374,11 @@ fn defined_sequence(name: Symbol, env: &Environment) -> Option<Graph> {
     let definition = env
         .get(name)
         .filter(|definition| definition.is_sequence())?;
-    let index = match definition.params() {
-        [index] => *index,
-        _ => Symbol::new("n"),
-    };
+    let index = definition
+        .params()
+        .get(definition.index())
+        .copied()
+        .unwrap_or_else(|| Symbol::new("n"));
     let term = Parser::new(name.name())
         .with_environment(env)
         .parse(R.get_sequence_set(index))
@@ -643,6 +645,8 @@ pub(crate) fn evaluate(
         {
             defined_sequence(*name, env)
         }
+        // A value at an integer
+        Statement::Definition { case: Some(_), .. } => None,
         Statement::Definition { params, body, .. } => match params.as_slice() {
             [param] => Some(function(body, *param)),
             [p, q] => Some(surface(body, [*p, *q])),
@@ -752,6 +756,7 @@ pub(crate) fn evaluate_complex(
     };
     let graph = match &statement {
         Statement::Expression(term) => graph_of(term),
+        Statement::Definition { case: Some(_), .. } => None,
         Statement::Definition { params, body, .. } => match params.as_slice() {
             [param] if *param == z => complex_map(body, z),
             [param] => complex_function(body, *param),

@@ -237,6 +237,101 @@ fn values_of_functions() {
     );
 }
 
+const MANDELBROT: [&str; 2] = ["f(c, 0) := c", "f(c, n) := f(c, n - 1)^2 + c"];
+
+/// `lines` after the definition of the Mandelbrot iteration `f(c, n)`.
+fn with_mandelbrot<'a>(lines: &[&'a str]) -> Vec<&'a str> {
+    MANDELBROT
+        .iter()
+        .copied()
+        .chain(lines.iter().copied())
+        .collect()
+}
+
+#[test]
+fn sequences_with_parameters() {
+    assert_eq!(
+        eval("R", &with_mandelbrot(&["f(1/2, 2)"])),
+        Ok("17/16".to_owned())
+    );
+    // In the other order, and with other names in the value
+    assert_eq!(
+        eval(
+            "R",
+            &["f(c, n) := f(c, n - 1)^2 + c", "f(a, 0) := a", "f(1/2, 3)"]
+        ),
+        Ok("417/256".to_owned())
+    );
+    assert_eq!(
+        eval("R", &with_mandelbrot(&["f(x, 2)"])),
+        same("R", "(x^2 + x)^2 + x")
+    );
+    assert_eq!(
+        eval("R", &with_mandelbrot(&["f(f(1/2, 1), 1)"])),
+        Ok("21/16".to_owned())
+    );
+    assert_eq!(
+        eval("R", &with_mandelbrot(&["f(a, n)"])),
+        same("R", "f(a, n)")
+    );
+    assert_eq!(
+        eval("Z", &with_mandelbrot(&["f(-2, 10)"])),
+        Ok("2".to_owned())
+    );
+    // The index first
+    assert_eq!(
+        eval(
+            "R",
+            &["g(0, x) := x", "g(n, x) := 2 g(n - 1, x)", "g(3, 5)"]
+        ),
+        Ok("40".to_owned())
+    );
+    // The whole sequence keeps its parameter
+    assert_eq!(
+        eval("R^N", &with_mandelbrot(&["f"])),
+        Ok("recurrence(u(n) = c+u(n-1)^2, u(0) = c)".to_owned())
+    );
+    assert_eq!(
+        eval("R^N", &with_mandelbrot(&["f(1, n + 1) - f(1, n)^2"])),
+        Ok("1".to_owned())
+    );
+    assert_eq!(
+        eval("R^N", &with_mandelbrot(&["f(-1, 3)"])),
+        Ok("0".to_owned())
+    );
+}
+
+#[test]
+fn errors_of_sequences_with_parameters() {
+    assert_eq!(
+        eval(
+            "R",
+            &["g(c, 0) := 1", "g(c, n) := g(2 c, n - 1)", "g(1, 3)"]
+        ),
+        Err(
+            "the rule of `g` can only refer to `g(c, n - d)` with d >= 1, found `g(2 c, n - 1)`"
+                .to_owned()
+        )
+    );
+    assert_eq!(
+        eval("R", &with_mandelbrot(&["f(1)"])),
+        Err("`f` expects 2 arguments, found 1".to_owned())
+    );
+    // Two integers aren't a value of the definition
+    assert!(eval("R", &with_mandelbrot(&["f(0, 0) := 1"])).is_err());
+}
+
+#[test]
+fn printed_definitions_with_parameters() {
+    let mut env = Environment::new();
+    for line in MANDELBROT {
+        env.eval(line, R).unwrap();
+    }
+    let printed: Vec<String> = env.definitions().map(ToString::to_string).collect();
+    assert_eq!(printed, ["f(c, 0) := c\nf(c, n) := f(c, n - 1)^2 + c"]);
+    assert_eq!(eval("R", &["f(c, 0) := c"]), Ok(":= c".to_owned()));
+}
+
 #[test]
 fn complex_sequences() {
     assert_eq!(

@@ -530,18 +530,30 @@ fn print_with<P: PrettyPrint + fmt::Display>(value: &P, options: Option<PrintOpt
 struct DefinitionPrinter<'a, E: Set> {
     name: Symbol,
     params: &'a [Symbol],
-    /// The integer of a value `name(m) := body`
-    case: Option<i64>,
+    /// The position of the index and the integer of a value `name(m) := body` or `name(c, m) := body`
+    case: Option<(usize, i64)>,
     body: &'a Term<E>,
 }
 
 impl<E: Set> DefinitionPrinter<'_, E> {
-    /// The head `name(params)` or `name(m)`.
+    /// The head `name(params)`, `name(m)` or `name(c, m)`.
     fn head(&self, typst: bool) -> String {
-        self.case.map_or_else(
-            || head(self.name, self.params, typst),
-            |m| head(self.name, &[], typst) + &format!("({m})"),
-        )
+        let Some((index, m)) = self.case else {
+            return head(self.name, self.params, typst);
+        };
+        let mut args: Vec<String> = self
+            .params
+            .iter()
+            .map(|param| {
+                if typst {
+                    crate::printer::typst_name(param.name()).into_owned()
+                } else {
+                    param.name().to_owned()
+                }
+            })
+            .collect();
+        args.insert(index.min(args.len()), m.to_string());
+        format!("{}({})", head(self.name, &[], typst), args.join(", "))
     }
 }
 

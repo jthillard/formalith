@@ -12,7 +12,8 @@ A computer algebra system written in Rust. Expressions are generic over the alge
 - `Z/n`: integers modulo `n`
 - `K[x]`: univariate polynomials over a set `K`
 - `R^N`, `C^N`: sequences, given by a general term (`n^2 + 1`) or a recurrence
-  (`u(0) := 1`, `u(n) := 2 u(n - 1) + 1`), with terms `u(10)` and shifts `u(n + 1)`; `R^N[k]` for the index `k`
+  (`u(0) := 1`, `u(n) := 2 u(n - 1) + 1`), with terms `u(10)` and shifts `u(n + 1)`, also with parameters
+  (`f(c, 0) := c`, `f(c, n) := f(c, n - 1)^2 + c`, `f(1/2, 3)`); `R^N[k]` for the index `k`
 - `M`: matrices with symbolic entries
 
 `R` supports derivatives, limits, series, integrals (with the Risch algorithm), sums and products (with Gosper's
@@ -69,7 +70,7 @@ Add `--release` for an optimized build (otherwise a debug build without `wasm-op
 `./dev gui` runs the graphical interface (`cargo run -p formalith-gui`): a list of lines with their results, next
 to a plot of curves (`y = sin(x)`, `f(x) := x^3 - x`, `x = y^2`), implicit curves and regions (`x^2 + y^2 = 1`,
 `y < exp(-x^2)`), points (`(1, f(1))`) and sequences (`n^2/10` in the set `R^N`, or `u(0) := 1` and
-`u(n) := 2 u(n - 1) + 1` in `R`, as the points `(k, u_k)`), with sliders for parameters (`y = a*sin(b*x)`) and the roots, extrema
+`u(n) := 2 u(n - 1) + 1` in `R`, as the points `(k, u_k)`, `f(c, n)` with a slider for `c`), with sliders for parameters (`y = a*sin(b*x)`) and the roots, extrema
 and intersections of the selected curve. `./dev gui-web` builds it for the browser (WebGPU, or WebGL2 without it),
 `./dev gui-web --serve` also serves it on port 8001.
 

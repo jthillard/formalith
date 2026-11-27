@@ -336,3 +336,23 @@ fn test_recursive_definitions() {
         GraphKind::Function { .. }
     ));
 }
+
+#[test]
+fn test_recursive_definitions_with_parameters() {
+    let mut session = Session::new();
+    assert_eq!(draw(&mut session, "f(c, 0) := c").1, None);
+    // The other parameters are sliders
+    assert_eq!(
+        sequence_terms(&mut session, "f(c, n) := f(c, n - 1)^2 + c", &[-1.], (0, 3)),
+        (
+            vec![(0, -1.), (1, 0.), (2, -1.), (3, 0.)],
+            vec!["c".to_owned()]
+        )
+    );
+    // The index first
+    session.run("g(0, a) := a");
+    assert_eq!(
+        sequence_terms(&mut session, "g(k, a) := 2 g(k - 1, a)", &[3.], (0, 2)),
+        (vec![(0, 3.), (1, 6.), (2, 12.)], vec!["a".to_owned()])
+    );
+}

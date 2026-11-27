@@ -101,7 +101,7 @@ impls for rings or for `R`. Set-specific parts go through specialized traits: `S
 ## Module map (`crates/formalith/src/`)
 
 - `parser/`, `parser.rs`: Pratt parser (`parse!` / `try_parse!`), lexer, `environment.rs` (definitions stored as
-  source text, expanded in the outermost set, with values at integers `u(0) := 1`), `sequence.rs` (definitions
+  source text, expanded in the outermost set, with values at integers `u(0) := 1`, `f(c, 0) := c` at the index position), `sequence.rs` (definitions
   with values are sequences referring to themselves, built in `Seq`, `ExpandSequence`), `syntax.rs` (typesets the
   input without evaluating it). Per-set parsing via `SetParseExpression`.
 - `context/`: interned `Symbol`s (`symbol!("x")`), builtin names / arities, `docs.rs` (builtin docs),

@@ -1,11 +1,16 @@
-//! Definitions of sequences: definitions of one variable with values at integers, like `u(0) := 1` and
-//! `u(n) := 2 u(n - 1) + 1`, referring to themselves.
+//! Definitions of sequences: definitions with values at integers, like `u(0) := 1` and `u(n) := 2 u(n - 1) + 1`,
+//! referring to themselves.
 //!
 //! Such a definition is built as a sequence of `{$K^NN$}` ([`Seq`]): its rule is parsed in `{$K^NN$}` with its
 //! parameter as the index, its own calls `u(n - d)` standing for the recurrence. In a set of sequences, the
 //! definition is the whole sequence `u`, `u(n + k)` a shift and `u(m)` a term. In `R` and `C`, `u(m)` is the term
 //! for an integer `m`, computed by iteration, `u(x)` staying unevaluated for a symbol `x`; in `Z`, terms are
 //! computed in `R`. Elsewhere, calls stay unevaluated.
+//!
+//! A definition may have other parameters, the index being the parameter at the position of the integers of its
+//! values: `f(c, 0) := c` and `f(c, n) := f(c, n - 1)^2 + c` is a sequence of parameter `c`, its own calls being
+//! `f(c, n - d)`. A call `f(1/2, 3)` binds `c` to `1/2` before building the sequence, and the whole sequence `f`
+//! keeps the symbol `c`.
 
 use std::{cell::RefCell, rc::Rc};
 
@@ -84,49 +89,78 @@ impl From<ParserError> for BuildError {
     }
 }
 
-/// The sequence of `definition`, in the set of sequences of `values` indexed by its parameter.
-fn build<K>(definition: &Rc<Definition>, values: K) -> Result<(Seq<K>, Sequence<K>), BuildError>
+/// The parameters of `definition` other than its index.
+fn other_params(definition: &Definition) -> Vec<Symbol> {
+    let mut params = definition.params().to_vec();
+    if definition.index() < params.len() {
+        params.remove(definition.index());
+    }
+    params
+}
+
+/// The sequence of `definition`, in the set of sequences of `values` indexed by its index, its other parameters
+/// being symbols, or bound to the sources of `bound`.
+fn build<K>(
+    definition: &Rc<Definition>,
+    values: K,
+    bound: Option<Vec<String>>,
+) -> Result<(Seq<K>, Sequence<K>), BuildError>
 where
     K: SequenceValues + SetParseExpression,
 {
-    let [param] = definition.params() else {
+    let Some(&param) = definition.params().get(definition.index()) else {
         return Err(ParserError::new(format!(
-            "`{}` must have a single parameter to have values at integers",
+            "`{}` has no index to have values at integers",
             definition.name().name()
         ))
         .into());
     };
-    let set = Seq::new(values, *param);
-    let mut env: Environment = definition.env().without(*param);
+    let set = Seq::new(values, param);
+    let others = other_params(definition);
+    let mut env: Environment = definition.env().without(param);
+    for other in &others {
+        env = env.without(*other);
+    }
+    if let Some(bound) = bound {
+        env.bind(&others, bound, &Environment::new());
+    }
     let mut given = vec![];
-    for (m, source) in definition.cases() {
-        let value = Parser::new(source)
+    for case in definition.cases() {
+        // The names of the parameters in this value stand for those of the rule
+        let mut case_env = env.clone();
+        let names = others.iter().map(|p| p.name().to_owned()).collect();
+        case_env.bind(case.params(), names, &env);
+        let value = Parser::new(case.source())
             .with_offset(None)
-            .with_environment(&env)
+            .with_environment(&case_env)
             .parse(values)?;
-        given.push((*m, value));
+        given.push((case.m(), value));
     }
     env.insert_rc(Rc::clone(definition));
-    let body = match definition.body() {
-        Some(body) => {
-            let _building = Building::enter(definition);
-            match Parser::new(body)
-                .with_offset(None)
-                .with_environment(&env)
-                .parse(set)?
-            {
-                Term::Value(value) => value.value,
-                _ => {
-                    return Err(ParserError::new(format!(
-                        "the rule of `{}` isn't a sequence",
-                        definition.name().name()
-                    ))
-                    .into());
-                }
+    let body = if let Some(body) = definition.body() {
+        let _building = Building::enter(definition);
+        match Parser::new(body)
+            .with_offset(None)
+            .with_environment(&env)
+            .parse(set)?
+        {
+            Term::Value(value) => value.value,
+            _ => {
+                return Err(ParserError::new(format!(
+                    "the rule of `{}` isn't a sequence",
+                    definition.name().name()
+                ))
+                .into());
             }
         }
+    } else {
         // Only values are given, the rule stays unevaluated
-        None => Sequence::closed(call(definition.name(), set.index_as_term())),
+        let mut args: Vec<Term<K>> = others
+            .iter()
+            .map(|p| Term::Symbol(SymbolTerm::new(*p, values)))
+            .collect();
+        args.insert(definition.index().min(args.len()), set.index_as_term());
+        Sequence::closed(call(definition.name(), args, values))
     };
     let sequence = set
         .close_recursive(&body, placeholder_delay, given, definition.name())
@@ -137,10 +171,9 @@ where
     Ok((set, sequence))
 }
 
-/// The call `name(arg)`, unevaluated.
-fn call<E: Set>(name: Symbol, arg: Term<E>) -> Term<E> {
-    let set = arg.get_set();
-    Term::Fun(Box::new(Fun::new(name, vec![arg], set))).normalize()
+/// The call `name(args)`, unevaluated.
+fn call<E: Set>(name: Symbol, args: Vec<Term<E>>, set: E) -> Term<E> {
+    Term::Fun(Box::new(Fun::new(name, args, set))).normalize()
 }
 
 /// Expansions of the definitions of sequences in a set.
@@ -197,26 +230,57 @@ trait Terms: SequenceValues + SetParseExpression {}
 impl Terms for R<Rational> {}
 impl Terms for C<R<Rational>> {}
 
-/// The single argument of a sequence.
-fn single<'a>(definition: &Definition, args: &'a [String]) -> Result<&'a String, ParserError> {
-    match args {
-        [arg] => Ok(arg),
-        _ => Err(ParserError::new(format!(
-            "`{}` expects 1 argument, found {}",
+/// Check that a sequence is called with as many arguments as it has parameters, returning the index argument
+/// and the others.
+fn split_args<'a>(
+    definition: &Definition,
+    args: &'a [String],
+) -> Result<(&'a String, Vec<&'a String>), ParserError> {
+    let arity = definition.params().len();
+    if args.len() != arity {
+        let plural = if arity == 1 { "" } else { "s" };
+        return Err(ParserError::new(format!(
+            "`{}` expects {arity} argument{plural}, found {}",
             definition.name().name(),
             args.len()
-        ))),
+        )));
     }
+    let index = definition.index().min(arity - 1);
+    let others = args
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| *i != index)
+        .map(|(_, arg)| arg)
+        .collect();
+    Ok((&args[index], others))
 }
 
-/// The term of `definition` at `arg` in `K`: computed for an integer, written with the rule of a definition
-/// which isn't recursive (a `piecewise` of its values), unevaluated otherwise.
+/// The sources binding the parameters other than the index to `others`, `None` if one of them refers to `index`,
+/// which would stand for the index in the rule.
+fn bindings<K: Set>(others: &[Term<K>], index: Symbol) -> Option<Vec<String>> {
+    others
+        .iter()
+        .map(|arg| {
+            (!arg.symbols().contains(&index))
+                .then(|| arg.with_options(PrintOptions::plain()).to_string())
+        })
+        .collect()
+}
+
+/// The term of `definition` at `arg` in `K`, the other parameters being `others`: computed for an integer,
+/// written with the rule of a definition which isn't recursive (a `piecewise` of its values), unevaluated
+/// otherwise.
 fn scalar_term<K: Terms>(
     definition: &Rc<Definition>,
     arg: &Term<K>,
+    others: &[Term<K>],
 ) -> Result<Term<K>, ParserError> {
     let values = arg.get_set();
-    let unevaluated = || call(definition.name(), arg.clone());
+    let unevaluated = || {
+        let mut args = others.to_vec();
+        args.insert(definition.index().min(args.len()), arg.clone());
+        call(definition.name(), args, values)
+    };
     let m = match arg {
         Term::Value(value) => values.to_i64(&value.value),
         _ => None,
@@ -224,7 +288,11 @@ fn scalar_term<K: Terms>(
     if m.is_none() && definition.is_recursive() {
         return Ok(unevaluated());
     }
-    let (set, sequence) = match build(definition, values) {
+    let index = definition.params()[definition.index()];
+    let Some(bound) = bindings(others, index) else {
+        return Ok(unevaluated());
+    };
+    let (set, sequence) = match build(definition, values, Some(bound)) {
         Ok(built) => built,
         Err(BuildError { missing: true, .. }) => return Ok(unevaluated()),
         Err(BuildError { error, .. }) => return Err(error),
@@ -260,8 +328,13 @@ impl<K: Terms> ExpandSequence for K {
         args: &[String],
         set: Self,
     ) -> Result<Term<Self>, ParserError> {
-        let arg = parser.parse_source(single(definition, args)?, set)?;
-        scalar_term(definition, &arg)
+        let (arg, others) = split_args(definition, args)?;
+        let arg = parser.parse_source(arg, set)?;
+        let others: Vec<_> = others
+            .into_iter()
+            .map(|other| parser.parse_source(other, set))
+            .collect::<Result<_, _>>()?;
+        scalar_term(definition, &arg, &others)
     }
 }
 
@@ -273,8 +346,12 @@ impl ExpandSequence for Z<Integer> {
         args: &[String],
         set: Self,
     ) -> Result<Term<Self>, ParserError> {
-        let arg = single(definition, args)?;
-        let term = scalar_term(definition, &parser.parse_source(arg, R)?)?;
+        let (arg, others) = split_args(definition, args)?;
+        let others: Vec<_> = others
+            .into_iter()
+            .map(|other| parser.parse_source(other, R))
+            .collect::<Result<_, _>>()?;
+        let term = scalar_term(definition, &parser.parse_source(arg, R)?, &others)?;
         if let Term::Value(_) = term {
             let source = term.with_options(PrintOptions::plain()).to_string();
             return parser.parse_source(&source, set);
@@ -295,7 +372,30 @@ impl<K: SequenceValues + SetParseExpression> ExpandSequence for Seq<K> {
         match building(definition) {
             // The sequence itself at `{$n - d$}`, in its own rule
             Some(true) => {
-                let arg = parser.parse_source(single(definition, args)?, set)?;
+                let (arg, others) = split_args(definition, args)?;
+                let params = other_params(definition);
+                let own_head = || {
+                    let mut args: Vec<String> =
+                        params.iter().map(|p| p.name().to_owned()).collect();
+                    args.insert(
+                        definition.index().min(args.len()),
+                        format!("{} - d", set.index().name()),
+                    );
+                    format!("{name}({})", args.join(", "))
+                };
+                // The other parameters are passed as they are
+                if others
+                    .iter()
+                    .zip(&params)
+                    .any(|(other, param)| other.trim() != param.name())
+                {
+                    return Err(ParserError::new(format!(
+                        "the rule of `{name}` can only refer to `{}` with d >= 1, found `{name}({})`",
+                        own_head(),
+                        args.join(", ")
+                    )));
+                }
+                let arg = parser.parse_source(arg, set)?;
                 let delay = match &arg {
                     Term::Value(value) => value.value.as_closed().and_then(|rule| {
                         match (set.index_as_term() - rule.clone()).normalize() {
@@ -310,9 +410,9 @@ impl<K: SequenceValues + SetParseExpression> ExpandSequence for Seq<K> {
                         SymbolTerm::new(placeholder(d), *set.values()),
                     )))),
                     _ => Err(ParserError::new(format!(
-                        "the rule of `{name}` can only refer to `{name}` at `{0} - d` with d >= 1, found \
-                         `{name}({arg})`",
-                        set.index().name(),
+                        "the rule of `{name}` can only refer to `{}` with d >= 1, found `{name}({})`",
+                        own_head(),
+                        args.join(", ")
                     ))),
                 };
             }
@@ -324,22 +424,46 @@ impl<K: SequenceValues + SetParseExpression> ExpandSequence for Seq<K> {
             }
             None => {}
         }
-        let (built_set, sequence) =
-            build(definition, *set.values()).map_err(|error| error.error)?;
-        let sequence = set.reindexed(&sequence, built_set.index());
-        let arg = match args {
-            [] => return Ok(set.sequence_value(sequence)),
-            [arg] => parser.parse_source(arg, set)?,
-            _ => {
-                single(definition, args)?;
-                unreachable!("More than one argument is an error")
-            }
+        if args.is_empty() {
+            let (built_set, sequence) =
+                build(definition, *set.values(), None).map_err(|error| error.error)?;
+            return Ok(set.sequence_value(set.reindexed(&sequence, built_set.index())));
+        }
+        let (arg, others) = split_args(definition, args)?;
+        let arg = parser.parse_source(arg, set)?;
+        let others: Vec<_> = others
+            .into_iter()
+            .map(|other| parser.parse_source(other, set))
+            .collect::<Result<_, _>>()?;
+        let unevaluated = || {
+            let mut args = others.clone();
+            args.insert(definition.index().min(args.len()), arg.clone());
+            call(definition.name(), args, set)
         };
+        // The other parameters are constant sequences, not referring to the index of the definition
+        let index = definition.params()[definition.index()];
+        let constants: Option<Vec<Term<K>>> = others
+            .iter()
+            .map(|other| match other {
+                Term::Value(value) => value
+                    .value
+                    .as_closed()
+                    .filter(|rule| !rule.symbols().contains(&set.index()))
+                    .cloned(),
+                _ => None,
+            })
+            .collect();
+        let Some(bound) = constants.and_then(|constants| bindings(&constants, index)) else {
+            return Ok(unevaluated());
+        };
+        let (built_set, sequence) =
+            build(definition, *set.values(), Some(bound)).map_err(|error| error.error)?;
+        let sequence = set.reindexed(&sequence, built_set.index());
         let Term::Value(value) = &arg else {
-            return Ok(call(definition.name(), arg));
+            return Ok(unevaluated());
         };
         let Some(rule) = value.value.as_closed() else {
-            return Ok(call(definition.name(), arg));
+            return Ok(unevaluated());
         };
         // `u(n + k)`
         if let Term::Value(k) = (rule.clone() - set.index_as_term()).normalize()
@@ -353,14 +477,14 @@ impl<K: SequenceValues + SetParseExpression> ExpandSequence for Seq<K> {
         {
             return Ok(set.sequence_value(Sequence::closed(term)));
         }
-        Ok(call(definition.name(), arg))
+        Ok(unevaluated())
     }
 
     fn whole_sequence(
         definition: &Rc<Definition>,
         set: Self,
     ) -> Result<Option<Term<Self>>, ParserError> {
-        match build(definition, *set.values()) {
+        match build(definition, *set.values(), None) {
             Ok((built_set, sequence)) => Ok(Some(
                 set.sequence_value(set.reindexed(&sequence, built_set.index())),
             )),

@@ -88,6 +88,23 @@ fn sequences() {
 }
 
 #[test]
+fn sequences_with_parameters() {
+    let mut session = Session::new();
+    assert_eq!(
+        run(&mut session, "f(c, 0) := c"),
+        ("f(c, 0) := c".to_owned(), true)
+    );
+    assert!(run(&mut session, "f(c, n) := f(c, n - 1)^2 + c").1);
+    assert_eq!(run(&mut session, "f(1/2, 2)").0, "17/16");
+    assert_eq!(
+        run(&mut session, ":defs").0,
+        "f(c, 0) := c\nf(c, n) := f(c, n - 1)^2 + c"
+    );
+    run(&mut session, ":typst");
+    assert_eq!(run(&mut session, "f(c, 0) := c").0, "f(c, 0) := c");
+}
+
+#[test]
 fn default_assumptions() {
     let mut session = Session::new();
     assert_eq!(run(&mut session, "sin(n*pi)").0, "0");
