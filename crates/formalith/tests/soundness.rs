@@ -194,6 +194,4 @@ fn exceptional_values_of_closed_forms() {
 fn zeros_need_proofs() {
     // `{$10^(-2000) sin t$}` depends on the angle, below the precision of approximations: not taken as constant
     assert!(eval_r("lim(sin(10^(-2000)*sin(x)), x, oo)").starts_with("lim("));
-    // A section radicand `{$8 cos(10 pi/9)^3 - 6 cos(10 pi/9) + 1 = 0$}` that expansion doesn't prove zero
-    assert!(eval_r("y^2 < x^3 - 3*x + 1").starts_with("error"));
 }

@@ -74,15 +74,15 @@ approximation is the sign of the constant. What is left:
 - **Zero tests are proofs only.** Decisions that need an equality (`expr::is_numerically_zero`: the CAD's
   `rational_value`, `Root::same`, `eliminated_roots` and `same_bound`, `compare_points` of definite integrals,
   `nicer_value`, `zeilberger::negligible`, Gruntz's zero tests and `without_angles`) take a constant as zero only when
-  normalization or expansion gives 0, never from an approximation. Zeros that expansion doesn't see stay undecided:
-  - constants of nested radicals equal to a rational, like a section coefficient `x0^3 - 3 x0 + 1` with
-    `x0 = 2 cos(2π/9)`, so `y^2 < x^3 - 3x + 1` is an error;
-  - trigonometric identities, like `sin(2t) - 2 sin(t) cos(t)` at sample angles, so
-    `lim(sin(2x) - 2 sin(x) cos(x), x, oo)` stays unevaluated;
-  - `tan(1) - (sin(1)/cos(1))`, so `integrate(tan(x)^2, x, 0, 1)` keeps the form of the limit, `sin(1)/cos(1) - 1`.
+  normalization, expansion or the products of `sin` and `cos` written as sums (`rewrite::is_trigonometric_zero`,
+  so `sin(2t) - 2 sin(t) cos(t)` and `8 cos(a)^3 - 6 cos(a) + 1` at `a = 10π/9` are zero) give 0, never from an
+  approximation. Zeros that these don't see stay undecided:
+  - `tan(1) - (sin(1)/cos(1))`, so `integrate(tan(x)^2, x, 0, 1)` keeps the form of the limit, `sin(1)/cos(1) - 1`;
+  - other identities, like nested radicals equal to a rational that their tower doesn't reach, or polynomials in
+    `cos(a)` of an angle whose multiple isn't a classic value.
 
   Zero tests of constants in the tower of their radicals (like `radicals::Tower`, with `cos(2π/9)` as a root of its
-  minimal polynomial) and with the addition formulas would recover them.
+  minimal polynomial) would recover more.
 - **Estimated errors.** The numerical integration (two results agreeing to half of the precision), the tails of held
   sums, the Gamma family, `zeta`, the Lambert W function, `erf`, `erfi`, `Si`, `Ci` and `Ei` estimate their errors
   (their own, and the slope of the function by a difference at a low precision) rather than bound them.

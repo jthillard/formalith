@@ -5,7 +5,9 @@ use malachite::Rational;
 
 use super::{
     R,
-    expr::{Expr, exp_of_ln, fun, hyperbolic_as_exp, map_tree, one, size, unary, value},
+    expr::{
+        Expr, exp_of_ln, fun, has_function, hyperbolic_as_exp, map_tree, one, size, unary, value,
+    },
 };
 use crate::{
     context::Context,
@@ -47,6 +49,16 @@ pub(super) fn simplify(u: &Expr) -> Expr {
         }
     }
     res
+}
+
+/// Whether `term` is proven zero by trigonometric identities: its products of `sin` and `cos` written as sums,
+/// then expanded, give 0 (`{$sin(2 u) - 2 sin u cos u$}`). A proof, since these rewrites are identities.
+pub(super) fn is_trigonometric_zero(term: &Expr) -> bool {
+    if !has_function(term, &[Context::SIN, Context::COS]) {
+        return false;
+    }
+    let linearized = products_to_sums(term);
+    linearized != *term && linearized.expand().is_zero()
 }
 
 /// Rewrite the products of `sin` and `cos` as sums, `{$sin a cos b = (sin(a + b) + sin(a - b))/2$}`,

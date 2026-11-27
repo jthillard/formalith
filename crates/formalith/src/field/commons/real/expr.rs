@@ -201,6 +201,7 @@ pub fn is_proven_zero(term: &Expr) -> bool {
     term.is_zero()
         || sign(&term, SignMode::STRUCTURAL) == Some(Ordering::Equal)
         || crate::term::Expand::expand(&term).is_zero()
+        || super::rewrite::is_trigonometric_zero(&term)
 }
 
 /// Whether `term` is zero: `Some(true)` when it is proven zero (it normalizes or expands to 0, or is structurally
@@ -226,13 +227,16 @@ pub fn is_numerically_zero(term: &Expr) -> Option<bool> {
         if super::approx::enclose(&term, 128).is_some_and(|ball| !ball.contains_zero()) {
             return Some(false);
         }
-        if crate::term::Expand::expand(&term).is_zero() {
+        if crate::term::Expand::expand(&term).is_zero()
+            || super::rewrite::is_trigonometric_zero(&term)
+        {
             return Some(true);
         }
         let approximation = super::approx::approximate(&term, DIGITS)?;
         return (approximation != 0).then_some(false);
     }
-    crate::term::Expand::expand(&term).is_zero().then_some(true)
+    (crate::term::Expand::expand(&term).is_zero() || super::rewrite::is_trigonometric_zero(&term))
+        .then_some(true)
 }
 
 /// [`is_numerically_zero`] for a constant `term` whose approximation by [`super::approx::approximate`] is known.
@@ -240,7 +244,8 @@ pub fn zero_from_approximation(term: &Expr, approximation: &Rational) -> Option<
     if *approximation != 0 {
         return Some(false);
     }
-    crate::term::Expand::expand(term).is_zero().then_some(true)
+    (crate::term::Expand::expand(term).is_zero() || super::rewrite::is_trigonometric_zero(term))
+        .then_some(true)
 }
 
 /// The sign of a term free of the variable, from its structure and the assumptions on its symbols, or the
