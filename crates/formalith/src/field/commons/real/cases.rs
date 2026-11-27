@@ -27,7 +27,7 @@ use malachite::{
 };
 
 use super::{
-    expr::{Expr, subs, value, variable},
+    expr::{Expr, depends, subs, value, variable},
     sign::linear_expr,
 };
 use crate::{
@@ -126,6 +126,26 @@ pub fn evaluate(
         return eval(args);
     }
     let _guard = Guard;
+    // A bound depending on the variable makes it a parameter too, so the variable is renamed:
+    // `{$integral_0^x cos(sqrt(x)) dif x = integral_0^x cos(sqrt(t)) dif t$}`
+    if matches!(ident, Context::INTEGRATE | Context::SUM | Context::PRODUCT)
+        && let [f, _, a, b] = args
+        && (depends(a, bound) || depends(b, bound))
+    {
+        let dummy = Symbol::new("@c");
+        let args = [
+            subs(f, bound, &variable(dummy)),
+            variable(dummy),
+            a.clone(),
+            b.clone(),
+        ];
+        let call = Call {
+            ident,
+            bound: dummy,
+            eval,
+        };
+        return call.split(&args, MAX_SPLITS, &BTreeSet::new()).0;
+    }
     let call = Call { ident, bound, eval };
     call.split(args, MAX_SPLITS, &BTreeSet::new()).0
 }

@@ -767,6 +767,11 @@ fn case_splits() {
         integrate("integrate(exp(a*x), x, 0, oo)"),
         integrate("piecewise(a < 0, -1/a, oo)")
     );
+    // The variable is also a parameter of the bound
+    assert_eq!(
+        integrate("integrate(cos(sqrt(x)), x, 0, x)"),
+        integrate("piecewise(x < 0, undefined, 2 cos(sqrt(x)) + 2 sqrt(x) sin(sqrt(x)) - 2)")
+    );
     assert_eq!(
         integrate("lim(exp(a*x), x, oo)"),
         integrate("piecewise(a < 0, 0, a = 0, 1, oo)")
