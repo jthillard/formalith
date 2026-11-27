@@ -66,6 +66,13 @@ fn domains_and_singularities() {
     assert_eq!(argmin("argmin(x^2 + 1/x^2, x)"), solved("x^2 = 1, x"));
     assert_eq!(argmin("argmin(1/x, x)"), none());
     assert_eq!(argmin("argmin(1/(x^2 - 1), x)"), none());
+    // The domain of the function as typed, which normalization drops: `x^3/x` is `x^2` but undefined at 0
+    assert_eq!(argmin("argmin(x^3/x, x)"), none());
+    assert_eq!(argmin("argmin(x^2 + 1/x - 1/x, x)"), none());
+    assert_eq!(argmin("argmin(sqrt(x)^2 + 1, x)"), solved("x = 0, x"));
+    assert_eq!(argmin("argmin(exp(ln(x))^2, x)"), none());
+    assert_eq!(eval(&["f(x) := x^3/x", "argmin(f(x), x)"]), none());
+    assert_eq!(argmin("argmin((x^2 + y^2) x/x, x, y)"), none());
 }
 
 #[test]
@@ -238,6 +245,12 @@ mod both {
             ok("\"min:\" x = 1, quad f = -1")
         );
         assert_eq!(argmin("extrema(x^3, x)"), ok("\"no extremum\""));
+        // Undefined at 0
+        assert_eq!(argmin("extrema(x^3/x)"), ok("\"no extremum\""));
+        assert_eq!(
+            argmin("extrema(x^3/x, x, -1, 1)"),
+            ok("\"max:\" x = -1, quad f = 1 \\ \"max:\" x = 1, quad f = 1")
+        );
         // Reached everywhere
         assert_eq!(
             argmin("extrema(5, x)"),
@@ -262,6 +275,11 @@ mod both {
         assert_eq!(
             argmin("localextrema((x - y)^2, x, y)"),
             ok("\"min:\" x = y, quad f = 0")
+        );
+        assert_eq!(argmin("localextrema(x^3/x)"), ok("\"no extremum\""));
+        assert_eq!(
+            argmin("localextrema((x^2 + y^2) x/x, x, y)"),
+            ok("\"no extremum\"")
         );
         // Either kind failing is an error
         assert!(argmin("localextrema(x^3 + y^2, x, y)").is_err());

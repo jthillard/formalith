@@ -13,7 +13,10 @@ use std::cmp::Ordering;
 
 use malachite::base::num::arithmetic::traits::Sign;
 
-use super::{error, keep_lowest};
+use super::{
+    error, keep_lowest,
+    univariate::{Condition, domain_conditions},
+};
 use crate::{
     context::{Context, Symbol},
     field::{
@@ -21,7 +24,7 @@ use crate::{
         real::{
             R, Real,
             approx::approximate,
-            expr::{DIGITS, Expr, depends, has_special_constant, subs},
+            expr::{DIGITS, Expr, constant_sign, depends, has_special_constant, subs},
         },
     },
     matrix::Matrix,
@@ -46,21 +49,37 @@ enum Kind {
     Degenerate,
 }
 
-/// The minimizers of `f` in `unknowns`, `equations` being `{$diff f / diff x_i = 0$}`.
+/// The conditions for `f` to be defined, with those of the terms of `domain`, each once.
+fn conditions(f: &Expr, domain: &[Expr], unknowns: &[Symbol]) -> Vec<(Expr, Condition)> {
+    let mut res: Vec<(Expr, Condition)> = vec![];
+    for x in unknowns {
+        for condition in domain_conditions(f, domain, *x) {
+            if !res.contains(&condition) {
+                res.push(condition);
+            }
+        }
+    }
+    res
+}
+
+/// The minimizers of `f` in `unknowns`, `equations` being `{$diff f / diff x_i = 0$}`, `f` being only defined
+/// where the terms of `domain` are.
 pub(super) fn argmin(
     f: &Expr,
+    domain: &[Expr],
     unknowns: &[Symbol],
     equations: &[Equation<Real>],
 ) -> Result<Solution<Real>, SolveError> {
     check_rational(f, unknowns)?;
+    let conditions = conditions(f, domain, unknowns);
     let mut best = vec![];
-    for (branch, value) in critical_points(f, unknowns, equations)? {
+    for (branch, value) in critical_points(f, &conditions, unknowns, equations)? {
         keep_lowest(&mut best, branch, value)?;
     }
     let Some((_, lowest)) = best.first() else {
         return Ok(Solution::NoSolution);
     };
-    if !is_bound(f, unknowns, lowest, Relation::Less)? {
+    if !is_bound(f, &conditions, unknowns, lowest, Relation::Less)? {
         return Ok(Solution::NoSolution);
     }
     Ok(Solution::from_branches(
@@ -68,9 +87,11 @@ pub(super) fn argmin(
     ))
 }
 
-/// The local minimizers of `f` in `unknowns`, `equations` being `{$diff f / diff x_i = 0$}`.
+/// The local minimizers of `f` in `unknowns`, `equations` being `{$diff f / diff x_i = 0$}`, `f` being only
+/// defined where the terms of `domain` are.
 pub(super) fn local_min(
     f: &Expr,
+    domain: &[Expr],
     unknowns: &[Symbol],
     equations: &[Equation<Real>],
 ) -> Result<Solution<Real>, SolveError> {
@@ -88,8 +109,9 @@ pub(super) fn local_min(
         })
         .collect();
     let minors = leading_minors(&hessian)?;
+    let conditions = conditions(f, domain, unknowns);
     let mut minimizers = vec![];
-    for (branch, value) in critical_points(f, unknowns, equations)? {
+    for (branch, value) in critical_points(f, &conditions, unknowns, equations)? {
         let is_point = unknowns
             .iter()
             .all(|x| branch.iter().any(|(symbol, _)| symbol == x));
@@ -108,9 +130,9 @@ pub(super) fn local_min(
                         assignments_text(&branch)
                     ))
                 })?;
-                if is_bound(f, unknowns, &value, Relation::Less)? {
+                if is_bound(f, &conditions, unknowns, &value, Relation::Less)? {
                     true
-                } else if is_bound(f, unknowns, &value, Relation::Greater)? {
+                } else if is_bound(f, &conditions, unknowns, &value, Relation::Greater)? {
                     false
                 } else {
                     return Err(error(format!(
@@ -148,10 +170,11 @@ fn check_rational(f: &Expr, unknowns: &[Symbol]) -> Result<(), SolveError> {
     Ok(())
 }
 
-/// The critical points of `f` with its value there, dropping those where it isn't defined and the lines of
-/// critical points along which it isn't constant.
+/// The critical points of `f` with its value there, dropping those where it isn't defined (by its value, or a
+/// constant violating one of `conditions` there) and the lines of critical points along which it isn't constant.
 fn critical_points(
     f: &Expr,
+    conditions: &[(Expr, Condition)],
     unknowns: &[Symbol],
     equations: &[Equation<Real>],
 ) -> Result<Vec<(Assignments<Real>, Expr)>, SolveError> {
@@ -164,8 +187,15 @@ fn critical_points(
         .into_iter()
         .filter_map(|branch| {
             let value = at(f, &branch);
-            (!has_special_constant(&value) && !unknowns.iter().any(|x| depends(&value, *x)))
-                .then_some((branch, value))
+            let defined = conditions.iter().all(|(u, condition)| {
+                let u = at(u, &branch);
+                unknowns.iter().any(|x| depends(&u, *x))
+                    || constant_sign(&u).is_none_or(|sign| condition.holds(sign))
+            });
+            (defined
+                && !has_special_constant(&value)
+                && !unknowns.iter().any(|x| depends(&value, *x)))
+            .then_some((branch, value))
         })
         .collect())
 }
@@ -180,13 +210,14 @@ fn at(term: &Expr, assignments: &Assignments<Real>) -> Expr {
         .expand()
 }
 
-/// Whether `{$f op m$}` has no solution: `m` is a lower bound of `f` for [`Relation::Less`], an upper bound for
-/// [`Relation::Greater`].
+/// Whether `{$f op m$}` has no solution where `conditions` hold: `m` is a lower bound of `f` for
+/// [`Relation::Less`], an upper bound for [`Relation::Greater`].
 ///
 /// `m` must be rational: the cylindrical algebraic decomposition factors over ℚ, and with radicals (values at
 /// roots of cubics) it fails or doesn't finish.
 fn is_bound(
     f: &Expr,
+    conditions: &[(Expr, Condition)],
     unknowns: &[Symbol],
     m: &Expr,
     relation: Relation,
@@ -197,8 +228,16 @@ fn is_bound(
             plain(m)
         )));
     }
-    let inequality = Inequality::new(f.clone(), relation, m.clone());
-    Ok(R.solve_inequalities(&[inequality], unknowns)?
+    let mut inequalities = vec![Inequality::new(f.clone(), relation, m.clone())];
+    inequalities.extend(conditions.iter().map(|(u, condition)| {
+        let relation = match condition {
+            Condition::Positive => Relation::Greater,
+            Condition::NonNegative => Relation::GreaterEqual,
+            Condition::NonZero => Relation::NotEqual,
+        };
+        Inequality::new(u.clone(), relation, Term::zero(R))
+    }));
+    Ok(R.solve_inequalities(&inequalities, unknowns)?
         .cells
         .is_empty())
 }

@@ -16,7 +16,9 @@ use crate::field::{
     Group, Monoid, Ring, Semiring, Set, SetParseExpression, integer::Z, natural::N,
 };
 use crate::printer::{Print, PrintOptions};
-use crate::term::{Fun, Mul, Normalize, SymbolTerm, Term, Value, flags::Flags, relation::Relation};
+use crate::term::{
+    Fun, Mul, Normalize, Pow, SymbolTerm, Term, Value, flags::Flags, relation::Relation,
+};
 
 use environment::Environment;
 use lexer::{Lexer, LiteralTokenKind, Token, TokenKind};
@@ -689,6 +691,8 @@ where
                             ident.name()
                         )));
                     }
+                    // `exp(ln x)` is `x`, the optimizer needs `{$x > 0$}`
+                    crate::optimize::domain::record(|| fun.clone());
                     node = fun.normalize();
                 }
                 // Postfix factorials bind tighter than any operator: `{$n!^2 = (n!)^2$}`, `{$2^3! = 2^(3!)$}`
@@ -880,7 +884,17 @@ impl<E: Ring> ApplyBinary<E> for Parser<'_> {
     ) -> Result<Term<E>, ParserError> {
         match op {
             Op::Subtract => Ok(current - right),
-            Op::Divide => Ok(current / right),
+            Op::Divide => {
+                // `x^3/x` is `x^2`, the optimizer needs `x^-1`
+                crate::optimize::domain::record(|| {
+                    Term::Pow(Pow::new(
+                        right.clone(),
+                        Term::nth(-1, set.get_exponant_set()),
+                        set,
+                    ))
+                });
+                Ok(current / right)
+            }
             _ => apply_semiring_binary(current, current_in_coefficient_set, op, right, set),
         }
     }
@@ -904,6 +918,10 @@ impl<E: Semiring> ParseBinary<E> for Parser<'_> {
                 set.get_exponant_set(),
             )? {
                 <Self as CheckExponent<E>>::check_exponent(&right)?;
+                // `sqrt(x)^2` is `x`, the optimizer needs `{$x >= 0$}`
+                crate::optimize::domain::record(|| {
+                    Term::Pow(Pow::new(current.clone(), right.clone(), set))
+                });
                 return Ok((current.pow(&right), true));
             }
         } else if let Some(right) =

@@ -752,7 +752,9 @@ impl Parser<'_> {
         // `argmin(`
         self.next_token();
         self.next_token();
-        let items = self.parse_items(set)?;
+        // The raw nodes of the arguments, since normalization drops conditions (`x^3/x` is `x^2`)
+        let (items, domain) = crate::optimize::domain::recording(|| self.parse_items(set));
+        let items = items?;
         self.expect_token(&TokenKind::CloseParen)?;
         self.expect_eof()?;
         let mut args = vec![];
@@ -813,6 +815,7 @@ impl Parser<'_> {
         let Some(extremum) = extremum else {
             let extrema = set.extrema(
                 &f,
+                &domain,
                 &unknowns,
                 bounds.as_ref(),
                 function == Context::LOCALEXTREMA,
@@ -832,7 +835,7 @@ impl Parser<'_> {
             let integers = new_integer_parameters(&extrema.equations, symbols);
             return Ok(Statement::Extrema { extrema, integers });
         };
-        let optimum = set.optimize(&f, &unknowns, bounds.as_ref(), extremum)?;
+        let optimum = set.optimize(&f, &domain, &unknowns, bounds.as_ref(), extremum)?;
         let integers = integer_parameters(&optimum.equations, &optimum.solution);
         Ok(Statement::System {
             equations: optimum.equations,

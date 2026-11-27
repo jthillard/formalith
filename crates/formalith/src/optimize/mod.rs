@@ -17,9 +17,9 @@
 //! use formalith::{field::real::R, optimize::{Extremum, Optimize}, parse, solve::Solution, symbol};
 //!
 //! let x = symbol!("x");
-//! let optimum = R.optimize(&parse!("x^2 - 2*x", R), &[x], None, Extremum::GlobalMin).unwrap();
+//! let optimum = R.optimize(&parse!("x^2 - 2*x", R), &[], &[x], None, Extremum::GlobalMin).unwrap();
 //! assert_eq!(optimum.solution, Solution::Assignments(vec![(x, parse!("1", R))]));
-//! let optimum = R.optimize(&parse!("x^3 - 3*x", R), &[x], None, Extremum::LocalMax).unwrap();
+//! let optimum = R.optimize(&parse!("x^3 - 3*x", R), &[], &[x], None, Extremum::LocalMax).unwrap();
 //! assert_eq!(optimum.solution, Solution::Assignments(vec![(x, parse!("-1", R))]));
 //! ```
 //!
@@ -30,10 +30,11 @@
 //! use formalith::{field::real::R, optimize::Optimize, parse, symbol};
 //!
 //! let x = symbol!("x");
-//! let extrema = R.extrema(&parse!("x^3 - 3*x", R), &[x], None, true).unwrap();
+//! let extrema = R.extrema(&parse!("x^3 - 3*x", R), &[], &[x], None, true).unwrap();
 //! assert_eq!(extrema.to_string(), "min: x = 1, f = -2\nmax: x = -1, f = 2");
 //! ```
 
+pub(crate) mod domain;
 mod multivariate;
 pub(crate) mod univariate;
 
@@ -204,7 +205,9 @@ impl Extremum {
 /// Sets in which extrema can be found: only [`R`](crate::field::real::R), other sets fail at runtime.
 pub trait Optimize: Set {
     /// The points where `f` reaches the `extremum` over the real values of `unknowns`, or over `{$[a, b]$}` for
-    /// `bounds` `(a, b)` and a single unknown.
+    /// `bounds` `(a, b)` and a single unknown. `f` is only defined where the terms of `domain` are: the
+    /// subexpressions of the function as typed, whose conditions normalization may have dropped (`x^3/x` is
+    /// `x^2`, its domain `{$x^(-1)$}`), recorded by the parser for `argmin` and the like.
     ///
     /// # Errors
     /// [`SolveError::Optimization`] when the extremum can't be decided: equations that can't be solved, values,
@@ -213,6 +216,7 @@ pub trait Optimize: Set {
     fn optimize(
         &self,
         f: &Term<Self>,
+        domain: &[Term<Self>],
         unknowns: &[Symbol],
         bounds: Option<&(Term<Self>, Term<Self>)>,
         extremum: Extremum,
@@ -226,6 +230,7 @@ pub trait Optimize: Set {
     fn extrema(
         &self,
         f: &Term<Self>,
+        domain: &[Term<Self>],
         unknowns: &[Symbol],
         bounds: Option<&(Term<Self>, Term<Self>)>,
         local: bool,
@@ -236,6 +241,7 @@ impl<T: Set> Optimize for T {
     default fn optimize(
         &self,
         _: &Term<Self>,
+        _: &[Term<Self>],
         _: &[Symbol],
         _: Option<&(Term<Self>, Term<Self>)>,
         _: Extremum,
@@ -246,6 +252,7 @@ impl<T: Set> Optimize for T {
     default fn extrema(
         &self,
         _: &Term<Self>,
+        _: &[Term<Self>],
         _: &[Symbol],
         _: Option<&(Term<Self>, Term<Self>)>,
         _: bool,
@@ -258,6 +265,7 @@ impl Optimize for Real {
     fn optimize(
         &self,
         f: &Expr,
+        domain: &[Expr],
         unknowns: &[Symbol],
         bounds: Option<&(Expr, Expr)>,
         extremum: Extremum,
@@ -273,7 +281,7 @@ impl Optimize for Real {
             // A constant function reaches its extremum everywhere
             Solution::Assignments(vec![])
         } else if let [x] = unknowns {
-            let analysis = univariate::Analysis::new(&f, *x, bounds)?;
+            let analysis = univariate::Analysis::new(&f, domain, *x, bounds)?;
             if extremum.is_local() {
                 analysis.local_min()?
             } else {
@@ -282,9 +290,9 @@ impl Optimize for Real {
         } else if bounds.is_some() {
             return Err(error("bounds are only supported for a single variable"));
         } else if extremum.is_local() {
-            multivariate::local_min(&f, unknowns, &equations)?
+            multivariate::local_min(&f, domain, unknowns, &equations)?
         } else {
-            multivariate::argmin(&f, unknowns, &equations)?
+            multivariate::argmin(&f, domain, unknowns, &equations)?
         };
         Ok(Optimum {
             equations,
@@ -295,6 +303,7 @@ impl Optimize for Real {
     fn extrema(
         &self,
         f: &Expr,
+        domain: &[Expr],
         unknowns: &[Symbol],
         bounds: Option<&(Expr, Expr)>,
         local: bool,
@@ -304,8 +313,8 @@ impl Optimize for Real {
         } else {
             (Extremum::GlobalMin, Extremum::GlobalMax)
         };
-        let minima = self.optimize(f, unknowns, bounds, min)?;
-        let maxima = self.optimize(f, unknowns, bounds, max)?;
+        let minima = self.optimize(f, domain, unknowns, bounds, min)?;
+        let maxima = self.optimize(f, domain, unknowns, bounds, max)?;
         let mut points = vec![];
         for (optimum, max) in [(&minima, false), (&maxima, true)] {
             for point in optimum.solution.branches() {

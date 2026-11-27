@@ -54,7 +54,7 @@ const MAX_PERIODIC_POINTS: i64 = 100;
 const MAX_DERIVATIVE_ORDER: usize = 6;
 
 /// A condition for `f` to be defined, on a subterm `u`.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Condition {
     /// `{$u > 0$}`, like in `{$ln u$}`
     Positive,
@@ -66,7 +66,7 @@ pub enum Condition {
 
 impl Condition {
     /// Whether a term of sign `sign` satisfies the condition.
-    fn holds(self, sign: Ordering) -> bool {
+    pub(super) fn holds(self, sign: Ordering) -> bool {
         match self {
             Self::Positive => sign == Ordering::Greater,
             Self::NonNegative => sign != Ordering::Less,
@@ -111,9 +111,10 @@ pub(super) struct Analysis<'a> {
 }
 
 impl<'a> Analysis<'a> {
-    /// Analyze `f` in `x` over `bounds` (ℝ by default).
+    /// Analyze `f` in `x` over `bounds` (ℝ by default), `f` being only defined where the terms of `domain` are.
     pub(super) fn new(
         f: &'a Expr,
+        domain: &[Expr],
         x: Symbol,
         bounds: Option<&(Expr, Expr)>,
     ) -> Result<Self, SolveError> {
@@ -143,8 +144,7 @@ impl<'a> Analysis<'a> {
             }
         }
         let derivative = f.derivative(x).normalize();
-        let mut conditions = vec![];
-        collect_conditions(f, x, false, &mut conditions);
+        let conditions = domain_conditions(f, domain, x);
         // Special points, where `f` may stop being defined or differentiable
         let mut special = vec![];
         for (u, _) in &conditions {
@@ -651,6 +651,22 @@ fn walk(term: &Expr, visit: &mut impl FnMut(&Expr)) {
             }
         }
     }
+}
+
+/// The conditions for `f` to be defined, with those of the terms of `domain` (see [`super::domain`]), each
+/// once, those of subterms first.
+pub(super) fn domain_conditions(f: &Expr, domain: &[Expr], x: Symbol) -> Vec<(Expr, Condition)> {
+    let mut conditions = vec![];
+    for term in domain.iter().chain([f]) {
+        collect_conditions(term, x, false, &mut conditions);
+    }
+    let mut res: Vec<(Expr, Condition)> = vec![];
+    for condition in conditions {
+        if !res.contains(&condition) {
+            res.push(condition);
+        }
+    }
+    res
 }
 
 /// Push to `res` the conditions for `term` to be defined, those of its subterms first. Only those of parts
