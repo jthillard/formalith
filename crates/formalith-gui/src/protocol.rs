@@ -98,6 +98,11 @@ pub enum Reply {
         generation: u64,
         /// The identifier of the line.
         id: u64,
+        /// The key of the line, see [`line_key`]: the interface compares it with the key of the line's current text
+        /// to tell whether the result is up to date.
+        key: u64,
+        /// Whether the line changed the state of its session, so the lines after it depend on it.
+        replay: bool,
         /// Its result.
         result: LineResult,
     },
@@ -118,6 +123,24 @@ pub enum Reply {
 /// The error shown for a line which crashed the worker.
 pub const CRASHED: &str = "this operation is not supported (the evaluation crashed)";
 
+/// The state of a session evaluating lines in `set`, before any line, see [`line_key`].
+#[must_use]
+pub fn initial_state(set: &str) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    set.hash(&mut hasher);
+    hasher.finish()
+}
+
+/// The key of a line with input `text` evaluated in the session state `state`: a line's result only depends on its
+/// text and on the state of the session, which only lines with `replay` change. The state after a line is its key
+/// if it changed the state, `state` otherwise; it starts at [`initial_state`].
+#[must_use]
+pub fn line_key(state: u64, text: &str) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    (state, text).hash(&mut hasher);
+    hasher.finish()
+}
+
 /// The options of the printed results: 2D layout, without colors.
 const PRINT_OPTIONS: PrintOptions = PrintOptions {
     colors: false,
@@ -137,7 +160,8 @@ struct Cached {
 #[derive(Default)]
 pub struct Worker {
     set: String,
-    cache: HashMap<(u64, String), Cached>,
+    /// The results by key, see [`line_key`].
+    cache: HashMap<u64, Cached>,
     /// The number of lines evaluated, not reused.
     #[cfg(test)]
     evaluations: usize,
@@ -181,11 +205,14 @@ impl Worker {
         profile_scope!("evaluate request");
         let mut session = Session::new();
         let set_result = session.run(&format!(":set {}", request.set));
+        let mut state = initial_state(&request.set);
         if let Output::Error(error) = set_result.output {
             for line in &request.lines {
                 if !emit(Reply::Line {
                     generation: request.generation,
                     id: line.id,
+                    key: line_key(state, &line.text),
+                    replay: false,
                     result: LineResult::error(error.clone()),
                 }) {
                     return false;
@@ -197,22 +224,20 @@ impl Worker {
             self.cache.clear();
             self.set.clone_from(&request.set);
         }
-        // A line's result only depends on its text and on the state of the session, which only lines with
-        // `replay` change: `state` identifies the sequence of those before the current line. None is reused when
-        // profiling.
+        // `state` identifies the sequence of the state-changing lines before the current line, see `line_key`. No
+        // result is reused when profiling.
         let mut previous = std::mem::take(&mut self.cache);
         if request.profile {
             previous.clear();
         }
-        let mut state = 0;
         for line in &request.lines {
-            let key = (state, line.text.clone());
+            let key = line_key(state, &line.text);
             let reused = if request.skip.contains(&line.text) {
                 None
             } else if let Some(cached) = self.cache.get(&key) {
                 Some(cached)
             } else if let Some(cached) = previous.remove(&key) {
-                Some(&*self.cache.entry(key.clone()).or_insert(cached))
+                Some(&*self.cache.entry(key).or_insert(cached))
             } else {
                 None
             };
@@ -237,13 +262,13 @@ impl Worker {
                 (result, replay)
             };
             if replay {
-                let mut hasher = DefaultHasher::new();
-                (state, &line.text).hash(&mut hasher);
-                state = hasher.finish();
+                state = key;
             }
             if !emit(Reply::Line {
                 generation: request.generation,
                 id: line.id,
+                key,
+                replay,
                 result,
             }) {
                 return false;
@@ -366,22 +391,44 @@ mod tests {
             .collect()
     }
 
+    /// The keys of the lines, with whether they changed the state.
+    fn keys(replies: &[Reply]) -> Vec<(u64, bool)> {
+        replies
+            .iter()
+            .filter_map(|reply| match reply {
+                Reply::Line { key, replay, .. } => Some((*key, *replay)),
+                _ => None,
+            })
+            .collect()
+    }
+
     #[test]
     fn test_reuse() {
         let mut worker = Worker::new();
         let replies = run(&mut worker, &request(1, &["a := 2", "1 + 1", "a + 1"]));
         assert_eq!(texts(&replies)[2], "3");
         assert_eq!(worker.evaluations, 3);
+        let first = keys(&replies);
 
-        // Editing a line which changes no state evaluates only this line
+        // Editing a line which changes no state evaluates only this line, the others keep their key
         let replies = run(&mut worker, &request(2, &["a := 2", "1 + 2", "a + 1"]));
         assert_eq!(texts(&replies)[1..], ["3", "3"]);
         assert_eq!(worker.evaluations, 4);
+        let second = keys(&replies);
+        assert_eq!(first[0], second[0]);
+        assert_ne!(first[1], second[1]);
+        assert_eq!(first[2], second[2]);
 
-        // Editing a definition evaluates the lines after it again
+        // Editing a definition evaluates the lines after it again, with new keys
         let replies = run(&mut worker, &request(3, &["a := 5", "1 + 2", "a + 1"]));
         assert_eq!(texts(&replies)[2], "6");
         assert_eq!(worker.evaluations, 7);
+        assert!(
+            keys(&replies)
+                .iter()
+                .zip(&second)
+                .all(|(new, old)| new != old)
+        );
 
         // Profiling evaluates every line
         let mut profiled = request(4, &["a := 5", "1 + 2", "a + 1"]);

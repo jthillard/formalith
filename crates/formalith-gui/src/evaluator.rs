@@ -6,7 +6,7 @@
 
 use std::collections::VecDeque;
 
-use crate::protocol::{CRASHED, Reply, Request};
+use crate::protocol::{CRASHED, Reply, Request, initial_state, line_key};
 
 /// What a backend reports.
 // Events are sent once per line, boxing wouldn't save anything
@@ -37,8 +37,9 @@ const PATIENCE: f64 = 1.5;
 pub struct Evaluator {
     factory: BackendFactory,
     backend: Box<dyn Backend>,
-    /// The request being evaluated, with the number of lines answered.
-    running: Option<(Request, usize)>,
+    /// The request being evaluated, with the number of lines answered and the state of the session after them (see
+    /// [`line_key`]).
+    running: Option<(Request, usize, u64)>,
     /// The newest request, waiting for the running one.
     waiting: Option<Request>,
     /// When the running request was sent or last answered.
@@ -79,7 +80,9 @@ impl Evaluator {
     /// The generation of the running request.
     #[must_use]
     pub fn running_generation(&self) -> Option<u64> {
-        self.running.as_ref().map(|(request, _)| request.generation)
+        self.running
+            .as_ref()
+            .map(|(request, ..)| request.generation)
     }
 
     /// Send the waiting request if nothing is running.
@@ -89,7 +92,8 @@ impl Evaluator {
         {
             request.skip.clone_from(&self.skip);
             self.backend.send(&request);
-            self.running = Some((request, 0));
+            let state = initial_state(&request.set);
+            self.running = Some((request, 0, state));
             self.last_activity = now;
         }
     }
@@ -97,7 +101,7 @@ impl Evaluator {
     /// Replace the backend, for example after a crash, and send the running request again.
     fn restart(&mut self, now: f64) {
         self.backend = (self.factory)();
-        if let Some((request, _)) = self.running.take() {
+        if let Some((request, ..)) = self.running.take() {
             // The newest request first
             if self.waiting.is_none() {
                 self.waiting = Some(request);
@@ -111,13 +115,21 @@ impl Evaluator {
         for event in self.backend.poll() {
             match event {
                 Event::Reply(reply) => {
-                    let Some((request, answered)) = &mut self.running else {
+                    let Some((request, answered, state)) = &mut self.running else {
                         continue;
                     };
                     self.last_activity = now;
                     match &reply {
-                        Reply::Line { generation, .. } if *generation == request.generation => {
-                            *answered += 1
+                        Reply::Line {
+                            generation,
+                            key,
+                            replay,
+                            ..
+                        } if *generation == request.generation => {
+                            *answered += 1;
+                            if *replay {
+                                *state = *key;
+                            }
                         }
                         Reply::Done { generation } if *generation == request.generation => {
                             self.running = None;
@@ -128,13 +140,15 @@ impl Evaluator {
                 }
                 Event::Crashed => {
                     // The first line without an answer crashed the backend
-                    if let Some((request, answered)) = &self.running
+                    if let Some((request, answered, state)) = &self.running
                         && let Some(line) = request.lines.get(*answered)
                     {
                         self.skip.push(line.text.clone());
                         let reply = Reply::Line {
                             generation: request.generation,
                             id: line.id,
+                            key: line_key(*state, &line.text),
+                            replay: false,
                             result: crate::protocol::LineResult::error(CRASHED),
                         };
                         self.replies.push_back(reply);
@@ -340,6 +354,8 @@ mod tests {
                 self.events.push(Event::Reply(Reply::Line {
                     generation: request.generation,
                     id: line.id,
+                    key: 0,
+                    replay: false,
                     result: LineResult::error(line.text.clone()),
                 }));
             }

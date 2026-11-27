@@ -11,7 +11,7 @@ use crate::{
     evaluator::{BackendFactory, Evaluator},
     gpu,
     plot::{ComplexView, Drawable, Plotter},
-    protocol::{LineResult, Reply, Request, RequestLine, ResultKind},
+    protocol::{LineResult, Reply, Request, RequestLine, ResultKind, initial_state, line_key},
     space::{Space, is_surface},
     typeset::Typesetter,
 };
@@ -179,10 +179,36 @@ fn gap_id(id: Option<u64>) -> egui::Id {
     egui::Id::unique(("gap", id))
 }
 
-/// The result of a line, with the generation of the request it answers.
+/// The result of a line.
 struct Evaluated {
-    generation: u64,
+    /// The key of the line it was evaluated for, see [`line_key`].
+    key: u64,
+    /// Whether the line changed the state of its session.
+    replay: bool,
+    /// Changes with the result, so that graphs are drawn again only when it changes.
+    revision: u64,
     result: LineResult,
+}
+
+/// Whether each line of `lines`, evaluated in `set`, waits for a new result: its key differs from the key of its
+/// result.
+///
+/// The state after a line whose result is outdated isn't known yet: it is guessed from the previous result of the
+/// line, so that editing an expression only marks it, and editing a definition the lines after it too. The line's
+/// new result corrects the guess.
+fn pending_lines(set: &str, lines: &[Line], results: &HashMap<u64, Evaluated>) -> Vec<bool> {
+    let mut state = initial_state(set);
+    lines
+        .iter()
+        .map(|line| {
+            let key = line_key(state, &line.text);
+            let evaluated = results.get(&line.id);
+            if evaluated.is_some_and(|evaluated| evaluated.replay) {
+                state = key;
+            }
+            evaluated.is_none_or(|evaluated| evaluated.key != key)
+        })
+        .collect()
 }
 
 /// The application.
@@ -194,6 +220,8 @@ pub struct App {
     /// Whether the lines were edited since they were last evaluated.
     edited: bool,
     results: HashMap<u64, Evaluated>,
+    /// The last revision given to a result.
+    revision: u64,
     /// The images of the results.
     typesetter: Typesetter,
     plotter: Plotter,
@@ -224,6 +252,7 @@ impl App {
             generation: 0,
             edited: true,
             results: HashMap::new(),
+            revision: 0,
             typesetter: Typesetter::default(),
             plotter: Plotter::new(gpu),
             space: Space::new(gpu),
@@ -255,22 +284,38 @@ impl App {
         for reply in self.evaluator.poll(now) {
             match reply {
                 Reply::Line {
-                    generation,
                     id,
+                    key,
+                    replay,
                     result,
+                    ..
                 } => {
                     if let Some(graph) = &result.graph {
                         for param in &graph.params {
                             self.state.params.entry(param.clone()).or_default();
                         }
                     }
+                    let previous = self.results.get(&id);
                     let new_surface = is_new_surface(
                         result.graph.as_ref(),
-                        self.results
-                            .get(&id)
-                            .and_then(|evaluated| evaluated.result.graph.as_ref()),
+                        previous.and_then(|evaluated| evaluated.result.graph.as_ref()),
                     );
-                    self.results.insert(id, Evaluated { generation, result });
+                    let revision = match previous {
+                        Some(previous) if previous.result == result => previous.revision,
+                        _ => {
+                            self.revision += 1;
+                            self.revision
+                        }
+                    };
+                    self.results.insert(
+                        id,
+                        Evaluated {
+                            key,
+                            replay,
+                            revision,
+                            result,
+                        },
+                    );
                     if new_surface && !self.has_flat_graph() {
                         self.state.view = PlotView::Space;
                     }
@@ -323,15 +368,6 @@ impl App {
                     .and_then(|evaluated| evaluated.result.graph.as_ref())
                     .is_some_and(|graph| !is_surface(graph))
             })
-    }
-
-    /// Check if the result of the line `id` is outdated.
-    fn is_pending(&self, id: u64) -> bool {
-        self.edited
-            || self
-                .results
-                .get(&id)
-                .is_none_or(|evaluated| evaluated.generation < self.generation)
     }
 
     /// Move the playing parameters.
@@ -458,9 +494,10 @@ impl App {
         let mut top = ui.cursor().top();
         let mut started = None;
         let count = self.state.lines.len();
+        let pending_lines = pending_lines(self.state.set.trim(), &self.state.lines, &self.results);
         for index in 0..count {
             let id = self.state.lines[index].id;
-            let pending = self.is_pending(id);
+            let pending = pending_lines[index];
             let evaluated = self.results.get(&id);
             let graph = evaluated.and_then(|evaluated| evaluated.result.graph.as_ref());
             let has_graph = graph.is_some();
@@ -713,7 +750,7 @@ impl App {
                     .collect();
                 Some(Drawable {
                     id: line.id,
-                    revision: evaluated.generation,
+                    revision: evaluated.revision,
                     graph,
                     color: Color32::from_rgb(line.color[0], line.color[1], line.color[2]),
                     params,
@@ -895,5 +932,99 @@ impl eframe::App for App {
 
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
         eframe::set_value(storage, STORAGE_KEY, &self.state);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::protocol::Worker;
+
+    fn lines(texts: &[&str]) -> Vec<Line> {
+        texts
+            .iter()
+            .zip(0..)
+            .map(|(text, id)| Line {
+                id,
+                text: (*text).to_owned(),
+                color: PALETTE[0],
+                visible: true,
+                complex_view: ComplexView::default(),
+            })
+            .collect()
+    }
+
+    /// Evaluate `lines` in `set` with `worker`, storing their results in `results`.
+    fn evaluate(
+        worker: &mut Worker,
+        set: &str,
+        lines: &[Line],
+        results: &mut HashMap<u64, Evaluated>,
+    ) {
+        let request = Request {
+            generation: 0,
+            set: set.to_owned(),
+            lines: lines
+                .iter()
+                .map(|line| RequestLine {
+                    id: line.id,
+                    text: line.text.clone(),
+                })
+                .collect(),
+            skip: vec![],
+            profile: false,
+        };
+        worker.evaluate(&request, |reply| {
+            if let Reply::Line {
+                id,
+                key,
+                replay,
+                result,
+                ..
+            } = reply
+            {
+                results.insert(
+                    id,
+                    Evaluated {
+                        key,
+                        replay,
+                        revision: 0,
+                        result,
+                    },
+                );
+            }
+            true
+        });
+    }
+
+    #[test]
+    fn test_pending_lines() {
+        let mut worker = Worker::new();
+        let mut results = HashMap::new();
+        let mut lines = lines(&["a := 2", "1 + 1", "a + 1"]);
+        assert_eq!(pending_lines("R", &lines, &results), [true; 3]);
+        evaluate(&mut worker, "R", &lines, &mut results);
+        assert_eq!(pending_lines("R", &lines, &results), [false; 3]);
+
+        // Editing an expression only marks it
+        "1 + 2".clone_into(&mut lines[1].text);
+        assert_eq!(pending_lines("R", &lines, &results), [false, true, false]);
+
+        // Editing a definition marks the lines after it
+        "a := 3".clone_into(&mut lines[0].text);
+        assert_eq!(pending_lines("R", &lines, &results), [true, true, true]);
+        evaluate(&mut worker, "R", &lines, &mut results);
+        assert_eq!(pending_lines("R", &lines, &results), [false; 3]);
+
+        // An expression which becomes a definition marks the lines after it once evaluated
+        "a := 4".clone_into(&mut lines[1].text);
+        assert_eq!(pending_lines("R", &lines, &results), [false, true, false]);
+        let mut first = HashMap::new();
+        evaluate(&mut worker, "R", &lines[..2], &mut first);
+        results.extend(first);
+        assert_eq!(pending_lines("R", &lines, &results), [false, false, true]);
+
+        // Changing the set marks every line
+        assert_eq!(pending_lines("Z", &lines, &results), [true; 3]);
     }
 }
