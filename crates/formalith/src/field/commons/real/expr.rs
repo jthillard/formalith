@@ -194,6 +194,55 @@ pub fn is_infinite(term: &Expr) -> bool {
     infinity_sign(term).is_some()
 }
 
+/// Whether `term` is proven zero: it normalizes or expands to 0, or is structurally zero. Faster than
+/// [`is_numerically_zero`] when only a proof matters, since it never approximates.
+pub fn is_proven_zero(term: &Expr) -> bool {
+    let term = term.normalize();
+    term.is_zero()
+        || sign(&term, SignMode::STRUCTURAL) == Some(Ordering::Equal)
+        || crate::term::Expand::expand(&term).is_zero()
+}
+
+/// Whether `term` is zero: `Some(true)` when it is proven zero (it normalizes or expands to 0, or is structurally
+/// zero), `Some(false)` when it has a sign (from its structure, the assumptions, or for a constant an approximation
+/// whose error bound excludes 0), and `None` otherwise, which must never be taken as an equality. A constant
+/// indistinguishable from zero at the maximum precision of approximations isn't proven zero: `{$10^(-2000) sin(1)$}`
+/// isn't.
+pub fn is_numerically_zero(term: &Expr) -> Option<bool> {
+    let term = term.normalize();
+    if term.is_zero() {
+        return Some(true);
+    }
+    if let Some(sign) = sign(&term, SignMode::STRUCTURAL) {
+        return Some(sign == Ordering::Equal);
+    }
+    let constant = term
+        .symbols()
+        .iter()
+        .all(|symbol| Context::is_builtin_constant(*symbol));
+    if constant {
+        // A quick approximation excluding 0, then a proof by expansion, then a precise approximation, which is slow
+        // for zeros since it raises its precision to its maximum
+        if super::approx::enclose(&term, 128).is_some_and(|ball| !ball.contains_zero()) {
+            return Some(false);
+        }
+        if crate::term::Expand::expand(&term).is_zero() {
+            return Some(true);
+        }
+        let approximation = super::approx::approximate(&term, DIGITS)?;
+        return (approximation != 0).then_some(false);
+    }
+    crate::term::Expand::expand(&term).is_zero().then_some(true)
+}
+
+/// [`is_numerically_zero`] for a constant `term` whose approximation by [`super::approx::approximate`] is known.
+pub fn zero_from_approximation(term: &Expr, approximation: &Rational) -> Option<bool> {
+    if *approximation != 0 {
+        return Some(false);
+    }
+    crate::term::Expand::expand(term).is_zero().then_some(true)
+}
+
 /// The sign of a term free of the variable, from its structure and the assumptions on its symbols, or the
 /// numerical approximation with [`DIGITS`] digits of a constant. `None` if it is unknown.
 pub fn constant_sign(term: &Expr) -> Option<Ordering> {

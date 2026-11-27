@@ -6,17 +6,14 @@
 //! non-zero limit. They are `x` or exponentials. They are rewritten as `{$A w^c$}` with `{$w -> 0^+$}` and `A` in
 //! a lower class ([`Gruntz::rewrite`]), and the leading term of the series of `f` in `w` decides the limit.
 
-use crate::field::real::expr::try_map_operands;
 use crate::field::real::expr::{
-    DIGITS, Expr, depends, fun, half, infinity, int, is_infinite, one, polygamma, polygamma_args,
-    size, unary, value, variable, zero,
+    Expr, depends, fun, half, infinity, int, is_infinite, one, polygamma, polygamma_args, size,
+    unary, value, variable, zero,
 };
+use crate::field::real::expr::{is_numerically_zero, is_proven_zero, try_map_operands};
 use std::cmp::Ordering;
 
-use malachite::{
-    Rational,
-    base::num::{arithmetic::traits::Sign, basic::traits::Zero},
-};
+use malachite::{Rational, base::num::basic::traits::Zero};
 
 use crate::{
     context::{Context, Symbol},
@@ -28,13 +25,10 @@ use super::{
     bounds::{angles, bounds, has_angle},
     const_sign, only_symbols, series,
 };
-use crate::field::real::approx::{approximate, approximate_fixed};
+use crate::field::real::approx::enclose;
 
 /// Maximum depth of nested leading term computations.
 const MAX_DEPTH: usize = 48;
-
-/// Rational points where coefficients are evaluated to check if they are zero.
-const ZERO_TEST_POINTS: [(i64, i64); 3] = [(23, 7), (47, 10), (61, 9)];
 
 /// Number of values of the angles where a result is evaluated, to check if it depends on them.
 const ANGLE_SAMPLES: i64 = 16;
@@ -340,9 +334,8 @@ impl Gruntz {
             {
                 let signs: Vec<_> = (0..ANGLE_SAMPLES)
                     .filter_map(|j| {
-                        approximate_fixed(&c.substitute(*t, &angle_sample(0, j))?, SAMPLE_BITS)
+                        enclose(&c.substitute(*t, &angle_sample(0, j))?, SAMPLE_BITS)?.sign()
                     })
-                    .map(|value| value.sign())
                     .collect();
                 if signs.contains(&Ordering::Greater) && signs.contains(&Ordering::Less) {
                     return Err(LimitError::Undefined);
@@ -376,27 +369,35 @@ impl Gruntz {
             .ok_or(LimitError::Unknown)?;
         let samples = values
             .iter()
-            .map(|value| approximate_fixed(value, SAMPLE_BITS))
+            .map(|value| enclose(value, SAMPLE_BITS))
             .collect::<Option<Vec<_>>>()
             .ok_or(LimitError::Unknown)?;
-        let tolerance = Rational::from_signeds(1, 1_000_000_000_000_000_000_i64);
-        let small = |value: &Rational| *value < tolerance && -value < tolerance;
-        // Values close to the first one are compared exactly, like `{$10^(-30) sin t$}` isn't constant: their
-        // difference is zero, or indistinguishable from it at the maximum precision
-        let constant = samples.iter().zip(&values).all(|(sample, value)| {
-            let difference = crate::term::Normalize::normalize(&(value - &values[0]));
-            small(&(sample - &samples[0]))
-                && (difference.is_zero()
-                    || crate::field::real::expr::constant_sign(&difference)
-                        .is_none_or(|sign| sign == Ordering::Equal))
-        });
+        // Samples whose balls are disjoint surely differ, others are compared exactly, like `{$10^(-30) sin t$}`
+        // isn't constant: their difference is zero, or unknown
+        let mut varies = false;
+        let mut unknown = false;
+        for (sample, value) in samples.iter().zip(&values).skip(1) {
+            if sample.lo() > samples[0].hi() || sample.hi() < samples[0].lo() {
+                varies = true;
+                break;
+            }
+            match is_numerically_zero(&(value - &values[0])) {
+                Some(true) => {}
+                Some(false) => {
+                    varies = true;
+                    break;
+                }
+                None => unknown = true,
+            }
+        }
+        let constant = !varies && !unknown;
         if constant {
             angles
                 .iter()
                 .try_fold(res.clone(), |res, t| res.substitute(*t, &zero()))
                 .map(|res| res.simplify())
                 .ok_or(LimitError::Unknown)
-        } else if angles.len() == 1 && only_symbols(res, &angles) {
+        } else if varies && angles.len() == 1 && only_symbols(res, &angles) {
             Err(LimitError::Undefined)
         } else {
             Err(LimitError::Unknown)
@@ -714,8 +715,9 @@ impl Gruntz {
         })
     }
 
-    /// Whether the coefficient `c`, free of `w`, is zero. Coefficients depending only on `x` are evaluated at a
-    /// few points, other symbols are assumed generic.
+    /// Whether the coefficient `c`, free of `w`, is zero: zero once simplified, a constant proven zero (see
+    /// [`is_numerically_zero`]), or a coefficient in `x` and the angles whose expanded numerator is zero. Other
+    /// symbols are assumed generic.
     pub(super) fn is_zero(&self, c: &Expr) -> bool {
         if c.is_zero() || c.simplify().is_zero() {
             return true;
@@ -729,56 +731,14 @@ impl Gruntz {
             return false;
         }
         if symbols.is_empty() {
-            return approximate(c, DIGITS).is_some_and(|value| value == Rational::ZERO);
+            // An unknown coefficient is taken as non-zero, which is sound: its sign is asked to the sign engine,
+            // which doesn't know it either, and a vanishing exponent gives the coefficient itself as the limit
+            return is_proven_zero(c);
         }
-        // Polynomials and rational functions are zero when their expanded numerator is
+        // Zero when its expanded numerator is, otherwise unknown, so taken as non-zero (see above): values at
+        // points aren't a proof
         let (numerator, _) = c.as_fraction(true);
-        let numerator = crate::term::Expand::expand(&numerator);
-        if numerator.is_zero() {
-            return true;
-        }
-        if is_polynomial(&numerator) {
-            return false;
-        }
-        // Points depending on `c`, so that a coefficient can't vanish at all of them by construction
-        let mut state = std::hash::DefaultHasher::new();
-        std::hash::Hash::hash(&format!("{c:?}"), &mut state);
-        let hash = std::hash::Hasher::finish(&state);
-        let points = (0..3).map(|k| {
-            let bits = (hash >> (16 * k)) & 0xffff;
-            (3 + i64::try_from(bits % 4096).unwrap_or(0), 997)
-        });
-        let mut evaluated = false;
-        for (num, den) in ZERO_TEST_POINTS.into_iter().chain(points) {
-            let at = symbols
-                .iter()
-                .zip(1..)
-                .try_fold(c.clone(), |c, (symbol, i)| {
-                    c.substitute(*symbol, &value(Rational::from_signeds(num + 3 * i, den)))
-                });
-            if let Some(value) = at.and_then(|c| approximate(&c, DIGITS)) {
-                if value != Rational::ZERO {
-                    return false;
-                }
-                evaluated = true;
-            }
-        }
-        evaluated
-    }
-}
-
-/// Whether `term` is a polynomial in its symbols with rational coefficients: sums and products of symbols and
-/// their natural powers.
-fn is_polynomial(term: &Expr) -> bool {
-    match term {
-        Term::Value(_) | Term::Symbol(_) => true,
-        Term::Add(add) => add.iter().all(is_polynomial),
-        Term::Mul(mul) => mul.iter().all(is_polynomial),
-        Term::Pow(pow) => {
-            matches!(&*pow.base, Term::Symbol(_))
-                && matches!(&**pow.exponant, Term::Value(e) if e.value > 0 && e.value.denominator_ref() == &1u32)
-        }
-        Term::Fun(_) => false,
+        crate::term::Expand::expand(&numerator).is_zero()
     }
 }
 

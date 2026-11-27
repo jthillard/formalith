@@ -135,3 +135,65 @@ fn small_oscillations_at_infinity() {
     assert_eq!(eval_r("lim(1 + 10^(-30)*sin(x), x, oo)"), "undefined");
     assert_eq!(eval_r("lim(sin(x)^2 + cos(x)^2, x, oo)"), "1");
 }
+
+#[test]
+fn errors_of_approximations_are_bounded() {
+    // `sin` reduces large arguments with enough digits of `{$pi$}`, and decisions use its sign
+    assert_eq!(eval_r("approx(sin(10^50))"), "-0.78967249342931");
+    assert_eq!(eval_r("piecewise(sin(10^50) > 0, 1, 0)"), "0");
+    // A zero times a large constant has no sign, its errors being amplified too
+    assert_eq!(
+        eval_r("approx(10^40*(atan(1/2) + atan(1/3) - pi/4))"),
+        "0.0"
+    );
+    // `{$4 (atan(1/2) + atan(1/3))/pi = 1$}` is at a jump of `floor`, which has no approximate value there
+    assert!(
+        eval_r("piecewise(floor(4*(atan(1/2) + atan(1/3))/pi) = 1, 1, 0)")
+            .starts_with("piecewise(")
+    );
+}
+
+#[test]
+fn reduction_of_large_angles() {
+    // `{$k$}` in `{$atan(tan theta) = theta - k pi$}` from an approximation of `{$theta / pi$}` accurate enough
+    assert_eq!(
+        eval_r("atan(tan(10^30))"),
+        "-318309886183790671537767526745*pi+1000000000000000000000000000000"
+    );
+    assert_eq!(
+        eval_r("atan(tan(10^32))"),
+        "-31830988618379067153776752674503*pi+100000000000000000000000000000000"
+    );
+}
+
+#[test]
+fn coefficients_defined_only_at_large_points() {
+    // `{$(9x - 64) ln(x - 7)$}` is only defined at `{$64/9$}` among the small test points, where it vanishes
+    assert_eq!(eval_r("lim(x - exp(x)*(9*x - 64)*ln(x - 7), x, oo)"), "-oo");
+}
+
+#[test]
+fn poles_near_bounds_of_definite_integrals() {
+    // The pole `{$5 pi/6$}` of `{$tan(3x)$}` is `{$10^(-40)$}` inside the interval, outside of it in floats
+    assert_eq!(
+        eval_r("integrate(tan(3*x), x, 7, 5*pi/2 + 10^(-40))"),
+        "undefined"
+    );
+}
+
+#[test]
+fn exceptional_values_of_closed_forms() {
+    // The closed form has a pole at `{$n = 0$}`, which can't be approximated, so the value there is a case
+    assert!(
+        eval_r("sum(binomial(n, k)*binomial(n, k + 1), k, 0, n)")
+            .starts_with("piecewise(n = 0, 0,")
+    );
+}
+
+#[test]
+fn zeros_need_proofs() {
+    // `{$10^(-2000) sin t$}` depends on the angle, below the precision of approximations: not taken as constant
+    assert!(eval_r("lim(sin(10^(-2000)*sin(x)), x, oo)").starts_with("lim("));
+    // A section radicand `{$8 cos(10 pi/9)^3 - 6 cos(10 pi/9) + 1 = 0$}` that expansion doesn't prove zero
+    assert!(eval_r("y^2 < x^3 - 3*x + 1").starts_with("error"));
+}

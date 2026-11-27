@@ -20,8 +20,8 @@
 use crate::field::real::expr::sqrt;
 use crate::field::real::expr::{
     DIGITS, Expr, Real, any_subterm, constant_sign, depends, fun, half, has_function,
-    has_special_constant, infinity_sign, int, is_infinite, map_tree, one, subs, unary, value,
-    variable, zero,
+    has_special_constant, infinity_sign, int, is_infinite, is_numerically_zero, is_proven_zero,
+    map_tree, one, subs, unary, value, variable, zero,
 };
 use std::{
     cell::{Cell, RefCell},
@@ -32,7 +32,7 @@ use malachite::{
     Rational,
     base::{
         num::{
-            arithmetic::traits::{Abs, Ceiling, CheckedSqrt, Floor, PowerOf2},
+            arithmetic::traits::{Abs, Ceiling, CheckedSqrt, Floor},
             conversion::traits::RoundingFrom,
         },
         rounding_modes::RoundingMode,
@@ -49,7 +49,7 @@ use crate::{
         },
     },
     field::real::{
-        approx::{approximate, approximate_fixed},
+        approx::approximate,
         cases,
         sign::{SignMode, linear_form, sign_set},
     },
@@ -67,8 +67,6 @@ use super::{
     replace_symbol, risch,
 };
 
-/// Bits of the numerical check of values computed by substitution.
-const CHECK_BITS: u64 = 96;
 /// Maximum number of bisections of the interval in [`same_sign`].
 const MAX_BISECTIONS: u32 = 16;
 
@@ -120,7 +118,10 @@ fn range_sign(h: &Expr) -> Option<Ordering> {
     })?;
     let mut points = vec![];
     zeros(h, v, interval, &mut points).ok()?;
-    if points.iter().any(|(p, _)| interior(*p, interval)) {
+    if points
+        .iter()
+        .any(|(p, point)| interior((*p, point), interval, None) != Some(false))
+    {
         return None;
     }
     constant_sign(&h.substitute(v, &value(interior_point(interval)?))?)
@@ -232,13 +233,13 @@ pub(super) fn integrate(f: &Expr, x: Symbol, a: &Expr, b: &Expr) -> IntegrateRes
         return symbolic(f, x, a, b);
     }
     let (a_value, b_value) = (approximate_bound(a)?, approximate_bound(b)?);
-    match compare_points((a_value, a), (b_value, b)) {
+    match compare_points((a_value, a), (b_value, b)).ok_or(IntegrateError::Unsupported)? {
         Ordering::Equal => return Ok(zero()),
         Ordering::Greater => return integrate(f, x, b, a).map(|res| -res),
         Ordering::Less => {}
     }
     let interval = (a_value, b_value);
-    let f = &constant_parts(f, x, interval);
+    let f = &constant_parts(f, x, interval, (a, b));
     if let Some(res) = split_abs(f, x, a, b, interval) {
         return res;
     }
@@ -262,15 +263,20 @@ pub(super) fn integrate(f: &Expr, x: Symbol, a: &Expr, b: &Expr) -> IntegrateRes
     let mut points = vec![];
     singular_points(f, x, (a_value, b_value), &mut points)?;
     singular_points(&antiderivative, x, (a_value, b_value), &mut points)?;
-    sort_points(&mut points);
-    // Singular points are searched in the closed interval, with approximations: those outside of it are dropped
-    points.retain(|(p, point)| {
-        compare_points((*p, point), (a_value, a)) != Ordering::Less
-            && compare_points((*p, point), (b_value, b)) != Ordering::Greater
-    });
-    // The bounds being regular when no singular point is found there
+    sort_points(&mut points)?;
+    // Singular points are searched near the closed interval, with approximations: those outside of it are dropped
+    let mut kept = vec![];
+    for (p, point) in points {
+        let below = compare_points((p, &point), (a_value, a)).ok_or(IntegrateError::Unsupported)?;
+        let above = compare_points((p, &point), (b_value, b)).ok_or(IntegrateError::Unsupported)?;
+        if below != Ordering::Less && above != Ordering::Greater {
+            kept.push((p, point));
+        }
+    }
+    let points = kept;
+    // The bounds being regular when no singular point is found there (compared above)
     let near = |(p, point): &(f64, Expr), bound: (f64, &Expr)| {
-        compare_points((*p, point), bound) == Ordering::Equal
+        compare_points((*p, point), bound) == Some(Ordering::Equal)
     };
     let regular = |bound: (f64, &Expr)| !points.iter().any(|point| near(point, bound));
     let mut bounds = vec![(a.clone(), regular((a_value, a)))];
@@ -389,11 +395,16 @@ fn split_abs(
     for u in &arguments {
         zeros(u, x, interval, &mut points).ok()?;
     }
-    sort_points(&mut points);
-    points.retain(|(p, point)| {
-        compare_points((*p, point), (interval.0, a)) == Ordering::Greater
-            && compare_points((*p, point), (interval.1, b)) == Ordering::Less
-    });
+    sort_points(&mut points).ok()?;
+    let mut kept = vec![];
+    for (p, point) in points {
+        let below = compare_points((p, &point), (interval.0, a))?;
+        let above = compare_points((p, &point), (interval.1, b))?;
+        if below == Ordering::Greater && above == Ordering::Less {
+            kept.push((p, point));
+        }
+    }
+    let points = kept;
     let mut bounds = vec![(interval.0, a.clone())];
     bounds.extend(points);
     bounds.push((interval.1, b.clone()));
@@ -641,11 +652,11 @@ fn nicer_value(antiderivative: &Expr, x: Symbol, point: &Expr, res: Expr) -> Exp
     let Some(substituted) = antiderivative.substitute(x, point) else {
         return res;
     };
-    // Singular values like `{$0^(-1)$}` normalize to wrong constants, so the value is checked numerically
-    let tolerance = Rational::power_of_2(-i64::try_from(CHECK_BITS / 2).unwrap_or(0));
-    match approximate_fixed(&(&substituted - &res), CHECK_BITS) {
-        Some(difference) if (&difference).abs() < tolerance => substituted,
-        _ => res,
+    // Singular values like `{$0^(-1)$}` normalize to wrong constants, so the value is checked
+    if is_proven_zero(&(&substituted - &res)) {
+        substituted
+    } else {
+        res
     }
 }
 
@@ -801,7 +812,7 @@ fn polynomial_zeros(
             <Real as PolynomialRoots>::roots(&coefficients).ok_or(IntegrateError::Unsupported)?;
         for root in roots {
             let r = to_f64(&root).ok_or(IntegrateError::Unsupported)?;
-            if interval.0 <= r && r <= interval.1 {
+            if near_interval(r, interval) {
                 points.push((r, root.expand()));
             }
         }
@@ -849,10 +860,11 @@ fn periodic_zeros(
     if last - first > MAX_PERIODS {
         return Err(IntegrateError::Unsupported);
     }
-    for k in first..=last {
+    // One more on each side, the floats being inexact: the candidates are then compared with the interval
+    for k in first - 1..=last + 1 {
         let point = ((value(Rational::from(k)) + offset) * variable(Context::PI) - &b) / &a;
         let p = to_f64(&point).ok_or(IntegrateError::Unsupported)?;
-        if interval.0 <= p && p <= interval.1 {
+        if near_interval(p, interval) {
             points.push((p, point.expand()));
         }
     }
@@ -944,32 +956,77 @@ fn same_sign(term: &Expr, x: Symbol, interval: (f64, f64)) -> IntegrateResult<()
     Ok(())
 }
 
+/// Whether the approximations `p` and `q` are too close to be compared as floats.
+fn close(p: f64, q: f64) -> bool {
+    p.is_finite() && q.is_finite() && (p - q).abs() <= 1e-9 * (1. + p.abs().max(q.abs()))
+}
+
 /// Compare the points `p` and `q`, real constants or infinities, given with their approximations. Approximations
-/// close to each other are compared exactly, by the sign of the difference: zero once expanded, or indistinguishable
-/// from zero at the maximum precision of [`constant_sign`], like `{$1$}` and `{$1 + 10^(-20)$}` aren't.
-pub(super) fn compare_points(p: (f64, &Expr), q: (f64, &Expr)) -> Ordering {
+/// close to each other are compared exactly, by their difference (see [`is_numerically_zero`]), like `{$1$}` and
+/// `{$1 + 10^(-20)$}`. `None` when the comparison is unknown.
+pub(super) fn compare_points(p: (f64, &Expr), q: (f64, &Expr)) -> Option<Ordering> {
     let ((p, p_term), (q, q_term)) = (p, q);
-    if p.is_infinite() || q.is_infinite() || (p - q).abs() > 1e-9 * (1. + p.abs().max(q.abs())) {
-        return p.partial_cmp(&q).unwrap_or(Ordering::Equal);
+    if !close(p, q) {
+        return p.partial_cmp(&q);
     }
     let difference = crate::term::Normalize::normalize(&(p_term.clone() - q_term.clone()));
-    if difference.is_zero() || difference.expand().is_zero() {
-        return Ordering::Equal;
+    if difference.expand().is_zero() {
+        return Some(Ordering::Equal);
     }
-    constant_sign(&difference).unwrap_or(Ordering::Equal)
+    if is_numerically_zero(&difference)? {
+        Some(Ordering::Equal)
+    } else {
+        constant_sign(&difference)
+    }
 }
 
-/// Sort the points with their approximations (see [`compare_points`]), removing duplicates.
-pub(super) fn sort_points(points: &mut Vec<(f64, Expr)>) {
-    points.sort_by(|(p, p_term), (q, q_term)| compare_points((*p, p_term), (*q, q_term)));
-    points.dedup_by(|(p, p_term), (q, q_term)| {
-        compare_points((*p, p_term), (*q, q_term)) == Ordering::Equal
-    });
+/// Sort the points with their approximations (see [`compare_points`]), removing duplicates. Unsupported when two
+/// of them can't be compared.
+pub(super) fn sort_points(points: &mut Vec<(f64, Expr)>) -> IntegrateResult<()> {
+    // Insertion sort, since the comparison may fail
+    let mut sorted: Vec<(f64, Expr)> = Vec::with_capacity(points.len());
+    for point in points.drain(..) {
+        let mut index = sorted.len();
+        let mut duplicate = false;
+        for (i, other) in sorted.iter().enumerate() {
+            match compare_points((point.0, &point.1), (other.0, &other.1))
+                .ok_or(IntegrateError::Unsupported)?
+            {
+                Ordering::Less => {
+                    index = index.min(i);
+                }
+                Ordering::Equal => duplicate = true,
+                Ordering::Greater => {}
+            }
+        }
+        if !duplicate {
+            sorted.insert(index, point);
+        }
+    }
+    *points = sorted;
+    Ok(())
 }
 
-/// Whether `p` is strictly inside the interval, away from its bounds.
-fn interior(p: f64, interval: (f64, f64)) -> bool {
-    interval.0 + 1e-12 < p && p < interval.1 - 1e-12
+/// Whether the approximation `p` is near the closed interval, so that the point may be in it: the points found
+/// near the interval are then compared exactly with its bounds.
+fn near_interval(p: f64, interval: (f64, f64)) -> bool {
+    (interval.0 <= p || close(p, interval.0)) && (p <= interval.1 || close(p, interval.1))
+}
+
+/// Whether the point `p` is strictly inside the interval, compared exactly with its bounds when they are given and
+/// its approximation is close to one of them. `None` when it is unknown.
+fn interior(p: (f64, &Expr), interval: (f64, f64), bounds: Option<(&Expr, &Expr)>) -> Option<bool> {
+    let (value, term) = p;
+    // Whether the point is on the inner side of a bound, `outside` being its order relative to the bound outside
+    let inside = |bound: f64, bound_term: Option<&Expr>, outside: Ordering| -> Option<bool> {
+        if !close(value, bound) {
+            return Some(value.partial_cmp(&bound)? != outside);
+        }
+        let ordering = compare_points((value, term), (bound, bound_term?))?;
+        Some(ordering != outside && ordering != Ordering::Equal)
+    };
+    let (a, b) = bounds.unzip();
+    Some(inside(interval.0, a, Ordering::Less)? && inside(interval.1, b, Ordering::Greater)?)
 }
 
 /// A simple rational point strictly inside the interval, 0 when possible.
@@ -995,8 +1052,8 @@ pub(super) fn sample_between(p: (f64, &Expr), q: (f64, &Expr)) -> Option<Expr> {
     let inside = |sample: &Rational| {
         let point = value(sample.clone());
         let approximation = f64::rounding_from(sample, RoundingMode::Nearest).0;
-        compare_points((approximation, &point), p) == Ordering::Greater
-            && compare_points((approximation, &point), q) == Ordering::Less
+        compare_points((approximation, &point), p) == Some(Ordering::Greater)
+            && compare_points((approximation, &point), q) == Some(Ordering::Less)
     };
     if let Some(sample) = interior_point((p.0, q.0)).filter(inside) {
         return Some(value(sample));
@@ -1016,7 +1073,7 @@ fn has_inverse_trig(term: &Expr) -> bool {
 
 /// `f` with its sums and functions of inverse trigonometric functions which are constant on the open interval
 /// replaced by their value, like `{$acos(2x / (1 + x^2)) + atan(2x / (1 - x^2)) = pi/2$}` on `{$(-1, 1)$}`.
-fn constant_parts(f: &Expr, x: Symbol, interval: (f64, f64)) -> Expr {
+fn constant_parts(f: &Expr, x: Symbol, interval: (f64, f64), bounds: (&Expr, &Expr)) -> Expr {
     if !has_inverse_trig(f) {
         return f.clone();
     }
@@ -1038,14 +1095,16 @@ fn constant_parts(f: &Expr, x: Symbol, interval: (f64, f64)) -> Expr {
         candidates.insert(candidates.len() - 1, -&p);
         candidates.insert(candidates.len() - 1, p);
     }
-    candidates.retain(|p| to_f64(p).is_some_and(|p| interior(p, interval)));
+    candidates.retain(|p| {
+        to_f64(p).is_some_and(|value| interior((value, p), interval, Some(bounds)) == Some(true))
+    });
     map_tree(f, &|t| {
         if !depends(t, x) {
             return Some(t.clone());
         }
         if matches!(t, Term::Add(_) | Term::Fun(_))
             && has_inverse_trig(t)
-            && locally_constant(t, x, interval)
+            && locally_constant(t, x, interval, bounds)
         {
             let values = candidates.iter().filter_map(|p| t.substitute(x, p));
             let values: Vec<_> = values.collect();
@@ -1061,20 +1120,22 @@ fn constant_parts(f: &Expr, x: Symbol, interval: (f64, f64)) -> Expr {
 
 /// Whether `g` is constant on the open interval: it has no singular point there, and its derivative is exactly
 /// zero once square roots of squares are written with the sign they have on the interval.
-fn locally_constant(g: &Expr, x: Symbol, interval: (f64, f64)) -> bool {
+fn locally_constant(g: &Expr, x: Symbol, interval: (f64, f64), bounds: (&Expr, &Expr)) -> bool {
     let mut points = vec![];
     if singular_points(g, x, interval, &mut points).is_err()
-        || points.iter().any(|(p, _)| interior(*p, interval))
+        || points
+            .iter()
+            .any(|(p, point)| interior((*p, point), interval, Some(bounds)) != Some(false))
     {
         return false;
     }
-    let derivative = map_tree(&g.derivative(x), &|t| square_root(t, x, interval));
+    let derivative = map_tree(&g.derivative(x), &|t| square_root(t, x, interval, bounds));
     rational_function(&derivative, x).is_some_and(|(p, _)| p.is_zero())
 }
 
 /// `{$r^(n/2)$}` as `{$(plus.minus c p / q)^n$}` for a rational function `{$r = c^2 p^2 / q^2$}` of `x`, the sign
 /// of `{$p / q$}` being constant on the interval.
-fn square_root(t: &Expr, x: Symbol, interval: (f64, f64)) -> Option<Expr> {
+fn square_root(t: &Expr, x: Symbol, interval: (f64, f64), bounds: (&Expr, &Expr)) -> Option<Expr> {
     let Term::Pow(pow) = t else {
         return None;
     };
@@ -1090,7 +1151,10 @@ fn square_root(t: &Expr, x: Symbol, interval: (f64, f64)) -> Option<Expr> {
     let mut points = vec![];
     polynomial_zeros(&p, x, interval, &mut points).ok()?;
     polynomial_zeros(&q, x, interval, &mut points).ok()?;
-    if points.iter().any(|(p, _)| interior(*p, interval)) {
+    if points
+        .iter()
+        .any(|(p, point)| interior((*p, point), interval, Some(bounds)) != Some(false))
+    {
         return None;
     }
     let point = interior_point(interval)?;

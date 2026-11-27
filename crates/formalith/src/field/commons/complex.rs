@@ -175,11 +175,12 @@ impl C<R<Rational>> {
         match (ident, rest) {
             (Context::INTEGRATE, []) => true,
             (Context::INTEGRATE, [a, b]) => {
-                let bound = |t: &Expr| crate::field::real::approx::approximate(t, expr::DIGITS);
+                // An interval containing both bounds
+                let bound = |t: &Expr| crate::field::real::approx::enclose(t, 100);
                 let (Some(a), Some(b)) = (bound(a), bound(b)) else {
                     return false;
                 };
-                let (lo, hi) = if a < b { (a, b) } else { (b, a) };
+                let (lo, hi) = (a.lo().min(b.lo()), a.hi().max(b.hi()));
                 bases.iter().all(|(base, _)| {
                     crate::limit::bounds::bounds_in(base, &[(x, (lo.clone(), hi.clone()))])
                         .is_some_and(|(l, _)| l >= 0)

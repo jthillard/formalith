@@ -1,8 +1,9 @@
 //! Numerical approximation of real expressions, used by `approx`.
 //!
 //! Expressions are evaluated with fixed-point arithmetic on integers, an integer `m` standing for `{$m / 2^b$}`,
-//! then rounded to a number of significant decimal digits. The working precision is increased until the result
-//! has enough significant bits, which isn't a guarantee: the last digits can be wrong after a cancellation.
+//! then rounded to a number of significant decimal digits. Each evaluation gives a [`Ball`], the approximation with
+//! a bound of its error (an estimate for some algorithms, see [`Ball`]), and the working precision is increased until
+//! the ball has enough significant bits, so cancellations don't give wrong digits or signs.
 
 use std::{cell::RefCell, thread::LocalKey};
 
@@ -11,11 +12,12 @@ use malachite::{
     base::{
         num::{
             arithmetic::traits::{
-                Abs, Ceiling, DivRound, DivisibleBy, Factorial, Floor, FloorLogBase2, FloorRoot,
-                Pow, Reciprocal, UnsignedAbs,
+                Abs, Ceiling, CeilingLogBase2, DivRound, DivisibleBy, Factorial, Floor,
+                FloorLogBase2, FloorRoot, Pow, Reciprocal, Sign, UnsignedAbs,
             },
             basic::traits::{One, Zero},
             conversion::traits::RoundingFrom,
+            logic::traits::SignificantBits,
         },
         rounding_modes::RoundingMode,
     },
@@ -75,6 +77,153 @@ enum Quadrature {
     Left(Rational),
     /// From `{$-oo$}` to `{$oo$}`.
     Whole,
+}
+
+/// Largest number of bits of the argument of `sin` and `cos` before its reduction modulo `{$2 pi$}`, which needs
+/// that many more bits of `{$pi$}`.
+const MAX_REDUCTION_BITS: u64 = 1 << 16;
+/// Significant bits kept in radii, rounded up.
+const RADIUS_BITS: u64 = 32;
+/// The step of the differences estimating slopes is about `{$2^(-"SLOPE_STEP_BITS")$}` relative to the point.
+const SLOPE_STEP_BITS: u64 = 24;
+
+thread_local! {
+    /// Whether the last evaluation failed because a ball was too wide, like `{$tan$}` of a ball containing a pole
+    /// or `{$floor$}` of a ball containing an integer, so that a higher precision may succeed.
+    static IMPRECISE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// `None`, recording that the evaluation failed for lack of precision (see [`IMPRECISE`]).
+fn imprecise<T>() -> Option<T> {
+    IMPRECISE.set(true);
+    None
+}
+
+/// A ball `{$[m - r, m + r]$}` containing a real number: the result of an evaluation with its error bound.
+///
+/// The elementary operations (`+`, `*`, powers, `exp`, `ln`, `sin`, `cos`, `tan`, the inverse trigonometric and
+/// hyperbolic functions, roots, `rootof`, `pi`, `e`) bound their errors: the rounding errors of each primitive,
+/// bounded per primitive (see [`Fixed::absolute_error`]), plus the error of their arguments times a bound of the
+/// derivative on the ball. The radii of the other algorithms (numerical integration, infinite sums, the Gamma family,
+/// `zeta`, the Lambert W function, `erf`, `Si`, `Ci`, `Ei`) are estimates, not bounds.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Ball {
+    /// The center, the approximation.
+    pub mid: Rational,
+    /// The radius, non-negative.
+    pub rad: Rational,
+}
+
+impl Ball {
+    /// The exact value `mid`.
+    #[must_use]
+    pub const fn exact(mid: Rational) -> Self {
+        Self {
+            mid,
+            rad: Rational::ZERO,
+        }
+    }
+
+    fn new(mid: Rational, rad: Rational) -> Self {
+        Self {
+            mid,
+            rad: round_up(rad),
+        }
+    }
+
+    /// The lower bound `{$m - r$}`.
+    #[must_use]
+    pub fn lo(&self) -> Rational {
+        &self.mid - &self.rad
+    }
+
+    /// The upper bound `{$m + r$}`.
+    #[must_use]
+    pub fn hi(&self) -> Rational {
+        &self.mid + &self.rad
+    }
+
+    /// Whether 0 is in the ball.
+    #[must_use]
+    pub fn contains_zero(&self) -> bool {
+        (&self.mid).abs() <= self.rad
+    }
+
+    /// The sign of the number, `None` when the ball contains 0 (and isn't exactly 0).
+    #[must_use]
+    pub fn sign(&self) -> Option<std::cmp::Ordering> {
+        if self.rad == 0 {
+            return Some(self.mid.sign());
+        }
+        (!self.contains_zero()).then(|| self.mid.sign())
+    }
+
+    /// An upper bound of the absolute value.
+    fn magnitude(&self) -> Rational {
+        (&self.mid).abs() + &self.rad
+    }
+
+    /// A lower bound of the absolute value, 0 when the ball contains 0.
+    fn min_magnitude(&self) -> Rational {
+        let res = (&self.mid).abs() - &self.rad;
+        if res < 0 { Rational::ZERO } else { res }
+    }
+
+    fn add(&self, other: &Self) -> Self {
+        Self::new(&self.mid + &other.mid, &self.rad + &other.rad)
+    }
+
+    fn mul(&self, other: &Self) -> Self {
+        let rad = (&self.mid).abs() * &other.rad
+            + (&other.mid).abs() * &self.rad
+            + &self.rad * &other.rad;
+        Self::new(&self.mid * &other.mid, rad)
+    }
+
+    /// `{$1/x$}`, `None` when the ball contains 0.
+    fn reciprocal(&self) -> Option<Self> {
+        if self.rad == 0 {
+            return (self.mid != 0).then(|| Self::exact((&self.mid).reciprocal()));
+        }
+        let low = self.min_magnitude();
+        if low == 0 {
+            return imprecise();
+        }
+        // `{$|1/y - 1/m| <= r / (|m| (|m| - r))$}`
+        let rad = &self.rad / ((&self.mid).abs() * low);
+        Some(Self::new((&self.mid).reciprocal(), rad))
+    }
+}
+
+/// `r` rounded up to [`RADIUS_BITS`] significant bits, so that radii don't grow huge denominators.
+fn round_up(r: Rational) -> Rational {
+    if r <= 0 {
+        return Rational::ZERO;
+    }
+    // Small enough already
+    if r.numerator_ref().significant_bits() + r.denominator_ref().significant_bits()
+        <= 4 * RADIUS_BITS
+    {
+        return r;
+    }
+    let log = r.floor_log_base_2();
+    let shift = i64::try_from(RADIUS_BITS).unwrap_or(32) - log;
+    let scaled = if shift >= 0 {
+        r << shift.unsigned_abs()
+    } else {
+        r >> shift.unsigned_abs()
+    };
+    let up = Rational::from(Ceiling::ceiling(scaled));
+    if shift >= 0 {
+        up >> shift.unsigned_abs()
+    } else {
+        up << shift.unsigned_abs()
+    }
+}
+
+/// A slightly larger bound for a positive quantity computed numerically, used as a bound of a derivative.
+fn upper(x: &Rational) -> Rational {
+    x.abs() * Rational::from_signeds(17, 16) + (Rational::ONE >> 64_u64)
 }
 
 /// Fixed-point arithmetic, an integer `m` standing for `{$m / 2^"bits"$}`.
@@ -209,11 +358,47 @@ impl Fixed {
         (self.arctanh(&y) << 1_u64) + Integer::from(k) * self.ln2()
     }
 
-    /// `{$(sin(x), cos(x))$}`, reducing `x` modulo `{$2 pi$}` and using the double-angle formulas.
-    fn sin_cos(self, x: &Integer) -> (Integer, Integer) {
-        let two_pi = self.pi() << 1_u64;
-        let n = x.div_round(&two_pi, RoundingMode::Nearest).0;
-        let r = (x - n * two_pi) >> HALVINGS;
+    /// A bound of the rounding errors of the primitives at this precision, in units of the absolute or relative
+    /// precision: the truncations of their series (at most one unit per term, and fewer terms than `bits`), amplified
+    /// by the [`HALVINGS`] squarings or the halvings of `arctan`, and the errors of `{$pi$}` and `{$ln 2$}`.
+    fn ulps(self) -> Rational {
+        Rational::from((1_u64 << 20) + (self.bits << HALVINGS)) >> self.bits
+    }
+
+    /// The error bound of a primitive with an absolute precision (relative for large values), at the value `v`.
+    fn absolute_error(self, v: &Rational) -> Rational {
+        self.ulps() * v.abs().max(Rational::ONE)
+    }
+
+    /// The error bound of a primitive with a relative precision, like `exp` or roots, at the value `v`.
+    fn relative_error(self, v: &Rational) -> Rational {
+        self.ulps() * v.abs()
+    }
+
+    /// The estimated error of the algorithms without a bound (see [`Ball`]), at the value `v`.
+    fn estimated_error(self, v: &Rational) -> Rational {
+        (v.abs() + Rational::ONE) >> self.bits.saturating_sub(GUARD_BITS / 2)
+    }
+
+    /// `{$(sin(x), cos(x))$}`, reducing `x` modulo `{$2 pi$}` and using the double-angle formulas. The reduction
+    /// uses `{$log_2 |x|$}` more bits of `{$pi$}`, since its error is multiplied by the number of periods, `None`
+    /// beyond [`MAX_REDUCTION_BITS`].
+    fn sin_cos(self, x: &Rational) -> Option<(Integer, Integer)> {
+        let extra = if x.abs() >= 1 {
+            u64::try_from(x.abs().floor_log_base_2()).ok()? + 2
+        } else {
+            0
+        };
+        if extra > MAX_REDUCTION_BITS {
+            return None;
+        }
+        let wide = Self {
+            bits: self.bits + extra,
+        };
+        let x = wide.from_rational(x);
+        let two_pi = wide.pi() << 1_u64;
+        let n = (&x).div_round(&two_pi, RoundingMode::Nearest).0;
+        let r = (x - n * two_pi) >> (extra + HALVINGS);
         let r2 = self.mul(&r, &r);
         let (mut sin, mut cos) = (r.clone(), self.one());
         let (mut sin_term, mut cos_term) = (r, self.one());
@@ -231,7 +416,7 @@ impl Fixed {
                 self.mul(&cos, &cos) - self.mul(&sin, &sin),
             );
         }
-        (sin, cos)
+        Some((sin, cos))
     }
 
     /// `{$root(n, x)$}`, `x` being negative only for odd `n`, with a relative precision of about
@@ -451,7 +636,7 @@ impl Fixed {
                 g += term;
             }
         }
-        let (sin, cos) = fixed.sin_cos(&fixed.from_rational(x));
+        let (sin, cos) = fixed.sin_cos(x)?;
         let res = if ident == Context::SI {
             (fixed.pi() >> 1_u64) - fixed.mul(&f, &cos) - fixed.mul(&g, &sin)
         } else {
@@ -812,7 +997,7 @@ impl Fixed {
                 self.integrate(f, x, b, a).map(|res| -res)
             };
         }
-        let bound = |t: &Term<Real>| self.evaluate(t);
+        let bound = |t: &Term<Real>| self.value(t);
         let kind = match (a_infinity, b_infinity) {
             (None, None) => Quadrature::Finite(bound(a)?, bound(b)?),
             (None, Some(_)) => Quadrature::Right(bound(a)?),
@@ -820,7 +1005,7 @@ impl Fixed {
             (Some(_), Some(_)) => Quadrature::Whole,
         };
         let eval =
-            |node: Rational| self.evaluate(&bind(f, x, &Term::Value(Value::new(node, super::R))));
+            |node: Rational| self.value(&bind(f, x, &Term::Value(Value::new(node, super::R))));
         let pi = self.to_rational(self.pi());
         let half_pi = &pi >> 1_u64;
         // `{$f(x(s)) x'(s)$}`, plus the symmetric node for finite intervals
@@ -910,20 +1095,27 @@ impl Fixed {
     }
 
     /// `{$sum_(k = a)^oo f$}` by its partial sums, until [`NEGLIGIBLE_TERMS`] consecutive terms are below the
-    /// precision. `None` when
-    /// they don't become negligible after [`MAX_SUM_TERMS`] terms, outside of the disk of convergence of a series.
-    fn infinite_sum(self, f: &Term<Real>, k: Symbol, a: &Term<Real>) -> Option<Rational> {
-        let a = Integer::try_from(&self.evaluate(a)?).ok()?;
+    /// precision. `None` when they don't become negligible after [`MAX_SUM_TERMS`] terms, outside of the disk of
+    /// convergence of a series. The radius bounds the errors of the terms added, but the tail is only estimated.
+    fn infinite_sum(self, f: &Term<Real>, k: Symbol, a: &Term<Real>) -> Option<Ball> {
+        let a = Integer::try_from(&self.value(a)?).ok()?;
         let mut sum = Integer::ZERO;
+        let mut rad = Rational::ZERO;
         let mut negligible = 0;
         for j in 0..MAX_SUM_TERMS {
             let index = Term::Value(Value::new(Rational::from(&a + Integer::from(j)), super::R));
-            let term = self.from_rational(&self.evaluate(&bind(f, k, &index))?);
+            let term = self.evaluate(&bind(f, k, &index))?;
+            rad += &term.rad;
+            let term = self.from_rational(&term.mid);
             // Rounded down, tiny negative terms are -1
             if (&term).unsigned_abs() <= 1u32 {
                 negligible += 1;
                 if negligible >= NEGLIGIBLE_TERMS {
-                    return Some(self.to_rational(sum));
+                    let sum = self.to_rational(sum);
+                    // One unit per term rounded down, and the estimated tail
+                    let rounding = Rational::from(j + 1) >> self.bits;
+                    let tail = self.estimated_error(&sum);
+                    return Some(Ball::new(sum, rad + rounding + tail));
                 }
             } else {
                 negligible = 0;
@@ -934,174 +1126,509 @@ impl Fixed {
     }
 
     /// `{$sum_(k = a)^b f$}` for integer bounds, at most [`MAX_SUM_TERMS`] terms.
-    fn finite_sum(
-        self,
-        f: &Term<Real>,
-        k: Symbol,
-        a: &Term<Real>,
-        b: &Term<Real>,
-    ) -> Option<Rational> {
-        let (a, b) = (self.evaluate(a)?, self.evaluate(b)?);
+    fn finite_sum(self, f: &Term<Real>, k: Symbol, a: &Term<Real>, b: &Term<Real>) -> Option<Ball> {
+        let (a, b) = (self.value(a)?, self.value(b)?);
         let (a, b) = (Integer::try_from(&a).ok()?, Integer::try_from(&b).ok()?);
         if &b - &a >= MAX_SUM_TERMS {
             return None;
         }
         let mut sum = Integer::ZERO;
+        let mut rad = Rational::ZERO;
+        let mut count = 0_u64;
         let mut index = a;
         while index <= b {
             let value = Term::Value(Value::new(Rational::from(&index), super::R));
-            sum += self.from_rational(&self.evaluate(&bind(f, k, &value))?);
+            let term = self.evaluate(&bind(f, k, &value))?;
+            rad += &term.rad;
+            sum += self.from_rational(&term.mid);
+            count += 1;
             index += Integer::from(1);
         }
-        Some(self.to_rational(sum))
+        // One unit per term rounded down
+        Some(Ball::new(
+            self.to_rational(sum),
+            rad + (Rational::from(count) >> self.bits),
+        ))
     }
 
-    /// Evaluate a term without symbols, other than builtin constants.
-    fn evaluate(self, term: &Term<Real>) -> Option<Rational> {
+    /// The value of a term at the center of its ball, for the algorithms estimating their own errors.
+    fn value(self, term: &Term<Real>) -> Option<Rational> {
+        self.evaluate(term).map(|ball| ball.mid)
+    }
+
+    /// `f` at the center of `x`, a primitive whose rounding errors are bounded by `error` at its value, plus the
+    /// radius of `x` times `slope`, a bound of `{$|f'|$}` on the ball given the value at its center (only called
+    /// when `x` isn't exact).
+    fn unary(
+        x: &Ball,
+        f: impl FnOnce(&Rational) -> Option<Rational>,
+        error: impl FnOnce(&Rational) -> Rational,
+        slope: impl FnOnce(&Rational) -> Option<Rational>,
+    ) -> Option<Ball> {
+        let v = f(&x.mid)?;
+        let mut rad = error(&v);
+        if x.rad != 0 {
+            let Some(slope) = slope(&v) else {
+                return imprecise();
+            };
+            rad += slope * &x.rad;
+        }
+        Some(Ball::new(v, rad))
+    }
+
+    /// `f`, an algorithm without an error bound (see [`Ball`]), at the center of `x`: its estimated error, plus for an
+    /// inexact `x` its radius times twice the slope of `f` at the center, estimated by a difference at a low
+    /// precision, `f` being smooth there.
+    fn estimated(self, x: &Ball, f: impl Fn(Self, &Rational) -> Option<Rational>) -> Option<Ball> {
+        let v = f(self, &x.mid)?;
+        let mut rad = self.estimated_error(&v);
+        if x.rad != 0 {
+            let low = Self {
+                bits: 2 * SLOPE_STEP_BITS,
+            };
+            // A point at a small distance, rounded to the low precision so that exact operations on it are cheap
+            let step = (&x.mid).abs().max(Rational::ONE) >> SLOPE_STEP_BITS;
+            let point = low.to_rational(low.from_rational(&(&x.mid + step.max(x.rad.clone()))));
+            let h = &point - &x.mid;
+            let Some(near) = f(low, &point) else {
+                return imprecise();
+            };
+            let slope = (near - &v).abs() / h;
+            rad += upper(&slope) * &x.rad * Rational::from(2);
+        }
+        Some(Ball::new(v, rad))
+    }
+
+    /// `f` like [`Self::estimated`], but with twice the largest variation to the bounds of `x`, for a function
+    /// whose slope varies a lot on the ball.
+    fn estimated_at_bounds(
+        self,
+        x: &Ball,
+        f: impl Fn(&Rational) -> Option<Rational>,
+    ) -> Option<Ball> {
+        let v = f(&x.mid)?;
+        let mut rad = self.estimated_error(&v);
+        if x.rad != 0 {
+            let (Some(lo), Some(hi)) = (f(&x.lo()), f(&x.hi())) else {
+                return imprecise();
+            };
+            rad += (&lo - &v).abs().max((&hi - &v).abs()) << 1_u64;
+        }
+        Some(Ball::new(v, rad))
+    }
+
+    /// Whether the ball contains a pole of `{$Gamma$}`, a non-positive integer.
+    fn has_gamma_pole(x: &Ball) -> bool {
+        let first = Rational::from(Ceiling::ceiling(x.lo()));
+        first <= 0 && first <= x.hi()
+    }
+
+    /// `{$e^x$}`, with a relative error.
+    fn exp_ball(self, x: &Ball) -> Option<Ball> {
+        if x.rad > Rational::from_signeds(1, 2) {
+            return imprecise();
+        }
+        // `{$|e^(m + d) - e^m| <= e^m (e^r - 1) <= 2 r e^m$}` for `{$|d| <= r <= 1/2$}`
+        Self::unary(
+            x,
+            |m| self.exp_rational(m),
+            |v| self.relative_error(v),
+            |v| Some(upper(v) << 1_u64),
+        )
+    }
+
+    /// `{$ln(x)$}` for a positive `x`.
+    fn ln_ball(self, x: &Ball) -> Option<Ball> {
+        if x.mid <= 0 {
+            return None;
+        }
+        if x.lo() <= 0 && x.rad != 0 {
+            return imprecise();
+        }
+        Self::unary(
+            x,
+            |m| Some(self.to_rational(self.ln(m))),
+            |v| self.absolute_error(v),
+            |_| Some(x.lo().reciprocal()),
+        )
+    }
+
+    /// `{$x^n$}` for a natural `n`, exact for an exact `x`.
+    fn int_pow(x: &Ball, n: u64) -> Ball {
+        let mid = Pow::pow(x.mid.clone(), n);
+        if x.rad == 0 || n == 0 {
+            return Ball::exact(mid);
+        }
+        // `{$|y^n - m^n| <= n M^(n - 1) r$}`, `M` bounding `|y|`
+        let magnitude = round_up(x.magnitude());
+        let rad = Rational::from(n) * Pow::pow(magnitude, n - 1) * &x.rad;
+        Ball::new(mid, rad)
+    }
+
+    /// `{$root(n, x)$}`, `x` being negative only for odd `n`, with a relative error for an exact `x`. Roots are
+    /// monotone, so an inexact `x` gives the roots of its bounds, the lower one clamped to 0 for even roots.
+    fn root_ball(self, x: &Ball, n: u64) -> Option<Ball> {
+        if x.rad == 0 {
+            let v = self.root(&x.mid, n)?;
+            let rad = self.relative_error(&v);
+            return Some(Ball::new(v, rad));
+        }
+        let low = x.min_magnitude();
+        if low > 0 {
+            // `{$|root(n, y)'| = |root(n, y)| / (n |y|) <= |root(n, m)| / (n (|m| - r)) (|m| / (|m| - r))$}`, roots
+            // growing slower than `y`
+            let v = self.root(&x.mid, n)?;
+            let slope = upper(&v) * (&x.mid).abs() / (Rational::from(n) * &low * &low);
+            let rad = self.relative_error(&v) + slope * &x.rad;
+            return Some(Ball::new(v, rad));
+        }
+        let (mut lo, hi) = (x.lo(), x.hi());
+        if n % 2 == 0 && lo < 0 {
+            if hi < 0 {
+                return None;
+            }
+            lo = Rational::ZERO;
+        }
+        let (a, b) = (self.root(&lo, n)?, self.root(&hi, n)?);
+        let a = &a - self.relative_error(&a);
+        let b = &b + self.relative_error(&b);
+        Some(Ball::new((&a + &b) >> 1_u64, (b - a) >> 1_u64))
+    }
+
+    /// `{$b^e$}`, exact for an exact base and a small integer exponent.
+    fn pow_ball(self, base: &Ball, exponant: &Ball) -> Option<Ball> {
+        if base.rad == 0 && base.mid == 0 {
+            return (exponant.lo() > 0).then(|| Ball::exact(Rational::ZERO));
+        }
+        // `{$b^e = exp(e ln b)$}`
+        let general = || self.exp_ball(&self.ln_ball(base)?.mul(exponant));
+        if exponant.rad != 0 {
+            return general();
+        }
+        let e = &exponant.mid;
+        if *e < 0 {
+            return self.pow_ball(base, &Ball::exact(-e))?.reciprocal();
+        }
+        let (num, den) = e.numerator_and_denominator_ref();
+        if *num <= MAX_EXPONENT && *den <= MAX_ROOT {
+            let power = Self::int_pow(base, u64::try_from(num).ok()?);
+            let den = u64::try_from(den).ok()?;
+            return if den == 1 {
+                Some(power)
+            } else {
+                self.root_ball(&power, den)
+            };
+        }
+        general()
+    }
+
+    /// `{$sin$}`, `{$cos$}` or `{$tan$}` of `x`.
+    fn trig_ball(self, ident: Symbol, x: &Ball) -> Option<Ball> {
+        let (sin, cos) = self.sin_cos(&x.mid)?;
+        let (sin, cos) = (self.to_rational(sin), self.to_rational(cos));
+        let error = self.absolute_error(&Rational::ONE);
+        match ident {
+            Context::SIN => Some(Ball::new(sin, error + &x.rad)),
+            Context::COS => Some(Ball::new(cos, error + &x.rad)),
+            _ => {
+                // `{$|cos| >= d$}` on the ball and at the approximation
+                let d = (&cos).abs() - &error - &x.rad;
+                if d <= 0 {
+                    return imprecise();
+                }
+                // The error of the quotient of the approximations, then of the argument (`{$tan' = 1/cos^2$}`)
+                let quotient = &error * (Rational::ONE + ((&sin).abs() + &error) / &d) / &d;
+                let rad = quotient + &x.rad / (&d * &d);
+                Some(Ball::new(sin / cos, rad))
+            }
+        }
+    }
+
+    /// The hyperbolic functions and the inverse trigonometric and hyperbolic functions, `erf`, `erfi`, `Si`, `Ci`
+    /// and `Ei` of `x`, `None` outside of their domain.
+    fn elementary_ball(self, ident: Symbol, x: &Ball) -> Option<Ball> {
+        let f = |m: &Rational| self.eval_elementary(ident, m);
+        let absolute = |v: &Rational| self.absolute_error(v);
+        let estimated = |v: &Rational| self.estimated_error(v);
+        let one = |_: &Rational| Some(Rational::ONE);
+        let reach = x.magnitude();
+        // `{$1 - (|m| + r)^2$}`, positive when the ball is inside `{$(-1, 1)$}`
+        let inside = || {
+            let s = Rational::ONE - &reach * &reach;
+            (s > 0).then_some(s)
+        };
+        match ident {
+            Context::ATAN | Context::TANH | Context::ASINH => Self::unary(x, f, absolute, one),
+            // `{$1/sqrt(1 - y^2) <= 1/(1 - y^2)$}`
+            Context::ASIN | Context::ACOS => {
+                Self::unary(x, f, absolute, |_| inside().map(Reciprocal::reciprocal))
+            }
+            Context::ATANH => Self::unary(x, f, absolute, |_| inside().map(Reciprocal::reciprocal)),
+            Context::ACOSH => Self::unary(x, f, absolute, |_| {
+                // `{$1/sqrt(y^2 - 1)$}`, at most `{$1/(y^2 - 1)$}` below 1
+                let lo = x.lo();
+                let t = &lo * &lo - Rational::ONE;
+                (lo > 1).then(|| {
+                    if t >= 1 {
+                        Rational::ONE
+                    } else {
+                        t.reciprocal()
+                    }
+                })
+            }),
+            // `{$|sinh|, cosh <= cosh(|m| + r) <= e^r cosh m <= 2 (|v| + 1)$}` for `{$r <= 1/2$}`
+            Context::SINH | Context::COSH => Self::unary(
+                x,
+                f,
+                |v| absolute(v) << 1_u64,
+                |v| {
+                    (x.rad <= Rational::from_signeds(1, 2))
+                        .then(|| upper(&(v.abs() + Rational::ONE)) << 1_u64)
+                },
+            ),
+            // `{$2/sqrt(pi) < 2$}`
+            Context::ERF => Self::unary(x, f, estimated, |_| Some(Rational::from(2))),
+            Context::ERFI => Self::unary(x, f, estimated, |_| {
+                let square = round_up(&reach * &reach);
+                Some(upper(&self.exp_rational(&square)?) << 1_u64)
+            }),
+            // `{$|sin(y)/y| <= 1$}`
+            Context::SI => Self::unary(x, f, estimated, one),
+            Context::CI => Self::unary(x, f, estimated, |_| {
+                let lo = x.lo();
+                (lo > 0).then(|| lo.reciprocal())
+            }),
+            Context::EI => Self::unary(x, f, estimated, |_| {
+                let low = x.min_magnitude();
+                (low > 0).then_some(())?;
+                Some(upper(&self.exp_rational(&round_up(reach.clone()))?) / low)
+            }),
+            _ => None,
+        }
+    }
+
+    /// Evaluate a term without symbols, other than builtin constants, as a ball containing its value.
+    fn evaluate(self, term: &Term<Real>) -> Option<Ball> {
         match term {
-            Term::Value(value) => Some(value.value.clone()),
+            Term::Value(value) => Some(Ball::exact(value.value.clone())),
             Term::Symbol(symbol) => match symbol.symbol {
-                Context::PI => Some(self.to_rational(self.pi())),
-                Context::E => Some(self.to_rational(self.exp(&self.one())?)),
+                Context::PI => {
+                    let pi = self.to_rational(self.pi());
+                    let rad = self.absolute_error(&pi);
+                    Some(Ball::new(pi, rad))
+                }
+                Context::E => self.exp_ball(&Ball::exact(Rational::ONE)),
                 // `{$gamma = -psi(1)$}`
-                Context::EULER_GAMMA => Some(-self.digamma(&Rational::ONE)?),
+                Context::EULER_GAMMA => self.estimated(&Ball::exact(Rational::ONE), |fixed, x| {
+                    Some(-fixed.digamma(x)?)
+                }),
                 _ => None,
             },
             Term::Add(add) => add
                 .iter()
-                .try_fold(Rational::ZERO, |sum, term| Some(sum + self.evaluate(term)?)),
+                .try_fold(Ball::exact(Rational::ZERO), |sum, term| {
+                    Some(sum.add(&self.evaluate(term)?))
+                }),
             Term::Mul(mul) => mul
                 .iter()
-                .try_fold(mul.coefficient.clone(), |product, factor| {
-                    Some(product * self.evaluate(factor)?)
+                .try_fold(Ball::exact(mul.coefficient.clone()), |product, factor| {
+                    Some(product.mul(&self.evaluate(factor)?))
                 }),
-            Term::Pow(pow) => self.pow(&self.evaluate(&pow.base)?, &self.evaluate(&pow.exponant)?),
-            Term::Fun(fun) => {
-                let args = fun.get_args::<Real>()?;
-                match (fun.get_ident(), args.as_slice()) {
-                    (Context::EXP, [x]) => self.exp_rational(&self.evaluate(x)?),
-                    (Context::LN, [x]) => {
-                        let x = self.evaluate(x)?;
-                        (x > 0).then(|| self.to_rational(self.ln(&x)))
-                    }
-                    (ident @ (Context::SIN | Context::COS | Context::TAN), [x]) => {
-                        let (sin, cos) = self.sin_cos(&self.from_rational(&self.evaluate(x)?));
-                        match ident {
-                            Context::SIN => Some(self.to_rational(sin)),
-                            Context::COS => Some(self.to_rational(cos)),
-                            _ => (cos != 0).then(|| self.to_rational(self.div(&sin, &cos))),
+            Term::Pow(pow) => {
+                self.pow_ball(&self.evaluate(&pow.base)?, &self.evaluate(&pow.exponant)?)
+            }
+            Term::Fun(fun) => self.evaluate_function(fun.as_ref()),
+        }
+    }
+
+    /// Evaluate a function of terms without symbols, see [`Self::evaluate`].
+    #[allow(clippy::too_many_lines)]
+    fn evaluate_function(self, fun: &dyn crate::term::Function<Real>) -> Option<Ball> {
+        let args = fun.get_args::<Real>()?;
+        let set = fun.get_set();
+        // The value of the builtin at values, by normalization
+        let at = |ident: Symbol, values: Vec<Rational>| -> Option<Rational> {
+            let args = values
+                .into_iter()
+                .map(|v| Term::Value(Value::new(v, set)))
+                .collect();
+            match Term::Fun(Box::new(Fun::new(ident, args, set))).normalize() {
+                Term::Value(value) => Some(value.value),
+                _ => None,
+            }
+        };
+        match (fun.get_ident(), args.as_slice()) {
+            (Context::EXP, [x]) => self.exp_ball(&self.evaluate(x)?),
+            (Context::LN, [x]) => self.ln_ball(&self.evaluate(x)?),
+            (ident @ (Context::SIN | Context::COS | Context::TAN), [x]) => {
+                self.trig_ball(ident, &self.evaluate(x)?)
+            }
+            (ident, args) if ident == Context::real_root() => {
+                let v = super::rootof::approximate(args, self.bits)?;
+                Some(Ball::new(v, Rational::ONE >> self.bits))
+            }
+            (Context::LAMBERTW, [x]) => self.lambert_ball(&self.evaluate(x)?, true),
+            (Context::LAMBERTW, [x, k]) => match self.evaluate(k)? {
+                k if k.rad == 0 && k.mid == 0 => self.lambert_ball(&self.evaluate(x)?, true),
+                k if k.rad == 0 && k.mid == -1 => self.lambert_ball(&self.evaluate(x)?, false),
+                _ => None,
+            },
+            (ident, [x]) if ident == Context::lambertw_m1() => {
+                self.lambert_ball(&self.evaluate(x)?, false)
+            }
+            (Context::GAMMA, [x]) => {
+                let x = self.evaluate(x)?;
+                if x.rad == 0
+                    && let Ok(n) = u64::try_from(&x.mid)
+                    && (1..=MAX_EXPONENT).contains(&n)
+                {
+                    return Some(Ball::exact(Rational::from(Natural::factorial(n - 1))));
+                }
+                if x.rad != 0 && Self::has_gamma_pole(&x) {
+                    return imprecise();
+                }
+                self.estimated(&x, Self::gamma)
+            }
+            (Context::FACTORIAL, [x]) => {
+                let x = self.evaluate(x)?;
+                // Exact for natural numbers, like the terms of series
+                if x.rad == 0
+                    && let Ok(n) = u64::try_from(&x.mid)
+                    && n <= MAX_EXACT_FACTORIAL
+                {
+                    return Some(Ball::exact(Rational::from(Natural::factorial(n))));
+                }
+                let shifted = x.add(&Ball::exact(Rational::ONE));
+                if shifted.rad != 0 && Self::has_gamma_pole(&shifted) {
+                    return imprecise();
+                }
+                self.estimated(&shifted, Self::gamma)
+            }
+            (Context::BINOMIAL, [n, k]) => {
+                let (n, k) = (self.evaluate(n)?, self.evaluate(k)?);
+                if n.rad == 0
+                    && k.rad == 0
+                    && *n.mid.denominator_ref() == 1
+                    && *k.mid.denominator_ref() == 1
+                {
+                    // Exact, also when `{$Gamma$}` has poles
+                    return at(Context::BINOMIAL, vec![n.mid, k.mid]).map(Ball::exact);
+                }
+                // `{$binom(n, k) = Gamma(n + 1) / (Gamma(k + 1) Gamma(n - k + 1))$}`
+                let one = Rational::ONE;
+                let binomial = |n: &Rational, k: &Rational| {
+                    Some(
+                        self.gamma(&(n + &one))?
+                            / (self.gamma(&(k + &one))? * self.gamma(&(n - k + &one))?),
+                    )
+                };
+                let v = binomial(&n.mid, &k.mid)?;
+                let mut rad = self.estimated_error(&v);
+                // Twice the largest variations in `n` and in `k`
+                let mut points = vec![];
+                if n.rad != 0 {
+                    points.extend([(n.lo(), k.mid.clone()), (n.hi(), k.mid.clone())]);
+                }
+                if k.rad != 0 {
+                    points.extend([(n.mid.clone(), k.lo()), (n.mid, k.hi())]);
+                }
+                for (a, b) in points {
+                    rad += (binomial(&a, &b)? - &v).abs() << 1_u64;
+                }
+                Some(Ball::new(v, rad))
+            }
+            (Context::POLYGAMMA, [m, x]) => {
+                let m = self.evaluate(m)?;
+                if m.rad != 0 {
+                    return None;
+                }
+                let m = u64::try_from(&m.mid).ok()?;
+                let x = self.evaluate(x)?;
+                if x.rad != 0 && Self::has_gamma_pole(&x) {
+                    return imprecise();
+                }
+                self.estimated(&x, |fixed, x| fixed.polygamma(m, x))
+            }
+            (Context::ZETA, [s]) => {
+                let s = self.evaluate(s)?;
+                if s.rad == 0 && *s.mid.denominator_ref() == 1 && s.mid <= 0 {
+                    // Exact values from the Bernoulli numbers
+                    return at(Context::ZETA, vec![s.mid]).map(Ball::exact);
+                }
+                self.estimated(&s, |fixed, s| fixed.hurwitz_zeta(s, &Rational::ONE))
+            }
+            (Context::INTEGRATE, [f, Term::Symbol(x), a, b]) => {
+                let v = self.integrate(f, x.symbol, a, b)?;
+                // The step is halved until two results agree to half of the precision
+                let rad = ((&v).abs() + Rational::ONE) >> (self.bits / 2).saturating_sub(2);
+                Some(Ball::new(v, rad))
+            }
+            (ident, [f, Term::Symbol(k), a, _]) if ident == Context::held_sum() => {
+                self.infinite_sum(f, k.symbol, a)
+            }
+            // The finite sums in the general terms of products of series
+            (Context::SUM, [f, Term::Symbol(k), a, b]) => self.finite_sum(f, k.symbol, a, b),
+            (
+                ident @ (Context::ASIN
+                | Context::ACOS
+                | Context::ATAN
+                | Context::SINH
+                | Context::COSH
+                | Context::TANH
+                | Context::ASINH
+                | Context::ACOSH
+                | Context::ATANH
+                | Context::ERF
+                | Context::ERFI
+                | Context::SI
+                | Context::CI
+                | Context::EI),
+                [x],
+            ) => self.elementary_ball(ident, &self.evaluate(x)?),
+            (ident, args) => {
+                // Other builtins, like `abs` or `floor`, are evaluated on the values of their arguments
+                let balls = args
+                    .iter()
+                    .map(|arg| self.evaluate(arg))
+                    .collect::<Option<Vec<_>>>()?;
+                let mids = balls.iter().map(|ball| ball.mid.clone()).collect();
+                if balls.iter().all(|ball| ball.rad == 0) {
+                    return at(ident, mids).map(Ball::exact);
+                }
+                match (ident, balls.as_slice()) {
+                    // Steps, monotone: constant on the ball when equal at its bounds, unknown near a jump
+                    (Context::FLOOR | Context::CEIL | Context::SIGN, [x]) => {
+                        let (lo, hi) = (at(ident, vec![x.lo()])?, at(ident, vec![x.hi()])?);
+                        if lo == hi {
+                            Some(Ball::exact(lo))
+                        } else {
+                            imprecise()
                         }
                     }
-                    (ident, args) if ident == Context::real_root() => {
-                        super::rootof::approximate(args, self.bits)
+                    // 1-Lipschitz
+                    (Context::ABS | Context::MIN | Context::MAX, _) => {
+                        let rad = balls.iter().map(|ball| ball.rad.clone()).max()?;
+                        Some(Ball::new(at(ident, mids)?, rad))
                     }
-                    (Context::LAMBERTW, [x]) => self.lambert_w(&self.evaluate(x)?, true),
-                    (Context::LAMBERTW, [x, k]) => match self.evaluate(k)? {
-                        k if k == 0 => self.lambert_w(&self.evaluate(x)?, true),
-                        k if k == -1 => self.lambert_w(&self.evaluate(x)?, false),
-                        _ => None,
-                    },
-                    (ident, [x]) if ident == Context::lambertw_m1() => {
-                        self.lambert_w(&self.evaluate(x)?, false)
-                    }
-                    (Context::GAMMA, [x]) => self.gamma(&self.evaluate(x)?),
-                    (Context::FACTORIAL, [x]) => {
-                        let x = self.evaluate(x)?;
-                        // Exact for natural numbers, like the terms of series
-                        match u64::try_from(&x) {
-                            Ok(n) if n <= MAX_EXACT_FACTORIAL => {
-                                Some(Rational::from(Natural::factorial(n)))
-                            }
-                            _ => self.gamma(&(x + Rational::ONE)),
-                        }
-                    }
-                    (Context::BINOMIAL, [n, k]) => {
-                        let (n, k) = (self.evaluate(n)?, self.evaluate(k)?);
-                        if let (Ok(n), Ok(k)) = (Integer::try_from(&n), Integer::try_from(&k)) {
-                            // Exact, also when `{$Gamma$}` has poles
-                            let args = vec![
-                                Term::Value(Value::new(Rational::from(n), fun.get_set())),
-                                Term::Value(Value::new(Rational::from(k), fun.get_set())),
-                            ];
-                            return match Term::Fun(Box::new(Fun::new(
-                                Context::BINOMIAL,
-                                args,
-                                fun.get_set(),
-                            )))
-                            .normalize()
-                            {
-                                Term::Value(value) => Some(value.value),
-                                _ => None,
-                            };
-                        }
-                        // `{$binom(n, k) = Gamma(n + 1) / (Gamma(k + 1) Gamma(n - k + 1))$}`
-                        let one = Rational::ONE;
-                        Some(
-                            self.gamma(&(&n + &one))?
-                                / (self.gamma(&(&k + &one))? * self.gamma(&(n - k + one))?),
-                        )
-                    }
-                    (Context::POLYGAMMA, [m, x]) => {
-                        let m = u64::try_from(&self.evaluate(m)?).ok()?;
-                        self.polygamma(m, &self.evaluate(x)?)
-                    }
-                    (Context::ZETA, [s]) => {
-                        let s = self.evaluate(s)?;
-                        if *s.denominator_ref() == 1 && s <= 0 {
-                            // Exact values from the Bernoulli numbers
-                            let set = fun.get_set();
-                            let arg = vec![Term::Value(Value::new(s, set))];
-                            return match Term::Fun(Box::new(Fun::new(Context::ZETA, arg, set)))
-                                .normalize()
-                            {
-                                Term::Value(value) => Some(value.value),
-                                _ => None,
-                            };
-                        }
-                        self.hurwitz_zeta(&s, &Rational::ONE)
-                    }
-                    (Context::INTEGRATE, [f, Term::Symbol(x), a, b]) => {
-                        self.integrate(f, x.symbol, a, b)
-                    }
-                    (ident, [f, Term::Symbol(k), a, _]) if ident == Context::held_sum() => {
-                        self.infinite_sum(f, k.symbol, a)
-                    }
-                    // The finite sums in the general terms of products of series
-                    (Context::SUM, [f, Term::Symbol(k), a, b]) => {
-                        self.finite_sum(f, k.symbol, a, b)
-                    }
-                    (
-                        ident @ (Context::ASIN
-                        | Context::ACOS
-                        | Context::ATAN
-                        | Context::SINH
-                        | Context::COSH
-                        | Context::TANH
-                        | Context::ASINH
-                        | Context::ACOSH
-                        | Context::ATANH
-                        | Context::ERF
-                        | Context::ERFI
-                        | Context::SI
-                        | Context::CI
-                        | Context::EI),
-                        [x],
-                    ) => self.eval_elementary(ident, &self.evaluate(x)?),
-                    (ident, args) => {
-                        // Other builtins, like `abs` or `floor`, are evaluated on approximated arguments
-                        let set = fun.get_set();
-                        let args = args
-                            .iter()
-                            .map(|arg| Some(Term::Value(Value::new(self.evaluate(arg)?, set))))
-                            .collect::<Option<_>>()?;
-                        match Term::Fun(Box::new(Fun::new(ident, args, set))).normalize() {
-                            Term::Value(value) => Some(value.value),
-                            _ => None,
-                        }
-                    }
+                    _ => None,
                 }
             }
         }
+    }
+
+    /// `{$W_0(x)$}`, or `{$W_(-1)(x)$}` without `principal`, see [`Self::lambert_w`]. Its error is estimated from
+    /// the values at the bounds of `x` widened by the relative precision, since it grows near the branch point
+    /// `{$-1/e$}`, and `{$W_(-1)$}` of tiny arguments depends on their relative precision.
+    fn lambert_ball(self, x: &Ball, principal: bool) -> Option<Ball> {
+        if x.rad == 0 && x.mid == 0 {
+            return principal.then(|| Ball::exact(Rational::ZERO));
+        }
+        let precision = (&x.mid).abs() >> self.bits.saturating_sub(GUARD_BITS);
+        let widened = Ball {
+            mid: x.mid.clone(),
+            rad: (&x.rad).max(&precision).clone(),
+        };
+        self.estimated_at_bounds(&widened, |x| self.lambert_w(x, principal))
     }
 }
 
@@ -1148,8 +1675,20 @@ const fn bits_for_digits(digits: u64) -> u64 {
     digits * 33_220 / 10_000 + 1
 }
 
+/// The number of significant bits of the center of a ball which is known to be non-zero, `{$log_2 |m| - log_2 r$}`
+/// rounded down, `None` for an exact ball.
+fn significant_bits(ball: &Ball) -> Option<i64> {
+    (ball.rad != 0).then(|| (&ball.mid).abs().floor_log_base_2() - (&ball.rad).ceiling_log_base_2())
+}
+
 /// Approximate a term without symbols, other than builtin constants, to `digits` significant digits. Return `None`
-/// if the term contains symbols or can't be evaluated, like `{$ln(-1)$}`.
+/// if the term contains symbols or can't be evaluated, like `{$ln(-1)$}`, and 0 when it is indistinguishable from
+/// zero at the maximum precision.
+///
+/// The working precision is raised until the [`Ball`] of the evaluation excludes 0 and has the needed relative
+/// precision, so a non-zero result has the sign of the term, and its digits are right up to the last one (rounded)
+/// for the operations bounding their errors (see [`Ball`]). At the maximum precision, a ball excluding 0 without
+/// enough precision gives only its certain digits.
 pub fn approximate(term: &Term<Real>, digits: u64) -> Option<Rational> {
     let needed = bits_for_digits(digits) + GUARD_BITS / 2;
     // Each term of a held sum is evaluated at the working precision, and more terms are needed as it grows, so a
@@ -1159,39 +1698,40 @@ pub fn approximate(term: &Term<Real>, digits: u64) -> Option<Rational> {
     } else {
         4 * needed + 4096
     };
+    let needed_signed = i64::try_from(needed).ok()?;
     let mut bits = needed + GUARD_BITS;
-    // The last non-zero evaluation below the absolute precision
-    let mut previous: Option<Rational> = None;
     loop {
-        let value = Fixed { bits }.evaluate(term)?;
-        if value == 0 {
+        IMPRECISE.set(false);
+        let Some(ball) = Fixed { bits }.evaluate(term) else {
+            // Too wide balls, like `{$tan$}` near a pole, may be evaluated at a higher precision
+            if IMPRECISE.get() && bits < max_bits {
+                bits = (2 * bits).min(max_bits);
+                continue;
+            }
+            return None;
+        };
+        if ball.rad == 0 {
+            return Some(round_significant(&ball.mid, digits));
+        }
+        if ball.contains_zero() {
             // Maybe below the precision, like `{$e^(-70) < 2^(-100)$}`
             if bits >= max_bits {
-                return Some(value);
+                // Indistinguishable from zero at the maximum precision, like `{$sin(pi)$}`
+                return Some(Rational::ZERO);
             }
             bits = (2 * bits).min(max_bits);
             continue;
         }
-        // The evaluation is accurate to about `{$2^(-"bits")$}`, check the number of significant bits
-        let significant = i64::try_from(bits).ok()? + (&(&value).abs()).floor_log_base_2();
-        if significant >= i64::try_from(needed).ok()? {
-            return Some(round_significant(&value, digits));
+        let significant = significant_bits(&ball)?;
+        if significant >= needed_signed {
+            return Some(round_significant(&ball.mid, digits));
         }
-        // Values below the absolute precision may still have their relative precision, like exact ones or
-        // `{$e^(-x) = 1 / e^x$}`: two evaluations at different precisions agreeing to the needed bits are kept, while
-        // the rounding errors of a zero, like `{$sin(pi)$}`, shrink with the precision
-        if previous
-            .as_ref()
-            .is_some_and(|previous| ((&value - previous).abs() << needed) <= (&value).abs())
-        {
-            return Some(round_significant(&value, digits));
-        }
-        previous = Some(value);
         if bits >= max_bits {
-            // Indistinguishable from zero at the maximum precision, like `{$sin(pi)$}`
-            return Some(Rational::ZERO);
+            // Only the certain digits, `{$log_10 2 > 0.3$}`
+            let certain = u64::try_from(significant.max(1) * 3 / 10).ok()?.max(1);
+            return Some(round_significant(&ball.mid, certain.min(digits)));
         }
-        let missing = u64::try_from(i64::try_from(needed).ok()? - significant).ok()?;
+        let missing = u64::try_from(needed_signed - significant).ok()?;
         bits = (bits + missing + GUARD_BITS).min(max_bits);
     }
 }
@@ -1212,13 +1752,18 @@ fn has_held_sum(term: &Term<Real>) -> bool {
     }
 }
 
-/// Approximate a term like [`approximate`], but in a single evaluation with an absolute error of about
-/// `{$2^(-"bits")$}`, which is faster when the value may be zero.
-pub fn approximate_fixed(term: &Term<Real>, bits: u64) -> Option<Rational> {
+/// Evaluate a term like [`approximate`], but in a single evaluation at a precision of about `{$2^(-"bits")$}`, as a
+/// [`Ball`] containing its value, which is faster when the value may be zero.
+pub fn enclose(term: &Term<Real>, bits: u64) -> Option<Ball> {
     Fixed {
         bits: bits + GUARD_BITS,
     }
     .evaluate(term)
+}
+
+/// The center of [`enclose`], an approximation without error bound, for heuristics whose results are checked.
+pub fn approximate_fixed(term: &Term<Real>, bits: u64) -> Option<Rational> {
+    enclose(term, bits).map(|ball| ball.mid)
 }
 
 /// An approximated value, printed as a decimal number.

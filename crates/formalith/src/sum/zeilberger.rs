@@ -126,6 +126,13 @@ pub(super) fn definite(f: &Expr, k: Symbol, a: &Expr, b: &Expr) -> Option<Expr> 
     // The closed form against values term by term
     let agrees = |res: &Expr, m: usize, direct: &Expr| {
         let at_m = combine_factorials(&subs(res, n, &value(Rational::from(m))));
+        // A constant closed form must be defined there, not a pole like `{$1/(0 (-1)!^2)$}`
+        if is_constant(&at_m)
+            && crate::field::real::approx::approximate(&at_m, crate::field::real::expr::DIGITS)
+                .is_none()
+        {
+            return false;
+        }
         let difference = polynomial_binomials(&(at_m - direct)).expand();
         difference.is_zero() || negligible(&difference)
     };
@@ -308,14 +315,17 @@ fn direct(f: &Expr, n: Symbol, k: Symbol, a: &Expr, b: &Expr, m: usize) -> Optio
     subs(f, n, &m).sum(k, a, &subs(b, n, &m)).ok()
 }
 
-/// Whether a constant is indistinguishable from zero at the maximum precision of approximations (see
-/// [`constant_sign`]), for closed forms with angles like `{$cos(n theta)$}` not reduced at integers.
+/// Whether a constant is zero (see [`is_numerically_zero`]), for closed forms with angles like `{$cos(n theta)$}`
+/// not reduced at integers. A constant which can't be approximated, like a pole, isn't.
 fn negligible(difference: &Expr) -> bool {
-    difference
-        .symbols()
+    is_constant(difference) && crate::field::real::expr::is_proven_zero(difference)
+}
+
+/// Whether `term` has no symbol other than builtin constants.
+fn is_constant(term: &Expr) -> bool {
+    term.symbols()
         .iter()
         .all(|s| Context::is_builtin_constant(*s))
-        && crate::field::real::expr::constant_sign(difference).is_none()
 }
 
 /// A recurrence `{$sum_j sigma_j F(n + j, k) = G(n, k + 1) - G(n, k)$}` with its certificate `{$G = R F$}`, as

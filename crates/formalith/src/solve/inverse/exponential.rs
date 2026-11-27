@@ -87,8 +87,8 @@ impl Inverter {
             }
             Some(n.eval(&[])).filter(|v| v.is_finite())
         };
-        // Exact signs and floating-point values, the rates being sorted
-        let mut exponentials: Vec<(Exponential, Ordering)> = vec![];
+        // Exact signs and floating-point values, the rates being sorted exactly
+        let mut exponentials: Vec<(Exponential, Ordering, &Expr)> = vec![];
         for (rate, coefficient) in &terms {
             if depends(coefficient, x) || symbols.iter().any(|s| depends(coefficient, *s)) {
                 return None;
@@ -98,27 +98,35 @@ impl Inverter {
             if sign == Ordering::Equal {
                 continue;
             }
-            exponentials.push((
-                Exponential {
-                    rate: numeric(rate)?,
-                    coefficient: numeric(coefficient)?,
-                },
-                sign,
-            ));
-        }
-        exponentials.sort_by(|a, b| a.0.rate.total_cmp(&b.0.rate));
-        if exponentials
-            .windows(2)
-            .any(|w| (w[1].0.rate - w[0].0.rate).abs() <= 1e-12 * w[1].0.rate.abs().max(1.0))
-        {
-            // Equal rates should have been merged
-            return None;
+            let exponential = Exponential {
+                rate: numeric(rate)?,
+                coefficient: numeric(coefficient)?,
+            };
+            // Insertion by the exact order of the rates, close floats being compared exactly
+            let mut index = exponentials.len();
+            for (i, (other, _, other_rate)) in exponentials.iter().enumerate() {
+                let (p, q) = (exponential.rate, other.rate);
+                let order = if (p - q).abs() > 1e-9 * p.abs().max(q.abs()).max(1.0) {
+                    p.partial_cmp(&q)?
+                } else {
+                    constant_sign(&(rate - *other_rate).normalize())?
+                };
+                match order {
+                    // Equal rates should have been merged
+                    Ordering::Equal => return None,
+                    Ordering::Less => {
+                        index = index.min(i);
+                    }
+                    Ordering::Greater => {}
+                }
+            }
+            exponentials.insert(index, (exponential, sign, rate));
         }
         let changes = exponentials.windows(2).filter(|w| w[0].1 != w[1].1).count();
         if changes == 0 {
             return Some(Ok(vec![]));
         }
-        let terms: Vec<Exponential> = exponentials.into_iter().map(|(t, _)| t).collect();
+        let terms: Vec<Exponential> = exponentials.into_iter().map(|(t, _, _)| t).collect();
         // Rational roots close to the approximate ones, checked exactly
         let mut exact: Vec<Rational> = vec![];
         for root in real_roots(&terms) {

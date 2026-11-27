@@ -17,7 +17,7 @@ use malachite::{
     base::num::{
         arithmetic::traits::{
             Abs, BinomialCoefficient, Ceiling, CheckedRoot, CheckedSqrt, DivisibleBy, Factorial,
-            Floor, Gcd, Lcm, Parity, Pow, Reciprocal, Sign,
+            Floor, FloorLogBase2, Gcd, Lcm, Parity, Pow, Reciprocal, Sign,
         },
         basic::traits::{NegativeOne, One, Zero},
         factorization::traits::Primes,
@@ -1679,16 +1679,26 @@ impl R<Rational> {
     /// `{$atan(tan theta) = theta - k pi$}` for a constant `{$theta$}`, `k` being the integer nearest to
     /// `{$theta / pi$}`. `None` when `{$theta$}` can't be approximated, or is too close to a pole of `tan`.
     fn reduce_angle(self, theta: Term<Self>) -> Option<Term<Self>> {
+        /// Most bits of the approximation of `{$theta / pi$}`.
+        const MAX_BITS: u64 = 4096;
         let pi = Term::Symbol(SymbolTerm::new(Context::PI, self));
-        // `{$theta/pi + 1/2$}` is never an integer since `{$cos theta != 0$}`, but must be far enough from one to
-        // round with an approximation
-        let shifted =
-            approx::approximate_fixed(&(&theta / &pi), 64)? + Rational::from_signeds(1, 2);
-        let k = Rational::from((&shifted).floor());
-        let margin = Rational::from_signeds(1, 1_i64 << 32);
-        if &shifted - &k < margin || &k + Rational::ONE - &shifted < margin {
-            return None;
-        }
+        let ratio = &theta / &pi;
+        // `{$theta/pi + 1/2$}` is never an integer since `{$cos theta != 0$}`, so its floor is the same at both
+        // bounds of an accurate enough approximation, whose error grows with `{$|theta|$}`
+        let mut bits = 64;
+        let k = loop {
+            let ball = approx::enclose(&ratio, bits)?;
+            let half = Rational::from_signeds(1, 2);
+            let (lo, hi) = ((ball.lo() + &half).floor(), (ball.hi() + half).floor());
+            if lo == hi {
+                break Rational::from(lo);
+            }
+            if bits >= MAX_BITS {
+                return None;
+            }
+            let magnitude = u64::try_from((&ball.mid).abs().floor_log_base_2().max(0)).ok()?;
+            bits = (2 * bits + magnitude).min(MAX_BITS);
+        };
         Some(theta - Term::Value(Value::new(k, self)) * pi)
     }
 

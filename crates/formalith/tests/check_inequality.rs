@@ -560,8 +560,10 @@ fn bug_sector_sampled_at_a_rounded_root() {
 #[test]
 fn bug_vanishing_coefficients_over_sections() {
     // Over the roots of `{$x^3 - 3x + 1$}`, `{$y^2 - (x^3 - 3x + 1)$}` had roots `{$plus.minus sqrt(0)$}` with an
-    // unsimplified zero, which couldn't be approximated
-    regression("y^2 < x^3 - 3*x + 1");
+    // unsimplified zero, which couldn't be approximated. Over `{$x_0 = 2 cos(10 pi/9)$}`, the radicand
+    // `{$8 cos(10 pi/9)^3 - 6 cos(10 pi/9) + 1$}` is zero (`{$cos(3a) = 4 cos(a)^3 - 3 cos(a)$}`), which expansion
+    // doesn't prove, so the two roots can't be compared: an error rather than a zero taken from an approximation
+    // (see `soundness::zeros_need_proofs`)
     regression("y^2 >= x^3 - x - 2");
 }
 

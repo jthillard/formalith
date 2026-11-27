@@ -138,11 +138,17 @@ pub fn natural_roots(p: &EPoly) -> Option<Vec<u64>> {
         .collect::<Option<Vec<_>>>()?;
     let (candidates, _) =
         rational_roots(&Poly::new(specialized), crate::context::Symbol::new("@n"));
+    let naturals: Vec<u64> = candidates
+        .into_iter()
+        .filter_map(|r| u64::try_from(&r).ok())
+        .collect();
+    // A larger root would be missed, and the indices past it are needed
+    if naturals.iter().any(|&n| n > MAX_ROOT) {
+        return None;
+    }
     Some(
-        candidates
+        naturals
             .into_iter()
-            .filter_map(|r| u64::try_from(&r).ok())
-            .filter(|&n| n <= MAX_ROOT)
             .filter(|&n| p.eval(&Elem::integer(n.cast_signed())).is_zero())
             .collect(),
     )

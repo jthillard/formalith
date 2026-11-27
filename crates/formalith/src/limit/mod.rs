@@ -40,10 +40,8 @@ use std::{cmp::Ordering, error::Error, fmt};
 
 use malachite::{
     Rational,
-    base::num::{
-        arithmetic::traits::{Abs, Floor, Pow},
-        basic::traits::One,
-    },
+    base::num::{arithmetic::traits::Floor, basic::traits::One},
+    rational::arithmetic::traits::SimplestRationalInInterval,
 };
 
 use crate::{
@@ -355,16 +353,20 @@ fn const_cmp(a: &Expr, b: &Expr) -> LimitResult<Ordering> {
 
 /// A rational close to the constant `term`, below it if `!above`, above it otherwise.
 fn rational_bound(term: &Expr, above: bool) -> LimitResult<Rational> {
+    /// Absolute precision of the bounds, in bits.
+    const BITS: u64 = 100;
     if let Term::Value(value) = term {
         return Ok(value.value.clone());
     }
-    let value = approximate(term, DIGITS).ok_or(LimitError::Unknown)?;
-    // The approximation has `DIGITS` significant digits
-    let epsilon = ((&value).abs() + Rational::ONE) / Rational::from(10u32).pow(20u64);
+    let ball = crate::field::real::approx::enclose(term, BITS).ok_or(LimitError::Unknown)?;
+    // The simplest rational between the bound of the ball and a slightly wider one
+    let slack = Rational::ONE >> BITS;
     Ok(if above {
-        value + epsilon
+        let hi = ball.hi();
+        Rational::simplest_rational_in_closed_interval(&hi, &(&hi + slack))
     } else {
-        value - epsilon
+        let lo = ball.lo();
+        Rational::simplest_rational_in_closed_interval(&(&lo - slack), &lo)
     })
 }
 

@@ -34,8 +34,9 @@ use crate::{
     },
     field::real::{
         R,
-        approx::{approximate, approximate_fixed},
+        approx::{approximate, enclose},
         expr::{Expr, depends, subs, value, variable, zero},
+        expr::{is_numerically_zero, is_proven_zero, zero_from_approximation},
         rootof,
         sign::linear_expr,
     },
@@ -58,11 +59,12 @@ const MAX_FACTORS: usize = 40;
 /// Bits of the approximations of bounds compared by [`close`], accurate to about `{$2^(-116) < 10^(-34)$}`.
 const SAME_BOUND_BITS: u64 = 116;
 
-/// Whether the approximations `a` and `b` are the same point.
+/// Whether the approximations `a` and `b`, with [`DIGITS`] significant digits, may be the same point: they differ
+/// by less than a few units of their last digit, so that two approximations of a point never differ more.
 fn close(a: &Rational, b: &Rational) -> bool {
     let difference = (a - b).abs();
     let scale = a.clone().abs() + Rational::ONE;
-    difference * Rational::from(10u32).pow(30u64) <= scale
+    difference * Rational::from(10u32).pow(DIGITS - 3) <= scale
 }
 
 /// The product of two signs.
@@ -89,9 +91,9 @@ impl Root {
     }
 
     /// Whether `self` and `other`, sorted by their approximations, are the same root. Rational roots are compared
-    /// exactly, and others with approximations close to each other by their difference: zero once expanded, or a
-    /// constant whose sign can't be found, being indistinguishable from zero at the maximum precision. Distinct roots
-    /// too close to be separated by the approximations are an error, since a sample between them would be wrong.
+    /// exactly, and others with approximations close to each other by their difference (see
+    /// [`is_numerically_zero`]). Distinct roots too close to be separated by the approximations are an error, since a
+    /// sample between them would be wrong, and so are roots which can't be compared.
     fn same(&self, other: &Self) -> Result<bool, SolveError> {
         if self.is_exact() && other.is_exact() {
             return Ok(self.approximation == other.approximation);
@@ -100,13 +102,18 @@ impl Root {
             return Ok(false);
         }
         let difference = (self.value.clone() - other.value.clone()).normalize();
-        if difference.is_zero() || difference.expand().is_zero() {
+        if difference.expand().is_zero() {
             return Ok(true);
         }
-        match crate::field::real::expr::constant_sign(&difference) {
-            None | Some(Ordering::Equal) => Ok(true),
-            Some(_) => Err(SolveError::Inequality(format!(
+        match is_numerically_zero(&difference) {
+            Some(true) => Ok(true),
+            Some(false) => Err(SolveError::Inequality(format!(
                 "can't separate the roots `{}` and `{}`",
+                plain(&self.value),
+                plain(&other.value)
+            ))),
+            None => Err(SolveError::Inequality(format!(
+                "can't compare the roots `{}` and `{}`",
                 plain(&self.value),
                 plain(&other.value)
             ))),
@@ -139,12 +146,12 @@ const MAX_RECOGNIZED: u64 = 1_000_000_000_000;
 /// written with nested radicals equal to 1600 at a root of a discriminant. `solve_for` doesn't finish on polynomials
 /// with such coefficients, and the square roots of a vanishing value approximated as slightly negative would be
 /// wrong. A coefficient is a rational when its approximation at [`DIGITS`] digits is within a relative
-/// `{$10^(-35)$}` of one with numerator and denominator below `{$10^12$}` (0 when it is zero at the maximum
-/// precision), which an irrational number would only be by chance.
+/// `{$10^(-35)$}` of one with numerator and denominator below `{$10^12$}`, and their difference is zero (see
+/// [`is_numerically_zero`]).
 fn rational_value(c: &Expr) -> Option<Rational> {
     let approximation = approximate(c, DIGITS)?;
     if approximation == 0 {
-        return Some(approximation);
+        return (zero_from_approximation(c, &approximation) == Some(true)).then_some(approximation);
     }
     let margin = (&approximation).abs() / Rational::from(10u32).pow(35u64);
     let rational = simplest(&(&approximation - &margin), &(&approximation + margin));
@@ -154,9 +161,7 @@ fn rational_value(c: &Expr) -> Option<Rational> {
     }
     // A constant close to the rational without being it, like `{$1 + 10^(-40) sqrt(2)$}`
     let difference = (c.clone() - value(rational.clone())).normalize();
-    crate::field::real::expr::constant_sign(&difference)
-        .is_none_or(|sign| sign == Ordering::Equal)
-        .then_some(rational)
+    is_proven_zero(&difference).then_some(rational)
 }
 
 /// The polynomial `p` in `x` with its coefficients equal to rationals replaced by them, see [`rational_value`].
@@ -677,13 +682,25 @@ impl<'a> Cad<'a> {
         if coefficients.len() < 2 {
             return Ok(Some(vec![]));
         }
-        let roots = rootof::real_roots(&Poly::new(coefficients))
-            .into_iter()
-            .filter(|root| {
-                approximate_fixed(&subs(p, x, root).normalize(), SAME_BOUND_BITS)
-                    .is_some_and(|value| close(&value, &Rational::ZERO))
-            })
-            .collect();
+        // The roots where `p` vanishes: those where its approximation excludes 0 are dropped, the others checked
+        let mut roots = vec![];
+        for root in rootof::real_roots(&Poly::new(coefficients)) {
+            let at = subs(p, x, &root).normalize();
+            if enclose(&at, SAME_BOUND_BITS).is_some_and(|ball| !ball.contains_zero()) {
+                continue;
+            }
+            match is_numerically_zero(&at) {
+                Some(true) => roots.push(root),
+                Some(false) => {}
+                None => {
+                    return Err(SolveError::Inequality(format!(
+                        "can't decide if `{}` vanishes at `{}`",
+                        plain(p),
+                        plain(&root)
+                    )));
+                }
+            }
+        }
         approximated(roots).map(Some)
     }
 
@@ -838,15 +855,17 @@ impl<'a> Cad<'a> {
         match (a, b) {
             (None, None) => true,
             (Some(a), Some(b)) => {
-                // `close` only needs an absolute accuracy, and a bound may vanish at the point, where `approximate`
-                // would raise its precision up to its maximum
-                let approximate_at = |term: &Expr| {
-                    approximate_fixed(&Self::substitute(term, point), SAME_BOUND_BITS)
-                };
-                match (approximate_at(a), approximate_at(b)) {
-                    (Some(a), Some(b)) => close(&a, &b),
-                    _ => false,
+                // Bounds whose approximations are disjoint differ, a single evaluation being enough when a bound
+                // vanishes at the point, where `approximate` would raise its precision up to its maximum. Others are
+                // compared exactly, and are only merged when they are the same.
+                let (a, b) = (Self::substitute(a, point), Self::substitute(b, point));
+                if let (Some(a), Some(b)) =
+                    (enclose(&a, SAME_BOUND_BITS), enclose(&b, SAME_BOUND_BITS))
+                    && (a.hi() < b.lo() || b.hi() < a.lo())
+                {
+                    return false;
                 }
+                is_proven_zero(&(a - b))
             }
             _ => false,
         }

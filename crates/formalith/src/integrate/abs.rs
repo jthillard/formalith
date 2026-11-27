@@ -33,7 +33,7 @@ pub(super) fn integrate(f: &Expr, x: Symbol) -> IntegrateResult<Expr> {
     for u in &arguments {
         zeros(u, x, line, &mut points)?;
     }
-    sort_points(&mut points);
+    sort_points(&mut points)?;
     // The antiderivative on each interval between the zeros
     let oo = variable(Context::OO);
     let mut bounds = vec![(f64::NEG_INFINITY, -&oo)];
