@@ -6,8 +6,9 @@
 //! expressions in both `x` and `y`, definitions of two parameters and equations `z = f(x, y)`. In `C`, functions
 //! `f(z)` are drawn as the images of the lines of a grid, or in 3D as the surface `|f|` colored by `arg f`
 //! ([`GraphKind::ComplexMap`]), real ones as surfaces `f(x + i y)`, functions of a real `x` as curves (with their
-//! real and imaginary parts when they aren't real, [`GraphKind::ComplexCurve`]), and constants as points
-//! `(Re, Im)`. Sequences of `R^N` and recursive definitions in `R` (`u(0) := 1`, `u(n) := 2 u(n - 1) + 1`) are drawn
+//! real and imaginary parts when they aren't real, [`GraphKind::ComplexCurve`]), constants as points
+//! `(Re, Im)`, and relations between real functions of `z` as regions of the plane `z = x + i y`
+//! (`abs(z) < 2, im(z) > 0`). Sequences of `R^N` and recursive definitions in `R` (`u(0) := 1`, `u(n) := 2 u(n - 1) + 1`) are drawn
 //! as their points `(k, u_k)` ([`GraphKind::Sequence`]), the other parameters of a definition `f(c, n)` being
 //! parameters of the graph.
 //!
@@ -557,6 +558,16 @@ fn parse(input: &str, env: &Environment) -> Result<Term<Real>, ParserError> {
 
 /// Parse an expression in `R` like [`parse`], `input` being a part of `line`, so that errors point at `line`.
 fn parse_part(input: &str, line: &str, env: &Environment) -> Result<Term<Real>, ParserError> {
+    parse_part_in(input, line, env, R)
+}
+
+/// Parse an expression in `set` like [`parse_part`].
+fn parse_part_in<T: Set>(
+    input: &str,
+    line: &str,
+    env: &Environment,
+    set: T,
+) -> Result<Term<T>, ParserError> {
     // The parts of a line are slices of it
     let offset = (input.as_ptr().addr())
         .checked_sub(line.as_ptr().addr())
@@ -564,7 +575,7 @@ fn parse_part(input: &str, line: &str, env: &Environment) -> Result<Term<Real>, 
     Parser::new(input)
         .with_offset(offset)
         .with_environment(env)
-        .parse(R)
+        .parse(set)
 }
 
 /// Evaluate a line in `R`, which isn't a command, with its graph.
@@ -729,9 +740,33 @@ fn complex_point(c: &Term<Complex>) -> Option<Graph> {
     }))
 }
 
+/// The graph of the region of the plane `z = x + i y` where every relation `lhs op rhs` between complex terms
+/// holds, `!=` relations being left out, if both sides of every relation are real, like `abs(z) < 2`.
+fn complex_region(relations: &[(Term<Complex>, Relation, Term<Complex>)]) -> Option<Graph> {
+    let (x, y) = xy();
+    let z = Symbol::new("z");
+    let differences = relations
+        .iter()
+        .filter(|(_, relation, _)| *relation != Relation::NotEqual)
+        .map(|(lhs, relation, rhs)| {
+            let (re, im) = parts(&(lhs - rhs), z, x, y)?;
+            im.is_zero().then_some((re, *relation))
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let zero = Term::zero(R);
+    region_graph(
+        &differences
+            .iter()
+            .map(|(re, relation)| (re, *relation, &zero))
+            .collect::<Vec<_>>(),
+    )
+}
+
 /// Evaluate a line in `C`, which isn't a command, with its graph: the images of a grid under functions of `z` (see
 /// [`GraphKind::ComplexMap`]), curves for functions of `x` or of another single parameter of a definition (see
-/// [`GraphKind::ComplexCurve`]), and points `(Re c, Im c)` for constants `c`.
+/// [`GraphKind::ComplexCurve`]), points `(Re c, Im c)` for constants `c`, and regions for relations in `z`, `x` or
+/// `y` (see [`GraphKind::Implicit`]), kept as they are, which are drawn when their sides are real, like
+/// `abs(z - 1) <= re(z)`.
 ///
 /// # Errors
 /// Returns the parsing error if `line` is not a valid statement.
@@ -744,6 +779,37 @@ pub(crate) fn evaluate_complex(
 ) -> Result<(Evaluated, Option<Graph>), ParserError> {
     let (x, y) = xy();
     let z = Symbol::new("z");
+    let relations = split_relation(line)
+        .map(|relation| vec![relation])
+        .or_else(|| {
+            split_relations(line).filter(|relations| {
+                relations
+                    .iter()
+                    .any(|(_, relation, _)| *relation != Relation::Equal)
+            })
+        });
+    if let Some(relations) = relations {
+        let relations = relations
+            .into_iter()
+            .map(|(lhs, relation, rhs)| {
+                Ok((
+                    parse_part_in(lhs, line, env, C)?,
+                    relation,
+                    parse_part_in(rhs, line, env, C)?,
+                ))
+            })
+            .collect::<Result<Vec<_>, ParserError>>()?;
+        let variable = relations.iter().any(|(lhs, _, rhs)| {
+            [lhs, rhs].into_iter().any(|side| {
+                let symbols = side.symbols();
+                [x, y, z].iter().any(|symbol| symbols.contains(symbol))
+            })
+        });
+        if variable {
+            let graph = complex_region(&relations);
+            return Ok((Evaluated::relations(relations), graph));
+        }
+    }
     let statement = env.eval(line, C)?;
     let graph_of = |term: &Term<Complex>| {
         let symbols = term.symbols();

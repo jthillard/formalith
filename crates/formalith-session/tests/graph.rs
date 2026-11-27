@@ -356,3 +356,38 @@ fn test_recursive_definitions_with_parameters() {
         (vec![(0, 3.), (1, 6.), (2, 12.)], vec!["a".to_owned()])
     );
 }
+
+#[test]
+fn test_complex_regions() {
+    let mut session = Session::new();
+    session.run(":set C");
+    let inside = |relations: &[ImplicitRelation], values: &[f64]| {
+        relations.iter().all(|relation| relation.holds(values))
+    };
+    let (text, relations) = region(&mut session, "abs(z) < 2");
+    assert_eq!(text, "abs(z) < 2");
+    assert_eq!(relations.len(), 1);
+    assert!(inside(&relations, &[1., 1.]));
+    assert!(!inside(&relations, &[2., 1.]));
+    let (_, relations) = region(&mut session, "abs(z) < 2, im(z) > 0");
+    assert_eq!(relations.len(), 2);
+    assert!(inside(&relations, &[0., 1.]));
+    assert!(!inside(&relations, &[0., -1.]));
+    let (_, relations) = region(&mut session, "abs(z - 1) <= re(z)");
+    assert!(inside(&relations, &[1., 1.]));
+    assert!(!inside(&relations, &[0., 1.]));
+    // Parameters
+    let (_, graph) = draw(&mut session, "abs(z - a) <= 1");
+    let graph = graph.unwrap();
+    assert_eq!(graph.params, ["a"]);
+    let GraphKind::Implicit { relations } = graph.kind else {
+        panic!("Expected a region");
+    };
+    assert!(inside(&relations, &[2.5, 0., 2.]));
+    assert!(!inside(&relations, &[0., 0., 2.]));
+    // A curve
+    let (_, relations) = region(&mut session, "abs(z) = 1");
+    assert_eq!(relations[0].relation, Comparison::Equal);
+    // Comparisons of non-real sides aren't drawn
+    assert!(draw(&mut session, "z^2 < 1").1.is_none());
+}
