@@ -51,14 +51,26 @@ pub(super) fn simplify(u: &Expr) -> Expr {
     res
 }
 
-/// Whether `term` is proven zero by trigonometric identities: its products of `sin` and `cos` written as sums,
-/// then expanded, give 0 (`{$sin(2 u) - 2 sin u cos u$}`). A proof, since these rewrites are identities.
+/// Whether `term` is proven zero by trigonometric identities: with `{$tan u = sin u / cos u$}`, its products and
+/// powers of `sin` and `cos` written as sums, then expanded, give 0 (`{$sin(2 u) - 2 sin u cos u$}`,
+/// `{$tan 1 - sin 1 / cos 1$}`). A proof, since these rewrites are identities.
 pub(super) fn is_trigonometric_zero(term: &Expr) -> bool {
-    if !has_function(term, &[Context::SIN, Context::COS]) {
+    if !has_function(term, &[Context::SIN, Context::COS, Context::TAN]) {
         return false;
     }
-    let linearized = products_to_sums(term);
-    linearized != *term && linearized.expand().is_zero()
+    let rewritten = products_to_sums(&tan_free(term));
+    rewritten != *term && rewritten.expand().is_zero()
+}
+
+/// `term` with `{$tan u = sin u / cos u$}`.
+fn tan_free(term: &Expr) -> Expr {
+    map_tree(term, &|t| {
+        let (Context::TAN, u) = unary(t)? else {
+            return None;
+        };
+        let u = tan_free(u);
+        Some(fun(Context::SIN, u.clone()) / fun(Context::COS, u))
+    })
 }
 
 /// Rewrite the products and powers of `sin` and `cos` as sums, `{$sin a cos b = (sin(a + b) + sin(a - b))/2$}`,

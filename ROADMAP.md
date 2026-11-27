@@ -74,12 +74,11 @@ approximation is the sign of the constant. What is left:
 - **Zero tests are proofs only.** Decisions that need an equality (`expr::is_numerically_zero`: the CAD's
   `rational_value`, `Root::same`, `eliminated_roots` and `same_bound`, `compare_points` of definite integrals,
   `nicer_value`, `zeilberger::negligible`, Gruntz's zero tests and `without_angles`) take a constant as zero only when
-  normalization, expansion or the products and powers of `sin` and `cos` written as sums (`rewrite::is_trigonometric_zero`,
-  so `sin(2t) - 2 sin(t) cos(t)` and `8 cos(a)^3 - 6 cos(a) + 1` at `a = 10π/9` are zero) give 0, never from an
-  approximation. Zeros that these don't see stay undecided:
-  - `tan(1) - (sin(1)/cos(1))`, so `integrate(tan(x)^2, x, 0, 1)` keeps the form of the limit, `sin(1)/cos(1) - 1`;
-  - other identities, like nested radicals equal to a rational that their tower doesn't reach, or polynomials in
-    `cos(a)` of an angle whose multiple isn't a classic value.
+  normalization, expansion or `tan` written as `sin / cos` and the products and powers of `sin` and `cos` as sums
+  (`rewrite::is_trigonometric_zero`, so `sin(2t) - 2 sin(t) cos(t)`, `tan(1) - sin(1)/cos(1)` and
+  `8 cos(a)^3 - 6 cos(a) + 1` at `a = 10π/9` are zero) give 0, never from an approximation. Zeros that these don't
+  see stay undecided, like nested radicals equal to a rational that their tower doesn't reach, or polynomials in
+  `cos(a)` of an angle whose multiple isn't a classic value.
 
   Zero tests of constants in the tower of their radicals (like `radicals::Tower`, with `cos(2π/9)` as a root of its
   minimal polynomial) would recover more.

@@ -402,11 +402,9 @@ fn definite_integrals() {
         integrate("integrate(1/(2+cos(x)), x, 0, 2*pi)"),
         integrate("2*pi*sqrt(3)/3")
     );
-    // The substituted antiderivative `{$tan(1) - 1$}` isn't proven equal to the limit `{$sin(1)/cos(1) - 1$}` by
-    // expansion, so the limit is kept
     assert_eq!(
         integrate("integrate(tan(x)^2, x, 0, 1)"),
-        integrate("sin(1)/cos(1) - 1")
+        integrate("tan(1) - 1")
     );
     assert_eq!(integrate("integrate(x*exp(-x^2), x, -oo, oo)"), "0");
     // Oscillations whose frequency has an unknown sign
