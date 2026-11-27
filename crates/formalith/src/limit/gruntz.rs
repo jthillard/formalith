@@ -370,16 +370,27 @@ impl Gruntz {
                     res.substitute(*t, &angle_sample(i, j))
                 })
         };
-        let samples = (0..ANGLE_SAMPLES)
-            .map(|j| at(j).and_then(|res| approximate_fixed(&res, SAMPLE_BITS)))
+        let values = (0..ANGLE_SAMPLES)
+            .map(at)
+            .collect::<Option<Vec<_>>>()
+            .ok_or(LimitError::Unknown)?;
+        let samples = values
+            .iter()
+            .map(|value| approximate_fixed(value, SAMPLE_BITS))
             .collect::<Option<Vec<_>>>()
             .ok_or(LimitError::Unknown)?;
         let tolerance = Rational::from_signeds(1, 1_000_000_000_000_000_000_i64);
         let small = |value: &Rational| *value < tolerance && -value < tolerance;
-        let constant = samples.iter().all(|sample| small(&(sample - &samples[0])));
-        if constant && small(&samples[0]) {
-            Ok(zero())
-        } else if constant {
+        // Values close to the first one are compared exactly, like `{$10^(-30) sin t$}` isn't constant: their
+        // difference is zero, or indistinguishable from it at the maximum precision
+        let constant = samples.iter().zip(&values).all(|(sample, value)| {
+            let difference = crate::term::Normalize::normalize(&(value - &values[0]));
+            small(&(sample - &samples[0]))
+                && (difference.is_zero()
+                    || crate::field::real::expr::constant_sign(&difference)
+                        .is_none_or(|sign| sign == Ordering::Equal))
+        });
+        if constant {
             angles
                 .iter()
                 .try_fold(res.clone(), |res, t| res.substitute(*t, &zero()))

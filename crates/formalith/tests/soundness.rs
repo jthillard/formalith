@@ -127,3 +127,11 @@ fn principal_branches_in_complex_calculus() {
     assert_eq!(eval_in("C", &["lim(ln(x), x, -1)"]), "i*pi");
     assert_eq!(eval_in("C", &["integrate(sqrt(x), x, 0, 1)"]), "2/3");
 }
+
+#[test]
+fn small_oscillations_at_infinity() {
+    // The result depends on the angle by less than the tolerance of its samples
+    assert_eq!(eval_r("lim(10^(-30)*sin(x), x, oo)"), "undefined");
+    assert_eq!(eval_r("lim(1 + 10^(-30)*sin(x), x, oo)"), "undefined");
+    assert_eq!(eval_r("lim(sin(x)^2 + cos(x)^2, x, oo)"), "1");
+}
