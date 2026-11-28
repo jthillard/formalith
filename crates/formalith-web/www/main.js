@@ -257,7 +257,7 @@ let nextId = 0;
 // Appends `line`, which changed the session, to `log`, compacting it: `:clear` keeps only the set and the Typst
 // output (it doesn't change them), consecutive `:set` keep the last one and consecutive `:typst` cancel. Definitions
 // are kept even when redefined, later ones may use them.
-function record(log, line) {
+function recordReplay(log, line) {
   const last = log.at(-1);
   if (line === ':clear') {
     const set = log.findLast(entry => entry.startsWith(':set '));
@@ -275,7 +275,7 @@ function record(log, line) {
 
 // Lines typed which changed the session, kept in the local storage to restore it after a reload (compacted again in
 // case it was saved by a version which didn't)
-const storedLog = load(REPLAY_KEY).reduce(record, []);
+const storedLog = load(REPLAY_KEY).reduce(recordReplay, []);
 store(REPLAY_KEY, storedLog);
 // Every line which changed the session on this page, also those of a `?run=` link, replayed in a new worker
 const replayLog = [...storedLog];
@@ -310,9 +310,9 @@ function startWorker() {
       restartWorker();
     } else {
       if (data.replay) {
-        record(replayLog, line);
+        recordReplay(replayLog, line);
         if (persist) {
-          record(storedLog, line);
+          recordReplay(storedLog, line);
           store(REPLAY_KEY, storedLog);
         }
       }
